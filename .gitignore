@@ -30,3 +30,9 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# CLAUDE
+.claude/
+
+# SERENA
+.serena/
