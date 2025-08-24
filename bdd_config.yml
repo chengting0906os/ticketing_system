@@ -1,0 +1,86 @@
+# pytest-bdd Configuration for API and Entity Testing
+# This configuration defines patterns and constraints for BDD scenarios
+
+api_patterns:
+  - name: API call
+    given_format: 'the API endpoint "{endpoint}"'
+    when_format: 'I call the API with:'
+    constraints:
+      - API endpoint must be a valid URL path
+      - Request parameters must match the API specification
+      - DataTable columns should map to request parameters (query params + body)
+    example: |
+      Given the API endpoint "/api/v1/users/register"
+      When I call the API with:
+        | email              | password | first_name | last_name |
+        | alice@example.com  | Pass123! | Alice      | Chen      |
+
+  - name: API response validation
+    then_format: 'the response should be:'
+    constraints:
+      - Response fields must match API response schema
+      - Use dot notation for nested fields (e.g., "user.id", "user.email")
+      - Array items use bracket notation (e.g., "items[0].name")
+    example: |
+      Then the response should be:
+        | status_code | user.id | user.email         | user.status |
+        | 201         | 1       | alice@example.com  | active      |
+
+  - name: API response status only
+    then_format: 'the response status should be {status_code}'
+    example: |
+      Then the response status should be 204
+
+  - name: API error response
+    then_format: 'the request should fail with message "{message}"'
+    example: |
+      Then the request should fail with message "Email already exists"
+
+entity_patterns:
+  - name: Entity setup
+    given_format: 'a {entity} exists with:'
+    constraints:
+      - Entity must be defined in the domain 
+      - Use dot notation for nested properties (e.g., "email.host")
+      - All required fields must be provided
+    example: |
+      Given a User exists with:
+        | id | email              | first_name | last_name | status |
+        | 1  | john@example.com   | John       | Doe       | active |
+
+  - name: Entity validation
+    then_format: 'the {entity} should have:'
+    constraints:
+      - Entity must exist in the test context
+      - Properties must match entity schema
+      - Use dot notation for nested properties
+    example: |
+      Then the User should have:
+        | id | email              | first_name | last_name | created_at        |
+        | 1  | john@example.com   | John       | Doe       | 2025-01-24T10:00Z |
+
+  - name: Entity count validation
+    then_format: 'there should be {count} {entity}(s)'
+    with_filter: 'there should be {count} {entity}(s) with:'
+    example: |
+      Then there should be 3 Users with:
+        | status |
+        | active |
+
+relationship_patterns:
+  - name: Relationship setup
+    given_format: 'the {entity1} with id "{id}" has {count} {entity2}(s):'
+    example: |
+      Given the User with id "1" has 2 Posts:
+        | post_id | title                  | status    |
+        | 101     | Introduction to Python | published |
+        | 102     | Django Best Practices  | draft     |
+
+  - name: Relationship validation
+    then_format: 'the {entity1} with id "{id}" should have {count} {entity2}(s)'
+    with_details: 'the {entity1} with id "{id}" should have {count} {entity2}(s):'
+    example: |
+      Then the User with id "1" should have 2 Posts:
+        | post_id | title                  | view_count |
+        | 101     | Introduction to Python | 1250       |
+        | 102     | Django Best Practices  | 850        |
