@@ -1,0 +1,71 @@
+[project]
+name = "py-arch-lab"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "alembic>=1.16.4",
+    "django>=5.2.5",
+    "django-ninja>=1.4.3",
+    "django-ninja-extra>=0.30.1",
+    "psycopg2-binary>=2.9.10",
+    "python-dotenv>=1.1.1",
+    "sqlalchemy>=2.0.43",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.404",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-django>=4.11.1",
+    "ruff>=0.12.10",
+]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "F", # pyflakes
+    "B", # flake8-bugbear
+    "I", # isort import sorting
+    "W", # pycodestyle warnings
+]
+# If warning hints are annoying while coding, check their type and disable them
+# They'll still be fixed when you save or run 'ruff check --fix .'
+ignore = [
+    "I001", # unsorted-imports 
+    "E201", # ignore whitespace after '(' warning
+    "E202", # ignore whitespace before ')' warning
+    "E241", # allow multiple spaces for alignment
+    "E272", # allow multiple spaces before keyword
+    "E231", # missing whitespace after comma
+    "W291", # trailing whitespace
+    "W293", # line contains whitespace
+    "E501", # ignore line too long warning
+    "D107", # ignore missing docstring in __init__
+    "C901", # too complex
+    "B904", # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling 
+]
+unfixable = ["F401", "F841"] # unused-import, unused-variable 
+
+[tool.ruff.lint.isort]
+order-by-type = true
+force-sort-within-sections = true
+force-single-line = false
+lines-after-imports = 2
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false # preserve trailing commas
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
