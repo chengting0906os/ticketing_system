@@ -1,0 +1,1 @@
+"""User infrastructure layer."""
