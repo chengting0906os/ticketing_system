@@ -3,7 +3,7 @@ Feature: User Creation
   I want to create new users
   So that they can access the system
 
-  Scenario: Create a new buyer user
+  Scenario: Create a new buyer userddasd
     Given I have a database connection
     When I create a user with the following details:
       | email            | password    | first_name | last_name | role  |

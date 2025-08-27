@@ -12,8 +12,8 @@ from src.shared.database import Base
 class UserRole(str, Enum):
     """User roles."""
     
-    ORGANIZER = 'organizer'
-    CUSTOMER = 'customer'
+    SELLER = 'seller'
+    BUYER = 'buyer'
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
@@ -31,6 +31,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     role: Mapped[str] = mapped_column(
         String(20),
-        default=UserRole.CUSTOMER,
+        default=UserRole.BUYER,
         nullable=False,
     )

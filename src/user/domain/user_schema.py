@@ -28,7 +28,7 @@ class UserCreate(schemas.BaseUserCreate):
     last_name: str = Field(..., min_length=1, max_length=150)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    role: UserRole = UserRole.CUSTOMER
+    role: UserRole = UserRole.BUYER
 
 
 class UserUpdate(schemas.BaseUserUpdate):
