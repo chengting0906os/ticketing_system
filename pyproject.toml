@@ -13,6 +13,8 @@ dependencies = [
     "email-validator",
     "pydantic",
     "pydantic-settings",
+    "pytest-bdd-ng>=2.3.1",
+    "psycopg2-binary>=2.9.10",
 ]
 
 [dependency-groups]
@@ -76,14 +78,19 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "asyncio: mark test as async",
+    "bdd: BDD scenario tests",
+    "api: API tests",
+    "entity: Entity tests",
+    "integration: Integration tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pydantic._internal._config",
     "ignore::pytest.PytestReturnNotNoneWarning",
 ]
 testpaths = ["tests"]
-# 排除 feature 檔案
-addopts = "--ignore=tests/features"
+# pytest-bdd configuration
+bdd_features_base_dir = "tests/features/"
+addopts = "-v --tb=short --strict-markers"
 
 [tool.pyright]
 pythonVersion = "3.13"
