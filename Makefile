@@ -1,0 +1,108 @@
+# Database migrations
+ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
+
+.PHONY: migrate-up
+migrate-up:
+	@echo "Running migrations..."
+	@uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
+
+.PHONY: migrate-down
+migrate-down:
+	@echo "Rolling back one migration..."
+	@uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
+
+.PHONY: migrate-new
+migrate-new:
+	@if [ -z "$(MSG)" ]; then \
+		echo "Error: Migration message required"; \
+		echo "Usage: make migrate-new MSG='your message'"; \
+		exit 1; \
+	fi
+	@echo "Creating migration: $(MSG)"
+	@uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
+
+.PHONY: migrate-history
+migrate-history:
+	@uv run alembic -c $(ALEMBIC_CONFIG) history
+
+.PHONY: migrate-current
+migrate-current:
+	@uv run alembic -c $(ALEMBIC_CONFIG) current
+
+# Testing
+.PHONY: test
+test:
+	@uv run pytest tests/ -v
+
+.PHONY: test-api
+test-api:
+	@uv run pytest tests/test_user_api_async.py -v
+
+.PHONY: test-bdd
+test-bdd:
+	@uv run pytest tests/features/ -v
+
+# Linting and formatting
+.PHONY: lint
+lint:
+	@uv run ruff check .
+
+.PHONY: format
+format:
+	@uv run ruff format .
+
+.PHONY: typecheck
+typecheck:
+	@uv run pyright
+
+# Development
+.PHONY: run
+run:
+	@uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+
+.PHONY: clean
+clean:
+	@find . -type d -name "__pycache__" -exec rm -rf {} +
+	@find . -type f -name "*.pyc" -delete
+	@find . -type f -name ".DS_Store" -delete
+
+# Docker
+.PHONY: docker-up
+docker-up:
+	@docker-compose up -d
+
+.PHONY: docker-down
+docker-down:
+	@docker-compose down
+
+.PHONY: docker-logs
+docker-logs:
+	@docker-compose logs -f
+
+# Help
+.PHONY: help
+help:
+	@echo "Available commands:"
+	@echo "  Database:"
+	@echo "    make migrate-up          - Run all pending migrations"
+	@echo "    make migrate-down        - Rollback one migration"
+	@echo "    make migrate-new MSG='message' - Create new migration"
+	@echo "    make migrate-history     - Show migration history"
+	@echo "    make migrate-current     - Show current migration"
+	@echo ""
+	@echo "  Testing:"
+	@echo "    make test               - Run all tests"
+	@echo "    make test-api           - Run API tests"
+	@echo "    make test-bdd           - Run BDD tests"
+	@echo ""
+	@echo "  Development:"
+	@echo "    make run                - Run development server"
+	@echo "    make lint               - Check code style"
+	@echo "    make format             - Format code"
+	@echo "    make typecheck          - Run type checking"
+	@echo "    make clean              - Remove cache files"
+	@echo ""
+	@echo "  Docker:"
+	@echo "    make docker-up          - Start Docker containers"
+	@echo "    make docker-down        - Stop Docker containers"
+	@echo "    make docker-logs        - View Docker logs"

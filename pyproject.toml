@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings",
     "pytest-bdd-ng>=2.3.1",
     "psycopg2-binary>=2.9.10",
+    "alembic>=1.16.4",
 ]
 
 [dependency-groups]
@@ -25,6 +26,8 @@ dev = [
     "httpx",
     "ruff",
     "pytest-bdd-ng>=2.3.1",
+    "pytest-postgresql>=7.0.2",
+    "psycopg-binary>=3.2.9",
 ]
 
 [tool.ruff]
@@ -95,3 +98,6 @@ addopts = "-v --tb=short --strict-markers"
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
+
+[tool.uv]
+package = false
