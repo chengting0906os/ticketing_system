@@ -9,19 +9,19 @@ https://fastapi-users.github.io/fastapi-users/10.1/
 ## User Stories
 
 ### Authentication
-- As a visitor, I can register as organizer
-- As a visitor, I can register as customer
+- As a visitor, I can register as seller
+- As a visitor, I can register as buyer
 - As a user, I can login
 - As a user, I can logout
 
-### Organizer
-- As an organizer, I can create product
-- As an organizer, I can manage stock
-- As an organizer, I can view sales
+### Seller
+- As a seller, I can create product
+- As a seller, I can manage stock
+- As a seller, I can view sales
 
-### Customer
-- As a customer, I can browse product
-- As a customer, I can buy prohect
-- As a customer, I can make payment
-- As a customer, I can view my orders
+### Buyer
+- As a buyer, I can browse product
+- As a buyer, I can buy product
+- As a buyer, I can make payment
+- As a buyer, I can view my orders
 
