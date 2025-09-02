@@ -1,48 +1,76 @@
-"""Test configuration - simple approach."""
+"""Test configuration with async database cleaning."""
+# ruff: noqa: F403, F405
 
+import asyncio
 import os
 
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import NullPool, text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # 設定測試環境變數
-os.environ["POSTGRES_DB"] = "ticketing_test_db"
+os.environ['POSTGRES_DB'] = 'ticketing_test_db'
+
 
 from src.main import app
 from src.shared.database import Base
 
+# Import step definitions for pytest_bdd_ng_example
+from tests.pytest_bdd_ng_example.fixtures import *
+from tests.pytest_bdd_ng_example.given import *
+from tests.pytest_bdd_ng_example.then import *
+from tests.pytest_bdd_ng_example.when import *
 
-# 用同步引擎只做資料清理
-SYNC_DATABASE_URL = "postgresql://py_arch_lab:py_arch_lab@localhost:5432/ticketing_test_db"
-sync_engine = create_engine(SYNC_DATABASE_URL)
+# Import step definitions for user
+from tests.user.functional.fixtures import *
+from tests.user.functional.then import *
+from tests.user.functional.when import *
 
-# 確保表存在
-Base.metadata.create_all(bind=sync_engine)
+
+# 資料庫 URL
+ASYNC_DATABASE_URL = 'postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/ticketing_test_db'
+
+
+async def async_clean_tables():
+    async_engine = create_async_engine(ASYNC_DATABASE_URL, poolclass=NullPool)
+
+    async with async_engine.begin() as conn:
+        result = await conn.execute(
+            text("""
+            SELECT tablename FROM pg_tables 
+            WHERE schemaname = 'public'
+            AND tablename != 'alembic_version'
+        """)
+        )
+        tables = [row[0] for row in result]
+
+        if tables:
+            await conn.execute(text(f'TRUNCATE {", ".join(tables)} CASCADE'))
+
+    await async_engine.dispose()
+
+
+async def async_create_tables():
+    async_engine = create_async_engine(ASYNC_DATABASE_URL, poolclass=NullPool)
+
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    await async_engine.dispose()
+
+
+asyncio.run(async_create_tables())
 
 
 @pytest.fixture(autouse=True)
 def clean_database():
-    """每個測試前後清理資料庫 - 自動清理所有表。"""
-    with sync_engine.begin() as conn:
-        # 取得所有表名（排除 alembic_version）
-        result = conn.execute(text("""
-            SELECT tablename FROM pg_tables 
-            WHERE schemaname = 'public'
-            AND tablename != 'alembic_version'
-        """))
-        tables = [row[0] for row in result]
-        
-        # 使用 TRUNCATE CASCADE 清理所有表（更快且會處理外鍵）
-        if tables:
-            conn.execute(text(f"TRUNCATE {', '.join(tables)} CASCADE"))
-    
+    asyncio.run(async_clean_tables())
     yield
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope='session')
 def client():
-    """提供測試客戶端 - session scope 避免重建。"""
     with TestClient(app) as client:
         yield client
