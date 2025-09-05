@@ -36,3 +36,26 @@ def create_product(step, client: TestClient, product_state):
     product_state['request_data'] = request_data
     
     product_state['response'] = client.post('/api/products', json=product_state['request_data'])
+
+
+@when('I update the product to')
+def update_product(step, client: TestClient, product_state):
+    """Update a product with the given data."""
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    update_data = dict(zip(headers, values, strict=True))
+    
+    # Convert data types
+    if 'price' in update_data:
+        update_data['price'] = int(update_data['price'])
+    if 'is_active' in update_data:
+        update_data['is_active'] = update_data['is_active'].lower() == 'true'
+    
+    product_id = product_state['product_id']
+    product_state['update_data'] = update_data
+    
+    # Send PATCH request to update product
+    product_state['response'] = client.patch(f'/api/products/{product_id}', json=update_data)

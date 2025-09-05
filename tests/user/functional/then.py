@@ -75,14 +75,6 @@ def verify_user_created_201(step, user_state):
     assert response_data['role'] == expected['role']
 
 
-@then('get 200')
-def verify_response_200(step, user_state):
-    """Verify response status is 200."""
-    response = user_state['response']
-    if response.status_code != 200:
-        print(f"Status Code: {response.status_code}")
-        print(f"Response: {response.text}")
-    assert response.status_code == 200
 
 
 @then('the user should fail with status 400')

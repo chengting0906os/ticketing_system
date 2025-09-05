@@ -1,5 +1,8 @@
 """Product repository implementation."""
 
+from typing import Optional
+
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.product.domain.product_entity import Product, ProductStatus
@@ -32,5 +35,54 @@ class ProductRepoImpl(ProductRepo):
             seller_id=db_product.seller_id,
             is_active=db_product.is_active,
             status=ProductStatus(db_product.status),  # Convert string to enum
+            id=db_product.id
+        )
+    
+    async def get_by_id(self, product_id: int) -> Optional[Product]:
+        result = await self.session.execute(
+            select(ProductModel).where(ProductModel.id == product_id)
+        )
+        db_product = result.scalar_one_or_none()
+        
+        if not db_product:
+            return None
+        
+        return Product(
+            name=db_product.name,
+            description=db_product.description,
+            price=db_product.price,
+            seller_id=db_product.seller_id,
+            is_active=db_product.is_active,
+            status=ProductStatus(db_product.status),
+            id=db_product.id
+        )
+    
+    async def update(self, product: Product) -> Product:
+        stmt = (
+            sql_update(ProductModel)
+            .where(ProductModel.id == product.id)
+            .values(
+                name=product.name,
+                description=product.description,
+                price=product.price,
+                is_active=product.is_active,
+                status=product.status.value
+            )
+            .returning(ProductModel)
+        )
+        
+        result = await self.session.execute(stmt)
+        db_product = result.scalar_one_or_none()
+        
+        if not db_product:
+            raise ValueError(f"Product with id {product.id} not found")
+        
+        return Product(
+            name=db_product.name,
+            description=db_product.description,
+            price=db_product.price,
+            seller_id=db_product.seller_id,
+            is_active=db_product.is_active,
+            status=ProductStatus(db_product.status),
             id=db_product.id
         )

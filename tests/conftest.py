@@ -18,6 +18,9 @@ os.environ['POSTGRES_DB'] = 'shopping_test_db'
 from src.main import app
 
 
+# Import shared test steps first
+from tests.shared.then import *
+
 # Import all BDD step definitions
 for module in ['product', 'user']:
     for step_type in ['fixtures', 'given', 'then', 'when']:
