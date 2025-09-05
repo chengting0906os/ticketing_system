@@ -1,19 +1,12 @@
 """User models."""
 
-from enum import Enum
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 from sqlalchemy import Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
+from user_entity import UserRole
 
 from src.shared.database import Base
-
-
-class UserRole(str, Enum):
-    """User roles."""
-    
-    SELLER = 'seller'
-    BUYER = 'buyer'
 
 
 class User(SQLAlchemyBaseUserTable[int], Base):

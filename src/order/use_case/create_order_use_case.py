@@ -6,7 +6,7 @@ from src.order.domain.order_entity import Order
 from src.product.domain.product_entity import ProductStatus
 from src.shared.exceptions import DomainException
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.user.domain.user_model import UserRole
+from src.user.domain.user_entity import UserRole
 
 
 class CreateOrderUseCase:
