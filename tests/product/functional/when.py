@@ -59,3 +59,17 @@ def update_product(step, client: TestClient, product_state):
     
     # Send PATCH request to update product
     product_state['response'] = client.patch(f'/api/products/{product_id}', json=update_data)
+
+
+@when('I delete the product')
+def delete_product(client: TestClient, product_state):
+    """Delete a product."""
+    product_id = product_state['product_id']
+    product_state['response'] = client.delete(f'/api/products/{product_id}')
+
+
+@when('I try to delete the product')
+def try_delete_product(client: TestClient, product_state):
+    """Try to delete a product (expecting failure)."""
+    product_id = product_state['product_id']
+    product_state['response'] = client.delete(f'/api/products/{product_id}')

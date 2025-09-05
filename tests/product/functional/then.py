@@ -101,3 +101,29 @@ def verify_error_message(product_state):
     error_msg = str(response_json)
     expected_message = "Price must be positive"
     assert expected_message in error_msg, f"Expected '{expected_message}' in error message, got: {error_msg}"
+
+
+@then('the product should not exist')
+def verify_product_not_exist(client, product_state):
+    """Verify product no longer exists."""
+    product_id = product_state['product_id']
+    response = client.get(f'/api/products/{product_id}')
+    assert response.status_code == 404
+
+
+def _verify_error_contains(product_state, expected_text):
+    """Helper function to verify error message contains expected text."""
+    response = product_state['response']
+    response_json = response.json()
+    error_msg = str(response_json)
+    assert expected_text in error_msg, f"Expected '{expected_text}' in error message, got: {error_msg}"
+
+
+@then('the error message should contain "Cannot delete reserved product"')
+def verify_cannot_delete_reserved(product_state):
+    _verify_error_contains(product_state, "Cannot delete reserved product")
+
+
+@then('the error message should contain "Cannot delete sold product"')
+def verify_cannot_delete_sold(product_state):
+    _verify_error_contains(product_state, "Cannot delete sold product")

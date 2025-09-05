@@ -1,7 +1,11 @@
 """Given steps for product BDD tests."""
 
+import asyncio
+
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 @given('a seller user exists')
@@ -53,5 +57,62 @@ def product_exists(step, client: TestClient, product_state):
     
     product_data = response.json()
     product_state['product_id'] = product_data['id']
+    product_state['original_product'] = product_data
+    product_state['request_data'] = request_data
+
+
+@given('a product exists with:')
+def product_exists_with_status(step, client: TestClient, product_state):
+    """Create a product with a specific status for testing deletion."""
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    row_data = dict(zip(headers, values, strict=True))
+    
+    # First create a seller user if needed
+    seller_id = int(row_data['seller_id'])
+    user_response = client.post('/api/users', json={
+        'email': f'seller{seller_id}@test.com',
+        'password': 'password123',
+        'name': f'Test Seller {seller_id}',
+        'role': 'seller',
+    })
+    
+    if user_response.status_code == 201:
+        seller_id = user_response.json()['id']
+    
+    # Create the product
+    request_data = {
+        'name': row_data['name'],
+        'description': row_data['description'],
+        'price': int(row_data['price']),
+        'seller_id': seller_id,
+        'is_active': row_data['is_active'].lower() == 'true'
+    }
+    
+    response = client.post('/api/products', json=request_data)
+    assert response.status_code == 201, f"Failed to create product: {response.text}"
+    
+    product_data = response.json()
+    product_state['product_id'] = product_data['id']
+    
+    # If status is not 'available', need to update it directly in database
+    if 'status' in row_data and row_data['status'] != 'available':
+        # Update status directly in database for test purposes
+        async def update_product_status():
+            TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+            engine = create_async_engine(TEST_DATABASE_URL)
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("UPDATE products SET status = :status WHERE id = :id"),
+                    {"status": row_data['status'], "id": product_data['id']}
+                )
+            await engine.dispose()
+        
+        asyncio.run(update_product_status())
+        product_data['status'] = row_data['status']
+    
     product_state['original_product'] = product_data
     product_state['request_data'] = request_data

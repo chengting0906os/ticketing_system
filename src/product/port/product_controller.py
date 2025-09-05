@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from src.product.domain.errors import ProductDomainError
-from src.product.use_case.product_use_case import CreateProductUseCase, UpdateProductUseCase
+from src.product.use_case.product_use_case import CreateProductUseCase, DeleteProductUseCase, UpdateProductUseCase
 
 
 class ProductCreateRequest(BaseModel):
@@ -127,4 +127,58 @@ async def update_product(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
+        )
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_product(
+    product_id: int,
+    use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends)
+):
+    try:
+        deleted = await use_case.delete(product_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Product with id {product_id} not found"
+            )
+    except ValueError as e:
+        # Handle business logic errors (cannot delete reserved/sold)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{product_id}", status_code=status.HTTP_200_OK)
+async def get_product(
+    product_id: int,
+    use_case: UpdateProductUseCase = Depends(UpdateProductUseCase.depends)
+) -> ProductResponse:
+    async with use_case.uow:
+        product = await use_case.uow.products.get_by_id(product_id)
+        
+        if not product:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Product with id {product_id} not found"
+            )
+        
+        if product.id is None:
+            raise ValueError("Product ID should not be None.")
+        
+        return ProductResponse(
+            id=product.id,
+            name=product.name,
+            description=product.description,
+            price=product.price,
+            seller_id=product.seller_id,
+            is_active=product.is_active,
+            status=product.status.value
         )

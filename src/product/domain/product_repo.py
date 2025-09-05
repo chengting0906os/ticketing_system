@@ -19,3 +19,7 @@ class ProductRepo(ABC):
     @abstractmethod
     async def update(self, product: Product) -> Product:
         pass
+    
+    @abstractmethod
+    async def delete(self, product_id: int) -> bool:
+        pass

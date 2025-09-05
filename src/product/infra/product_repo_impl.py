@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import delete as sql_delete, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.product.domain.product_entity import Product, ProductStatus
@@ -86,3 +86,15 @@ class ProductRepoImpl(ProductRepo):
             status=ProductStatus(db_product.status),
             id=db_product.id
         )
+    
+    async def delete(self, product_id: int) -> bool:
+        stmt = (
+            sql_delete(ProductModel)
+            .where(ProductModel.id == product_id)
+            .returning(ProductModel.id)
+        )
+        
+        result = await self.session.execute(stmt)
+        deleted_id = result.scalar_one_or_none()
+        
+        return deleted_id is not None

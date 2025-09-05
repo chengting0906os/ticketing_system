@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import Depends
 
-from src.product.domain.product_entity import Product
+from src.product.domain.product_entity import Product, ProductStatus
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
@@ -77,3 +77,31 @@ class UpdateProductUseCase:
             await self.uow.commit()
             
         return updated_product
+
+
+class DeleteProductUseCase:
+    
+    def __init__(self, uow: AbstractUnitOfWork):
+        self.uow = uow
+    
+    @classmethod
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow)
+    
+    async def delete(self, product_id: int) -> bool:
+        async with self.uow:
+            # Get existing product to check status
+            product = await self.uow.products.get_by_id(product_id)
+            if not product:
+                return False
+            
+            # Cannot delete reserved or sold products
+            if product.status == ProductStatus.RESERVED:
+                raise ValueError("Cannot delete reserved product")
+            if product.status == ProductStatus.SOLD:
+                raise ValueError("Cannot delete sold product")
+            
+            deleted = await self.uow.products.delete(product_id)
+            await self.uow.commit()
+            
+        return deleted
