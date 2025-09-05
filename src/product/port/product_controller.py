@@ -19,7 +19,7 @@ class ProductCreateRequest(BaseModel):
     description: str
     price: int
     seller_id: int
-    is_active: bool = True  # Default to active
+    is_active: bool = True  
 
 
 class ProductResponse(BaseModel):
@@ -149,7 +149,6 @@ async def delete_product(
                 detail=f"Product with id {product_id} not found"
             )
     except ValueError as e:
-        # Handle business logic errors (cannot delete reserved/sold)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -194,16 +193,9 @@ async def get_products(
     seller_id: Optional[int] = None,
     use_case: GetProductsUseCase = Depends(GetProductsUseCase.depends)
 ) -> List[ProductResponse]:
-    """Get products list.
-    
-    - If seller_id is provided: returns all products for that seller
-    - If no seller_id: returns only active and available products (for buyers)
-    """
     if seller_id is not None:
-        # Seller viewing their own products
         products = await use_case.get_by_seller(seller_id)
     else:
-        # Buyer viewing available products
         products = await use_case.get_available()
     
     return [

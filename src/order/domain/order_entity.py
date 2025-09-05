@@ -49,7 +49,6 @@ class Order:
         )
     
     def mark_as_paid(self) -> 'Order':
-        """Mark order as paid and set payment timestamp."""
         now = datetime.now()
         return attrs.evolve(
             self,
@@ -59,7 +58,6 @@ class Order:
         )
 
     def cancel(self) -> 'Order':
-        """Cancel the order."""
         now = datetime.now()
         return attrs.evolve(
             self,

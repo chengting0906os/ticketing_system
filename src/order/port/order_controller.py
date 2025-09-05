@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from src.order.use_case.create_order_use_case import CreateOrderUseCase
 from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
-from src.order.use_case.payment_use_case import PaymentUseCase
+from src.order.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.exceptions import DomainException
 
 
@@ -48,20 +48,18 @@ class CancelRequest(BaseModel):
 router = APIRouter()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post('', status_code=status.HTTP_201_CREATED)
 async def create_order(
-    request: OrderCreateRequest,
-    use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends)
+    request: OrderCreateRequest, use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends)
 ) -> OrderResponse:
     try:
         order = await use_case.create_order(
-            buyer_id=request.buyer_id,
-            product_id=request.product_id
+            buyer_id=request.buyer_id, product_id=request.product_id
         )
-        
+
         if order.id is None:
-            raise ValueError("Order ID should not be None after creation.")
-        
+            raise ValueError('Order ID should not be None after creation.')
+
         return OrderResponse(
             id=order.id,
             buyer_id=order.buyer_id,
@@ -70,32 +68,23 @@ async def create_order(
             price=order.price,
             status=order.status.value,
             created_at=order.created_at,
-            paid_at=order.paid_at
+            paid_at=order.paid_at,
         )
     except DomainException as e:
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.get("/{order_id}")
+@router.get('/{order_id}')
 async def get_order(
-    order_id: int,
-    use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends)
+    order_id: int, use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends)
 ) -> OrderResponse:
-    """Get order by ID."""
     try:
         order = await use_case.get_order(order_id)
-        
         if order.id is None:
-            raise ValueError("Order ID should not be None.")
-        
+            raise ValueError('Order ID should not be None.')
+
         return OrderResponse(
             id=order.id,
             buyer_id=order.buyer_id,
@@ -104,106 +93,70 @@ async def get_order(
             price=order.price,
             status=order.status.value,
             created_at=order.created_at,
-            paid_at=order.paid_at
+            paid_at=order.paid_at,
         )
     except DomainException as e:
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/{order_id}/pay")
+@router.post('/{order_id}/pay')
 async def pay_order(
     order_id: int,
     request: PaymentRequest,
-    use_case: PaymentUseCase = Depends(PaymentUseCase.depends)
+    use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
 ) -> PaymentResponse:
-    """Process payment for an order."""
     try:
         result = await use_case.pay_order(
-            order_id=order_id,
-            buyer_id=request.buyer_id,
-            card_number=request.card_number
+            order_id=order_id, buyer_id=request.buyer_id, card_number=request.card_number
         )
-        
+
         return PaymentResponse(
-            order_id=result["order_id"],
-            payment_id=result["payment_id"],
-            status=result["status"],
-            paid_at=result["paid_at"]
+            order_id=result['order_id'],
+            payment_id=result['payment_id'],
+            status=result['status'],
+            paid_at=result['paid_at'],
         )
     except DomainException as e:
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{order_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_order(
-    order_id: int,
-    buyer_id: int,
-    use_case: PaymentUseCase = Depends(PaymentUseCase.depends)
+    order_id: int, buyer_id: int, use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends)
 ):
-    """Cancel an order."""
     try:
-        await use_case.cancel_order(
-            order_id=order_id,
-            buyer_id=buyer_id
-        )
-        
+        await use_case.cancel_order(order_id=order_id, buyer_id=buyer_id)
+
         return None
     except DomainException as e:
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-
-@router.get("/buyer/{buyer_id}")
+@router.get('/buyer/{buyer_id}')
 async def list_buyer_orders(
     buyer_id: int,
     order_status: Optional[str] = None,
-    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends)
+    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
-    """List all orders for a buyer."""
     try:
         return await use_case.list_buyer_orders(buyer_id, order_status)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.get("/seller/{seller_id}")
+@router.get('/seller/{seller_id}')
 async def list_seller_orders(
     seller_id: int,
     order_status: Optional[str] = None,
-    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends)
+    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
-    """List all orders for a seller products."""
     try:
         return await use_case.list_seller_orders(seller_id, order_status)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

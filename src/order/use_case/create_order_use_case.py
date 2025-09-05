@@ -2,62 +2,54 @@
 
 from fastapi import Depends
 
+from src.order.domain.order_aggregate import OrderAggregate
 from src.order.domain.order_entity import Order
-from src.product.domain.product_entity import ProductStatus
+from src.order.use_case.mock_send_email_use_case import MockSendEmailUseCase
 from src.shared.exceptions import DomainException
+from src.shared.services.mock_email_service import MockEmailService, get_mock_email_service
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.user.domain.user_entity import UserRole
 
 
 class CreateOrderUseCase:
-    
-    def __init__(self, uow: AbstractUnitOfWork):
+    def __init__(self, uow: AbstractUnitOfWork, email_service: MockEmailService):
         self.uow = uow
-    
+        self.email_service = email_service
+        self.email_use_case = MockSendEmailUseCase(email_service, uow)
+
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
-    
+    def depends(
+        cls,
+        uow: AbstractUnitOfWork = Depends(get_unit_of_work),
+        email_service: MockEmailService = Depends(get_mock_email_service),
+    ):
+        return cls(uow, email_service)
+
     async def create_order(self, buyer_id: int, product_id: int) -> Order:
         async with self.uow:
             buyer = await self.uow.users.get_by_id(buyer_id)
-            
             if not buyer:
-                raise DomainException(status_code=404, message="Buyer not found")
-            
-            if buyer.role != UserRole.BUYER.value:
-                raise DomainException(status_code=403, message="Only buyers can create orders")
-            
+                raise DomainException(status_code=404, message='Buyer not found')
             product = await self.uow.products.get_by_id(product_id)
             if not product:
-                raise DomainException(status_code=404, message="Product not found")
-            
-            if not product.is_active:
-                raise DomainException(status_code=400, message="Product not active")
-            
-            if product.status != ProductStatus.AVAILABLE:
-                raise DomainException(status_code=400, message="Product not available")
-            
-            if buyer.id == product.seller_id:
-                raise DomainException(status_code=403, message="Only buyers can create orders")
-            
+                raise DomainException(status_code=404, message='Product not found')
+
             if product.id:
                 existing_order = await self.uow.orders.get_by_product_id(product.id)
                 if existing_order:
-                    raise DomainException(status_code=400, message="Product already has an active order")
-            
-            order = Order.create(
-                buyer_id=buyer_id,
-                seller_id=product.seller_id,
-                product_id=product.id or 0,
-                price=product.price
-            )
-            
-            created_order = await self.uow.orders.create(order)
-            
-            product.status = ProductStatus.RESERVED
-            await self.uow.products.update(product)
-            
+                    raise DomainException(
+                        status_code=400, message='Product already has an active order'
+                    )
+
+            aggregate = OrderAggregate.create_order(buyer, product)
+            created_order = await self.uow.orders.create(aggregate.order)
+            aggregate.order.id = created_order.id 
+            updated_product = aggregate.get_product_for_update()
+            if updated_product:
+                await self.uow.products.update(updated_product)
+            events = aggregate.collect_events()
+            for event in events:
+                await self.email_use_case.handle(event)
+
             await self.uow.commit()
-            
+
         return created_order
