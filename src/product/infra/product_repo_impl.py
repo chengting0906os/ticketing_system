@@ -1,6 +1,6 @@
 """Product repository implementation."""
 
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import delete as sql_delete, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,3 +98,46 @@ class ProductRepoImpl(ProductRepo):
         deleted_id = result.scalar_one_or_none()
         
         return deleted_id is not None
+    
+    async def get_by_seller(self, seller_id: int) -> List[Product]:
+        result = await self.session.execute(
+            select(ProductModel)
+            .where(ProductModel.seller_id == seller_id)
+            .order_by(ProductModel.id)
+        )
+        db_products = result.scalars().all()
+        
+        return [
+            Product(
+                name=db_product.name,
+                description=db_product.description,
+                price=db_product.price,
+                seller_id=db_product.seller_id,
+                is_active=db_product.is_active,
+                status=ProductStatus(db_product.status),
+                id=db_product.id
+            )
+            for db_product in db_products
+        ]
+    
+    async def get_available(self) -> List[Product]:
+        result = await self.session.execute(
+            select(ProductModel)
+            .where(ProductModel.is_active == True)
+            .where(ProductModel.status == ProductStatus.AVAILABLE.value)
+            .order_by(ProductModel.id)
+        )
+        db_products = result.scalars().all()
+        
+        return [
+            Product(
+                name=db_product.name,
+                description=db_product.description,
+                price=db_product.price,
+                seller_id=db_product.seller_id,
+                is_active=db_product.is_active,
+                status=ProductStatus(db_product.status),
+                id=db_product.id
+            )
+            for db_product in db_products
+        ]

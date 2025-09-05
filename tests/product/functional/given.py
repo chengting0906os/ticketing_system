@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 @given('a seller user exists')
 def create_seller_user_for_product(step, client: TestClient, product_state):
-    """Create a seller user for tests."""
     data_table = step.data_table
     rows = data_table.rows
     
@@ -36,7 +35,6 @@ def create_seller_user_for_product(step, client: TestClient, product_state):
 
 @given('a product exists')
 def product_exists(step, client: TestClient, product_state):
-    """Create a product for testing updates."""
     data_table = step.data_table
     rows = data_table.rows
     
@@ -63,7 +61,6 @@ def product_exists(step, client: TestClient, product_state):
 
 @given('a product exists with:')
 def product_exists_with_status(step, client: TestClient, product_state):
-    """Create a product with a specific status for testing deletion."""
     data_table = step.data_table
     rows = data_table.rows
     
@@ -116,3 +113,116 @@ def product_exists_with_status(step, client: TestClient, product_state):
     
     product_state['original_product'] = product_data
     product_state['request_data'] = request_data
+
+
+@given('a seller with products:')
+def create_seller_with_products(step, client: TestClient, product_state):
+    seller_response = client.post('/api/users', json={
+        'email': 'list_seller@test.com',
+        'password': 'password123',
+        'name': 'List Test Seller',
+        'role': 'seller',
+    })
+    
+    if seller_response.status_code == 201:
+        seller_id = seller_response.json()['id']
+    else:
+        seller_id = 1
+    
+    product_state['seller_id'] = seller_id
+    product_state['created_products'] = []
+    
+    # Create products from table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+    
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        product_data = dict(zip(headers, values, strict=True))
+        
+        # Create product
+        create_response = client.post('/api/products', json={
+            'name': product_data['name'],
+            'description': product_data['description'],
+            'price': int(product_data['price']),
+            'seller_id': seller_id,
+            'is_active': product_data['is_active'].lower() == 'true'
+        })
+        
+        if create_response.status_code == 201:
+            created_product = create_response.json()
+            product_id = created_product['id']
+            
+            # Update status if not available
+            if product_data['status'] != 'available':
+                async def update_status(status, pid):
+                    TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+                    engine = create_async_engine(TEST_DATABASE_URL)
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            text("UPDATE products SET status = :status WHERE id = :id"),
+                            {"status": status, "id": pid}
+                        )
+                    await engine.dispose()
+                
+                asyncio.run(update_status(product_data['status'], product_id))
+                created_product['status'] = product_data['status']
+            
+            product_state['created_products'].append(created_product)
+
+
+@given('no available products exist')
+def create_no_available_products(step, client: TestClient, product_state):
+    seller_response = client.post('/api/users', json={
+        'email': 'empty_list_seller@test.com',
+        'password': 'password123',
+        'name': 'Empty List Seller',
+        'role': 'seller',
+    })
+    
+    if seller_response.status_code == 201:
+        seller_id = seller_response.json()['id']
+    else:
+        seller_id = 1
+    
+    product_state['seller_id'] = seller_id
+    product_state['created_products'] = []
+    
+    # Create non-available products from table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+    
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        product_data = dict(zip(headers, values, strict=True))
+        
+        # Create product
+        create_response = client.post('/api/products', json={
+            'name': product_data['name'],
+            'description': product_data['description'],
+            'price': int(product_data['price']),
+            'seller_id': seller_id,
+            'is_active': product_data['is_active'].lower() == 'true'
+        })
+        
+        if create_response.status_code == 201:
+            created_product = create_response.json()
+            product_id = created_product['id']
+            
+            # Update status to non-available
+            async def update_status(status, pid):
+                TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+                engine = create_async_engine(TEST_DATABASE_URL)
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("UPDATE products SET status = :status WHERE id = :id"),
+                        {"status": status, "id": pid}
+                    )
+                await engine.dispose()
+            
+            asyncio.run(update_status(product_data['status'], product_id))
+            created_product['status'] = product_data['status']
+            
+            product_state['created_products'].append(created_product)

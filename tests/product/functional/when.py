@@ -6,7 +6,6 @@ from pytest_bdd import when
 
 @when('I create a product with')
 def create_product(step, client: TestClient, product_state):
-    """Create a product with the given data."""
     data_table = step.data_table
     rows = data_table.rows
     
@@ -40,7 +39,6 @@ def create_product(step, client: TestClient, product_state):
 
 @when('I update the product to')
 def update_product(step, client: TestClient, product_state):
-    """Update a product with the given data."""
     data_table = step.data_table
     rows = data_table.rows
     
@@ -63,13 +61,22 @@ def update_product(step, client: TestClient, product_state):
 
 @when('I delete the product')
 def delete_product(client: TestClient, product_state):
-    """Delete a product."""
     product_id = product_state['product_id']
     product_state['response'] = client.delete(f'/api/products/{product_id}')
 
 
 @when('I try to delete the product')
 def try_delete_product(client: TestClient, product_state):
-    """Try to delete a product (expecting failure)."""
     product_id = product_state['product_id']
     product_state['response'] = client.delete(f'/api/products/{product_id}')
+
+
+@when('the seller requests their products')
+def seller_requests_products(client: TestClient, product_state):
+    seller_id = product_state['seller_id']
+    product_state['response'] = client.get(f'/api/products?seller_id={seller_id}')
+
+
+@when('a buyer requests products')
+def buyer_requests_products(client: TestClient, product_state):
+    product_state['response'] = client.get('/api/products')

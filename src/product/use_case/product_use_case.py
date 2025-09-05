@@ -1,6 +1,6 @@
 """Product use cases."""
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends
 
@@ -105,3 +105,25 @@ class DeleteProductUseCase:
             await self.uow.commit()
             
         return deleted
+
+
+class GetProductsUseCase:
+    
+    def __init__(self, uow: AbstractUnitOfWork):
+        self.uow = uow
+    
+    @classmethod
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow)
+    
+    async def get_by_seller(self, seller_id: int) -> List[Product]:
+        """Get all products for a specific seller."""
+        async with self.uow:
+            products = await self.uow.products.get_by_seller(seller_id)
+        return products
+    
+    async def get_available(self) -> List[Product]:
+        """Get all active and available products (for buyers)."""
+        async with self.uow:
+            products = await self.uow.products.get_available()
+        return products

@@ -127,3 +127,75 @@ def verify_cannot_delete_reserved(product_state):
 @then('the error message should contain "Cannot delete sold product"')
 def verify_cannot_delete_sold(product_state):
     _verify_error_contains(product_state, "Cannot delete sold product")
+
+
+def _verify_product_count(product_state, count):
+    """Helper to verify product count."""
+    response = product_state['response']
+    assert response.status_code == 200
+    products = response.json()
+    assert len(products) == count, f"Expected {count} products, got {len(products)}"
+    return products
+
+
+@then('the seller should see 5 products')
+def verify_seller_sees_5_products(product_state):
+    _verify_product_count(product_state, 5)
+
+
+@then('the buyer should see 2 products')
+def verify_buyer_sees_2_products(product_state):
+    products = _verify_product_count(product_state, 2)
+    # Verify they are the active and available ones
+    for p in products:
+        assert p['is_active'] is True
+        assert p['status'] == 'available'
+
+
+@then('the buyer should see 0 products')
+def verify_buyer_sees_0_products(product_state):
+    _verify_product_count(product_state, 0)
+
+
+@then('the products should include all statuses')
+def verify_products_include_all_statuses(product_state):
+    """Verify that products include different statuses."""
+    response = product_state['response']
+    products = response.json()
+    
+    statuses = {product['status'] for product in products}
+    # Should have at least available, reserved, and sold
+    expected_statuses = {'available', 'reserved', 'sold'}
+    assert expected_statuses.issubset(statuses), f"Expected statuses {expected_statuses}, got {statuses}"
+
+
+@then('the products should be:')
+def verify_specific_products(step, product_state):
+    """Verify specific products are in the list."""
+    response = product_state['response']
+    products = response.json()
+    
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+    
+    expected_products = []
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        expected_products.append(dict(zip(headers, values, strict=True)))
+    
+    # Verify we have the right number of products
+    assert len(products) == len(expected_products), f"Expected {len(expected_products)} products, got {len(products)}"
+    
+    # Verify each expected product is present
+    for expected in expected_products:
+        found = False
+        for product in products:
+            if product['name'] == expected['name']:
+                assert product['description'] == expected['description']
+                assert str(product['price']) == expected['price']
+                assert str(product['is_active']).lower() == expected['is_active'].lower()
+                assert product['status'] == expected['status']
+                found = True
+                break
+        assert found, f"Product {expected['name']} not found in response"

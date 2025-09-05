@@ -1,7 +1,7 @@
 """Product repository interface."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 
 from src.product.domain.product_entity import Product
 
@@ -22,4 +22,12 @@ class ProductRepo(ABC):
     
     @abstractmethod
     async def delete(self, product_id: int) -> bool:
+        pass
+    
+    @abstractmethod
+    async def get_by_seller(self, seller_id: int) -> List[Product]:
+        pass
+    
+    @abstractmethod
+    async def get_available(self) -> List[Product]:
         pass

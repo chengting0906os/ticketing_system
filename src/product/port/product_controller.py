@@ -1,12 +1,17 @@
 """Product controller."""
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from src.product.domain.errors import ProductDomainError
-from src.product.use_case.product_use_case import CreateProductUseCase, DeleteProductUseCase, UpdateProductUseCase
+from src.product.use_case.product_use_case import (
+    CreateProductUseCase,
+    DeleteProductUseCase,
+    GetProductsUseCase,
+    UpdateProductUseCase,
+)
 
 
 class ProductCreateRequest(BaseModel):
@@ -182,3 +187,35 @@ async def get_product(
             is_active=product.is_active,
             status=product.status.value
         )
+
+
+@router.get("", status_code=status.HTTP_200_OK)
+async def get_products(
+    seller_id: Optional[int] = None,
+    use_case: GetProductsUseCase = Depends(GetProductsUseCase.depends)
+) -> List[ProductResponse]:
+    """Get products list.
+    
+    - If seller_id is provided: returns all products for that seller
+    - If no seller_id: returns only active and available products (for buyers)
+    """
+    if seller_id is not None:
+        # Seller viewing their own products
+        products = await use_case.get_by_seller(seller_id)
+    else:
+        # Buyer viewing available products
+        products = await use_case.get_available()
+    
+    return [
+        ProductResponse(
+            id=product.id,
+            name=product.name,
+            description=product.description,
+            price=product.price,
+            seller_id=product.seller_id,
+            is_active=product.is_active,
+            status=product.status.value
+        )
+        for product in products
+        if product.id is not None
+    ]
