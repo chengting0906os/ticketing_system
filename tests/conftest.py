@@ -3,6 +3,8 @@
 
 import asyncio
 import os
+import subprocess
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 import pytest
@@ -15,7 +17,6 @@ os.environ['POSTGRES_DB'] = 'ticketing_test_db'
 
 
 from src.main import app
-from src.shared.database import Base
 
 # Import step definitions for pytest_bdd_ng_example
 from tests.pytest_bdd_ng_example.fixtures import *
@@ -52,16 +53,19 @@ async def async_clean_tables():
     await async_engine.dispose()
 
 
-async def async_create_tables():
-    async_engine = create_async_engine(ASYNC_DATABASE_URL, poolclass=NullPool)
+def run_migrations():
+    """Run Alembic migrations for test database."""
+    alembic_ini = Path(__file__).parent.parent / 'src' / 'shared' / 'alembic' / 'alembic.ini'
+    subprocess.run(
+        ['alembic', '-c', str(alembic_ini), 'upgrade', 'head'],
+        check=True,
+        capture_output=True,
+        env={**os.environ, 'POSTGRES_DB': 'ticketing_test_db'}
+    )
 
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
-    await async_engine.dispose()
-
-
-asyncio.run(async_create_tables())
+# Run migrations at test session start
+run_migrations()
 
 
 @pytest.fixture(autouse=True)
