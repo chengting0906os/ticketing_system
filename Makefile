@@ -1,18 +1,19 @@
 # Database migrations
 ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
 
-.PHONY: migrate-up
-migrate-up:
+
+.PHONY: migrate-up mu
+migrate-up mu:
 	@echo "Running migrations..."
 	@uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
 
-.PHONY: migrate-down
-migrate-down:
+.PHONY: migrate-down md
+migrate-down md:
 	@echo "Rolling back one migration..."
 	@uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
 
-.PHONY: migrate-new
-migrate-new:
+.PHONY: migrate-new mn
+migrate-new mn:
 	@if [ -z "$(MSG)" ]; then \
 		echo "Error: Migration message required"; \
 		echo "Usage: make migrate-new MSG='your message'"; \
@@ -30,16 +31,16 @@ migrate-current:
 	@uv run alembic -c $(ALEMBIC_CONFIG) current
 
 # Testing
-.PHONY: test
-test:
+.PHONY: test t
+test t:
 	@uv run pytest tests/ -v
 
 .PHONY: test-api
 test-api:
 	@uv run pytest tests/test_user_api_async.py -v
 
-.PHONY: test-bdd
-test-bdd:
+.PHONY: test-bdd tbdd
+test-bdd tbdd:
 	@uv run pytest tests/features/ -v
 
 # Linting and formatting
