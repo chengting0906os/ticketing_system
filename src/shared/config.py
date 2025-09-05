@@ -15,14 +15,14 @@ class Settings(BaseSettings):
         extra='ignore',
     )
     
-    PROJECT_NAME: str = 'Ticketing System'
+    PROJECT_NAME: str = 'Shopping System'
     VERSION: str = '0.1.0'
     
     # Database
     POSTGRES_SERVER: str = 'localhost'
     POSTGRES_USER: str = 'py_arch_lab'
     POSTGRES_PASSWORD: str = 'py_arch_lab'
-    POSTGRES_DB: str = 'ticketing_db'
+    POSTGRES_DB: str = 'shopping_db'
     POSTGRES_PORT: int = 5432
     
     @property

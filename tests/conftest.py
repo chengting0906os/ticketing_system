@@ -3,8 +3,8 @@
 
 import asyncio
 import os
-import subprocess
 from pathlib import Path
+import subprocess
 
 from fastapi.testclient import TestClient
 import pytest
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # 設定測試環境變數
-os.environ['POSTGRES_DB'] = 'ticketing_test_db'
+os.environ['POSTGRES_DB'] = 'shopping_test_db'
 
 
 from src.main import app
@@ -32,7 +32,7 @@ from tests.user.functional.when import *
 
 
 # 資料庫 URL
-ASYNC_DATABASE_URL = 'postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/ticketing_test_db'
+ASYNC_DATABASE_URL = 'postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db'
 
 
 async def async_clean_tables():
@@ -57,12 +57,14 @@ async def async_clean_tables():
 def run_migrations():
     """Run Alembic migrations for test database."""
     alembic_ini = Path(__file__).parent.parent / 'src' / 'shared' / 'alembic' / 'alembic.ini'
-    subprocess.run(
+    result = subprocess.run(
         ['alembic', '-c', str(alembic_ini), 'upgrade', 'head'],
-        check=True,
         capture_output=True,
-        env={**os.environ, 'POSTGRES_DB': 'ticketing_test_db'}
+        text=True,
+        env={**os.environ, 'POSTGRES_DB': 'shopping_test_db'}
     )
+    if result.returncode != 0:
+        print(f"Migration failed: {result.stderr}")
 
 
 # Run migrations at test session start

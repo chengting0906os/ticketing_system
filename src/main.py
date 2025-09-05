@@ -39,4 +39,4 @@ app.include_router(users_router, prefix='/api/users', tags=['users'])
 @app.get('/')
 async def root():
     """Root endpoint."""
-    return {'message': 'Ticketing System API'}
+    return {'message': 'Shopping System API'}

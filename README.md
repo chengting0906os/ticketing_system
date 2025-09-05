@@ -5,7 +5,7 @@ A Python sandbox project focused on applying BDD, TDD, and Clean Architecture to
 ### fastapi-users
 https://fastapi-users.github.io/fastapi-users/10.1/
 
-# simple ticketing platform
+# Simple Shopping Platform
 ## User Stories
 
 ### Authentication
