@@ -37,6 +37,9 @@ async def create_product(
             price=int(request.price),  # Ensure it's int
             seller_id=request.seller_id
         )
+
+        if product.id is None:
+            raise ValueError("Product ID should not be None after creation.")
         
         return ProductResponse(
             id=product.id,

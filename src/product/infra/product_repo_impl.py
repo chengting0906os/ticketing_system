@@ -21,12 +21,12 @@ class ProductRepoImpl(ProductRepo):
         )
         self.session.add(db_product)
         await self.session.flush()
-        await self.session.refresh(db_product)  # 把 DB 裡的 id 同步回來
+        await self.session.refresh(db_product)  
         
         return Product(
             name=db_product.name,
             description=db_product.description,
-            price=int(db_product.price),  # Convert to int from DB
+            price=db_product.price, 
             seller_id=db_product.seller_id,
             id=db_product.id
         )
