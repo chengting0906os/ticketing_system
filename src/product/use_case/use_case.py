@@ -20,14 +20,17 @@ class CreateProductUseCase:
         name: str, 
         description: str, 
         price: int, 
-        seller_id: int
+        seller_id: int,
+        is_active: bool = True
     ) -> Product:
         async with self.uow:
-            product = Product.create(
+            product = Product(
                 name=name,
                 description=description,
                 price=price,
-                seller_id=seller_id
+                seller_id=seller_id,
+                is_active=is_active,
+                id=None
             )
             
             created_product = await self.uow.products.create(product)

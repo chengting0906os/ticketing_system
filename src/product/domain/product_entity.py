@@ -32,6 +32,7 @@ class Product:
     description: str = attrs.field(validator=[attrs.validators.instance_of(str), validate_description])
     price: int = attrs.field(validator=[attrs.validators.instance_of(int), validate_positive_price])
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
+    is_active: bool = attrs.field(default=True, validator=attrs.validators.instance_of(bool))
     id: Optional[int] = None
     
     @classmethod
@@ -41,5 +42,6 @@ class Product:
             description=description,
             price=price,
             seller_id=seller_id,
+            is_active=True,
             id=None
         )

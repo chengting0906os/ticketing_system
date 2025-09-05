@@ -17,7 +17,8 @@ class ProductRepoImpl(ProductRepo):
             name=product.name,
             description=product.description,
             price=product.price,
-            seller_id=product.seller_id
+            seller_id=product.seller_id,
+            is_active=product.is_active
         )
         self.session.add(db_product)
         await self.session.flush()
@@ -28,5 +29,6 @@ class ProductRepoImpl(ProductRepo):
             description=db_product.description,
             price=db_product.price, 
             seller_id=db_product.seller_id,
+            is_active=db_product.is_active,
             id=db_product.id
         )

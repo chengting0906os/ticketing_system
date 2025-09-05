@@ -13,11 +13,23 @@ def verify_product_created(step, product_state):
     values = [cell.value for cell in rows[1].cells]
     expected_data = dict(zip(headers, values, strict=True))
     
-    request_data = product_state['request_data']
+    response = product_state['response']
+    response_json = response.json()
     
-    assert request_data['name'] == expected_data['name']
-    assert request_data['description'] == expected_data['description']
-    assert request_data['price'] == int(expected_data['price'])
+    # Check each field in the expected data
+    for field, expected_value in expected_data.items():
+        if expected_value == '{any_int}':
+            # Check that the field exists and is a positive integer
+            assert field in response_json, f"Response should contain field '{field}'"
+            assert isinstance(response_json[field], int), f"{field} should be an integer"
+            assert response_json[field] > 0, f"{field} should be positive"
+        elif field == 'is_active':
+            expected_active = expected_value.lower() == 'true'
+            assert response_json['is_active'] == expected_active
+        elif field in ['price', 'seller_id', 'id']:
+            assert response_json[field] == int(expected_value)
+        else:
+            assert response_json[field] == expected_value
 
 
 @then('the stock should be initialized with')

@@ -12,6 +12,7 @@ class ProductCreateRequest(BaseModel):
     description: str
     price: int
     seller_id: int
+    is_active: bool = True  # Default to active
 
 
 class ProductResponse(BaseModel):
@@ -20,6 +21,7 @@ class ProductResponse(BaseModel):
     description: str
     price: int
     seller_id: int
+    is_active: bool
 
 
 router = APIRouter()
@@ -35,7 +37,8 @@ async def create_product(
             name=request.name,
             description=request.description,
             price=int(request.price),  # Ensure it's int
-            seller_id=request.seller_id
+            seller_id=request.seller_id,
+            is_active=request.is_active
         )
 
         if product.id is None:
@@ -46,7 +49,8 @@ async def create_product(
             name=product.name,
             description=product.description,
             price=product.price,
-            seller_id=product.seller_id
+            seller_id=product.seller_id,
+            is_active=product.is_active
         )
     except ProductDomainError as e:
         raise HTTPException(

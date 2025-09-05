@@ -14,16 +14,25 @@ def create_product(step, client: TestClient, product_state):
     values = [cell.value for cell in rows[1].cells]
     row_data = dict(zip(headers, values, strict=True))
     
-    # Use seller_id from product_state (created by Background)
-    seller_id = product_state.get('seller_id')
-    if not seller_id:
-        raise ValueError("No seller_id found. Make sure a seller user is created first.")
+    # Get seller_id from test data or from product_state (created by Background)
+    if 'seller_id' in row_data:
+        seller_id = int(row_data['seller_id'])
+    else:
+        seller_id = product_state.get('seller_id')
+        if not seller_id:
+            raise ValueError("No seller_id found. Make sure a seller user is created first or provide it in test data.")
     
-    product_state['request_data'] = {
+    request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
         'price': int(row_data['price']),
-        'seller_id': seller_id,  # Now using int ID
+        'seller_id': seller_id,
     }
+    
+    # Add is_active if specified in the test data
+    if 'is_active' in row_data:
+        request_data['is_active'] = row_data['is_active'].lower() == 'true'
+    
+    product_state['request_data'] = request_data
     
     product_state['response'] = client.post('/api/products', json=product_state['request_data'])
