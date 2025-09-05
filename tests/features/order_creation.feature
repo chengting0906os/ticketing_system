@@ -1,0 +1,48 @@
+Feature: Order Creation
+  As a buyer
+  I want to create orders for available products
+  So that I can purchase items
+
+  Scenario: Successfully create order for available product
+    Given a seller with a product:
+      | name         | description    | price | is_active | status    |
+      | Test Product | For order test |  1000 | true      | available |
+    And a buyer exists:
+      | email          | password    | name       | role  |
+      | buyer@test.com | password123 | Test Buyer | buyer |
+    When the buyer creates an order for the product
+    Then get 201
+    And the order should be created with:
+      | price | status          |
+      |  1000 | pending_payment |
+    And the product status should be "reserved"
+
+  Scenario: Cannot create order for reserved product
+    Given a seller with a product:
+      | name         | description      | price | is_active | status   |
+      | Test Product | Already reserved |  1000 | true      | reserved |
+    And a buyer exists:
+      | email          | password    | name       | role  |
+      | buyer@test.com | password123 | Test Buyer | buyer |
+    When the buyer tries to create an order for the product
+    Then get 400
+    And the error message should contain "Product not available"
+
+  Scenario: Cannot create order for inactive product
+    Given a seller with a product:
+      | name         | description      | price | is_active | status    |
+      | Test Product | Inactive product |  1000 | false     | available |
+    And a buyer exists:
+      | email          | password    | name       | role  |
+      | buyer@test.com | password123 | Test Buyer | buyer |
+    When the buyer tries to create an order for the product
+    Then get 400
+    And the error message should contain "Product not active"
+
+  Scenario: Seller cannot create order
+    Given a seller with a product:
+      | name         | description    | price | is_active | status    |
+      | Test Product | For order test |  1000 | true      | available |
+    When the seller tries to create an order for their own product
+    Then get 403
+    And the error message should contain "Only buyers can create orders"
