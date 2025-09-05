@@ -5,7 +5,7 @@ import uuid
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import (
     AuthenticationBackend,
-    BearerTransport,
+    CookieTransport,
     JWTStrategy,
 )
 
@@ -14,7 +14,13 @@ from src.user.use_case.manager import get_user_manager
 from src.user.domain.user_model import User
 
 
-bearer_transport = BearerTransport(tokenUrl='auth/jwt/login')
+cookie_transport = CookieTransport(
+    cookie_name='fastapiusersauth',
+    cookie_max_age=3600,
+    cookie_secure=False,  # Set to True in production with HTTPS
+    cookie_httponly=True,
+    cookie_samesite='lax'
+)
 
 
 def get_jwt_strategy() -> JWTStrategy:
@@ -27,8 +33,8 @@ def get_jwt_strategy() -> JWTStrategy:
 
 
 auth_backend = AuthenticationBackend(
-    name='jwt',
-    transport=bearer_transport,
+    name='cookie',
+    transport=cookie_transport,
     get_strategy=get_jwt_strategy,
 )
 

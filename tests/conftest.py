@@ -26,6 +26,7 @@ from tests.pytest_bdd_ng_example.when import *
 
 # Import step definitions for user
 from tests.user.functional.fixtures import *
+from tests.user.functional.given import *
 from tests.user.functional.then import *
 from tests.user.functional.when import *
 
