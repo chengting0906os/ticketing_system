@@ -13,8 +13,8 @@ Feature: Order Creation
     When the buyer creates an order for the product
     Then get 201
     And the order should be created with:
-      | price | status          |
-      |  1000 | pending_payment |
+      | price | status          | created_at | paid_at |
+      |  1000 | pending_payment | not_null   | null    |
     And the product status should be "reserved"
 
   Scenario: Cannot create order for reserved product

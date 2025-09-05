@@ -2,6 +2,7 @@
 
 import asyncio
 
+from src.order.infra.order_model import OrderModel  # Import order models
 from src.product.infra.product_model import ProductModel  # Import product models
 from src.shared.database import Base, engine
 from src.user.domain.user_model import (

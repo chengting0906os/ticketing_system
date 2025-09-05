@@ -12,11 +12,15 @@ from src.shared.database import get_async_session
 
 
 if TYPE_CHECKING:
+    from src.order.domain.order_repo import OrderRepo
     from src.product.domain.product_repo import ProductRepo
+    from src.user.domain.user_repo import UserRepo
 
 
 class AbstractUnitOfWork(abc.ABC):
     products: ProductRepo
+    orders: OrderRepo
+    users: UserRepo
 
     async def __aenter__(self) -> AbstractUnitOfWork:
         return self
@@ -42,8 +46,13 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         self.session = session
     
     async def __aenter__(self):
+        from src.order.infra.order_repo_impl import OrderRepoImpl
         from src.product.infra.product_repo_impl import ProductRepoImpl
+        from src.user.infra.user_repo_impl import UserRepoImpl
+        
         self.products = ProductRepoImpl(self.session)
+        self.orders = OrderRepoImpl(self.session)
+        self.users = UserRepoImpl(self.session)
         return await super().__aenter__()
     
     async def __aexit__(self, *args):

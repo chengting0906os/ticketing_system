@@ -1,43 +1,26 @@
-from src.order.domain.order_entity import Order, OrderStatus
-from src.order.domain.order_repo import OrderRepo
+"""Create order use case."""
+
+from fastapi import Depends
+
+from src.order.domain.order_entity import Order
 from src.product.domain.product_entity import ProductStatus
-from src.product.domain.product_repo import ProductRepo
 from src.shared.exceptions import DomainException
-from src.shared.uow import UnitOfWork
-from src.user.domain.user_entity import UserRole
-from src.user.domain.user_repo import UserRepo
+from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.user.domain.user_model import UserRole
 
 
-class CreateOrderRequest(UseCase.Request):
-    buyer_id: int
-    product_id: int
-
-
-class CreateOrderResponse(UseCase.Response):
-    id: int
-    buyer_id: int
-    seller_id: int
-    product_id: int
-    price: int
-    status: str
-
-
-class CreateOrderUseCase(UseCase):
-    def __init__(
-        self,
-        uow: UnitOfWork,
-        order_repo: OrderRepo,
-        product_repo: ProductRepo,
-        user_repo: UserRepo,
-    ) -> None:
+class CreateOrderUseCase:
+    
+    def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
-        self.order_repo = order_repo
-        self.product_repo = product_repo
-        self.user_repo = user_repo
-
-    async def execute(self, request: CreateOrderRequest) -> CreateOrderResponse:
+    
+    @classmethod
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow)
+    
+    async def create_order(self, buyer_id: int, product_id: int) -> Order:
         async with self.uow:
-            buyer = await self.user_repo.get_by_id(request.buyer_id)
+            buyer = await self.uow.users.get_by_id(buyer_id)
             
             if not buyer:
                 raise DomainException(status_code=404, message="Buyer not found")
@@ -45,7 +28,7 @@ class CreateOrderUseCase(UseCase):
             if buyer.role != UserRole.BUYER.value:
                 raise DomainException(status_code=403, message="Only buyers can create orders")
             
-            product = await self.product_repo.get_by_id(request.product_id)
+            product = await self.uow.products.get_by_id(product_id)
             if not product:
                 raise DomainException(status_code=404, message="Product not found")
             
@@ -55,31 +38,26 @@ class CreateOrderUseCase(UseCase):
             if product.status != ProductStatus.AVAILABLE:
                 raise DomainException(status_code=400, message="Product not available")
             
+            if buyer.id == product.seller_id:
+                raise DomainException(status_code=403, message="Only buyers can create orders")
+            
             if product.id:
-                existing_order = await self.order_repo.get_by_product_id(product.id)
+                existing_order = await self.uow.orders.get_by_product_id(product.id)
                 if existing_order:
                     raise DomainException(status_code=400, message="Product already has an active order")
             
-            order = Order(
-                buyer_id=request.buyer_id,
+            order = Order.create(
+                buyer_id=buyer_id,
                 seller_id=product.seller_id,
-                product_id=product.id or 0,  # This should never be 0 as product must exist
-                price=product.price,
-                status=OrderStatus.PENDING_PAYMENT,
+                product_id=product.id or 0,
+                price=product.price
             )
             
-            created_order = await self.order_repo.create(order)
+            created_order = await self.uow.orders.create(order)
             
             product.status = ProductStatus.RESERVED
-            await self.product_repo.update(product)
+            await self.uow.products.update(product)
             
             await self.uow.commit()
             
-            return CreateOrderResponse(
-                id=created_order.id,
-                buyer_id=created_order.buyer_id,
-                seller_id=created_order.seller_id,
-                product_id=created_order.product_id,
-                price=created_order.price,
-                status=created_order.status.value,
-            )
+        return created_order

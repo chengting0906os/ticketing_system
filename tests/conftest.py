@@ -17,12 +17,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 os.environ['POSTGRES_DB'] = 'shopping_test_db'
 from src.main import app
 
-
 # Import shared test steps first
 from tests.shared.then import *
 
+
 # Import all BDD step definitions
-for module in ['product', 'user']:
+for module in ['product', 'user', 'order']:
     for step_type in ['fixtures', 'given', 'then', 'when']:
         exec(f"from tests.{module}.functional.{step_type} import *")
 
