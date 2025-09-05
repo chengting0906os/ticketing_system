@@ -32,3 +32,77 @@ def seller_tries_to_create_order(client: TestClient, order_state):
     })
     
     order_state['response'] = response
+
+
+@when('the buyer pays for the order with:')
+def buyer_pays_for_order(step, client: TestClient, order_state):
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    payment_data = dict(zip(headers, values, strict=True))
+    
+    response = client.post(f"/api/orders/{order_state['order']['id']}/pay", json={
+        'card_number': payment_data['card_number'],
+        'buyer_id': order_state['buyer_id']
+    })
+    
+    order_state['response'] = response
+
+
+@when('the buyer tries to pay for the order again')
+def buyer_tries_to_pay_again(client: TestClient, order_state):
+    response = client.post(f"/api/orders/{order_state['order']['id']}/pay", json={
+        'card_number': '4242424242424242',
+        'buyer_id': order_state['buyer_id']
+    })
+    
+    order_state['response'] = response
+
+
+@when('the buyer tries to pay for the order')
+def buyer_tries_to_pay(client: TestClient, order_state):
+    response = client.post(f"/api/orders/{order_state['order']['id']}/pay", json={
+        'card_number': '4242424242424242',
+        'buyer_id': order_state['buyer_id']
+    })
+    
+    order_state['response'] = response
+
+
+@when('another user tries to pay for the order')
+def another_user_tries_to_pay(client: TestClient, order_state):
+    # Create another buyer
+    another_buyer_response = client.post('/api/users', json={
+        'email': 'another_buyer@test.com',
+        'password': 'password123',
+        'name': 'Another Buyer',
+        'role': 'buyer',
+    })
+    
+    if another_buyer_response.status_code == 201:
+        another_buyer_id = another_buyer_response.json()['id']
+    else:
+        another_buyer_id = 999  # Use a different ID
+    
+    response = client.post(f"/api/orders/{order_state['order']['id']}/pay", json={
+        'card_number': '4242424242424242',
+        'buyer_id': another_buyer_id
+    })
+    
+    order_state['response'] = response
+
+
+@when('the buyer cancels the order')
+def buyer_cancels_order(client: TestClient, order_state):
+    response = client.delete(f"/api/orders/{order_state['order']['id']}?buyer_id={order_state['buyer_id']}")
+    
+    order_state['response'] = response
+
+
+@when('the buyer tries to cancel the order')
+def buyer_tries_to_cancel(client: TestClient, order_state):
+    response = client.delete(f"/api/orders/{order_state['order']['id']}?buyer_id={order_state['buyer_id']}")
+    
+    order_state['response'] = response

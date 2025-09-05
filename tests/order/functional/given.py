@@ -1,6 +1,7 @@
 """Given steps for order BDD tests."""
 
 import asyncio
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 from pytest_bdd import given
@@ -86,3 +87,117 @@ def create_buyer(step, client: TestClient, order_state):
     else:
         # If user exists, we can still use it
         order_state['buyer'] = {'id': 2, 'email': buyer_data['email']}
+
+
+@given('an order exists with status "pending_payment":')
+def create_pending_order(step, client: TestClient, order_state):
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    order_data = dict(zip(headers, values, strict=True))
+    
+    # First create users and product
+    # Create seller
+    seller_response = client.post('/api/users', json={
+        'email': 'seller@test.com',
+        'password': 'password123',
+        'name': 'Test Seller',
+        'role': 'seller',
+    })
+    if seller_response.status_code == 201:
+        seller = seller_response.json()
+        seller_id = seller['id']
+    else:
+        seller_id = int(order_data['seller_id'])
+    
+    # Create buyer
+    buyer_response = client.post('/api/users', json={
+        'email': 'buyer@test.com',
+        'password': 'password123',
+        'name': 'Test Buyer',
+        'role': 'buyer',
+    })
+    if buyer_response.status_code == 201:
+        buyer = buyer_response.json()
+        buyer_id = buyer['id']
+    else:
+        buyer_id = int(order_data['buyer_id'])
+    
+    # Create product
+    product_response = client.post('/api/products', json={
+        'name': 'Test Product',
+        'description': 'Test Description',
+        'price': int(order_data['price']),
+        'seller_id': seller_id,
+        'is_active': True
+    })
+    assert product_response.status_code == 201, f"Failed to create product: {product_response.text}"
+    product = product_response.json()
+    
+    # Create order
+    order_response = client.post('/api/orders', json={
+        'buyer_id': buyer_id,
+        'product_id': product['id']
+    })
+    assert order_response.status_code == 201, f"Failed to create order: {order_response.text}"
+    order = order_response.json()
+    
+    order_state['order'] = order
+    order_state['buyer_id'] = buyer_id
+    order_state['seller_id'] = seller_id
+    order_state['product_id'] = product['id']
+
+
+@given('an order exists with status "paid":')
+def create_paid_order(step, client: TestClient, order_state):
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    order_data = dict(zip(headers, values, strict=True))
+    
+    # First create a pending order
+    create_pending_order(step, client, order_state)
+    
+    # Update order status to paid in database
+    if 'paid_at' in order_data and order_data['paid_at'] == 'not_null':
+        async def update_order_to_paid():
+            TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+            engine = create_async_engine(TEST_DATABASE_URL)
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("UPDATE orders SET status = 'paid', paid_at = :paid_at WHERE id = :id"),
+                    {"paid_at": datetime.now(), "id": order_state['order']['id']}
+                )
+            await engine.dispose()
+        
+        asyncio.run(update_order_to_paid())
+        order_state['order']['status'] = 'paid'
+        order_state['order']['paid_at'] = datetime.now().isoformat()
+
+
+@given('an order exists with status "cancelled":')
+def create_cancelled_order(step, client: TestClient, order_state):
+    create_pending_order(step, client, order_state)
+    
+    # Update order status to cancelled in database
+    async def update_order_to_cancelled():
+        TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+        engine = create_async_engine(TEST_DATABASE_URL)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE orders SET status = 'cancelled' WHERE id = :id"),
+                {"id": order_state['order']['id']}
+            )
+            # Also update product back to available
+            await conn.execute(
+                text("UPDATE products SET status = 'available' WHERE id = :id"),
+                {"id": order_state['product_id']}
+            )
+        await engine.dispose()
+    
+    asyncio.run(update_order_to_cancelled())
+    order_state['order']['status'] = 'cancelled'

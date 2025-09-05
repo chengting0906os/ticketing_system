@@ -57,3 +57,12 @@ class Order:
             paid_at=now,
             updated_at=now
         )
+
+    def cancel(self) -> 'Order':
+        """Cancel the order."""
+        now = datetime.now()
+        return attrs.evolve(
+            self,
+            status=OrderStatus.CANCELLED,
+            updated_at=now
+        )

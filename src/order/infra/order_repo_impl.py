@@ -57,6 +57,9 @@ class OrderRepoImpl(OrderRepo):
             product_id=db_order.product_id,
             price=db_order.price,
             status=OrderStatus(db_order.status),
+            created_at=db_order.created_at,
+            updated_at=db_order.updated_at,
+            paid_at=db_order.paid_at,
             id=db_order.id
         )
     
@@ -77,6 +80,9 @@ class OrderRepoImpl(OrderRepo):
             product_id=db_order.product_id,
             price=db_order.price,
             status=OrderStatus(db_order.status),
+            created_at=db_order.created_at,
+            updated_at=db_order.updated_at,
+            paid_at=db_order.paid_at,
             id=db_order.id
         )
     
@@ -95,6 +101,9 @@ class OrderRepoImpl(OrderRepo):
                 product_id=db_order.product_id,
                 price=db_order.price,
                 status=OrderStatus(db_order.status),
+                created_at=db_order.created_at,
+                updated_at=db_order.updated_at,
+                paid_at=db_order.paid_at,
                 id=db_order.id
             )
             for db_order in db_orders
@@ -115,6 +124,9 @@ class OrderRepoImpl(OrderRepo):
                 product_id=db_order.product_id,
                 price=db_order.price,
                 status=OrderStatus(db_order.status),
+                created_at=db_order.created_at,
+                updated_at=db_order.updated_at,
+                paid_at=db_order.paid_at,
                 id=db_order.id
             )
             for db_order in db_orders
@@ -129,7 +141,9 @@ class OrderRepoImpl(OrderRepo):
                 seller_id=order.seller_id,
                 product_id=order.product_id,
                 price=order.price,
-                status=order.status.value
+                status=order.status.value,
+                updated_at=order.updated_at,
+                paid_at=order.paid_at
             )
             .returning(OrderModel)
         )
@@ -146,5 +160,8 @@ class OrderRepoImpl(OrderRepo):
             product_id=db_order.product_id,
             price=db_order.price,
             status=OrderStatus(db_order.status),
+            created_at=db_order.created_at,
+            updated_at=db_order.updated_at,
+            paid_at=db_order.paid_at,
             id=db_order.id
         )
