@@ -3,40 +3,19 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 
 from src.product.domain.errors import ProductDomainError
+from src.product.port.product_schema import (
+    ProductCreateRequest,
+    ProductResponse,
+    ProductUpdateRequest,
+)
 from src.product.use_case.product_use_case import (
     CreateProductUseCase,
     DeleteProductUseCase,
     GetProductsUseCase,
     UpdateProductUseCase,
 )
-
-
-class ProductCreateRequest(BaseModel):
-    name: str
-    description: str
-    price: int
-    seller_id: int
-    is_active: bool = True  
-
-
-class ProductResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    price: int
-    seller_id: int
-    is_active: bool
-    status: str
-
-
-class ProductUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    price: Optional[int] = None
-    is_active: Optional[bool] = None
 
 
 router = APIRouter()

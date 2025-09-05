@@ -1,48 +1,21 @@
 """Order controller."""
 
-from datetime import datetime
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 
+from src.order.port.order_schema import (
+    OrderCreateRequest,
+    OrderResponse,
+    PaymentRequest,
+    PaymentResponse,
+)
 from src.order.use_case.create_order_use_case import CreateOrderUseCase
 from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
 from src.order.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.exceptions import DomainException
-
-
-class OrderCreateRequest(BaseModel):
-    buyer_id: int
-    product_id: int
-
-
-class OrderResponse(BaseModel):
-    id: int
-    buyer_id: int
-    seller_id: int
-    product_id: int
-    price: int
-    status: str
-    created_at: datetime
-    paid_at: Optional[datetime]
-
-
-class PaymentRequest(BaseModel):
-    card_number: str
-    buyer_id: int
-
-
-class PaymentResponse(BaseModel):
-    order_id: int
-    payment_id: str
-    status: str
-    paid_at: Optional[str]
-
-
-class CancelRequest(BaseModel):
-    buyer_id: int
 
 
 router = APIRouter()
