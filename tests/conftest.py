@@ -30,6 +30,12 @@ from tests.user.functional.given import *
 from tests.user.functional.then import *
 from tests.user.functional.when import *
 
+# Import step definitions for product
+from tests.product.functional.fixtures import *
+from tests.product.functional.given import *
+from tests.product.functional.then import *
+from tests.product.functional.when import *
+
 
 # 資料庫 URL
 ASYNC_DATABASE_URL = 'postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db'

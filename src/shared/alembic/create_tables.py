@@ -1,8 +1,12 @@
 """Script to create database tables."""
 
 import asyncio
-from src.shared.database import engine, Base
-from src.user.domain.user_model import User  # 重要：必須 import 所有 model 讓 SQLAlchemy 知道它們存在
+
+from src.product.infra.product_model import ProductModel  # Import product models
+from src.shared.database import Base, engine
+from src.user.domain.user_model import (
+    User,  # 重要：必須 import 所有 model 讓 SQLAlchemy 知道它們存在
+)
 
 
 async def init_db():

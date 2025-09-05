@@ -55,8 +55,8 @@ def verify_wrong_user_details(step, user_state):
     assert request_data['role'] == expected['role']
 
 
-@then('get 201')
-def verify_response_201(step, user_state):
+@then('the user should be created with status 201')
+def verify_user_created_201(step, user_state):
     response = user_state['response']
     if response.status_code != 201:
         print(f"Status Code: {response.status_code}")
@@ -85,8 +85,8 @@ def verify_response_200(step, user_state):
     assert response.status_code == 200
 
 
-@then('get 400')
-def verify_response_400(step, user_state):
+@then('the user should fail with status 400')
+def verify_user_failed_400(step, user_state):
     response = user_state['response']
     if response.status_code != 400:
         print(f"Status Code: {response.status_code}")
@@ -155,8 +155,8 @@ def verify_user_info(step, user_state):
     assert response_data['role'] == expected['role']
 
 
-@then('the error message should contain "{expected_text}"')
-def verify_error_message(expected_text, user_state):
+@then('the user error message should contain "{expected_text}"')
+def verify_user_error_message(expected_text, user_state):
     """Verify error message contains expected text."""
     response = user_state['response']
     response_text = response.text.lower() if hasattr(response, 'text') else response.json()
