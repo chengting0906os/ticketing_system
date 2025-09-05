@@ -201,3 +201,141 @@ def create_cancelled_order(step, client: TestClient, order_state):
     
     asyncio.run(update_order_to_cancelled())
     order_state['order']['status'] = 'cancelled'
+
+
+@given('users exist:')
+def create_users(step, client: TestClient, order_state):
+    """Create multiple users from table data."""
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    
+    order_state['users'] = {}
+    
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        user_data = dict(zip(headers, values, strict=True))
+        
+        # Try to create user
+        response = client.post('/api/users', json={
+            'email': user_data['email'],
+            'password': user_data['password'],
+            'name': user_data['name'],
+            'role': user_data['role'],
+        })
+        
+        if response.status_code == 201:
+            user = response.json()
+            order_state['users'][int(user_data['id'])] = user
+        else:
+            # Store with the ID from table
+            order_state['users'][int(user_data['id'])] = {
+                'id': int(user_data['id']),
+                'email': user_data['email'],
+                'name': user_data['name'],
+                'role': user_data['role']
+            }
+
+
+@given('products exist:')
+def create_products(step, client: TestClient, order_state):
+    """Create multiple products from table data."""
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    
+    order_state['products'] = {}
+    
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        product_data = dict(zip(headers, values, strict=True))
+        
+        response = client.post('/api/products', json={
+            'name': product_data['name'],
+            'description': f"Description for {product_data['name']}",
+            'price': int(product_data['price']),
+            'seller_id': int(product_data['seller_id']),
+            'is_active': True
+        })
+        
+        if response.status_code == 201:
+            product = response.json()
+            order_state['products'][int(product_data['id'])] = product
+            
+            # Update product status if needed
+            if product_data['status'] != 'available':
+                async def update_product_status(product_id, status):
+                    TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+                    engine = create_async_engine(TEST_DATABASE_URL)
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            text("UPDATE products SET status = :status WHERE id = :id"),
+                            {"status": product_data['status'], "id": product['id']}
+                        )
+                    await engine.dispose()
+                
+                asyncio.run(update_product_status(product['id'], product_data['status']))
+
+
+@given('orders exist:')  
+def create_orders(step, client: TestClient, order_state):
+    """Create multiple orders from table data."""
+    data_table = step.data_table
+    rows = data_table.rows
+    
+    headers = [cell.value for cell in rows[0].cells]
+    
+    order_state['orders'] = {}
+    
+    # Directly insert orders into database for testing
+    async def insert_orders():
+        TEST_DATABASE_URL = "postgresql+asyncpg://py_arch_lab:py_arch_lab@localhost:5432/shopping_test_db"
+        engine = create_async_engine(TEST_DATABASE_URL)
+        async with engine.begin() as conn:
+            for row in rows[1:]:
+                values = [cell.value for cell in row.cells]
+                order_data = dict(zip(headers, values, strict=True))
+                
+                # Get actual product ID from state
+                product_id = order_state['products'][int(order_data['product_id'])]['id']
+                
+                # Insert order directly
+                if order_data.get('paid_at') == 'not_null' and order_data['status'] == 'paid':
+                    result = await conn.execute(
+                        text("""
+                            INSERT INTO orders (buyer_id, seller_id, product_id, price, status, created_at, updated_at, paid_at)
+                            VALUES (:buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW(), NOW())
+                            RETURNING id
+                        """),
+                        {
+                            "buyer_id": int(order_data['buyer_id']),
+                            "seller_id": int(order_data['seller_id']),
+                            "product_id": product_id,
+                            "price": int(order_data['price']),
+                            "status": order_data['status']
+                        }
+                    )
+                else:
+                    result = await conn.execute(
+                        text("""
+                            INSERT INTO orders (buyer_id, seller_id, product_id, price, status, created_at, updated_at)
+                            VALUES (:buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW())
+                            RETURNING id
+                        """),
+                        {
+                            "buyer_id": int(order_data['buyer_id']),
+                            "seller_id": int(order_data['seller_id']),
+                            "product_id": product_id,
+                            "price": int(order_data['price']),
+                            "status": order_data['status']
+                        }
+                    )
+                
+                order_id = result.scalar()
+                order_state['orders'][int(order_data['id'])] = {'id': order_id}
+        
+        await engine.dispose()
+    
+    asyncio.run(insert_orders())

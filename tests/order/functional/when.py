@@ -106,3 +106,39 @@ def buyer_tries_to_cancel(client: TestClient, order_state):
     response = client.delete(f"/api/orders/{order_state['order']['id']}?buyer_id={order_state['buyer_id']}")
     
     order_state['response'] = response
+
+
+@when('buyer with id 3 requests their orders')
+def buyer_3_requests_orders(client: TestClient, order_state):
+    response = client.get("/api/orders/buyer/3")
+    order_state['response'] = response
+
+
+@when('buyer with id 4 requests their orders')
+def buyer_4_requests_orders(client: TestClient, order_state):
+    response = client.get("/api/orders/buyer/4")
+    order_state['response'] = response
+
+
+@when('buyer with id 5 requests their orders')
+def buyer_5_requests_orders(client: TestClient, order_state):
+    response = client.get("/api/orders/buyer/5")
+    order_state['response'] = response
+
+
+@when('seller with id 1 requests their orders')
+def seller_1_requests_orders(client: TestClient, order_state):
+    response = client.get("/api/orders/seller/1")
+    order_state['response'] = response
+
+
+@when('buyer with id 3 requests their orders with status "paid"')
+def buyer_3_requests_orders_paid(client: TestClient, order_state):
+    response = client.get("/api/orders/buyer/3?order_status=paid")
+    order_state['response'] = response
+
+
+@when('buyer with id 3 requests their orders with status "pending_payment"')
+def buyer_3_requests_orders_pending(client: TestClient, order_state):
+    response = client.get("/api/orders/buyer/3?order_status=pending_payment")
+    order_state['response'] = response

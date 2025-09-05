@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from src.order.use_case.create_order_use_case import CreateOrderUseCase
 from src.order.use_case.get_order_use_case import GetOrderUseCase
+from src.order.use_case.list_orders_use_case import ListOrdersUseCase
 from src.order.use_case.payment_use_case import PaymentUseCase
 from src.shared.exceptions import DomainException
 
@@ -168,6 +169,39 @@ async def cancel_order(
             status_code=e.status_code,
             detail=e.message
         )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+
+@router.get("/buyer/{buyer_id}")
+async def list_buyer_orders(
+    buyer_id: int,
+    order_status: Optional[str] = None,
+    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends)
+):
+    """List all orders for a buyer."""
+    try:
+        return await use_case.list_buyer_orders(buyer_id, order_status)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/seller/{seller_id}")
+async def list_seller_orders(
+    seller_id: int,
+    order_status: Optional[str] = None,
+    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends)
+):
+    """List all orders for a seller products."""
+    try:
+        return await use_case.list_seller_orders(seller_id, order_status)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
