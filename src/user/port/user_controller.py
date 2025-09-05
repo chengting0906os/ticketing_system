@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import exceptions
 
 from src.user.infra.auth import auth_backend, fastapi_users
-from src.user.domain.user_schema import UserCreate, UserRead, UserUpdate, UserPublic
+from src.user.port.user_schema import UserCreate, UserRead, UserUpdate, UserPublic
 from src.user.use_case.manager import get_user_manager
+from src.user.domain.user_model import UserRole
 
 
 auth_router = APIRouter()
@@ -28,6 +29,14 @@ async def register_user(
     user_manager=Depends(get_user_manager),
 ):
     """Register a new user."""
+    # Domain validation: Check if role is valid
+    valid_roles = [role.value for role in UserRole]
+    if user_create.role not in valid_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role: {user_create.role}. Must be one of: {', '.join(valid_roles)}"
+        )
+    
     try:
         user = await user_manager.create(
             user_create, safe=True, request=None

@@ -5,11 +5,33 @@ Feature: User Creation
 
   Scenario: Create a new buyer user
     When I send api
-      | email            | password    | name      | role  |
-      | test@example.com | Test123456! | John  Doe | buyer |
+      | email            | password    | name     | role  |
+      | test@example.com | Test123456! | John Doe | buyer |
     Then the user details should be:
       | email            | password    | name     | role  |
       | test@example.com | Test123456! | John Doe | buyer |
     And get 201
       | email            | role  |
       | test@example.com | buyer |
+
+  Scenario: Create a new seller user
+    When I send api
+      | email            | password    | name | role   |
+      | test@example.com | Test123456! | Ryan | seller |
+    Then the seller user details should be:
+      | email            | password    | name | role   |
+      | test@example.com | Test123456! | Ryan | seller |
+    And get 201
+      | email            | role   |
+      | test@example.com | seller |
+
+  Scenario: Create a new wrong user
+    When I send api
+      | email            | password    | name | role       |
+      | test@example.com | Test123456! | Max  | wrong_user |
+    Then the wrong user details should be:
+      | email            | password    | name | role       |
+      | test@example.com | Test123456! | Max  | wrong_user |
+    And get 400
+      | email            | role       |
+      | test@example.com | wrong_user |
