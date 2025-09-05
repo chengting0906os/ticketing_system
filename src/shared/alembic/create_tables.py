@@ -2,12 +2,10 @@
 
 import asyncio
 
-from src.order.infra.order_model import OrderModel  # Import order models
-from src.product.infra.product_model import ProductModel  # Import product models
+from src.order.infra.order_model import OrderModel as OrderModel
+from src.product.infra.product_model import ProductModel as ProductModel
 from src.shared.database import Base, engine
-from src.user.domain.user_model import (
-    User,  # 重要：必須 import 所有 model 讓 SQLAlchemy 知道它們存在
-)
+from src.user.domain.user_model import User as User
 
 
 async def init_db():
