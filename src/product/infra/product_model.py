@@ -15,3 +15,4 @@ class ProductModel(Base):
     price: Mapped[int] = mapped_column(Integer)
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('users.id'))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)

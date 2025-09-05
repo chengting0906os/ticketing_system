@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from src.product.domain.errors import ProductDomainError
-from src.product.use_case.use_case import CreateProductUseCase
+from src.product.use_case.product_use_case import CreateProductUseCase
 
 
 class ProductCreateRequest(BaseModel):
@@ -22,6 +22,7 @@ class ProductResponse(BaseModel):
     price: int
     seller_id: int
     is_active: bool
+    status: str
 
 
 router = APIRouter()
@@ -50,7 +51,8 @@ async def create_product(
             description=product.description,
             price=product.price,
             seller_id=product.seller_id,
-            is_active=product.is_active
+            is_active=product.is_active,
+            status=product.status.value  # Convert enum to string
         )
     except ProductDomainError as e:
         raise HTTPException(

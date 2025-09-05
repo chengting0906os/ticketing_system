@@ -29,6 +29,6 @@ Feature: Product Creation
       | seller_id | name     | description         | price | is_active |
       | 1         | iPad Pro | Professional tablet |  2000 | false     |
     Then the product should be created with
-      | id        | seller_id | name     | description         | price | is_active |
-      | {any_int} | 1         | iPad Pro | Professional tablet |  2000 | false     |
+      | id        | seller_id | name     | description         | price | is_active | status    |
+      | {any_int} | 1         | iPad Pro | Professional tablet |  2000 | false     | available |
     And get 201

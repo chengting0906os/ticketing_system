@@ -26,6 +26,8 @@ def verify_product_created(step, product_state):
         elif field == 'is_active':
             expected_active = expected_value.lower() == 'true'
             assert response_json['is_active'] == expected_active
+        elif field == 'status':
+            assert response_json['status'] == expected_value
         elif field in ['price', 'seller_id', 'id']:
             assert response_json[field] == int(expected_value)
         else:
