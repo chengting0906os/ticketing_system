@@ -1,7 +1,5 @@
 """Product controller."""
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
@@ -13,7 +11,7 @@ class ProductCreateRequest(BaseModel):
     name: str
     description: str
     price: int
-    seller_id: UUID
+    seller_id: int
 
 
 class ProductResponse(BaseModel):
@@ -21,7 +19,7 @@ class ProductResponse(BaseModel):
     name: str
     description: str
     price: int
-    seller_id: UUID
+    seller_id: int
 
 
 router = APIRouter()

@@ -1,17 +1,16 @@
 """User manager for FastAPI Users integration."""
 
-import uuid
 from typing import Optional
 
 from fastapi import Depends, Request
-from fastapi_users import BaseUserManager, UUIDIDMixin
+from fastapi_users import BaseUserManager, IntegerIDMixin
 
 from src.shared.config import settings
 from src.user.domain.user_model import User
 from src.user.infra.user_repository import get_user_db
 
 
-class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
+class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     """User manager for FastAPI Users."""
     
     reset_password_token_secret = settings.RESET_PASSWORD_TOKEN_SECRET

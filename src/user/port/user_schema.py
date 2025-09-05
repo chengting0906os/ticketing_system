@@ -1,17 +1,15 @@
 """User schemas."""
 
-import uuid
-
 from fastapi_users import schemas
 from pydantic import BaseModel, EmailStr, Field
 
 # UserRole validation will be done in domain layer, not schema
 
 
-class UserRead(schemas.BaseUser[uuid.UUID]):
+class UserRead(schemas.BaseUser[int]):
     """User read schema."""
     
-    id: uuid.UUID
+    id: int
     name: str
     email: EmailStr
     role: str
@@ -22,7 +20,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
 class UserPublic(BaseModel):
     """Simplified user schema for public API."""
     
-    id: uuid.UUID
+    id: int
     name: str
     email: EmailStr
     role: str

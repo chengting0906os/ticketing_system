@@ -23,7 +23,7 @@ def create_product(step, client: TestClient, product_state):
         'name': row_data['name'],
         'description': row_data['description'],
         'price': int(row_data['price']),
-        'seller_id': str(seller_id),  # Convert UUID to string for JSON serialization
+        'seller_id': seller_id,  # Now using int ID
     }
     
     product_state['response'] = client.post('/api/products', json=product_state['request_data'])

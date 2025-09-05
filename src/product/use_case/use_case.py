@@ -1,7 +1,5 @@
 """Create product use case."""
 
-from uuid import UUID
-
 from fastapi import Depends
 
 from src.product.domain.product_entity import Product
@@ -22,7 +20,7 @@ class CreateProductUseCase:
         name: str, 
         description: str, 
         price: int, 
-        seller_id: UUID
+        seller_id: int
     ) -> Product:
         async with self.uow:
             product = Product.create(
