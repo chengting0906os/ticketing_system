@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     
     PROJECT_NAME: str = 'Shopping System'
     VERSION: str = '0.1.0'
+    DEBUG: bool = True  # Set to False in production
     
     # Database
     POSTGRES_SERVER: str = 'localhost'
