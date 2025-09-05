@@ -9,8 +9,7 @@ class TestUserAPI:
         user_data = {
             'email': email,
             'password': 'Test123456!',
-            'first_name': 'John',
-            'last_name': 'Doe',
+            'name': 'John Doe',
             'role': 'buyer',
         }
 
@@ -24,8 +23,7 @@ class TestUserAPI:
         data = response.json()
         assert data['email'] == email
         assert data['role'] == 'buyer'
-        assert data['first_name'] == 'John'
-        assert data['last_name'] == 'Doe'
+        assert data['name'] == 'John Doe'
         assert 'id' in data
         assert 'password' not in data  # Password should not be returned
 
@@ -35,8 +33,7 @@ class TestUserAPI:
         user_data = {
             'email': 'test@example.com',
             'password': 'Test123456!',
-            'first_name': 'Jane',
-            'last_name': 'Smith',
+            'name': 'Jane Smith',
             'role': 'seller',
         }
 

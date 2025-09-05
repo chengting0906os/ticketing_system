@@ -21,12 +21,8 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     
     __tablename__ = 'users'
     
-    first_name: Mapped[str] = mapped_column(
-        String(150),
-        nullable=False,
-    )
-    last_name: Mapped[str] = mapped_column(
-        String(150),
+    name: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
     )
     role: Mapped[str] = mapped_column(

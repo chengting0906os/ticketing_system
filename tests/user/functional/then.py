@@ -16,14 +16,18 @@ def verify_user_details(step, user_state):
 
     assert request_data['email'] == expected['email']
     assert request_data['password'] == expected['password']
-    assert request_data['first_name'] == expected['first_name']
-    assert request_data['last_name'] == expected['last_name']
+    # Normalize spaces in name comparison
+    assert request_data['name'].replace('  ', ' ') == expected['name']
     assert request_data['role'] == expected['role']
 
 
 @then('get 201')
 def verify_response_201(step, user_state):
-    assert user_state['response'].status_code == 201
+    response = user_state['response']
+    if response.status_code != 201:
+        print(f"Status Code: {response.status_code}")
+        print(f"Response: {response.text}")
+    assert response.status_code == 201
 
     response_data = user_state['response'].json()
     data_table = step.data_table

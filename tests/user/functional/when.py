@@ -16,8 +16,7 @@ def send_api_request(step, client: TestClient, user_state):
     user_state['request_data'] = {
         'email': row_data['email'],
         'password': row_data['password'],
-        'first_name': row_data['first_name'],
-        'last_name': row_data['last_name'],
+        'name': row_data['name'],
         'role': row_data['role'],
     }
 

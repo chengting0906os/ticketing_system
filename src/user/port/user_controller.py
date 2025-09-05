@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import exceptions
 
 from src.user.infra.auth import auth_backend, fastapi_users
-from src.user.domain.user_schema import UserCreate, UserRead, UserUpdate
+from src.user.domain.user_schema import UserCreate, UserRead, UserUpdate, UserPublic
 from src.user.use_case.manager import get_user_manager
 
 
@@ -22,7 +22,7 @@ users_router.include_router(
 )
 
 # Custom registration endpoint to match BDD requirements
-@users_router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@users_router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_create: UserCreate,
     user_manager=Depends(get_user_manager),
