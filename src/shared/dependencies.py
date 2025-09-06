@@ -4,9 +4,10 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 
+from src.shared.jwt_auth_service import current_active_user
+from src.shared.role_auth_service import RoleAuthService
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
-from src.user.infra.auth import current_active_user
 
 
 def get_current_user(
@@ -18,7 +19,7 @@ def get_current_user(
 def require_buyer(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    if current_user.role != UserRole.BUYER:
+    if not RoleAuthService.can_create_order(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only buyers can perform this action"
@@ -29,7 +30,7 @@ def require_buyer(
 def require_seller(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    if current_user.role != UserRole.SELLER:
+    if not RoleAuthService.can_create_product(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only sellers can perform this action"

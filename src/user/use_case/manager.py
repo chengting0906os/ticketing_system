@@ -7,7 +7,7 @@ from fastapi_users import BaseUserManager, IntegerIDMixin
 
 from src.shared.config import settings
 from src.user.domain.user_model import User
-from src.user.infra.user_repo import get_user_db
+from src.user.infra.get_user_db import get_user_db
 
 
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
