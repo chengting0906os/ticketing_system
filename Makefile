@@ -1,7 +1,6 @@
 # Database migrations
 ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
 
-
 .PHONY: migrate-up mu
 migrate-up mu:
 	@echo "Running migrations..."
@@ -22,12 +21,12 @@ migrate-new mn:
 	@echo "Creating migration: $(MSG)"
 	@uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
 
-.PHONY: migrate-history
-migrate-history:
+.PHONY: migrate-history mh
+migrate-history mh:
 	@uv run alembic -c $(ALEMBIC_CONFIG) history
 
-.PHONY: migrate-current
-migrate-current:
+.PHONY: migrate-current mc
+migrate-current mc:
 	@uv run alembic -c $(ALEMBIC_CONFIG) current
 
 # Testing
@@ -80,30 +79,35 @@ docker-down:
 docker-logs:
 	@docker-compose logs -f
 
+.PHONY: db-shell psql
+db-shell psql:
+	@docker exec -it shopping_db psql -U py_arch_lab -d shopping_db
+
 # Help
 .PHONY: help
 help:
 	@echo "Available commands:"
-	@echo "  Database:"
-	@echo "    make migrate-up          - Run all pending migrations"
-	@echo "    make migrate-down        - Rollback one migration"
-	@echo "    make migrate-new MSG='message' - Create new migration"
-	@echo "    make migrate-history     - Show migration history"
-	@echo "    make migrate-current     - Show current migration"
+	@echo "  Database Migrations:"
+	@echo "    make migrate-up (mu)     - Run all pending migrations"
+	@echo "    make migrate-down (md)   - Rollback one migration"
+	@echo "    make migrate-new (mn) MSG='message' - Create new migration"
+	@echo "    make migrate-history (mh) - Show migration history"
+	@echo "    make migrate-current (mc) - Show current migration"
 	@echo ""
 	@echo "  Testing:"
-	@echo "    make test               - Run all tests"
-	@echo "    make test-api           - Run API tests"
-	@echo "    make test-bdd           - Run BDD tests"
+	@echo "    make test (t)            - Run all tests"
+	@echo "    make test-api            - Run API tests"
+	@echo "    make test-bdd (tbdd)     - Run BDD tests"
 	@echo ""
 	@echo "  Development:"
-	@echo "    make run                - Run development server"
-	@echo "    make lint               - Check code style"
-	@echo "    make format             - Format code"
-	@echo "    make typecheck          - Run type checking"
-	@echo "    make clean              - Remove cache files"
+	@echo "    make run                 - Run development server"
+	@echo "    make lint                - Check code style"
+	@echo "    make format              - Format code"
+	@echo "    make typecheck           - Run type checking"
+	@echo "    make clean               - Remove cache files"
 	@echo ""
-	@echo "  Docker:"
-	@echo "    make docker-up          - Start Docker containers"
-	@echo "    make docker-down        - Stop Docker containers"
-	@echo "    make docker-logs        - View Docker logs"
+	@echo "  Docker & Database:"
+	@echo "    make docker-up           - Start Docker containers"
+	@echo "    make docker-down         - Stop Docker containers"
+	@echo "    make docker-logs         - View Docker logs"
+	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
