@@ -97,7 +97,7 @@ async def setup_test_database():
     # Run test migration
     alembic_cfg = Config(Path(__file__).parent.parent / 'src/shared/alembic/alembic.ini')
     alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
-    command.upgrade(alembic_cfg, 'test_clean_init')
+    command.upgrade(alembic_cfg, 'head')
 
 
 # Cache table names to avoid repeated queries
