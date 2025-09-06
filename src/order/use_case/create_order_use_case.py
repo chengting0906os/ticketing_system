@@ -6,7 +6,7 @@ from src.order.domain.order_aggregate import OrderAggregate
 from src.order.domain.order_entity import Order
 from src.order.use_case.mock_send_email_use_case import MockSendEmailUseCase
 from src.shared.exceptions import DomainException
-from src.shared.services.mock_email_service import MockEmailService, get_mock_email_service
+from src.shared.mock_email_service import MockEmailService, get_mock_email_service
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 

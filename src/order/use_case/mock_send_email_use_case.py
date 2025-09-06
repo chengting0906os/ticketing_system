@@ -6,7 +6,7 @@ from src.order.domain.events import (
     OrderCreatedEvent,
     OrderPaidEvent,
 )
-from src.shared.services.mock_email_service import MockEmailService
+from src.shared.mock_email_service import MockEmailService
 from src.shared.unit_of_work import AbstractUnitOfWork
 
 
