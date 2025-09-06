@@ -29,8 +29,8 @@ Feature: Product List
     Then the buyer should see 2 products
     And the products should be:
       | name      | description      | price | is_active | status    |
-      | Product A | Active available | 1000  | true      | available |
-      | Product E | Active available | 1000  | true      | available |
+      | Product A | Active available |  1000 | true      | available |
+      | Product E | Active available |  1000 | true      | available |
 
   Scenario: Empty product list
     Given no available products exist
