@@ -5,13 +5,11 @@ from pydantic import BaseModel
 
 
 class OrderCreateRequest(BaseModel):
-    buyer_id: int
     product_id: int
     
     class Config:
         json_schema_extra = {
             'example': {
-                'buyer_id': 2,
                 'product_id': 1
             }
         }
@@ -44,13 +42,11 @@ class OrderResponse(BaseModel):
 
 class PaymentRequest(BaseModel):
     card_number: str
-    buyer_id: int
     
     class Config:
         json_schema_extra = {
             'example': {
-                'card_number': '4111111111111111',
-                'buyer_id': 2
+                'card_number': '4111111111111111'
             }
         }
 

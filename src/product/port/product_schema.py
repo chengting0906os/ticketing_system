@@ -7,7 +7,6 @@ class ProductCreateRequest(BaseModel):
     name: str
     description: str
     price: int
-    seller_id: int
     is_active: bool = True
     
     class Config:
@@ -16,7 +15,6 @@ class ProductCreateRequest(BaseModel):
                 'name': 'iPhone 15 Pro',
                 'description': 'Latest Apple smartphone with A17 Pro chip',
                 'price': 39900,
-                'seller_id': 1,
                 'is_active': True
             }
         }  

@@ -15,7 +15,10 @@ from src.order.use_case.create_order_use_case import CreateOrderUseCase
 from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
 from src.order.use_case.mock_payment_use_case import MockPaymentUseCase
+from src.shared.dependencies import get_current_user, require_buyer
 from src.shared.exceptions import DomainException
+from src.user.domain.user_entity import UserRole
+from src.user.domain.user_model import User
 
 
 router = APIRouter()
@@ -23,11 +26,14 @@ router = APIRouter()
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 async def create_order(
-    request: OrderCreateRequest, use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends)
+    request: OrderCreateRequest,
+    current_user: User = Depends(require_buyer),
+    use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends)
 ) -> OrderResponse:
     try:
+        # Use authenticated buyer's ID instead of request.buyer_id
         order = await use_case.create_order(
-            buyer_id=request.buyer_id, product_id=request.product_id
+            buyer_id=current_user.id, product_id=request.product_id
         )
 
         if order.id is None:
@@ -49,9 +55,29 @@ async def create_order(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.get('/my-orders')
+async def list_my_orders(
+    order_status: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
+):
+    try:
+        # List orders based on user role
+        if current_user.role == UserRole.BUYER:
+            return await use_case.list_buyer_orders(current_user.id, order_status)
+        elif current_user.role == UserRole.SELLER:
+            return await use_case.list_seller_orders(current_user.id, order_status)
+        else:
+            return []
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.get('/{order_id}')
 async def get_order(
-    order_id: int, use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends)
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends)
 ) -> OrderResponse:
     try:
         order = await use_case.get_order(order_id)
@@ -78,11 +104,13 @@ async def get_order(
 async def pay_order(
     order_id: int,
     request: PaymentRequest,
+    current_user: User = Depends(require_buyer),
     use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
 ) -> PaymentResponse:
     try:
+        # Use authenticated buyer's ID
         result = await use_case.pay_order(
-            order_id=order_id, buyer_id=request.buyer_id, card_number=request.card_number
+            order_id=order_id, buyer_id=current_user.id, card_number=request.card_number
         )
 
         return PaymentResponse(
@@ -99,10 +127,13 @@ async def pay_order(
 
 @router.delete('/{order_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_order(
-    order_id: int, buyer_id: int, use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends)
+    order_id: int,
+    current_user: User = Depends(require_buyer),
+    use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends)
 ):
     try:
-        await use_case.cancel_order(order_id=order_id, buyer_id=buyer_id)
+        # Use authenticated buyer's ID
+        await use_case.cancel_order(order_id=order_id, buyer_id=current_user.id)
 
         return None
     except DomainException as e:
@@ -111,19 +142,8 @@ async def cancel_order(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.get('/buyer/{buyer_id}')
-async def list_buyer_orders(
-    buyer_id: int,
-    order_status: Optional[str] = None,
-    use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
-):
-    try:
-        return await use_case.list_buyer_orders(buyer_id, order_status)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-
-@router.get('/seller/{seller_id}')
+# Deprecated endpoint - use /my-orders instead
+# @router.get('/seller/{seller_id}')
 async def list_seller_orders(
     seller_id: int,
     order_status: Optional[str] = None,

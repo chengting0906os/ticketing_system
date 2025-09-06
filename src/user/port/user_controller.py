@@ -12,6 +12,14 @@ from src.user.use_case.manager import get_user_manager
 
 auth_router = APIRouter()
 
+users_router = APIRouter()
+users_router.include_router(
+    fastapi_users.get_users_router(
+        UserRead,
+        UserUpdate,
+    ),
+)
+
 # Custom login endpoint that returns user data (must be defined before including default router)
 @auth_router.post("/login", response_model=UserPublic)
 async def login(
@@ -20,7 +28,6 @@ async def login(
     user_manager=Depends(get_user_manager),
     strategy=Depends(auth_backend.get_strategy),
 ):
-    """Custom login endpoint that returns user data with JWT cookie."""
     user = await user_manager.authenticate(credentials)
     
     if user is None or not user.is_active:
@@ -51,18 +58,6 @@ async def login(
     )
 
 
-# Don't include the default auth router to avoid conflicts
-# auth_router.include_router(
-#     fastapi_users.get_auth_router(auth_backend),
-# )
-
-users_router = APIRouter()
-users_router.include_router(
-    fastapi_users.get_users_router(
-        UserRead,
-        UserUpdate,
-    ),
-)
 
 # Custom registration endpoint to match BDD requirements
 @users_router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
@@ -70,8 +65,6 @@ async def register_user(
     user_create: UserCreate,
     user_manager=Depends(get_user_manager),
 ):
-    """Register a new user."""
-    # Domain validation: Check if role is valid
     valid_roles = [role.value for role in UserRole]
     if user_create.role not in valid_roles:
         raise HTTPException(

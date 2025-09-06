@@ -8,8 +8,8 @@ from fastapi_users.authentication import (
 )
 
 from src.shared.config import settings
-from src.user.use_case.manager import get_user_manager
 from src.user.domain.user_model import User
+from src.user.use_case.manager import get_user_manager
 
 
 cookie_transport = CookieTransport(
@@ -22,7 +22,6 @@ cookie_transport = CookieTransport(
 
 
 def get_jwt_strategy() -> JWTStrategy:
-    """Get JWT strategy."""
     return JWTStrategy(
         secret=settings.SECRET_KEY,
         lifetime_seconds=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,

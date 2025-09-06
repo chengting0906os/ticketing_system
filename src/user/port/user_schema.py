@@ -20,8 +20,6 @@ class UserRead(schemas.BaseUser[int]):
 
 
 class UserPublic(BaseModel):
-    """Simplified user schema for public API."""
-
     id: int
     name: str
     email: EmailStr
@@ -39,8 +37,6 @@ class UserPublic(BaseModel):
 
 
 class UserCreate(schemas.BaseUserCreate):
-    """User creation schema."""
-
     name: str = Field(..., min_length=1, max_length=255)
     email: EmailStr
     password: str = Field(..., min_length=8)
@@ -49,26 +45,21 @@ class UserCreate(schemas.BaseUserCreate):
     class Config:
         json_schema_extra = {
             'example': {
-                'name': 'Jane Smith',
-                'email': 'jane.smith@example.com',
-                'password': 'SecurePass123!',
-                'role': 'seller',
+                "email": "seller@test.com",
+                "name": "seller",
+                "password": "P@ssw0rd",
+                "role": "seller"
             }
         }
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    """User update schema."""
-
-    name: str | None = Field(None, min_length=1, max_length=255)
     email: EmailStr | None = None
-    role: str | None = None
 
     class Config:
         json_schema_extra = {
             'example': {
-                'name': 'Jane Doe Updated',
-                'email': 'jane.new@example.com',
-                'role': 'buyer',
+                "email": "seller@test.com",
+                "password": "P@ssw0rd",
             }
         }

@@ -5,6 +5,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.product.domain.errors import ProductDomainError
+from src.shared.dependencies import require_seller
+from src.user.domain.user_model import User
 from src.product.port.product_schema import (
     ProductCreateRequest,
     ProductResponse,
@@ -24,14 +26,16 @@ router = APIRouter()
 @router.post('', status_code=status.HTTP_201_CREATED)
 async def create_product(
     request: ProductCreateRequest,
+    current_user: User = Depends(require_seller),
     use_case: CreateProductUseCase = Depends(CreateProductUseCase.depends),
 ) -> ProductResponse:
     try:
+        # Use the authenticated seller's ID instead of request.seller_id
         product = await use_case.create(
             name=request.name,
             description=request.description,
             price=int(request.price),  # Ensure it's int
-            seller_id=request.seller_id,
+            seller_id=current_user.id,  # Use current user's ID
             is_active=request.is_active,
         )
 
@@ -57,9 +61,24 @@ async def create_product(
 async def update_product(
     product_id: int,
     request: ProductUpdateRequest,
+    current_user: User = Depends(require_seller),
     use_case: UpdateProductUseCase = Depends(UpdateProductUseCase.depends),
 ) -> ProductResponse:
     try:
+        # First check if product exists and belongs to current seller
+        async with use_case.uow:
+            existing_product = await use_case.uow.products.get_by_id(product_id)
+            if not existing_product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f'Product with id {product_id} not found'
+                )
+            if existing_product.seller_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail='You can only update your own products'
+                )
+        
         product = await use_case.update(
             product_id=product_id,
             name=request.name,
@@ -98,9 +117,25 @@ async def update_product(
 
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
-    product_id: int, use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends)
+    product_id: int,
+    current_user: User = Depends(require_seller),
+    use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends)
 ):
     try:
+        # First check if product exists and belongs to current seller
+        async with use_case.uow:
+            existing_product = await use_case.uow.products.get_by_id(product_id)
+            if not existing_product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f'Product with id {product_id} not found'
+                )
+            if existing_product.seller_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail='You can only delete your own products'
+                )
+        
         deleted = await use_case.delete(product_id)
 
         if not deleted:
