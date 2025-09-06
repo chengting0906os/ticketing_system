@@ -91,18 +91,6 @@ def verify_product_updated(step, product_state):
 
 
 
-@then('the error message should contain "Price must be positive"')
-def verify_error_message(product_state):
-    """Verify error message contains expected text."""
-    response = product_state['response']
-    response_json = response.json()
-    
-    # Check various possible error response formats
-    error_msg = str(response_json)
-    expected_message = "Price must be positive"
-    assert expected_message in error_msg, f"Expected '{expected_message}' in error message, got: {error_msg}"
-
-
 @then('the product should not exist')
 def verify_product_not_exist(client, product_state):
     """Verify product no longer exists."""
@@ -118,15 +106,6 @@ def _verify_error_contains(product_state, expected_text):
     error_msg = str(response_json)
     assert expected_text in error_msg, f"Expected '{expected_text}' in error message, got: {error_msg}"
 
-
-@then('the error message should contain "Cannot delete reserved product"')
-def verify_cannot_delete_reserved(product_state):
-    _verify_error_contains(product_state, "Cannot delete reserved product")
-
-
-@then('the error message should contain "Cannot delete sold product"')
-def verify_cannot_delete_sold(product_state):
-    _verify_error_contains(product_state, "Cannot delete sold product")
 
 
 def _verify_product_count(product_state, count):

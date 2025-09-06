@@ -20,7 +20,7 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
         '/api/users',
         json={
             'email': f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com',
-            'password': 'password123',
+            'password': 'P@ssw0rd',
             'name': 'Test Seller',
             'role': 'seller',
         },
@@ -29,16 +29,29 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
     if seller_response.status_code == 201:
         seller = seller_response.json()
         order_state['seller'] = seller
+        print(f"User {seller['email']} has registered.")
     else:
         # If user exists, try to find one
         order_state['seller'] = {'id': 1}
 
-    # Create the product
+    # Login as the seller to create product
+    seller_email = f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com'
+    login_response = client.post(
+        "/api/auth/login",
+        data={"username": seller_email, "password": "P@ssw0rd"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert login_response.status_code == 200, f"Login failed: {login_response.text}"
+    
+    # Store the cookie for subsequent requests
+    if 'fastapiusersauth' in login_response.cookies:
+        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+
+    # Create the product (no need for seller_id, will be taken from authenticated user)
     request_data = {
         'name': product_data['name'],
         'description': product_data['description'],
         'price': int(product_data['price']),
-        'seller_id': order_state['seller']['id'],
         'is_active': product_data['is_active'].lower() == 'true',
     }
 
@@ -100,7 +113,7 @@ def create_pending_order(step, client: TestClient, order_state):
         '/api/users',
         json={
             'email': 'seller@test.com',
-            'password': 'password123',
+            'password': 'P@ssw0rd',
             'name': 'Test Seller',
             'role': 'seller',
         },
@@ -116,7 +129,7 @@ def create_pending_order(step, client: TestClient, order_state):
         '/api/users',
         json={
             'email': 'buyer@test.com',
-            'password': 'password123',
+            'password': 'P@ssw0rd',
             'name': 'Test Buyer',
             'role': 'buyer',
         },
@@ -127,6 +140,16 @@ def create_pending_order(step, client: TestClient, order_state):
     else:
         buyer_id = int(order_data['buyer_id'])
 
+    # Login as seller to create product
+    login_response = client.post(
+        "/api/auth/login",
+        data={"username": "seller@test.com", "password": "P@ssw0rd"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert login_response.status_code == 200, f"Seller login failed: {login_response.text}"
+    if 'fastapiusersauth' in login_response.cookies:
+        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    
     # Create product
     product_response = client.post(
         '/api/products',
@@ -134,16 +157,25 @@ def create_pending_order(step, client: TestClient, order_state):
             'name': 'Test Product',
             'description': 'Test Description',
             'price': int(order_data['price']),
-            'seller_id': seller_id,
             'is_active': True,
         },
     )
     assert product_response.status_code == 201, f'Failed to create product: {product_response.text}'
     product = product_response.json()
 
+    # Login as buyer to create order
+    login_response = client.post(
+        "/api/auth/login",
+        data={"username": "buyer@test.com", "password": "P@ssw0rd"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert login_response.status_code == 200, f"Buyer login failed: {login_response.text}"
+    if 'fastapiusersauth' in login_response.cookies:
+        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    
     # Create order
     order_response = client.post(
-        '/api/orders', json={'buyer_id': buyer_id, 'product_id': product['id']}
+        '/api/orders', json={'product_id': product['id']}
     )
     assert order_response.status_code == 201, f'Failed to create order: {order_response.text}'
     order = order_response.json()
@@ -191,8 +223,10 @@ def create_cancelled_order(step, client: TestClient, order_state, execute_sql_st
 
 
 @given('users exist:')
-def create_users(step, client: TestClient, order_state):
+def create_users(step, client: TestClient, order_state, execute_sql_statement):
     """Create multiple users from table data."""
+    import bcrypt
+    
     data_table = step.data_table
     rows = data_table.rows
 
@@ -204,28 +238,43 @@ def create_users(step, client: TestClient, order_state):
         values = [cell.value for cell in row.cells]
         user_data = dict(zip(headers, values, strict=True))
 
-        # Try to create user
-        response = client.post(
-            '/api/users',
-            json={
-                'email': user_data['email'],
-                'password': user_data['password'],
-                'name': user_data['name'],
-                'role': user_data['role'],
-            },
-        )
-
-        if response.status_code == 201:
-            user = response.json()
-            order_state['users'][int(user_data['id'])] = user
-        else:
-            # Store with the ID from table
-            order_state['users'][int(user_data['id'])] = {
-                'id': int(user_data['id']),
-                'email': user_data['email'],
-                'name': user_data['name'],
-                'role': user_data['role'],
-            }
+        # Use the user ID from test data
+        user_id = int(user_data['id'])
+        
+        # Hash the password
+        hashed_password = bcrypt.hashpw(user_data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        # Insert user directly into database with specified ID
+        try:
+            execute_sql_statement(
+                """
+                    INSERT INTO users (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
+                    VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
+                """,
+                {
+                    'id': user_id,
+                    'email': user_data['email'],
+                    'hashed_password': hashed_password,
+                    'name': user_data['name'],
+                    'role': user_data['role'],
+                }
+            )
+            print(f"Inserted user {user_data['email']} with id={user_id}")
+        except Exception as e:
+            print(f"Failed to insert user {user_data['email']}: {e}")
+        
+        order_state['users'][user_id] = {
+            'id': user_id,
+            'email': user_data['email'],
+            'name': user_data['name'],
+            'role': user_data['role'],
+        }
+    
+    # Reset the sequence to the max ID + 1
+    execute_sql_statement(
+        "SELECT setval('users_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM users), false)",
+        {}
+    )
 
 
 @given('products exist:')
@@ -242,27 +291,40 @@ def create_products(step, client: TestClient, order_state, execute_sql_statement
         values = [cell.value for cell in row.cells]
         product_data = dict(zip(headers, values, strict=True))
 
-        response = client.post(
-            '/api/products',
-            json={
+        # Use the product ID from test data
+        product_id = int(product_data['id'])
+        seller_id = int(product_data['seller_id'])
+        
+        # Insert product directly into database with specified ID
+        execute_sql_statement(
+            """
+                INSERT INTO products (id, seller_id, name, description, price, is_active, status)
+                VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status)
+            """,
+            {
+                'id': product_id,
+                'seller_id': seller_id,
                 'name': product_data['name'],
                 'description': f'Description for {product_data["name"]}',
                 'price': int(product_data['price']),
-                'seller_id': int(product_data['seller_id']),
                 'is_active': True,
-            },
+                'status': product_data['status'],
+            }
         )
-
-        if response.status_code == 201:
-            product = response.json()
-            order_state['products'][int(product_data['id'])] = product
-
-            # Update product status if needed
-            if product_data['status'] != 'available':
-                execute_sql_statement(
-                    'UPDATE products SET status = :status WHERE id = :id',
-                    {'status': product_data['status'], 'id': product['id']},
-                )
+        
+        order_state['products'][product_id] = {
+            'id': product_id,
+            'seller_id': seller_id,
+            'name': product_data['name'],
+            'price': int(product_data['price']),
+            'status': product_data['status'],
+        }
+    
+    # Reset the sequence to the max ID + 1
+    execute_sql_statement(
+        "SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM products), false)",
+        {}
+    )
 
 
 @given('orders exist:')
@@ -274,15 +336,24 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
     headers = [cell.value for cell in rows[0].cells]
 
     order_state['orders'] = {}
+    
+    print(f"Creating orders, users state: {order_state.get('users', {})}")
+    print(f"Creating orders, products state: {order_state.get('products', {})}")
 
     # Directly insert orders into database for testing
     # Use the order ID from the test data
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         order_data = dict(zip(headers, values, strict=True))
+        print(f"Creating order: {order_data}")
 
-        # Get actual product ID from state
-        product_id = order_state['products'][int(order_data['product_id'])]['id']
+        # Get actual product ID from state or use the provided one
+        product_key = int(order_data['product_id'])
+        if 'products' in order_state and product_key in order_state['products']:
+            product_id = order_state['products'][product_key]['id']
+        else:
+            # If product not in state, use the ID directly (assuming it exists in DB)
+            product_id = product_key
         
         # Use the order ID from test data
         order_id = int(order_data['id'])
@@ -320,3 +391,9 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
             )
 
         order_state['orders'][int(order_data['id'])] = {'id': order_id}
+    
+    # Reset the sequence to the max ID + 1
+    execute_sql_statement(
+        "SELECT setval('orders_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM orders), false)",
+        {}
+    )

@@ -5,16 +5,16 @@ Feature: User Login
 
   Background:
     Given a buyer user exists
-      | email          | password    | name     | role  |
-      | buyer@test.com | Test123456! | John Doe | buyer |
+      | email          | password | name     | role  |
+      | buyer@test.com | P@ssw0rd | John Doe | buyer |
     And a seller user exists
-      | email           | password    | name | role   |
-      | seller@test.com | Test123456! | Ryan | seller |
+      | email           | password | name | role   |
+      | seller@test.com | P@ssw0rd | Ryan | seller |
 
   Scenario: Successful buyer login
     When I login with
-      | email          | password    |
-      | buyer@test.com | Test123456! |
+      | email          | password |
+      | buyer@test.com | P@ssw0rd |
     Then the login response should be successful
     And get 200
     And the response should contain a JWT cookie
@@ -24,8 +24,8 @@ Feature: User Login
 
   Scenario: Successful seller login
     When I login with
-      | email           | password    |
-      | seller@test.com | Test123456! |
+      | email           | password |
+      | seller@test.com | P@ssw0rd |
     Then the login response should be successful
     And get 200
     And the response should contain a JWT cookie

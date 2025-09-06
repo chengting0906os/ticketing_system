@@ -49,29 +49,6 @@ def verify_product_status_reserved(client: TestClient, order_state):
     assert updated_product['status'] == 'reserved'
 
 
-@then('the error message should contain "Product not available"')
-def verify_error_product_not_available(order_state):
-    response = order_state['response']
-    assert response.status_code == 400
-    error_data = response.json()
-    assert 'Product not available' in error_data['detail']
-
-
-@then('the error message should contain "Product not active"')
-def verify_error_product_not_active(order_state):
-    response = order_state['response']
-    assert response.status_code == 400
-    error_data = response.json()
-    assert 'Product not active' in error_data['detail']
-
-
-@then('the error message should contain "Only buyers can create orders"')
-def verify_error_only_buyers_can_create_orders(order_state):
-    response = order_state['response']
-    assert response.status_code == 403
-    error_data = response.json()
-    assert 'Only buyers can create orders' in error_data['detail']
-
 
 @then('the order status should be "paid"')
 def verify_order_status_paid(client: TestClient, order_state):
@@ -144,30 +121,6 @@ def verify_product_status_available(client: TestClient, order_state):
     assert product_data['status'] == 'available'
 
 
-@then('the error message should contain "Order already paid"')
-def verify_error_order_already_paid(order_state):
-    response = order_state['response']
-    assert response.status_code == 400
-    error_data = response.json()
-    assert 'Order already paid' in error_data['detail']
-
-
-@then('the error message should contain "Cannot pay for cancelled order"')
-def verify_error_cannot_pay_cancelled(order_state):
-    response = order_state['response']
-    assert response.status_code == 400
-    error_data = response.json()
-    assert 'Cannot pay for cancelled order' in error_data['detail']
-
-
-@then('the error message should contain "Only the buyer can pay for this order"')
-def verify_error_only_buyer_can_pay(order_state):
-    response = order_state['response']
-    assert response.status_code == 403
-    error_data = response.json()
-    assert 'Only the buyer can pay for this order' in error_data['detail']
-
-
 @then('the order status should be "cancelled"')
 def verify_order_status_cancelled(client: TestClient, order_state):
     response = client.get(f"/api/orders/{order_state['order']['id']}")
@@ -176,13 +129,6 @@ def verify_order_status_cancelled(client: TestClient, order_state):
     assert order_data['status'] == 'cancelled'
     order_state['updated_order'] = order_data
 
-
-@then('the error message should contain "Cannot cancel paid order"')
-def verify_error_cannot_cancel_paid(order_state):
-    response = order_state['response']
-    assert response.status_code == 400
-    error_data = response.json()
-    assert 'Cannot cancel paid order' in error_data['detail']
 
 
 @then('the response should contain 3 orders')

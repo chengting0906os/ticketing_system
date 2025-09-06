@@ -34,6 +34,7 @@ from tests.pytest_bdd_ng_example.then import *
 from tests.pytest_bdd_ng_example.when import *
 
 # Import shared test steps first
+from tests.shared.given import *
 from tests.shared.then import *
 from tests.user.functional.fixtures import *
 from tests.user.functional.given import *

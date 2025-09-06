@@ -9,12 +9,12 @@ Feature: Order List
 
   Background:
     Given users exist:
-      | email            | password    | name         | role   | id |
-      | seller1@test.com | password123 | Test Seller1 | seller |  1 |
-      | seller2@test.com | password123 | Test Seller2 | seller |  2 |
-      | buyer1@test.com  | password123 | Test Buyer1  | buyer  |  3 |
-      | buyer2@test.com  | password123 | Test Buyer2  | buyer  |  4 |
-      | buyer3@test.com  | password123 | Test Buyer3  | buyer  |  5 |
+      | email            | password | name         | role   | id |
+      | seller1@test.com | P@ssw0rd | Test Seller1 | seller |  1 |
+      | seller2@test.com | P@ssw0rd | Test Seller2 | seller |  2 |
+      | buyer1@test.com  | P@ssw0rd | Test Buyer1  | buyer  |  3 |
+      | buyer2@test.com  | P@ssw0rd | Test Buyer2  | buyer  |  4 |
+      | buyer3@test.com  | P@ssw0rd | Test Buyer3  | buyer  |  5 |
     And products exist:
       | name      | price | seller_id | status    | id |
       | Product A |  1000 |         1 | sold      |  1 |

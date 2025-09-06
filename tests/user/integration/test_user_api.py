@@ -8,7 +8,7 @@ class TestUserAPI:
         email = 'test@example.com'
         user_data = {
             'email': email,
-            'password': 'Test123456!',
+            'password': 'P@ssw0rd',
             'name': 'John Doe',
             'role': 'buyer',
         }
@@ -32,7 +32,7 @@ class TestUserAPI:
         # Arrange - 可以用相同的 email 因為資料庫已清理
         user_data = {
             'email': 'test@example.com',
-            'password': 'Test123456!',
+            'password': 'P@ssw0rd',
             'name': 'Jane Smith',
             'role': 'seller',
         }

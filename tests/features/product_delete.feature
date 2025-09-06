@@ -16,7 +16,8 @@ Feature: Product Deletion
       |         1 | Test Item | Reserved item |  1000 | true      | reserved |
     When I try to delete the product
     Then get 400
-    And the error message should contain "Cannot delete reserved product"
+    And the error message should contain:
+      | Cannot delete reserved product |
 
   Scenario: Cannot delete a sold product
     Given a product exists with:
@@ -24,4 +25,5 @@ Feature: Product Deletion
       |         1 | Test Item | Sold item   |  1000 | true      | sold   |
     When I try to delete the product
     Then get 400
-    And the error message should contain "Cannot delete sold product"
+    And the error message should contain:
+      | Cannot delete sold product |

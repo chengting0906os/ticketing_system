@@ -13,19 +13,11 @@ def create_product(step, client: TestClient, product_state):
     values = [cell.value for cell in rows[1].cells]
     row_data = dict(zip(headers, values, strict=True))
     
-    # Get seller_id from test data or from product_state (created by Background)
-    if 'seller_id' in row_data:
-        seller_id = int(row_data['seller_id'])
-    else:
-        seller_id = product_state.get('seller_id')
-        if not seller_id:
-            raise ValueError("No seller_id found. Make sure a seller user is created first or provide it in test data.")
-    
+    # Build request data without seller_id (will be taken from authenticated user)
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
         'price': int(row_data['price']),
-        'seller_id': seller_id,
     }
     
     # Add is_active if specified in the test data

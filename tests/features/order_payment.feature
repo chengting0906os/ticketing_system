@@ -26,7 +26,8 @@ Feature: Order Payment
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to pay for the order again
     Then get 400
-    And the error message should contain "Order already paid"
+    And the error message should contain:
+      | Order already paid |
 
   Scenario: Cannot pay for cancelled order
     Given an order exists with status "cancelled":
@@ -34,7 +35,8 @@ Feature: Order Payment
       |        2 |         1 |          1 |  1000 |
     When the buyer tries to pay for the order
     Then get 400
-    And the error message should contain "Cannot pay for cancelled order"
+    And the error message should contain:
+      | Cannot pay for cancelled order |
 
   Scenario: Only buyer can pay for their order
     Given an order exists with status "pending_payment":
@@ -42,7 +44,8 @@ Feature: Order Payment
       |        2 |         1 |          1 |  1000 |
     When another user tries to pay for the order
     Then get 403
-    And the error message should contain "Only the buyer can pay for this order"
+    And the error message should contain:
+      | Only the buyer can pay for this order |
 
   Scenario: Cancel unpaid order
     Given an order exists with status "pending_payment":
@@ -62,4 +65,5 @@ Feature: Order Payment
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to cancel the order
     Then get 400
-    And the error message should contain "Cannot cancel paid order"
+    And the error message should contain:
+      | Cannot cancel paid order |
