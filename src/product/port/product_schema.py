@@ -8,7 +8,18 @@ class ProductCreateRequest(BaseModel):
     description: str
     price: int
     seller_id: int
-    is_active: bool = True  
+    is_active: bool = True
+    
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'name': 'iPhone 15 Pro',
+                'description': 'Latest Apple smartphone with A17 Pro chip',
+                'price': 39900,
+                'seller_id': 1,
+                'is_active': True
+            }
+        }  
 
 
 class ProductResponse(BaseModel):
@@ -19,6 +30,19 @@ class ProductResponse(BaseModel):
     seller_id: int
     is_active: bool
     status: str
+    
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': 1,
+                'name': 'iPhone 15 Pro',
+                'description': 'Latest Apple smartphone with A17 Pro chip',
+                'price': 39900,
+                'seller_id': 1,
+                'is_active': True,
+                'status': 'available'
+            }
+        }
 
 
 class ProductUpdateRequest(BaseModel):
@@ -26,3 +50,13 @@ class ProductUpdateRequest(BaseModel):
     description: Optional[str] = None
     price: Optional[int] = None
     is_active: Optional[bool] = None
+    
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'name': 'iPhone 15 Pro Max',
+                'description': 'Updated description with new features',
+                'price': 42900,
+                'is_active': True
+            }
+        }
