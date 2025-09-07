@@ -5,6 +5,9 @@ from typing import List, Optional
 from fastapi import Depends
 
 from src.product.domain.product_entity import Product, ProductStatus
+from src.shared.exceptions import DomainError
+from src.shared.logging.loguru_io import LoguruIO
+from src.shared.logging.loguru_io_config import custom_logger
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
@@ -16,6 +19,7 @@ class CreateProductUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow)
 
+    @LoguruIO(custom_logger)
     async def create(
         self, name: str, description: str, price: int, seller_id: int, is_active: bool = True
     ) -> Product:
@@ -30,7 +34,7 @@ class CreateProductUseCase:
 
             created_product = await self.uow.products.create(product)
             await self.uow.commit()
-
+        # raise Exception('Simulated error for testing rollback')  # --- IGNORE ---
         return created_product
 
 
@@ -42,6 +46,7 @@ class UpdateProductUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow)
 
+    @LoguruIO(custom_logger)
     async def update(
         self,
         product_id: int,
@@ -80,6 +85,7 @@ class DeleteProductUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow)
 
+    @LoguruIO(custom_logger)
     async def delete(self, product_id: int) -> bool:
         async with self.uow:
             # Get existing product to check status
@@ -107,6 +113,7 @@ class GetProductUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow)
 
+    @LoguruIO(custom_logger)
     async def get_by_id(self, product_id: int) -> Optional[Product]:
         """Get a single product by ID."""
         async with self.uow:
@@ -122,12 +129,14 @@ class ListProductsUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow)
 
+    @LoguruIO(custom_logger)
     async def get_by_seller(self, seller_id: int) -> List[Product]:
         """Get all products for a specific seller."""
         async with self.uow:
             products = await self.uow.products.get_by_seller(seller_id)
         return products
 
+    @LoguruIO(custom_logger)
     async def list_available(self) -> List[Product]:
         """Get all active and available products (for buyers)."""
         async with self.uow:

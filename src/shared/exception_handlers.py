@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi_users import exceptions as fastapi_users_exceptions
 
 from src.shared.exceptions import DomainError
-from src.shared.logger_config import custom_logger
+from src.shared.logging.loguru_io_config import custom_logger
 
 
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
@@ -72,6 +72,7 @@ async def general_500_exception_handler(
     request: Request,
     exc: Exception
 ) -> JSONResponse:
+    custom_logger.exception(f"Unhandled exception: {str(exc)}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Internal server error"}

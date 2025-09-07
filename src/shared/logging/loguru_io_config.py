@@ -41,7 +41,7 @@ custom_logger.add(
     f'{LOG_DIR}/{{time:YYYY-MM-DD_HH}}.log',
     format=log_format,
     rotation='1 day',
-    retention='30 days',
-    compression='zip',
+    retention='14 days',
+    compression='gz',
     enqueue=True,
 )
