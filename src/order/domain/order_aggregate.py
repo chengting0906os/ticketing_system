@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 import attrs
 
+from src.shared.logging.loguru_io import Logger
 from src.order.domain.events import (
     DomainEventProtocol,
     OrderCancelledEvent,
@@ -38,6 +39,7 @@ class OrderAggregate:
     _product: Optional[Product] = attrs.field(default=None, init=False)
     
     @classmethod
+    @Logger.io
     def create_order(
         cls,
         buyer: 'User',  # User entity
@@ -80,6 +82,7 @@ class OrderAggregate:
         
         return aggregate
     
+    @Logger.io
     def process_payment(self) -> None:
         if self.order.status != OrderStatus.PENDING_PAYMENT:
             if self.order.status == OrderStatus.PAID:
@@ -101,6 +104,7 @@ class OrderAggregate:
             paid_at=self.order.paid_at or datetime.now()
         ))
     
+    @Logger.io
     def cancel(self, reason: Optional[str] = None) -> None:
         if self.order.status == OrderStatus.PAID:
             raise DomainError("Cannot cancel paid order", 400)
@@ -117,6 +121,7 @@ class OrderAggregate:
             reason=reason
         ))
     
+    @Logger.io
     def _reserve_product(self) -> None:
         if self._product:
             self._product.status = ProductStatus.RESERVED
@@ -127,6 +132,7 @@ class OrderAggregate:
                 order_id=self.order.id or 0
             ))
     
+    @Logger.io
     def _release_product(self) -> None:
         if self._product:
             self._product.status = ProductStatus.AVAILABLE
@@ -140,16 +146,19 @@ class OrderAggregate:
     def _add_event(self, event: DomainEventProtocol) -> None:
         self._events.append(event)
     
+    @Logger.io
     def collect_events(self) -> List[DomainEventProtocol]:
         events = self._events.copy()
         self._events.clear()
         return events
     
+    @Logger.io
     def get_product_for_update(self) -> Optional[Product]:
         """Get the product that needs to be updated."""
         return self._product
     
     @classmethod
+    @Logger.io
     def reconstitute(
         cls,
         order: Order,

@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, IntegerIDMixin
 
+from src.shared.logging.loguru_io import Logger
 from src.shared.config import settings
 from src.user.domain.user_model import User
 from src.user.infra.get_user_db import get_user_db
@@ -17,6 +18,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     verification_token_secret = settings.VERIFICATION_TOKEN_SECRET
     
 
+    @Logger.io
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         """Actions after user registration."""
         print(f'User {user.email} has registered.')

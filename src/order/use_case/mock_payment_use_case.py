@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from fastapi import Depends
 
+from src.shared.logging.loguru_io import Logger
 from src.order.domain.order_entity import OrderStatus
 from src.product.domain.product_entity import ProductStatus
 from src.shared.exceptions import BadRequestException, ForbiddenException, NotFoundException
@@ -20,6 +21,7 @@ class MockPaymentUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow=uow)
 
+    @Logger.io
     async def pay_order(self, order_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
         """Process payment for an order."""
         async with self.uow:
@@ -53,6 +55,7 @@ class MockPaymentUseCase:
                 'paid_at': updated_order.paid_at.isoformat() if updated_order.paid_at else None,
             }
 
+    @Logger.io
     async def cancel_order(self, order_id: int, buyer_id: int) -> None:
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id)

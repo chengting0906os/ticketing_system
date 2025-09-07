@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import List, Optional
 
+from src.shared.logging.loguru_io import Logger
+
 
 class MockEmailService:
     """Mock email service that prints to console instead of sending real emails."""
@@ -11,6 +13,7 @@ class MockEmailService:
         self.debug = debug
         self.sent_emails: List[dict] = []  # Store sent emails for testing
 
+    @Logger.io
     async def send_email(
         self, to: str, subject: str, body: str, cc: Optional[List[str]] = None
     ) -> bool:
@@ -40,6 +43,7 @@ class MockEmailService:
 
         return True
 
+    @Logger.io
     async def send_order_confirmation(
         self, buyer_email: str, order_id: int, product_name: str, price: int
     ):
@@ -64,6 +68,7 @@ class MockEmailService:
         """
         await self.send_email(buyer_email, subject, body.strip())
 
+    @Logger.io
     async def send_payment_confirmation(
         self, buyer_email: str, order_id: int, product_name: str, paid_amount: int
     ):
@@ -88,6 +93,7 @@ class MockEmailService:
         """
         await self.send_email(buyer_email, subject, body.strip())
 
+    @Logger.io
     async def send_order_cancellation(
         self, buyer_email: str, order_id: int, product_name: str, reason: Optional[str] = None
     ):
@@ -111,6 +117,7 @@ class MockEmailService:
         """
         await self.send_email(buyer_email, subject, body.strip())
 
+    @Logger.io
     async def notify_seller_new_order(
         self, seller_email: str, order_id: int, product_name: str, buyer_name: str, price: int
     ):
@@ -140,5 +147,6 @@ class MockEmailService:
 mock_email_service = MockEmailService(debug=True)
 
 
+@Logger.io
 def get_mock_email_service() -> MockEmailService:
     return mock_email_service

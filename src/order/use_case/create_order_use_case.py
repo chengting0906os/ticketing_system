@@ -2,6 +2,7 @@
 
 from fastapi import Depends
 
+from src.shared.logging.loguru_io import Logger
 from src.order.domain.order_aggregate import OrderAggregate
 from src.order.domain.order_entity import Order
 from src.order.use_case.mock_send_email_use_case import MockSendEmailUseCase
@@ -24,6 +25,7 @@ class CreateOrderUseCase:
     ):
         return cls(uow, email_service)
 
+    @Logger.io
     async def create_order(self, buyer_id: int, product_id: int) -> Order:
         async with self.uow:
             buyer = await self.uow.users.get_by_id(buyer_id)

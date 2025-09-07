@@ -5,6 +5,7 @@ from typing import List, Optional
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.logging.loguru_io import Logger
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.order_repo import OrderRepo
 from src.order.infra.order_model import OrderModel
@@ -15,6 +16,7 @@ class OrderRepoImpl(OrderRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
     
+    @Logger.io
     async def create(self, order: Order) -> Order:
         db_order = OrderModel(
             buyer_id=order.buyer_id,
@@ -42,6 +44,7 @@ class OrderRepoImpl(OrderRepo):
             id=db_order.id
         )
     
+    @Logger.io
     async def get_by_id(self, order_id: int) -> Optional[Order]:
         result = await self.session.execute(
             select(OrderModel).where(OrderModel.id == order_id)
@@ -63,6 +66,7 @@ class OrderRepoImpl(OrderRepo):
             id=db_order.id
         )
     
+    @Logger.io
     async def get_by_product_id(self, product_id: int) -> Optional[Order]:
         result = await self.session.execute(
             select(OrderModel)
@@ -86,6 +90,7 @@ class OrderRepoImpl(OrderRepo):
             id=db_order.id
         )
     
+    @Logger.io
     async def get_by_buyer(self, buyer_id: int) -> List[Order]:
         result = await self.session.execute(
             select(OrderModel)
@@ -109,6 +114,7 @@ class OrderRepoImpl(OrderRepo):
             for db_order in db_orders
         ]
     
+    @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Order]:
         result = await self.session.execute(
             select(OrderModel)
@@ -132,6 +138,7 @@ class OrderRepoImpl(OrderRepo):
             for db_order in db_orders
         ]
     
+    @Logger.io
     async def update(self, order: Order) -> Order:
         stmt = (
             sql_update(OrderModel)

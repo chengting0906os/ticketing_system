@@ -1,5 +1,6 @@
 """Email notification use case for order domain events."""
 
+from src.shared.logging.loguru_io import Logger
 from src.order.domain.events import (
     DomainEventProtocol,
     OrderCancelledEvent,
@@ -15,6 +16,7 @@ class MockSendEmailUseCase:
         self.email_service = email_service
         self.uow = uow
     
+    @Logger.io
     async def handle_order_created(self, event: OrderCreatedEvent):
         buyer = await self.uow.users.get_by_id(event.buyer_id)
         product = await self.uow.products.get_by_id(event.product_id)
@@ -37,6 +39,7 @@ class MockSendEmailUseCase:
                 price=event.price
             )
     
+    @Logger.io
     async def handle_order_paid(self, event: OrderPaidEvent):
         buyer = await self.uow.users.get_by_id(event.buyer_id)
         product = await self.uow.products.get_by_id(event.product_id)
@@ -49,6 +52,7 @@ class MockSendEmailUseCase:
                 paid_amount=product.price  
             )
     
+    @Logger.io
     async def handle_order_cancelled(self, event: OrderCancelledEvent):
         buyer = await self.uow.users.get_by_id(event.buyer_id)
         product = await self.uow.products.get_by_id(event.product_id)
@@ -61,6 +65,7 @@ class MockSendEmailUseCase:
                 reason=event.reason
             )
     
+    @Logger.io
     async def handle(self, event: DomainEventProtocol):
         if isinstance(event, OrderCreatedEvent):
             await self.handle_order_created(event)

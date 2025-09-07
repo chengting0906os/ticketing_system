@@ -6,8 +6,7 @@ from typing import Optional
 import attrs
 
 from src.shared.exceptions import DomainError
-from src.shared.logging.loguru_io import LoguruIO
-from src.shared.logging.loguru_io_config import custom_logger
+from src.shared.logging.loguru_io import Logger
 
 
 class ProductStatus(str, Enum):    
@@ -15,18 +14,18 @@ class ProductStatus(str, Enum):
     RESERVED = 'reserved'
     SOLD = 'sold'
 
-@LoguruIO(custom_logger)
+@Logger.io
 def validate_positive_price(instance, attribute, value):
     # value = -1
     if value < 0:
         raise DomainError("Price must be positive")
 
-@LoguruIO(custom_logger)
+@Logger.io
 def validate_name(instance, attribute, value):
     if not value or not value.strip():
         raise DomainError("Product name is required")
 
-@LoguruIO(custom_logger)
+@Logger.io
 def validate_description(instance, attribute, value):
     if not value or not value.strip():
         raise DomainError("Product description is required")
@@ -43,6 +42,7 @@ class Product:
     id: Optional[int] = None
     
     @classmethod
+    @Logger.io
     def create(cls, name: str, description: str, price: int, seller_id: int, is_active:bool) -> 'Product':
         return cls(
             name=name,

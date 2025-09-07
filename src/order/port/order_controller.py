@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, status
 
+from src.shared.logging.loguru_io import Logger
 from src.order.port.order_schema import (
     OrderCreateRequest,
     OrderResponse,
@@ -24,6 +25,7 @@ router = APIRouter()
 
 
 @router.post('', status_code=status.HTTP_201_CREATED)
+@Logger.io
 async def create_order(
     request: OrderCreateRequest,
     current_user: User = Depends(require_buyer),
@@ -51,6 +53,7 @@ async def create_order(
 
 
 @router.get('/my-orders')
+@Logger.io
 async def list_my_orders(
     order_status: Optional[str] = None,
     current_user: User = Depends(get_current_user),
@@ -66,6 +69,7 @@ async def list_my_orders(
  
 
 @router.get('/{order_id}')
+@Logger.io
 async def get_order(
     order_id: int,
     current_user: User = Depends(get_current_user),
@@ -88,6 +92,7 @@ async def get_order(
 
 
 @router.post('/{order_id}/pay')
+@Logger.io
 async def pay_order(
     order_id: int,
     request: PaymentRequest,
@@ -108,6 +113,7 @@ async def pay_order(
   
 
 @router.delete('/{order_id}', status_code=status.HTTP_204_NO_CONTENT)
+@Logger.io
 async def cancel_order(
     order_id: int,
     current_user: User = Depends(require_buyer),
@@ -122,6 +128,7 @@ async def cancel_order(
 
 # Deprecated endpoint - use /my-orders instead
 # @router.get('/seller/{seller_id}')
+@Logger.io
 async def list_seller_orders(
     seller_id: int,
     order_status: Optional[str] = None,

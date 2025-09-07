@@ -6,6 +6,7 @@ from typing import Optional
 
 import attrs
 
+from src.shared.logging.loguru_io import Logger
 from src.shared.exceptions import DomainError
 
 
@@ -16,6 +17,7 @@ class OrderStatus(str, Enum):
     COMPLETED = 'completed'
 
 
+@Logger.io
 def validate_positive_price(instance, attribute, value):
     if value <= 0:
         raise DomainError("Price must be positive", 400)
@@ -34,6 +36,7 @@ class Order:
     id: Optional[int] = None
     
     @classmethod
+    @Logger.io
     def create(cls, buyer_id: int, seller_id: int, product_id: int, price: int) -> 'Order':
         now = datetime.now()
         return cls(
@@ -48,6 +51,7 @@ class Order:
             id=None
         )
     
+    @Logger.io
     def mark_as_paid(self) -> 'Order':
         now = datetime.now()
         return attrs.evolve(
@@ -57,6 +61,7 @@ class Order:
             updated_at=now
         )
 
+    @Logger.io
     def cancel(self) -> 'Order':
         now = datetime.now()
         return attrs.evolve(

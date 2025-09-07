@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
+from src.shared.logging.loguru_io import Logger
 from src.shared.jwt_auth_service import auth_backend, fastapi_users
 from src.user.domain.user_entity import UserRole
 from src.user.port.user_schema import UserCreate, UserPublic, UserRead, UserUpdate
@@ -21,6 +22,7 @@ users_router.include_router(
 
 # Custom login endpoint that returns user data (must be defined before including default router)
 @auth_router.post("/login", response_model=UserPublic)
+@Logger.io
 async def login(
     response: Response,
     credentials: OAuth2PasswordRequestForm = Depends(),
@@ -61,6 +63,7 @@ async def login(
 # Custom registration endpoint to match BDD requirements
 
 @users_router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+@Logger.io
 async def register_user(
     user_create: UserCreate,
     user_manager=Depends(get_user_manager),

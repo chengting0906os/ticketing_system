@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends
 
+from src.shared.logging.loguru_io import Logger
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
@@ -35,6 +36,7 @@ class OrderDetailResponse:
         self.buyer_name = buyer_name
         self.seller_name = seller_name
 
+    @Logger.io
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -59,6 +61,7 @@ class ListOrdersUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow=uow)
 
+    @Logger.io
     async def list_buyer_orders(
         self, buyer_id: int, status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -89,6 +92,7 @@ class ListOrdersUseCase:
 
             return enriched_orders
 
+    @Logger.io
     async def list_seller_orders(
         self, seller_id: int, status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
