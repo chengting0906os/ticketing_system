@@ -4,9 +4,6 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from src.product.domain.errors import ProductDomainError
-from src.shared.dependencies import require_seller
-from src.user.domain.user_model import User
 from src.product.port.product_schema import (
     ProductCreateRequest,
     ProductResponse,
@@ -18,6 +15,8 @@ from src.product.use_case.product_use_case import (
     ListProductsUseCase,
     UpdateProductUseCase,
 )
+from src.shared.dependencies import require_seller
+from src.user.domain.user_model import User
 
 
 router = APIRouter()
@@ -29,32 +28,27 @@ async def create_product(
     current_user: User = Depends(require_seller),
     use_case: CreateProductUseCase = Depends(CreateProductUseCase.depends),
 ) -> ProductResponse:
-    try:
-        # Use the authenticated seller's ID instead of request.seller_id
-        product = await use_case.create(
-            name=request.name,
-            description=request.description,
-            price=int(request.price),  # Ensure it's int
-            seller_id=current_user.id,  # Use current user's ID
-            is_active=request.is_active,
-        )
+    product = await use_case.create(
+        name=request.name,
+        description=request.description,
+        price=int(request.price),  # Ensure it's int
+        seller_id=current_user.id,  # Use current user's ID
+        is_active=request.is_active,
+    )
 
-        if product.id is None:
-            raise ValueError('Product ID should not be None after creation.')
+    if product.id is None:
+        raise ValueError('Product ID should not be None after creation.')
 
-        return ProductResponse(
-            id=product.id,
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            seller_id=product.seller_id,
-            is_active=product.is_active,
-            status=product.status.value,  # Convert enum to string
-        )
-    except ProductDomainError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return ProductResponse(
+        id=product.id,
+        name=product.name,
+        description=product.description,
+        price=product.price,
+        seller_id=product.seller_id,
+        is_active=product.is_active,
+        status=product.status.value,  # Convert enum to string
+    )
+
 
 
 @router.patch('/{product_id}', status_code=status.HTTP_200_OK)
@@ -64,55 +58,33 @@ async def update_product(
     current_user: User = Depends(require_seller),
     use_case: UpdateProductUseCase = Depends(UpdateProductUseCase.depends),
 ) -> ProductResponse:
-    try:
-        # First check if product exists and belongs to current seller
-        async with use_case.uow:
-            existing_product = await use_case.uow.products.get_by_id(product_id)
-            if not existing_product:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f'Product with id {product_id} not found'
-                )
-            if existing_product.seller_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail='You can only update your own products'
-                )
-        
-        product = await use_case.update(
-            product_id=product_id,
-            name=request.name,
-            description=request.description,
-            price=request.price,
-            is_active=request.is_active,
+    product = await use_case.update(
+        product_id=product_id,
+        name=request.name,
+        description=request.description,
+        price=request.price,
+        is_active=request.is_active,
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Product with id {product_id} not found',
         )
 
-        if not product:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Product with id {product_id} not found',
-            )
+    if product.id is None:
+        raise ValueError('Product ID should not be None after update.')
 
-        if product.id is None:
-            raise ValueError('Product ID should not be None after update.')
-
-        return ProductResponse(
-            id=product.id,
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            seller_id=product.seller_id,
-            is_active=product.is_active,
-            status=product.status.value,
-        )
-    except ProductDomainError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except ValueError as e:
-        if 'not found' in str(e):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return ProductResponse(
+        id=product.id,
+        name=product.name,
+        description=product.description,
+        price=product.price,
+        seller_id=product.seller_id,
+        is_active=product.is_active,
+        status=product.status.value,
+    )
+    
 
 
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
@@ -121,32 +93,14 @@ async def delete_product(
     current_user: User = Depends(require_seller),
     use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends)
 ):
-    try:
-        # First check if product exists and belongs to current seller
-        async with use_case.uow:
-            existing_product = await use_case.uow.products.get_by_id(product_id)
-            if not existing_product:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f'Product with id {product_id} not found'
-                )
-            if existing_product.seller_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail='You can only delete your own products'
-                )
-        
-        deleted = await use_case.delete(product_id)
+    deleted = await use_case.delete(product_id)
 
-        if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Product with id {product_id} not found',
-            )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Product with id {product_id} not found',
+        )
+
 
 
 @router.get('/{product_id}', status_code=status.HTTP_200_OK)

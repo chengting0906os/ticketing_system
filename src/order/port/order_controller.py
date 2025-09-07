@@ -3,7 +3,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from src.order.port.order_schema import (
     OrderCreateRequest,
@@ -16,7 +16,6 @@ from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
 from src.order.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.dependencies import get_current_user, require_buyer
-from src.shared.exceptions import DomainException
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 
@@ -30,29 +29,25 @@ async def create_order(
     current_user: User = Depends(require_buyer),
     use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends)
 ) -> OrderResponse:
-    try:
-        # Use authenticated buyer's ID instead of request.buyer_id
-        order = await use_case.create_order(
-            buyer_id=current_user.id, product_id=request.product_id
-        )
+    # Use authenticated buyer's ID instead of request.buyer_id
+    order = await use_case.create_order(
+        buyer_id=current_user.id, product_id=request.product_id
+    )
 
-        if order.id is None:
-            raise ValueError('Order ID should not be None after creation.')
+    if order.id is None:
+        raise ValueError('Order ID should not be None after creation.')
 
-        return OrderResponse(
-            id=order.id,
-            buyer_id=order.buyer_id,
-            seller_id=order.seller_id,
-            product_id=order.product_id,
-            price=order.price,
-            status=order.status.value,
-            created_at=order.created_at,
-            paid_at=order.paid_at,
-        )
-    except DomainException as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return OrderResponse(
+        id=order.id,
+        buyer_id=order.buyer_id,
+        seller_id=order.seller_id,
+        product_id=order.product_id,
+        price=order.price,
+        status=order.status.value,
+        created_at=order.created_at,
+        paid_at=order.paid_at,
+    )
+  
 
 
 @router.get('/my-orders')
@@ -61,17 +56,14 @@ async def list_my_orders(
     current_user: User = Depends(get_current_user),
     use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
-    try:
-        # List orders based on user role
-        if current_user.role == UserRole.BUYER:
-            return await use_case.list_buyer_orders(current_user.id, order_status)
-        elif current_user.role == UserRole.SELLER:
-            return await use_case.list_seller_orders(current_user.id, order_status)
-        else:
-            return []
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+    if current_user.role == UserRole.BUYER:
+        return await use_case.list_buyer_orders(current_user.id, order_status)
+    elif current_user.role == UserRole.SELLER:
+        return await use_case.list_seller_orders(current_user.id, order_status)
+    else:
+        return []
+ 
 
 @router.get('/{order_id}')
 async def get_order(
@@ -79,25 +71,20 @@ async def get_order(
     current_user: User = Depends(get_current_user),
     use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends)
 ) -> OrderResponse:
-    try:
-        order = await use_case.get_order(order_id)
-        if order.id is None:
-            raise ValueError('Order ID should not be None.')
+    order = await use_case.get_order(order_id)
+    if order.id is None:
+        raise ValueError('Order ID should not be None.')
 
-        return OrderResponse(
-            id=order.id,
-            buyer_id=order.buyer_id,
-            seller_id=order.seller_id,
-            product_id=order.product_id,
-            price=order.price,
-            status=order.status.value,
-            created_at=order.created_at,
-            paid_at=order.paid_at,
-        )
-    except DomainException as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return OrderResponse(
+        id=order.id,
+        buyer_id=order.buyer_id,
+        seller_id=order.seller_id,
+        product_id=order.product_id,
+        price=order.price,
+        status=order.status.value,
+        created_at=order.created_at,
+        paid_at=order.paid_at,
+    )
 
 
 @router.post('/{order_id}/pay')
@@ -107,23 +94,18 @@ async def pay_order(
     current_user: User = Depends(require_buyer),
     use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
 ) -> PaymentResponse:
-    try:
-        # Use authenticated buyer's ID
-        result = await use_case.pay_order(
-            order_id=order_id, buyer_id=current_user.id, card_number=request.card_number
-        )
+   
+    result = await use_case.pay_order(
+        order_id=order_id, buyer_id=current_user.id, card_number=request.card_number
+    )
 
-        return PaymentResponse(
-            order_id=result['order_id'],
-            payment_id=result['payment_id'],
-            status=result['status'],
-            paid_at=result['paid_at'],
-        )
-    except DomainException as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
+    return PaymentResponse(
+        order_id=result['order_id'],
+        payment_id=result['payment_id'],
+        status=result['status'],
+        paid_at=result['paid_at'],
+    )
+  
 
 @router.delete('/{order_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_order(
@@ -131,15 +113,11 @@ async def cancel_order(
     current_user: User = Depends(require_buyer),
     use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends)
 ):
-    try:
-        # Use authenticated buyer's ID
-        await use_case.cancel_order(order_id=order_id, buyer_id=current_user.id)
 
-        return None
-    except DomainException as e:
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    await use_case.cancel_order(order_id=order_id, buyer_id=current_user.id)
+
+    return None
+    
 
 
 # Deprecated endpoint - use /my-orders instead
@@ -149,7 +127,5 @@ async def list_seller_orders(
     order_status: Optional[str] = None,
     use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
-    try:
-        return await use_case.list_seller_orders(seller_id, order_status)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    return await use_case.list_seller_orders(seller_id, order_status)
+ 

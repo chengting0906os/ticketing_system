@@ -17,6 +17,7 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "alembic>=1.16.4",
     "passlib[bcrypt]>=1.7.4",
+    "loguru>=0.7.3",
 ]
 
 [dependency-groups]

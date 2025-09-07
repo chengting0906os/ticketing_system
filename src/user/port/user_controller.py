@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import exceptions
 
 from src.shared.jwt_auth_service import auth_backend, fastapi_users
 from src.user.domain.user_entity import UserRole
@@ -60,6 +59,7 @@ async def login(
 
 
 # Custom registration endpoint to match BDD requirements
+
 @users_router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_create: UserCreate,
@@ -72,18 +72,9 @@ async def register_user(
             detail=f"Invalid role: {user_create.role}. Must be one of: {', '.join(valid_roles)}"
         )
     
-    try:
-        user = await user_manager.create(
-            user_create, safe=True, request=None
-        )
-        return user
-    except exceptions.UserAlreadyExists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="REGISTER_USER_ALREADY_EXISTS",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    user = await user_manager.create(
+        user_create, safe=True, request=None
+    )
+    return user
+    
