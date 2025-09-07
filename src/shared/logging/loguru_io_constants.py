@@ -9,8 +9,8 @@ SENSITIVE_KEYWORDS = {
 }
 
 # Visual markers for logging
-DEPTH_LINE = '│'
 ENTRY_ARROW = '┌'
+DEPTH_LINE = '│'
 EXIT_ARROW = '└'
 
 chain_start_time_var: ContextVar[float] = ContextVar('first_time_var', default=0)

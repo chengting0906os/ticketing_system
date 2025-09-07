@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from src.shared.logging.loguru_io_constants import GeneratorMethod
+from src.shared.logging.loguru_io_config import GeneratorMethod
 from src.shared.logging.loguru_io_utils import reset_call_depth
 
 
