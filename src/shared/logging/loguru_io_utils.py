@@ -7,10 +7,11 @@ from time import time
 from typing import Any, Callable, Optional
 
 from src.shared.logging.loguru_io_constants import (
+    DEPTH_LINE,
     SENSITIVE_KEYWORDS,
     GeneratorMethod,
     call_depth_var,
-    first_time_var,
+    chain_start_time_var,
 )
 
 
@@ -18,18 +19,18 @@ def handle_yield(yield_method: Optional[GeneratorMethod] = None) -> str:
     return f'yield: {yield_method} | ' if yield_method else ''
 
 
-def fetch_first_time() -> float:
-    if not (first_time := first_time_var.get()):
-        first_time = time()
-        first_time_var.set(first_time)
-    return first_time
+def get_chain_start_time() -> float:
+    if not (start_time := chain_start_time_var.get()):
+        start_time = time()
+        chain_start_time_var.set(start_time)
+    return start_time
 
 
-def fetch_layer() -> str:
-    return '│' * (call_depth_var.get() - 1)
+def fetch_layer_depth() -> str:
+    return DEPTH_LINE * (call_depth_var.get() - 1)
 
 
-def build_function_path(func: Callable[..., Any]) -> str:
+def build_call_target_func_path(func: Callable[..., Any]) -> str:
     lineno =  getsourcelines(func)[1]
     return f"{basename(getfile(getattr(func, '__func__', func)))}::{func.__qualname__}:{lineno}"
 
@@ -38,7 +39,7 @@ def reset_call_depth():
     layer = call_depth_var.get() - 1
     call_depth_var.set(layer)
     if not layer:
-        first_time_var.set(0)
+        chain_start_time_var.set(0)
 
 
 def normalize_args_kwargs(func: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[tuple[Any, ...], dict[Any, Any]]:

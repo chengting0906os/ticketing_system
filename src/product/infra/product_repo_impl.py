@@ -8,12 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.product.domain.product_entity import Product, ProductStatus
 from src.product.domain.product_repo import ProductRepo
 from src.product.infra.product_model import ProductModel
+from src.shared.logging.loguru_io import Logger
 
 
 class ProductRepoImpl(ProductRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @Logger.io
     async def create(self, product: Product) -> Product:
         db_product = ProductModel(
             name=product.name,
@@ -37,6 +39,7 @@ class ProductRepoImpl(ProductRepo):
             id=db_product.id,
         )
 
+    @Logger.io
     async def get_by_id(self, product_id: int) -> Optional[Product]:
         result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
@@ -56,6 +59,7 @@ class ProductRepoImpl(ProductRepo):
             id=db_product.id,
         )
 
+    @Logger.io
     async def update(self, product: Product) -> Product:
         stmt = (
             sql_update(ProductModel)
@@ -86,6 +90,7 @@ class ProductRepoImpl(ProductRepo):
             id=db_product.id,
         )
 
+    @Logger.io
     async def delete(self, product_id: int) -> bool:
         stmt = (
             sql_delete(ProductModel).where(ProductModel.id == product_id).returning(ProductModel.id)
@@ -96,6 +101,7 @@ class ProductRepoImpl(ProductRepo):
 
         return deleted_id is not None
 
+    @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Product]:
         result = await self.session.execute(
             select(ProductModel)

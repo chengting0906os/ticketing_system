@@ -7,15 +7,18 @@ import types
 from typing import Any, Callable, Optional, TypeVar, cast
 
 from src.shared.logging.generator_wrapper import GeneratorWrapper
+from src.shared.logging.loguru_io_config import custom_logger
 from src.shared.logging.loguru_io_constants import (
+    ENTRY_ARROW,
+    EXIT_ARROW,
     ExtraField,
     GeneratorMethod,
     call_depth_var,
 )
 from src.shared.logging.loguru_io_utils import (
-    build_function_path,
-    fetch_first_time,
-    fetch_layer,
+    build_call_target_func_path,
+    fetch_layer_depth,
+    get_chain_start_time,
     handle_yield,
     mask_sensitive,
     normalize_args_kwargs,
@@ -28,36 +31,33 @@ T = TypeVar('T', bound=Callable[..., Any])
 
 
 class LoguruIO:
-    depth = 2
+    def __init__(self, custom_logger, reraise: bool = True):
+        self._custom_logger = custom_logger
+        self.reraise = reraise
+        self.extra = {}
+        self.depth = 2  # Adjusted for wrapper functions
 
-    def log_args_kwargs(self, *args, yield_method: Optional[GeneratorMethod] = None, **kwargs):
+    def log_args_kwargs_content(self, *args, yield_method: Optional[GeneratorMethod] = None, **kwargs):
         call_depth_var.set(call_depth_var.get() + 1)
         self.extra |= {
-            ExtraField.FIRST_TIME: fetch_first_time(),
-            ExtraField.LAYER: fetch_layer(),
-            ExtraField.UP_DOWN: '┌',
+            ExtraField.CHAIN_START_TIME: get_chain_start_time(),
+            ExtraField.LAYER_MARKER: fetch_layer_depth(),
+            ExtraField.ENTRY_MARKER: ENTRY_ARROW,
+            ExtraField.EXIT_MARKER: '',
         }
-        self._logger.bind(**self.extra).opt(depth=self.depth).debug(
+        self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
             f'{handle_yield(yield_method)}args: {self.mask_sensitive(args)}, kwargs: {self.mask_sensitive(kwargs)}'
         )
-        self.extra[ExtraField.UP_DOWN] = '└'
 
-    def log_return(self, return_value, yield_method: Optional[GeneratorMethod] = None):
-        self._logger.bind(**self.extra).opt(depth=self.depth).debug(
+    def log_return_content(self, return_value, yield_method: Optional[GeneratorMethod] = None):
+        self.extra[ExtraField.ENTRY_MARKER] = ''
+        self.extra[ExtraField.EXIT_MARKER] = EXIT_ARROW
+        self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
             f'{handle_yield(yield_method)}return: {self.mask_sensitive(return_value)}'
         )
 
-    def log_error(self, e, yield_method: Optional[GeneratorMethod] = None):
-        if not hasattr(e, '_logged'):
-            self._logger.bind(**self.extra).opt(depth=self.depth).error(
-                f'{handle_yield(yield_method)}Error: {self.mask_sensitive(e)}'
-            )
-            e._logged = True
-        if self.reraise:
-            raise e
-
     def _hide_from_traceback(self, func):
-        func.__code__ = func.__code__.replace(co_filename=cast(types.FunctionType, self._logger.catch).__code__.co_filename)
+        func.__code__ = func.__code__.replace(co_filename=cast(types.FunctionType, self._custom_logger.catch).__code__.co_filename)
         return func
 
     def mask_sensitive(self, data: Any) -> Any:
@@ -70,25 +70,22 @@ class LoguruIO:
             return type(data)(self.mask_sensitive(item) for item in data)
         return mask_sensitive(data)
 
-    def __init__(self, logger_, reraise: bool = True):
-        self._logger = logger_
-        self.reraise = reraise
-        self.extra = {}
+    
 
     def __call__(self, func):
-        self.extra[ExtraField.DESTINATION] = build_function_path(func)
+        self.extra[ExtraField.CALL_TARGET] = build_call_target_func_path(func)
         if iscoroutinefunction(func):
 
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
                 try:
-                    self.log_args_kwargs(*args, **kwargs)
+                    self.log_args_kwargs_content(*args, **kwargs)
                     args, kwargs = normalize_args_kwargs(func, *args, **kwargs)
                     return_value = await func(*args, **kwargs)
-                    self.log_return(return_value)
+                    self.log_return_content(return_value)
                     return return_value
-                except Exception as e:
-                    self.log_error(e)
+                except Exception:
+                    raise 
                 finally:
                     reset_call_depth()
             return self._hide_from_traceback(async_wrapper)
@@ -98,12 +95,12 @@ class LoguruIO:
             @wraps(func)
             def generator_wrapper(*args, **kwargs):
                 try:
-                    self.log_args_kwargs(*args, **kwargs)
-                    gen = func(*args, **kwargs)
-                    self.log_return(gen)
-                    return GeneratorWrapper(gen, self)
-                except Exception as e:
-                    self.log_error(e)
+                    self.log_args_kwargs_content(*args, **kwargs)
+                    gen_obj = func(*args, **kwargs)
+                    self.log_return_content(gen_obj)
+                    return GeneratorWrapper(gen_obj, self)
+                except Exception:
+                    raise 
                 finally:
                     reset_call_depth()
             return self._hide_from_traceback(generator_wrapper)
@@ -113,13 +110,22 @@ class LoguruIO:
             @wraps(func)
             def sync_wrapper(*args, **kwargs):
                 try:
-                    self.log_args_kwargs(*args, **kwargs)
+                    self.log_args_kwargs_content(*args, **kwargs)
                     args, kwargs = normalize_args_kwargs(func, *args, **kwargs)
                     return_value = func(*args, **kwargs)
-                    self.log_return(return_value)
+                    self.log_return_content(return_value)
                     return return_value
-                except Exception as e:
-                    self.log_error(e)
+                except Exception:
+                    raise
                 finally:
                     reset_call_depth()
             return self._hide_from_traceback(sync_wrapper)
+
+class Logger:
+    base = custom_logger
+
+    @staticmethod
+    def io(func=None, *, reraise=True):
+        if func:
+            return LoguruIO(custom_logger=custom_logger, reraise=reraise)(func)
+        return LoguruIO(custom_logger=custom_logger, reraise=reraise)

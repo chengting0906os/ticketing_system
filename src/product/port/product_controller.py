@@ -17,6 +17,7 @@ from src.product.use_case.product_use_case import (
     UpdateProductUseCase,
 )
 from src.shared.dependencies import require_seller
+from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_model import User
 
 
@@ -24,6 +25,7 @@ router = APIRouter()
 
 
 @router.post('', status_code=status.HTTP_201_CREATED)
+@Logger.io
 async def create_product(
     request: ProductCreateRequest,
     current_user: User = Depends(require_seller),

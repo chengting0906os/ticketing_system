@@ -8,17 +8,21 @@ SENSITIVE_KEYWORDS = {
     'password',
 }
 
+# Visual markers for logging
+DEPTH_LINE = '│'
+ENTRY_ARROW = '┌'
+EXIT_ARROW = '└'
 
-
-first_time_var: ContextVar[float] = ContextVar('first_time_var', default=0)
+chain_start_time_var: ContextVar[float] = ContextVar('first_time_var', default=0)
 call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 
 
 class ExtraField(StrEnum):
-    FIRST_TIME = 'first_time'  
-    LAYER = 'layer'
-    UP_DOWN = 'up_down'
-    DESTINATION = 'destination'
+    CHAIN_START_TIME = 'chain_start_time'  
+    LAYER_MARKER = 'layer_marker'
+    ENTRY_MARKER = 'entry_marker'
+    EXIT_MARKER = 'exit_marker'
+    CALL_TARGET = 'call_target'
 
 
 class GeneratorMethod(StrEnum):
