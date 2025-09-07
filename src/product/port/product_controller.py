@@ -12,6 +12,7 @@ from src.product.port.product_schema import (
 from src.product.use_case.product_use_case import (
     CreateProductUseCase,
     DeleteProductUseCase,
+    GetProductUseCase,
     ListProductsUseCase,
     UpdateProductUseCase,
 )
@@ -31,7 +32,7 @@ async def create_product(
     product = await use_case.create(
         name=request.name,
         description=request.description,
-        price=int(request.price),  # Ensure it's int
+        price=request.price,  
         seller_id=current_user.id,  # Use current user's ID
         is_active=request.is_active,
     )
@@ -100,34 +101,35 @@ async def delete_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f'Product with id {product_id} not found',
         )
+    return None
 
 
 
 @router.get('/{product_id}', status_code=status.HTTP_200_OK)
 async def get_product(
-    product_id: int, use_case: UpdateProductUseCase = Depends(UpdateProductUseCase.depends)
+    product_id: int, 
+    use_case: GetProductUseCase = Depends(GetProductUseCase.depends)
 ) -> ProductResponse:
-    async with use_case.uow:
-        product = await use_case.uow.products.get_by_id(product_id)
+    product = await use_case.get_by_id(product_id)
 
-        if not product:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Product with id {product_id} not found',
-            )
-
-        if product.id is None:
-            raise ValueError('Product ID should not be None.')
-
-        return ProductResponse(
-            id=product.id,
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            seller_id=product.seller_id,
-            is_active=product.is_active,
-            status=product.status.value,
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Product with id {product_id} not found',
         )
+
+    if product.id is None:
+        raise ValueError('Product ID should not be None.')
+
+    return ProductResponse(
+        id=product.id,
+        name=product.name,
+        description=product.description,
+        price=product.price,
+        seller_id=product.seller_id,
+        is_active=product.is_active,
+        status=product.status.value,
+    )
 
 
 @router.get('', status_code=status.HTTP_200_OK)

@@ -99,6 +99,21 @@ class DeleteProductUseCase:
         return deleted
 
 
+class GetProductUseCase:
+    def __init__(self, uow: AbstractUnitOfWork):
+        self.uow = uow
+
+    @classmethod
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow)
+
+    async def get_by_id(self, product_id: int) -> Optional[Product]:
+        """Get a single product by ID."""
+        async with self.uow:
+            product = await self.uow.products.get_by_id(product_id)
+        return product
+
+
 class ListProductsUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
