@@ -16,7 +16,7 @@ from src.order.domain.events import (
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.value_objects import BuyerInfo, ProductSnapshot
 from src.product.domain.product_entity import Product, ProductStatus
-from src.shared.exceptions import DomainException
+from src.shared.exceptions import DomainError
 from src.user.domain.user_entity import UserRole
 
 
@@ -44,13 +44,13 @@ class OrderAggregate:
         product: Product,
     ) -> 'OrderAggregate':
         if buyer.role != UserRole.BUYER.value:
-            raise DomainException(status_code=403, message="Only buyers can create orders")
+            raise DomainError("Only buyers can create orders", 403)
         if buyer.id == product.seller_id:
-            raise DomainException(status_code=403, message="Cannot buy your own product")
+            raise DomainError("Cannot buy your own product", 403)
         if not product.is_active:
-            raise DomainException(status_code=400, message="Product not active")
+            raise DomainError("Product not active", 400)
         if product.status != ProductStatus.AVAILABLE:
-            raise DomainException(status_code=400, message="Product not available")
+            raise DomainError("Product not available", 400)
         
         order = Order.create(
             buyer_id=buyer.id,
@@ -83,11 +83,11 @@ class OrderAggregate:
     def process_payment(self) -> None:
         if self.order.status != OrderStatus.PENDING_PAYMENT:
             if self.order.status == OrderStatus.PAID:
-                raise DomainException(status_code=400, message="Order already paid")
+                raise DomainError("Order already paid", 400)
             elif self.order.status == OrderStatus.CANCELLED:
-                raise DomainException(status_code=400, message="Cannot pay for cancelled order")
+                raise DomainError("Cannot pay for cancelled order", 400)
             else:
-                raise DomainException(status_code=400, message="Invalid order status for payment")
+                raise DomainError("Invalid order status for payment", 400)
         
         self.order = self.order.mark_as_paid()
         
@@ -103,9 +103,9 @@ class OrderAggregate:
     
     def cancel(self, reason: Optional[str] = None) -> None:
         if self.order.status == OrderStatus.PAID:
-            raise DomainException(status_code=400, message="Cannot cancel paid order")
+            raise DomainError("Cannot cancel paid order", 400)
         if self.order.status == OrderStatus.CANCELLED:
-            raise DomainException(status_code=400, message="Order already cancelled")
+            raise DomainError("Order already cancelled", 400)
         self.order = self.order.cancel()
         if self._product and self._product.status == ProductStatus.RESERVED:
             self._release_product()

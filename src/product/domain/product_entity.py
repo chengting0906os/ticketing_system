@@ -5,11 +5,7 @@ from typing import Optional
 
 import attrs
 
-from src.product.domain.errors import (
-    InvalidPriceError,
-    InvalidProductDataError,
-    ProductErrorMessage,
-)
+from src.shared.exceptions import DomainError
 
 
 class ProductStatus(str, Enum):    
@@ -20,17 +16,17 @@ class ProductStatus(str, Enum):
 
 def validate_positive_price(instance, attribute, value):
     if value < 0:
-        raise InvalidPriceError()
+        raise DomainError("Price must be positive")
 
 
 def validate_name(instance, attribute, value):
     if not value or not value.strip():
-        raise InvalidProductDataError(ProductErrorMessage.NAME_REQUIRED)
+        raise DomainError("Product name is required")
 
 
 def validate_description(instance, attribute, value):
     if not value or not value.strip():
-        raise InvalidProductDataError(ProductErrorMessage.DESCRIPTION_REQUIRED)
+        raise DomainError("Product description is required")
 
 
 @attrs.define

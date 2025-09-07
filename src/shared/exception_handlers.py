@@ -4,16 +4,16 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi_users import exceptions as fastapi_users_exceptions
 
-from src.shared.exceptions import DomainException
+from src.shared.exceptions import DomainError
 from src.shared.logger_config import custom_logger
 
 
-async def domain_exception_handler(request: Request, exc: DomainException) -> JSONResponse:
-    """Handle domain exceptions."""
+async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+    """Handle domain errors."""
     if exc.status_code >= 500:
-        custom_logger.exception(f"Domain exception: {exc.message}")
+        custom_logger.exception(f"Domain error: {exc.message}")
     else:
-        custom_logger.error(f"Domain exception: {exc.message}")
+        custom_logger.error(f"Domain error: {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message}
@@ -56,6 +56,18 @@ async def invalid_password_handler(
     )
 
 
+async def value_error_handler(
+    request: Request,
+    exc: ValueError
+) -> JSONResponse:
+    """Handle ValueError exceptions."""
+    custom_logger.error(f"ValueError: {str(exc)}")
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)}
+    )
+
+
 async def general_500_exception_handler(
     request: Request,
     exc: Exception
@@ -68,10 +80,11 @@ async def general_500_exception_handler(
 
 # Exception handler mapping
 EXCEPTION_HANDLERS = {
-    DomainException: domain_exception_handler,
+    DomainError: domain_error_handler,
     fastapi_users_exceptions.UserAlreadyExists: user_already_exists_handler,
     fastapi_users_exceptions.UserNotExists: user_not_exists_handler,
     fastapi_users_exceptions.InvalidPasswordException: invalid_password_handler,
+    ValueError: value_error_handler,
     Exception: general_500_exception_handler,  # Catch-all for unhandled exceptions
 }
 

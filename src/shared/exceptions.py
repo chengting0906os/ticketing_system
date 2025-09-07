@@ -1,31 +1,31 @@
 """Shared exceptions for the application."""
 
 
-class DomainException(Exception):
-    """Base domain exception with status code and message."""
+class DomainError(Exception):
+    """Base domain error with customizable message and status code."""
     
-    def __init__(self, status_code: int, message: str):
-        self.status_code = status_code
+    def __init__(self, message: str, status_code: int = 400):
         self.message = message
+        self.status_code = status_code
         super().__init__(message)
 
 
-class BadRequestException(DomainException):
+class BadRequestException(DomainError):
     """Exception for bad request errors (400)."""
     
     def __init__(self, message: str):
-        super().__init__(400, message)
+        super().__init__(message, 400)
 
 
-class ForbiddenException(DomainException):
+class ForbiddenException(DomainError):
     """Exception for forbidden errors (403)."""
     
     def __init__(self, message: str):
-        super().__init__(403, message)
+        super().__init__(message, 403)
 
 
-class NotFoundException(DomainException):
+class NotFoundException(DomainError):
     """Exception for not found errors (404)."""
     
     def __init__(self, message: str):
-        super().__init__(404, message)
+        super().__init__(message, 404)

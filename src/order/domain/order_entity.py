@@ -6,7 +6,7 @@ from typing import Optional
 
 import attrs
 
-from src.shared.exceptions import DomainException
+from src.shared.exceptions import DomainError
 
 
 class OrderStatus(str, Enum):
@@ -18,7 +18,7 @@ class OrderStatus(str, Enum):
 
 def validate_positive_price(instance, attribute, value):
     if value <= 0:
-        raise DomainException(status_code=400, message="Price must be positive")
+        raise DomainError("Price must be positive", 400)
 
 
 @attrs.define
