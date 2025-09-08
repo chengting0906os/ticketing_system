@@ -38,10 +38,10 @@ async def login(
             detail='LOGIN_BAD_CREDENTIALS',
         )
 
-    # 
+    #
     token = await strategy.write_token(user)
 
-    # 
+    #
     response.set_cookie(
         key='fastapiusersauth',
         value=token,
