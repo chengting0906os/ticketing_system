@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 from tests.shared.utils import extract_table_data
+from tests.route_constant import AUTH_LOGIN, USER_CREATE
 
 
 @when('I send api')
@@ -12,7 +13,7 @@ def send_api_request(step, client: TestClient, user_state):
         'name': row_data['name'],
         'role': row_data['role'],
     }
-    user_state['response'] = client.post('/api/user', json=user_state['request_data'])
+    user_state['response'] = client.post(USER_CREATE, json=user_state['request_data'])
 
 
 @when('I login with')
@@ -21,7 +22,7 @@ def login_with_credentials(step, client: TestClient, user_state):
     user_state['login_data'] = login_data
     form_data = {'username': login_data['email'], 'password': login_data['password']}
     user_state['response'] = client.post(
-        '/api/auth/login',
+        AUTH_LOGIN,
         data=form_data,
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )

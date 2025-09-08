@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 from fastapi.testclient import TestClient
 from pytest_bdd import then
 from tests.shared.utils import extract_table_data, extract_single_value
+from tests.route_constant import PRODUCT_GET, ORDER_GET
 
 
 def assert_nullable_field(
@@ -20,13 +21,13 @@ def assert_response_status(response, expected_status: int, message: str | None =
 
 
 def get_product_status(client: TestClient, product_id: int) -> str:
-    response = client.get(f'/api/product/{product_id}')
+    response = client.get(PRODUCT_GET.format(product_id=product_id))
     assert_response_status(response, 200)
     return response.json()['status']
 
 
 def get_order_details(client: TestClient, order_id: int) -> Dict[str, Any]:
-    response = client.get(f'/api/order/{order_id}')
+    response = client.get(ORDER_GET.format(order_id=order_id))
     assert_response_status(response, 200)
     return response.json()
 

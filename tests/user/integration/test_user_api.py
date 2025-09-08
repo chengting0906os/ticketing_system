@@ -1,11 +1,19 @@
 from fastapi.testclient import TestClient
 
+from tests.route_constant import USER_CREATE
+from tests.util_constant import DEFAULT_PASSWORD, TEST_EMAIL
+
 
 class TestUserAPI:
     def test_create_user(self, client: TestClient):
-        email = 'test@example.com'
-        user_data = {'email': email, 'password': 'P@ssw0rd', 'name': 'John Doe', 'role': 'buyer'}
-        response = client.post('/api/user', json=user_data)
+        email = TEST_EMAIL
+        user_data = {
+            'email': email,
+            'password': DEFAULT_PASSWORD,
+            'name': 'John Doe',
+            'role': 'buyer',
+        }
+        response = client.post(USER_CREATE, json=user_data)
         assert response.status_code == 201
         data = response.json()
         assert data['email'] == email
@@ -16,13 +24,13 @@ class TestUserAPI:
 
     def test_create_another_user(self, client: TestClient):
         user_data = {
-            'email': 'test@example.com',
-            'password': 'P@ssw0rd',
+            'email': TEST_EMAIL,
+            'password': DEFAULT_PASSWORD,
             'name': 'Jane Smith',
             'role': 'seller',
         }
-        response = client.post('/api/user', json=user_data)
+        response = client.post(USER_CREATE, json=user_data)
         assert response.status_code == 201
         data = response.json()
-        assert data['email'] == 'test@example.com'
+        assert data['email'] == TEST_EMAIL
         assert data['role'] == 'seller'

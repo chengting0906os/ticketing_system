@@ -1,7 +1,24 @@
 from datetime import datetime
+
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+
+from tests.route_constant import (
+    AUTH_LOGIN,
+    ORDER_BASE,
+    PRODUCT_BASE,
+    USER_CREATE,
+)
 from tests.shared.utils import extract_table_data
+from tests.util_constant import (
+    DEFAULT_PASSWORD,
+    TEST_BUYER_EMAIL,
+    TEST_BUYER_NAME,
+    TEST_PRODUCT_DESCRIPTION,
+    TEST_PRODUCT_NAME,
+    TEST_SELLER_EMAIL,
+    TEST_SELLER_NAME,
+)
 
 
 @given('a seller with a product:')
@@ -12,11 +29,11 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
     values = [cell.value for cell in rows[1].cells]
     product_data = dict(zip(headers, values, strict=True))
     seller_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
             'email': f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com',
-            'password': 'P@ssw0rd',
-            'name': 'Test Seller',
+            'password': DEFAULT_PASSWORD,
+            'name': TEST_SELLER_NAME,
             'role': 'seller',
         },
     )
@@ -27,8 +44,8 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
         order_state['seller'] = {'id': 1}
     seller_email = f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com'
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': seller_email, 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': seller_email, 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Login failed: {login_response.text}'
@@ -40,7 +57,7 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
         'price': int(product_data['price']),
         'is_active': product_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/product', json=request_data)
+    response = client.post(PRODUCT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product = response.json()
     order_state['product'] = product
@@ -60,7 +77,7 @@ def create_buyer(step, client: TestClient, order_state):
     values = [cell.value for cell in rows[1].cells]
     buyer_data = dict(zip(headers, values, strict=True))
     response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
             'email': buyer_data['email'],
             'password': buyer_data['password'],
@@ -79,11 +96,11 @@ def create_buyer(step, client: TestClient, order_state):
 def create_pending_order(step, client: TestClient, order_state):
     order_data = extract_table_data(step)
     seller_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
-            'email': 'seller@test.com',
-            'password': 'P@ssw0rd',
-            'name': 'Test Seller',
+            'email': TEST_SELLER_EMAIL,
+            'password': DEFAULT_PASSWORD,
+            'name': TEST_SELLER_NAME,
             'role': 'seller',
         },
     )
@@ -93,11 +110,11 @@ def create_pending_order(step, client: TestClient, order_state):
     else:
         seller_id = int(order_data['seller_id'])
     buyer_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
-            'email': 'buyer@test.com',
-            'password': 'P@ssw0rd',
-            'name': 'Test Buyer',
+            'email': TEST_BUYER_EMAIL,
+            'password': DEFAULT_PASSWORD,
+            'name': TEST_BUYER_NAME,
             'role': 'buyer',
         },
     )
@@ -107,18 +124,18 @@ def create_pending_order(step, client: TestClient, order_state):
     else:
         buyer_id = int(order_data['buyer_id'])
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': 'seller@test.com', 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
     product_response = client.post(
-        '/api/product',
+        PRODUCT_BASE,
         json={
-            'name': 'Test Product',
-            'description': 'Test Description',
+            'name': TEST_PRODUCT_NAME,
+            'description': TEST_PRODUCT_DESCRIPTION,
             'price': int(order_data['price']),
             'is_active': True,
         },
@@ -126,14 +143,14 @@ def create_pending_order(step, client: TestClient, order_state):
     assert product_response.status_code == 201, f'Failed to create product: {product_response.text}'
     product = product_response.json()
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': 'buyer@test.com', 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Buyer login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    order_response = client.post('/api/order', json={'product_id': product['id']})
+    order_response = client.post(ORDER_BASE, json={'product_id': product['id']})
     assert order_response.status_code == 201, f'Failed to create order: {order_response.text}'
     order = order_response.json()
     order_state['order'] = order

@@ -1,13 +1,28 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+
+from tests.route_constant import (
+    AUTH_LOGIN,
+    PRODUCT_BASE,
+    USER_CREATE,
+)
 from tests.shared.utils import extract_table_data
+from tests.util_constant import (
+    DEFAULT_PASSWORD,
+    EMPTY_LIST_SELLER_EMAIL,
+    EMPTY_LIST_SELLER_NAME,
+    LIST_SELLER_EMAIL,
+    LIST_TEST_SELLER_NAME,
+    TEST_SELLER_EMAIL,
+    TEST_SELLER_NAME,
+)
 
 
 @given('a seller user exists')
 def create_seller_user_for_product(step, client: TestClient, product_state):
     user_data = extract_table_data(step)
     response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
             'email': user_data['email'],
             'password': user_data['password'],
@@ -24,19 +39,19 @@ def create_seller_user_for_product(step, client: TestClient, product_state):
 @given('a product exists')
 def product_exists(step, client: TestClient, product_state):
     row_data = extract_table_data(step)
-    seller_email = 'seller@test.com'
+    seller_email = TEST_SELLER_EMAIL
     client.post(
-        '/api/user',
+        USER_CREATE,
         json={
             'email': seller_email,
-            'password': 'P@ssw0rd',
-            'name': 'Test Seller',
+            'password': DEFAULT_PASSWORD,
+            'name': TEST_SELLER_NAME,
             'role': 'seller',
         },
     )
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': seller_email, 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': seller_email, 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Login failed: {login_response.text}'
@@ -48,7 +63,7 @@ def product_exists(step, client: TestClient, product_state):
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/product', json=request_data)
+    response = client.post(PRODUCT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product_data = response.json()
     product_state['product_id'] = product_data['id']
@@ -61,10 +76,10 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
     row_data = extract_table_data(step)
     seller_id = int(row_data['seller_id'])
     user_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
             'email': f'seller{seller_id}@test.com',
-            'password': 'P@ssw0rd',
+            'password': DEFAULT_PASSWORD,
             'name': f'Test Seller {seller_id}',
             'role': 'seller',
         },
@@ -72,8 +87,8 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
     if user_response.status_code == 201:
         seller_id = user_response.json()['id']
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': f'seller{row_data["seller_id"]}@test.com', 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': f'seller{row_data["seller_id"]}@test.com', 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Login failed: {login_response.text}'
@@ -85,7 +100,7 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/product', json=request_data)
+    response = client.post(PRODUCT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product_data = response.json()
     product_state['product_id'] = product_data['id']
@@ -102,11 +117,11 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
 @given('a seller with products:')
 def create_seller_with_products(step, client: TestClient, product_state, execute_sql_statement):
     seller_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
-            'email': 'list_seller@test.com',
-            'password': 'P@ssw0rd',
-            'name': 'List Test Seller',
+            'email': LIST_SELLER_EMAIL,
+            'password': DEFAULT_PASSWORD,
+            'name': LIST_TEST_SELLER_NAME,
             'role': 'seller',
         },
     )
@@ -117,8 +132,8 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
     product_state['seller_id'] = seller_id
     product_state['created_products'] = []
     login_response = client.post(
-        '/api/auth/login',
-        data={'username': 'list_seller@test.com', 'password': 'P@ssw0rd'},
+        AUTH_LOGIN,
+        data={'username': LIST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
     )
     assert login_response.status_code == 200, f'Login failed: {login_response.text}'
@@ -131,7 +146,7 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
         values = [cell.value for cell in row.cells]
         product_data = dict(zip(headers, values, strict=True))
         create_response = client.post(
-            '/api/product',
+            PRODUCT_BASE,
             json={
                 'name': product_data['name'],
                 'description': product_data['description'],
@@ -154,11 +169,11 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
 @given('no available products exist')
 def create_no_available_products(step, client: TestClient, product_state, execute_sql_statement):
     seller_response = client.post(
-        '/api/user',
+        USER_CREATE,
         json={
-            'email': 'empty_list_seller@test.com',
-            'password': 'P@ssw0rd',
-            'name': 'Empty List Seller',
+            'email': EMPTY_LIST_SELLER_EMAIL,
+            'password': DEFAULT_PASSWORD,
+            'name': EMPTY_LIST_SELLER_NAME,
             'role': 'seller',
         },
     )
@@ -175,7 +190,7 @@ def create_no_available_products(step, client: TestClient, product_state, execut
         values = [cell.value for cell in row.cells]
         product_data = dict(zip(headers, values, strict=True))
         create_response = client.post(
-            '/api/product',
+            PRODUCT_BASE,
             json={
                 'name': product_data['name'],
                 'description': product_data['description'],
