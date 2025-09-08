@@ -30,3 +30,30 @@ def verify_error_message_with_table(step, user_state=None, product_state=None, o
         )
     else:
         raise AssertionError(f"No 'detail' field in response: {response_data}")
+
+
+@then('the response should be 400')
+def response_should_be_400(user_state=None, product_state=None, order_state=None):
+    """Verify response status is 400."""
+    state = get_state_with_response(user_state, product_state, order_state)
+    assert state['response'].status_code == 400, (
+        f'Expected status 400, got {state["response"].status_code}'
+    )
+
+
+@then('the response should be 403')
+def response_should_be_403(user_state=None, product_state=None, order_state=None):
+    """Verify response status is 403."""
+    state = get_state_with_response(user_state, product_state, order_state)
+    assert state['response'].status_code == 403, (
+        f'Expected status 403, got {state["response"].status_code}'
+    )
+
+
+@then('the response should be 404')
+def response_should_be_404(user_state=None, product_state=None, order_state=None):
+    """Verify response status is 404."""
+    state = get_state_with_response(user_state, product_state, order_state)
+    assert state['response'].status_code == 404, (
+        f'Expected status 404, got {state["response"].status_code}'
+    )

@@ -151,7 +151,7 @@ def create_seller_with_product_shared(
 
     # Create seller
     seller_email = f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com'
-    seller = create_user(client, seller_email, 'password123', 'Test Seller', 'seller')
+    seller = create_user(client, seller_email, 'P@ssw0rd', 'Test Seller', 'seller')
 
     seller_id = seller['id'] if seller else 1
 
@@ -162,7 +162,7 @@ def create_seller_with_product_shared(
         product_state['seller'] = {'id': seller_id, 'email': seller_email}
 
     # Login as seller
-    login_user(client, seller_email, 'password123')
+    login_user(client, seller_email, 'P@ssw0rd')
 
     # Create product
     request_data = {
@@ -230,8 +230,8 @@ def create_product_shared(
     else:
         # Fallback: create via API
         seller_email = f'seller{seller_id}@test.com'
-        create_user(client, seller_email, 'password123', f'Test Seller {seller_id}', 'seller')
-        login_user(client, seller_email, 'password123')
+        create_user(client, seller_email, 'P@ssw0rd', f'Test Seller {seller_id}', 'seller')
+        login_user(client, seller_email, 'P@ssw0rd')
 
         request_data = {
             'name': product_data['name'],
@@ -262,3 +262,9 @@ def create_product_shared(
         product_state['original_product'] = product
 
     return product
+
+
+@given('I am not logged in')
+def logout_user(client: TestClient):
+    """Clear authentication cookies to simulate unauthenticated state."""
+    client.cookies.clear()

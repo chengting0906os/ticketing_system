@@ -176,3 +176,73 @@ def verify_orders_details(step, order_state):
 def verify_all_orders_status(step, order_state):
     expected_status = extract_single_value(step)
     assert_all_orders_have_status(order_state['orders_response'], expected_status)
+
+
+@then('the error message should contain "Price must be positive"')
+def verify_price_error_message(order_state):
+    """Verify error message contains price validation error."""
+    response = order_state['response']
+    assert response.status_code == 400, f'Expected status 400, got {response.status_code}'
+    error_data = response.json()
+
+    # Check if error message contains the expected text
+    error_message = str(error_data.get('detail', ''))
+    assert 'Price must be positive' in error_message, (
+        f'Expected "Price must be positive" in error message, got: {error_message}'
+    )
+
+
+@then('the order price should be 1000')
+def verify_order_price_1000(order_state):
+    """Verify the order price is 1000."""
+    order = order_state['order']
+    assert order['price'] == 1000, f'Expected order price 1000, got {order["price"]}'
+
+
+@then('the existing order price should remain 1000')
+def verify_existing_order_price_remains_1000(client: TestClient, order_state):
+    """Verify the existing order price remains 1000 after product price change."""
+    order_id = order_state['order']['id']
+    order_data = get_order_details(client, order_id)
+    assert order_data['price'] == 1000, (
+        f'Expected order price to remain 1000, got {order_data["price"]}'
+    )
+
+
+@then('the new order should have price 2000')
+def verify_new_order_has_price_2000(order_state):
+    """Verify the new order has the updated price of 2000."""
+    new_order = order_state['new_order']
+    assert new_order['price'] == 2000, f'Expected new order price 2000, got {new_order["price"]}'
+
+
+@then('the paid order price should remain 1500')
+def verify_paid_order_price_remains_1500(client: TestClient, order_state):
+    """Verify the paid order price remains 1500 after product price change."""
+    order_id = order_state['order']['id']
+    order_data = get_order_details(client, order_id)
+    assert order_data['price'] == 1500, (
+        f'Expected paid order price to remain 1500, got {order_data["price"]}'
+    )
+
+
+@then('the order status should remain "paid"')
+def verify_order_status_remains_paid(client: TestClient, order_state):
+    """Verify the order status remains paid."""
+    order_id = order_state['order']['id']
+    order_data = get_order_details(client, order_id)
+    assert order_data['status'] == 'paid', (
+        f'Expected order status to remain "paid", got {order_data["status"]}'
+    )
+
+
+@then('the product status should be "reserved"')
+def verify_product_status_is_reserved(client: TestClient, order_state):
+    """Verify the product status is reserved."""
+    product_id = order_state['product']['id']
+    response = client.get(PRODUCT_GET.format(product_id=product_id))
+    assert response.status_code == 200, f'Failed to get product: {response.text}'
+    product_data = response.json()
+    assert product_data['status'] == 'reserved', (
+        f'Expected product status "reserved", got {product_data["status"]}'
+    )

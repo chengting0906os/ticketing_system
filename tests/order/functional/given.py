@@ -6,6 +6,8 @@ from pytest_bdd import given
 from src.shared.constant.route_constant import (
     AUTH_LOGIN,
     ORDER_BASE,
+    ORDER_CANCEL,
+    ORDER_PAY,
     PRODUCT_BASE,
     USER_CREATE,
 )
@@ -14,6 +16,7 @@ from tests.util_constant import (
     DEFAULT_PASSWORD,
     TEST_BUYER_EMAIL,
     TEST_BUYER_NAME,
+    TEST_CARD_NUMBER,
     TEST_PRODUCT_DESCRIPTION,
     TEST_PRODUCT_NAME,
     TEST_SELLER_EMAIL,
@@ -228,3 +231,117 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
     execute_sql_statement(
         'SELECT setval(\'order_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "order"), false)', {}
     )
+
+
+@given('a product exists with negative price:')
+def create_product_with_negative_price(
+    step, client: TestClient, order_state, execute_sql_statement
+):
+    """Create a product with negative price for testing validation."""
+    product_data = extract_table_data(step)
+    seller_id = int(product_data.get('seller_id', 1))
+
+    # Store product data but don't create it yet (will fail on order creation)
+    order_state['invalid_product'] = {
+        'name': product_data['name'],
+        'description': product_data['description'],
+        'price': int(product_data['price']),  # Negative price
+        'seller_id': seller_id,
+        'is_active': product_data.get('is_active', 'true').lower() == 'true',
+        'status': product_data.get('status', 'available'),
+    }
+
+    # Create product directly in database to bypass API validation
+    execute_sql_statement(
+        """
+        INSERT INTO product (name, description, price, seller_id, is_active, status)
+        VALUES (:name, :description, :price, :seller_id, :is_active, :status)
+        """,
+        order_state['invalid_product'],
+    )
+
+    # Get the created product ID
+    result = execute_sql_statement(
+        'SELECT id FROM product WHERE name = :name ORDER BY id DESC LIMIT 1',
+        {'name': product_data['name']},
+    )
+    product_id = result[0]['id'] if result else 1
+    order_state['invalid_product']['id'] = product_id
+    order_state['product_id'] = product_id
+
+
+@given('a product exists with zero price:')
+def create_product_with_zero_price(step, client: TestClient, order_state, execute_sql_statement):
+    """Create a product with zero price for testing validation."""
+    product_data = extract_table_data(step)
+    seller_id = int(product_data.get('seller_id', 1))
+
+    # Store product data
+    order_state['invalid_product'] = {
+        'name': product_data['name'],
+        'description': product_data['description'],
+        'price': 0,  # Zero price
+        'seller_id': seller_id,
+        'is_active': product_data.get('is_active', 'true').lower() == 'true',
+        'status': product_data.get('status', 'available'),
+    }
+
+    # Create product directly in database to bypass API validation
+    execute_sql_statement(
+        """
+        INSERT INTO product (name, description, price, seller_id, is_active, status)
+        VALUES (:name, :description, :price, :seller_id, :is_active, :status)
+        """,
+        order_state['invalid_product'],
+    )
+
+    # Get the created product ID
+    result = execute_sql_statement(
+        'SELECT id FROM product WHERE name = :name ORDER BY id DESC LIMIT 1',
+        {'name': product_data['name']},
+    )
+    product_id = result[0]['id'] if result else 1
+    order_state['invalid_product']['id'] = product_id
+    order_state['product_id'] = product_id
+
+
+@given('the buyer creates an order for the product')
+def buyer_creates_order_given(client: TestClient, order_state):
+    """Given that a buyer has already created an order."""
+    # The buyer should already be logged in
+    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    assert response.status_code == 201, f'Failed to create order: {response.text}'
+    order_state['order'] = response.json()
+    order_state['response'] = response
+
+
+@given('the buyer pays for the order')
+def buyer_pays_for_order_given(client: TestClient, order_state):
+    """Given that the buyer has paid for the order."""
+    order_id = order_state['order']['id']
+    response = client.post(
+        ORDER_PAY.format(order_id=order_id),
+        json={'card_number': TEST_CARD_NUMBER},
+    )
+    assert response.status_code == 200, f'Failed to pay for order: {response.text}'
+    order_state['order']['status'] = 'paid'
+
+
+@given('the product price is updated to 2000')
+def product_price_updated_to_2000_given(order_state, execute_sql_statement):
+    """Given that the product price has been updated."""
+    product_id = order_state['product']['id']
+    execute_sql_statement(
+        'UPDATE product SET price = :price WHERE id = :id',
+        {'price': 2000, 'id': product_id},
+    )
+    order_state['product']['price'] = 2000
+
+
+@given('the buyer cancels the order to release the product')
+def buyer_cancels_order_given(client: TestClient, order_state):
+    """Given that the buyer has cancelled the order."""
+    order_id = order_state['order']['id']
+    response = client.delete(ORDER_CANCEL.format(order_id=order_id))
+    assert response.status_code == 204, f'Failed to cancel order: {response.text}'
+    order_state['order']['status'] = 'cancelled'
