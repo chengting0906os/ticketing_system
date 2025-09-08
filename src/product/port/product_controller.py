@@ -16,8 +16,8 @@ from src.product.use_case.product_use_case import (
     ListProductsUseCase,
     UpdateProductUseCase,
 )
-from src.shared.dependencies import require_seller
 from src.shared.logging.loguru_io import Logger
+from src.shared.role_auth_service import require_seller
 from src.user.domain.user_model import User
 
 

@@ -58,10 +58,3 @@ class PaymentResponse(BaseModel):
                 'paid_at': '2025-01-10T10:35:00',
             }
         }
-
-
-class CancelRequest(BaseModel):
-    buyer_id: int
-
-    class Config:
-        json_schema_extra = {'example': {'buyer_id': 2}}
