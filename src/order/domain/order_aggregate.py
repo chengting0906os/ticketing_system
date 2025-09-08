@@ -161,5 +161,4 @@ class OrderAggregate:
 
     @Logger.io
     def get_product_for_update(self) -> Optional[Product]:
-        """Get the product that needs to be updated."""
         return self._product

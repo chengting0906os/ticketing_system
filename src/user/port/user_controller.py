@@ -1,8 +1,9 @@
 """User routers."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.jwt_auth_service import auth_backend, fastapi_users
 from src.user.domain.user_entity import UserRole
@@ -33,10 +34,7 @@ async def login(
     user = await user_manager.authenticate(credentials)
 
     if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='LOGIN_BAD_CREDENTIALS',
-        )
+        raise DomainError('LOGIN_BAD_CREDENTIALS')
 
     #
     token = await strategy.write_token(user)
@@ -62,9 +60,8 @@ async def register_user(
 ):
     valid_roles = [role.value for role in UserRole]
     if user_create.role not in valid_roles:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f'Invalid role: {user_create.role}. Must be one of: {", ".join(valid_roles)}',
+        raise DomainError(
+            f'Invalid role: {user_create.role}. Must be one of: {", ".join(valid_roles)}'
         )
 
     user = await user_manager.create(user_create, safe=True, request=None)

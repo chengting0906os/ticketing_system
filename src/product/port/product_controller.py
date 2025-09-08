@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from src.product.port.product_schema import (
     ProductCreateRequest,
@@ -16,6 +16,7 @@ from src.product.use_case.product_use_case import (
     ListProductsUseCase,
     UpdateProductUseCase,
 )
+from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import require_seller
 from src.user.domain.user_model import User
@@ -69,16 +70,10 @@ async def update_product(
     )
 
     if not product:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f'Product with id {product_id} not found',
-        )
-
-    if product.id is None:
-        raise ValueError('Product ID should not be None after update.')
+        raise NotFoundError(f'Product with id {product_id} not found')
 
     return ProductResponse(
-        id=product.id,
+        id=product_id,
         name=product.name,
         description=product.description,
         price=product.price,
@@ -94,13 +89,7 @@ async def delete_product(
     current_user: User = Depends(require_seller),
     use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends),
 ):
-    deleted = await use_case.delete(product_id)
-
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f'Product with id {product_id} not found',
-        )
+    await use_case.delete(product_id)
     return None
 
 
@@ -111,16 +100,10 @@ async def get_product(
     product = await use_case.get_by_id(product_id)
 
     if not product:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f'Product with id {product_id} not found',
-        )
-
-    if product.id is None:
-        raise ValueError('Product ID should not be None.')
+        raise NotFoundError(f'Product with id {product_id} not found')
 
     return ProductResponse(
-        id=product.id,
+        id=product_id,
         name=product.name,
         description=product.description,
         price=product.price,
@@ -140,16 +123,18 @@ async def list_products(
     else:
         products = await use_case.list_available()
 
-    return [
-        ProductResponse(
-            id=product.id,
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            seller_id=product.seller_id,
-            is_active=product.is_active,
-            status=product.status.value,
-        )
-        for product in products
-        if product.id is not None
-    ]
+    result = []
+    for product in products:
+        if product.id is not None:
+            result.append(
+                ProductResponse(
+                    id=product.id,
+                    name=product.name,
+                    description=product.description,
+                    price=product.price,
+                    seller_id=product.seller_id,
+                    is_active=product.is_active,
+                    status=product.status.value,
+                )
+            )
+    return result

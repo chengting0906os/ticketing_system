@@ -71,11 +71,9 @@ async def get_order(
     use_case: GetOrderUseCase = Depends(GetOrderUseCase.depends),
 ) -> OrderResponse:
     order = await use_case.get_order(order_id)
-    if order.id is None:
-        raise ValueError('Order ID should not be None.')
 
     return OrderResponse(
-        id=order.id,
+        id=order_id,
         buyer_id=order.buyer_id,
         seller_id=order.seller_id,
         product_id=order.product_id,

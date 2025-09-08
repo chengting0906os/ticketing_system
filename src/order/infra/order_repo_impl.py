@@ -19,7 +19,6 @@ class OrderRepoImpl(OrderRepo):
 
     @staticmethod
     def _to_entity(db_order: OrderModel) -> Order:
-        """Convert database model to domain entity."""
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
