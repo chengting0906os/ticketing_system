@@ -7,3 +7,12 @@ repos:
         args:
           - --fix
       - id: ruff-format
+  
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: .venv/bin/pyright
+        language: system
+        types: [python]
+        pass_filenames: false
