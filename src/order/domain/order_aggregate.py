@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, List, Optional
 
 import attrs
 
-from src.shared.logging.loguru_io import Logger
 from src.order.domain.events import (
     DomainEventProtocol,
     OrderCancelledEvent,
@@ -18,6 +17,7 @@ from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.value_objects import BuyerInfo, ProductSnapshot
 from src.product.domain.product_entity import Product, ProductStatus
 from src.shared.exceptions import DomainError
+from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_entity import UserRole
 
 
@@ -163,16 +163,3 @@ class OrderAggregate:
     def get_product_for_update(self) -> Optional[Product]:
         """Get the product that needs to be updated."""
         return self._product
-
-    @classmethod
-    @Logger.io
-    def reconstitute(
-        cls,
-        order: Order,
-        product_snapshot: ProductSnapshot,
-        buyer_info: BuyerInfo,
-        product: Optional[Product] = None,
-    ) -> 'OrderAggregate':
-        aggregate = cls(order=order, product_snapshot=product_snapshot, buyer_info=buyer_info)
-        aggregate._product = product
-        return aggregate
