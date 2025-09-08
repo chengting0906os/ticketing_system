@@ -134,7 +134,7 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
     if 'status' in row_data and row_data['status'] != 'available':
         # Update status directly in database for test purposes
         execute_sql_statement(
-            'UPDATE products SET status = :status WHERE id = :id',
+            'UPDATE product SET status = :status WHERE id = :id',
             {'status': row_data['status'], 'id': product_data['id']},
         )
         product_data['status'] = row_data['status']
@@ -201,7 +201,7 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
             # Update status if not available
             if product_data['status'] != 'available':
                 execute_sql_statement(
-                    'UPDATE products SET status = :status WHERE id = :id',
+                    'UPDATE product SET status = :status WHERE id = :id',
                     {'status': product_data['status'], 'id': product_id},
                 )
                 created_product['status'] = product_data['status']
@@ -256,7 +256,7 @@ def create_no_available_products(step, client: TestClient, product_state, execut
 
             # Update status to non-available
             execute_sql_statement(
-                'UPDATE products SET status = :status WHERE id = :id',
+                'UPDATE product SET status = :status WHERE id = :id',
                 {'status': product_data['status'], 'id': product_id},
             )
             created_product['status'] = product_data['status']

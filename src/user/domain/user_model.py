@@ -1,23 +1,22 @@
 """User models."""
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
-from sqlalchemy import Integer, String, text
+from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
-from src.user.domain.user_entity import UserRole
 
 from src.shared.database import Base
+from src.user.domain.user_entity import UserRole
 
 
 class User(SQLAlchemyBaseUserTable[int], Base):
     """User model."""
 
-    __tablename__ = 'users'
+    __tablename__ = 'user'
 
     id: Mapped[int] = mapped_column(  # type: ignore
         Integer,
         primary_key=True,
         autoincrement=True,
-        server_default=text("nextval('users_id_seq'::regclass)"),
     )
     name: Mapped[str] = mapped_column(
         String(255),

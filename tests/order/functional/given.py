@@ -64,7 +64,7 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
     # If status is not 'available', need to update it directly in database
     if 'status' in product_data and product_data['status'] != 'available':
         execute_sql_statement(
-            'UPDATE products SET status = :status WHERE id = :id',
+            'UPDATE product SET status = :status WHERE id = :id',
             {'status': product_data['status'], 'id': product['id']},
         )
         order_state['product']['status'] = product_data['status']
@@ -199,7 +199,7 @@ def create_paid_order(step, client: TestClient, order_state, execute_sql_stateme
     # Update order status to paid in database
     if 'paid_at' in order_data and order_data['paid_at'] == 'not_null':
         execute_sql_statement(
-            "UPDATE orders SET status = 'paid', paid_at = :paid_at WHERE id = :id",
+            'UPDATE "order" SET status = \'paid\', paid_at = :paid_at WHERE id = :id',
             {'paid_at': datetime.now(), 'id': order_state['order']['id']},
         )
         order_state['order']['status'] = 'paid'
@@ -212,10 +212,11 @@ def create_cancelled_order(step, client: TestClient, order_state, execute_sql_st
 
     # Update order status to cancelled in database
     execute_sql_statement(
-        "UPDATE orders SET status = 'cancelled' WHERE id = :id", {'id': order_state['order']['id']}
+        'UPDATE "order" SET status = \'cancelled\' WHERE id = :id',
+        {'id': order_state['order']['id']},
     )
     execute_sql_statement(
-        "UPDATE products SET status = 'available' WHERE id = :id", {'id': order_state['product_id']}
+        "UPDATE product SET status = 'available' WHERE id = :id", {'id': order_state['product_id']}
     )
     order_state['order']['status'] = 'cancelled'
 
@@ -248,7 +249,7 @@ def create_users(step, client: TestClient, order_state, execute_sql_statement):
         try:
             execute_sql_statement(
                 """
-                    INSERT INTO users (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
+                    INSERT INTO "user" (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
                     VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
                 """,
                 {
@@ -272,7 +273,7 @@ def create_users(step, client: TestClient, order_state, execute_sql_statement):
 
     # Reset the sequence to the max ID + 1
     execute_sql_statement(
-        "SELECT setval('users_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM users), false)", {}
+        'SELECT setval(\'user_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "user"), false)', {}
     )
 
 
@@ -297,7 +298,7 @@ def create_products(step, client: TestClient, order_state, execute_sql_statement
         # Insert product directly into database with specified ID
         execute_sql_statement(
             """
-                INSERT INTO products (id, seller_id, name, description, price, is_active, status)
+                INSERT INTO product (id, seller_id, name, description, price, is_active, status)
                 VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status)
             """,
             {
@@ -321,7 +322,7 @@ def create_products(step, client: TestClient, order_state, execute_sql_statement
 
     # Reset the sequence to the max ID + 1
     execute_sql_statement(
-        "SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM products), false)",
+        "SELECT setval('product_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM product), false)",
         {},
     )
 
@@ -361,7 +362,7 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
         if order_data.get('paid_at') == 'not_null' and order_data['status'] == 'paid':
             execute_sql_statement(
                 """
-                    INSERT INTO orders (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at, paid_at)
+                    INSERT INTO "order" (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at, paid_at)
                     VALUES (:id, :buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW(), NOW())
                 """,
                 {
@@ -376,7 +377,7 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
         else:
             execute_sql_statement(
                 """
-                    INSERT INTO orders (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at)
+                    INSERT INTO "order" (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at)
                     VALUES (:id, :buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW())
                 """,
                 {
@@ -393,5 +394,5 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
 
     # Reset the sequence to the max ID + 1
     execute_sql_statement(
-        "SELECT setval('orders_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM orders), false)", {}
+        'SELECT setval(\'order_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "order"), false)', {}
     )

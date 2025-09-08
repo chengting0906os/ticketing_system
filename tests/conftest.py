@@ -123,8 +123,10 @@ async def clean_all_tables():
             _cached_tables = [row[0] for row in result]
 
         if _cached_tables:
+            # Quote table names to handle reserved words like 'user' and 'order'
+            quoted_tables = [f'"{table}"' for table in _cached_tables]
             await conn.execute(
-                text(f'TRUNCATE {", ".join(_cached_tables)} RESTART IDENTITY CASCADE')
+                text(f'TRUNCATE {", ".join(quoted_tables)} RESTART IDENTITY CASCADE')
             )
     await engine.dispose()
 

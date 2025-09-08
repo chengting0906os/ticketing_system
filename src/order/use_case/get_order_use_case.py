@@ -18,7 +18,6 @@ class GetOrderUseCase:
 
     @Logger.io
     async def get_order(self, order_id: int) -> Order:
-        """Get order by ID."""
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id)
 

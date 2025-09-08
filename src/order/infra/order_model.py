@@ -11,12 +11,12 @@ from src.shared.database import Base
 
 
 class OrderModel(Base):
-    __tablename__ = 'orders'
+    __tablename__ = 'order'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('users.id'))
-    seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('users.id'))
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey('products.id'))
+    buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
+    seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
+    product_id: Mapped[int] = mapped_column(Integer, ForeignKey('product.id'))
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='pending_payment', nullable=False)
     created_at: Mapped[datetime] = mapped_column(
