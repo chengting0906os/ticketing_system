@@ -40,5 +40,3 @@ logs
 # SERENA
 .serena/
 
-# Alembic
-src/shared/alembic/versions/
