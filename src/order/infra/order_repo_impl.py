@@ -1,5 +1,6 @@
 """Order repository implementation."""
 
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import select, update as sql_update
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.order_repo import OrderRepo
 from src.order.infra.order_model import OrderModel
+from src.shared.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
 
@@ -143,10 +145,6 @@ class OrderRepoImpl(OrderRepo):
 
     @Logger.io
     async def cancel_order_atomically(self, order_id: int, buyer_id: int) -> Order:
-        from datetime import datetime
-
-        from src.shared.exceptions import BadRequestException
-
         stmt = (
             sql_update(OrderModel)
             .where(OrderModel.id == order_id)
@@ -166,12 +164,12 @@ class OrderRepoImpl(OrderRepo):
             existing_order = check_result.scalar_one_or_none()
 
             if not existing_order:
-                raise BadRequestException('Order not found')
+                raise DomainError('Order not found')
             elif existing_order.status == OrderStatus.PAID.value:
-                raise BadRequestException('Cannot cancel paid order')
+                raise DomainError('Cannot cancel paid order')
             elif existing_order.status == OrderStatus.CANCELLED.value:
-                raise BadRequestException('Order already cancelled')
+                raise DomainError('Order already cancelled')
             else:
-                raise BadRequestException('Unable to cancel order')
+                raise DomainError('Unable to cancel order')
 
         return OrderRepoImpl._to_entity(db_order)

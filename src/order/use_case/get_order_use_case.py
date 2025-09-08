@@ -2,9 +2,9 @@
 
 from fastapi import Depends
 
-from src.shared.logging.loguru_io import Logger
 from src.order.domain.order_entity import Order
-from src.shared.exceptions import NotFoundException
+from src.shared.exceptions import NotFoundError
+from src.shared.logging.loguru_io import Logger
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
@@ -23,6 +23,6 @@ class GetOrderUseCase:
             order = await self.uow.orders.get_by_id(order_id)
 
             if not order:
-                raise NotFoundException('Order not found')
+                raise NotFoundError('Order not found')
 
             return order

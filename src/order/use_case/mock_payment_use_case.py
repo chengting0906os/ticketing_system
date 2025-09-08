@@ -8,7 +8,7 @@ from fastapi import Depends
 
 from src.order.domain.order_entity import OrderStatus
 from src.product.domain.product_entity import ProductStatus
-from src.shared.exceptions import BadRequestException, ForbiddenException, NotFoundException
+from src.shared.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
@@ -27,15 +27,15 @@ class MockPaymentUseCase:
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id)
             if not order:
-                raise NotFoundException('Order not found')
+                raise NotFoundError('Order not found')
             if order.buyer_id != buyer_id:
-                raise ForbiddenException('Only the buyer can pay for this order')
+                raise ForbiddenError('Only the buyer can pay for this order')
             if order.status == OrderStatus.PAID:
-                raise BadRequestException('Order already paid')
+                raise DomainError('Order already paid')
             elif order.status == OrderStatus.CANCELLED:
-                raise BadRequestException('Cannot pay for cancelled order')
+                raise DomainError('Cannot pay for cancelled order')
             elif order.status != OrderStatus.PENDING_PAYMENT:
-                raise BadRequestException('Order is not in a payable state')
+                raise DomainError('Order is not in a payable state')
 
             paid_order = order.mark_as_paid()
             updated_order = await self.uow.orders.update(paid_order)

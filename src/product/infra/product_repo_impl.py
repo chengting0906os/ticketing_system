@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.product.domain.product_entity import Product, ProductStatus
 from src.product.domain.product_repo import ProductRepo
 from src.product.infra.product_model import ProductModel
+from src.shared.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
 
@@ -114,11 +115,6 @@ class ProductRepoImpl(ProductRepo):
 
     @Logger.io
     async def release_product_atomically(self, product_id: int) -> Product:
-        """Release a product back to available status atomically."""
-        from sqlalchemy import update as sql_update
-
-        from src.shared.exceptions import BadRequestException
-
         stmt = (
             sql_update(ProductModel)
             .where(ProductModel.id == product_id)
@@ -131,6 +127,6 @@ class ProductRepoImpl(ProductRepo):
         db_product = result.scalar_one_or_none()
 
         if not db_product:
-            raise BadRequestException('Unable to release product')
+            raise DomainError('Unable to release product')
 
         return ProductRepoImpl._to_entity(db_product)
