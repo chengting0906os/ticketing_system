@@ -7,7 +7,8 @@ Feature: Product Deletion
       | seller_id | name      | description    | price | is_active | status    |
       |         1 | Test Item | Item to delete |  1000 | true      | available |
     When I delete the product
-    Then get 204
+    Then get status code:
+      | 204 |
     And the product should not exist
 
   Scenario: Cannot delete a reserved product
@@ -15,7 +16,8 @@ Feature: Product Deletion
       | seller_id | name      | description   | price | is_active | status   |
       |         1 | Test Item | Reserved item |  1000 | true      | reserved |
     When I try to delete the product
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Cannot delete reserved product |
 
@@ -24,6 +26,7 @@ Feature: Product Deletion
       | seller_id | name      | description | price | is_active | status |
       |         1 | Test Item | Sold item   |  1000 | true      | sold   |
     When I try to delete the product
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Cannot delete sold product |

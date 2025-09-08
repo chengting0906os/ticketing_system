@@ -1,6 +1,3 @@
-"""Test configuration with async database cleaning."""
-# ruff: noqa: F403, F405
-
 import asyncio
 import os
 from pathlib import Path
@@ -13,36 +10,28 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-# Setup test environment
 os.environ['POSTGRES_DB'] = 'shopping_test_db'
 from src.main import app
-from tests.order.functional.fixtures import *
-from tests.order.functional.given import *
-from tests.order.functional.then import *
-from tests.order.functional.when import *
-
-# Import all BDD step definitions - explicit imports are better than exec
-from tests.product.functional.fixtures import *
-from tests.product.functional.given import *
-from tests.product.functional.then import *
-from tests.product.functional.when import *
-
-# Import pytest-bdd-ng shared steps and fixtures
-from tests.pytest_bdd_ng_example.fixtures import *
-from tests.pytest_bdd_ng_example.given import *
-from tests.pytest_bdd_ng_example.then import *
-from tests.pytest_bdd_ng_example.when import *
-
-# Import shared test steps first
-from tests.shared.given import *
-from tests.shared.then import *
-from tests.user.functional.fixtures import *
-from tests.user.functional.given import *
-from tests.user.functional.then import *
-from tests.user.functional.when import *
+from tests.order.functional.fixtures import *  # noqa: F403
+from tests.order.functional.given import *  # noqa: F403
+from tests.order.functional.then import *  # noqa: F403
+from tests.order.functional.when import *  # noqa: F403
+from tests.product.functional.fixtures import *  # noqa: F403
+from tests.product.functional.given import *  # noqa: F403
+from tests.product.functional.then import *  # noqa: F403
+from tests.product.functional.when import *  # noqa: F403
+from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
+from tests.pytest_bdd_ng_example.given import *  # noqa: F403
+from tests.pytest_bdd_ng_example.then import *  # noqa: F403
+from tests.pytest_bdd_ng_example.when import *  # noqa: F403
+from tests.shared.given import *  # noqa: F403
+from tests.shared.then import *  # noqa: F403
+from tests.user.functional.fixtures import *  # noqa: F403
+from tests.user.functional.given import *  # noqa: F403
+from tests.user.functional.then import *  # noqa: F403
+from tests.user.functional.when import *  # noqa: F403
 
 
-# Database configuration
 DB_CONFIG = {
     'user': 'py_arch_lab',
     'password': 'py_arch_lab',
@@ -79,10 +68,7 @@ async def execute_sql(url: str, statements: list, **engine_kwargs):
 
 
 async def setup_test_database():
-    """Setup test database with fresh schema using Alembic migrations."""
     postgres_url = TEST_DATABASE_URL.replace(f'/{DB_CONFIG["test_db"]}', '/postgres')
-
-    # Ensure test database exists (check first)
     engine = create_async_engine(postgres_url, isolation_level='AUTOCOMMIT')
     async with engine.begin() as conn:
         result = await conn.execute(
@@ -91,27 +77,17 @@ async def setup_test_database():
         if not result.fetchone():
             await conn.execute(text(f'CREATE DATABASE {DB_CONFIG["test_db"]}'))
     await engine.dispose()
-
-    # Drop all existing tables
     await execute_sql(TEST_DATABASE_URL, ['DROP SCHEMA public CASCADE', 'CREATE SCHEMA public'])
-
-    # Run test migration
     alembic_cfg = Config(Path(__file__).parent.parent / 'src/shared/alembic/alembic.ini')
     alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
     command.upgrade(alembic_cfg, 'head')
 
 
-# Cache table names to avoid repeated queries
 _cached_tables = None
 
 
 async def clean_all_tables():
-    """Clean all tables while preserving structure.
-
-    Caches table names after first query to reduce database overhead.
-    """
     global _cached_tables
-
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
         if _cached_tables is None:
@@ -121,9 +97,7 @@ async def clean_all_tables():
                 )
             )
             _cached_tables = [row[0] for row in result]
-
         if _cached_tables:
-            # Quote table names to handle reserved words like 'user' and 'order'
             quoted_tables = [f'"{table}"' for table in _cached_tables]
             await conn.execute(
                 text(f'TRUNCATE {", ".join(quoted_tables)} RESTART IDENTITY CASCADE')
@@ -132,19 +106,16 @@ async def clean_all_tables():
 
 
 def pytest_sessionstart(session):
-    """Set up test database once at the start of the test session."""
     asyncio.run(setup_test_database())
 
 
 @pytest.fixture(autouse=True)
 async def clean_database():
-    """Clean all tables before each test."""
     await clean_all_tables()
     yield
 
 
 @pytest.fixture(scope='session')
 def client():
-    """FastAPI test client."""
     with TestClient(app) as test_client:
         yield test_client

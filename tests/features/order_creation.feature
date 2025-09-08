@@ -14,11 +14,13 @@ Feature: Order Creation
       | email           | password |
       | buyer@test.com  | P@ssw0rd |
     When the buyer creates an order for the product
-    Then get 201
+    Then get status code:
+      | 201 |
     And the order should be created with:
       | price | status          | created_at | paid_at |
       |  1000 | pending_payment | not_null   | null    |
-    And the product status should be "reserved"
+    And the product status should be:
+      | reserved |
 
   Scenario: Cannot create order for reserved product
     Given a seller with a product:
@@ -31,7 +33,8 @@ Feature: Order Creation
       | email           | password |
       | buyer@test.com  | P@ssw0rd |
     When the buyer tries to create an order for the product
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Product not available |
 
@@ -46,7 +49,8 @@ Feature: Order Creation
       | email           | password |
       | buyer@test.com  | P@ssw0rd |
     When the buyer tries to create an order for the product
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Product not active |
 
@@ -61,6 +65,7 @@ Feature: Order Creation
       | email           | password |
       | seller@test.com | P@ssw0rd |
     When the seller tries to create an order for their own product
-    Then get 403
+    Then get status code:
+      | 403 |
     And the error message should contain:
       | Only buyers can perform this action |

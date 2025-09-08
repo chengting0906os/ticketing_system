@@ -30,8 +30,10 @@ Feature: Order List
 
   Scenario: Buyer lists their orders
     When buyer with id 3 requests their orders
-    Then get 200
-    And the response should contain 3 orders
+    Then get status code:
+      | 200 |
+    And the response should contain orders:
+      | 3 |
     And the orders should include:
       | id | product_name | price | status          | seller_name  | created_at | paid_at  |
       |  1 | Product A    |  1000 | paid            | Test Seller1 | not_null   | not_null |
@@ -40,8 +42,10 @@ Feature: Order List
 
   Scenario: Seller lists orders for their products
     When seller with id 1 requests their orders
-    Then get 200
-    And the response should contain 3 orders
+    Then get status code:
+      | 200 |
+    And the response should contain orders:
+      | 3 |
     And the orders should include:
       | id | product_name | price | status    | buyer_name  | created_at | paid_at  |
       |  1 | Product A    |  1000 | paid      | Test Buyer1 | not_null   | not_null |
@@ -50,17 +54,25 @@ Feature: Order List
 
   Scenario: Buyer with no orders gets empty list
     When buyer with id 5 requests their orders
-    Then get 200
-    And the response should contain 0 orders
+    Then get status code:
+      | 200 |
+    And the response should contain orders:
+      | 0 |
 
   Scenario: Filter orders by status - paid orders only
     When buyer with id 3 requests their orders with status "paid"
-    Then get 200
-    And the response should contain 2 orders
-    And all orders should have status "paid"
+    Then get status code:
+      | 200 |
+    And the response should contain orders:
+      | 2 |
+    And all orders should have status:
+      | paid |
 
   Scenario: Filter orders by status - pending payment only
     When buyer with id 3 requests their orders with status "pending_payment"
-    Then get 200
-    And the response should contain 1 order
-    And all orders should have status "pending_payment"
+    Then get status code:
+      | 200 |
+    And the response should contain orders:
+      | 1 |
+    And all orders should have status:
+      | pending_payment |

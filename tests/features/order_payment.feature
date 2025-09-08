@@ -10,22 +10,26 @@ Feature: Order Payment
     When the buyer pays for the order with:
       | card_number      |
       | 4242424242424242 |
-    Then get 200
-    And the order status should be "paid"
+    Then get status code:
+      | 200 |
+    And the order status should be:
+      | paid |
     And the order should have:
       | created_at | paid_at  |
       | not_null   | not_null |
     And the payment should have:
       | payment_id | status |
       | PAY_MOCK_* | paid   |
-    And the product status should be "sold"
+    And the product status should be:
+      | sold |
 
   Scenario: Cannot pay for already paid order
     Given an order exists with status "paid":
       | buyer_id | seller_id | product_id | price | paid_at  |
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to pay for the order again
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Order already paid |
 
@@ -34,7 +38,8 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When the buyer tries to pay for the order
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Cannot pay for cancelled order |
 
@@ -43,7 +48,8 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When another user tries to pay for the order
-    Then get 403
+    Then get status code:
+      | 403 |
     And the error message should contain:
       | Only the buyer can pay for this order |
 
@@ -52,18 +58,22 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When the buyer cancels the order
-    Then get 204
-    And the order status should be "cancelled"
+    Then get status code:
+      | 204 |
+    And the order status should be:
+      | cancelled |
     And the order should have:
       | created_at | paid_at |
       | not_null   | null    |
-    And the product status should be "available"
+    And the product status should be:
+      | available |
 
   Scenario: Cannot cancel paid order
     Given an order exists with status "paid":
       | buyer_id | seller_id | product_id | price | paid_at  |
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to cancel the order
-    Then get 400
+    Then get status code:
+      | 400 |
     And the error message should contain:
       | Cannot cancel paid order |
