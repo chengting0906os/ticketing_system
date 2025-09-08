@@ -14,21 +14,6 @@ from tests.util_constant import (
 )
 
 
-@given('a seller user exists')
-def create_seller_user_for_product(step, client: TestClient, product_state):
-    user_data = extract_table_data(step)
-    created_user = create_user(
-        client, user_data['email'], user_data['password'], user_data['name'], user_data['role']
-    )
-    if created_user:
-        product_state['seller_id'] = created_user['id']
-        product_state['seller_user'] = created_user
-    else:
-        # User already exists, we'll use a default ID
-        product_state['seller_id'] = 1
-        product_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
-
-
 @given('a product exists')
 def product_exists(step, client: TestClient, product_state):
     row_data = extract_table_data(step)

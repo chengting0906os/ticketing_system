@@ -27,7 +27,6 @@ from tests.pytest_bdd_ng_example.when import *  # noqa: F403
 from tests.shared.given import *  # noqa: F403
 from tests.shared.then import *  # noqa: F403
 from tests.user.functional.fixtures import *  # noqa: F403
-from tests.user.functional.given import *  # noqa: F403
 from tests.user.functional.then import *  # noqa: F403
 from tests.user.functional.when import *  # noqa: F403
 
