@@ -30,3 +30,7 @@ class OrderRepo(ABC):
     @abstractmethod
     async def update(self, order: Order) -> Order:
         pass
+
+    @abstractmethod
+    async def cancel_order_atomically(self, order_id: int, buyer_id: int) -> Order:
+        pass

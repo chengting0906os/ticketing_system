@@ -30,3 +30,7 @@ class ProductRepo(ABC):
     @abstractmethod
     async def list_available(self) -> List[Product]:
         pass
+
+    @abstractmethod
+    async def release_product_atomically(self, product_id: int) -> Product:
+        pass

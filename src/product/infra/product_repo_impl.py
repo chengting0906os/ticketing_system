@@ -144,3 +144,34 @@ class ProductRepoImpl(ProductRepo):
             )
             for db_product in db_products
         ]
+
+    @Logger.io
+    async def release_product_atomically(self, product_id: int) -> Product:
+        """Release a product back to available status atomically."""
+        from sqlalchemy import update as sql_update
+
+        from src.shared.exceptions import BadRequestException
+
+        stmt = (
+            sql_update(ProductModel)
+            .where(ProductModel.id == product_id)
+            .where(ProductModel.status == ProductStatus.RESERVED.value)
+            .values(status=ProductStatus.AVAILABLE.value)
+            .returning(ProductModel)
+        )
+
+        result = await self.session.execute(stmt)
+        db_product = result.scalar_one_or_none()
+
+        if not db_product:
+            raise BadRequestException('Unable to release product')
+
+        return Product(
+            name=db_product.name,
+            description=db_product.description,
+            price=db_product.price,
+            seller_id=db_product.seller_id,
+            is_active=db_product.is_active,
+            status=ProductStatus(db_product.status),
+            id=db_product.id,
+        )
