@@ -58,9 +58,6 @@ def verify_wrong_user_details(step, user_state):
 @then('the user should be created with status 201')
 def verify_user_created_201(step, user_state):
     response = user_state['response']
-    if response.status_code != 201:
-        print(f'Status Code: {response.status_code}')
-        print(f'Response: {response.text}')
     assert response.status_code == 201
 
     response_data = user_state['response'].json()
@@ -78,9 +75,6 @@ def verify_user_created_201(step, user_state):
 @then('the user should fail with status 400')
 def verify_user_failed_400(step, user_state):
     response = user_state['response']
-    if response.status_code != 400:
-        print(f'Status Code: {response.status_code}')
-        print(f'Response: {response.text}')
     assert response.status_code == 400
 
     # For 400 errors, we expect domain validation error
@@ -91,9 +85,6 @@ def verify_user_failed_400(step, user_state):
 def verify_response_422(step, user_state):
     """Verify response status is 422."""
     response = user_state['response']
-    if response.status_code != 422:
-        print(f'Status Code: {response.status_code}')
-        print(f'Response: {response.text}')
     assert response.status_code == 422
 
 

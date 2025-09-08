@@ -18,7 +18,7 @@ def verify_order_created(step, order_state):
 
     order_data = response.json()
 
-    # Verify order fields
+    #
     if 'price' in expected_data:
         assert order_data['price'] == int(expected_data['price'])
     if 'status' in expected_data:
@@ -39,7 +39,7 @@ def verify_order_created(step, order_state):
 
 @then('the product status should be "reserved"')
 def verify_product_status_reserved(client: TestClient, order_state):
-    # Get the updated product status
+    #
     product_id = order_state['product']['id']
     response = client.get(f'/api/products/{product_id}')
 
@@ -72,7 +72,7 @@ def verify_order_fields(step, order_state):
     else:
         order_data = order_state['response'].json()
 
-    # Verify order fields
+    #
     if 'created_at' in expected_data:
         if expected_data['created_at'] == 'not_null':
             assert order_data.get('created_at') is not None, 'created_at should not be null'

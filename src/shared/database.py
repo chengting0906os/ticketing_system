@@ -28,12 +28,10 @@ class Base(DeclarativeBase):
 
 
 async def create_db_and_tables():
-    """Create database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get async database session."""
     async with async_session_maker() as session:
         yield session

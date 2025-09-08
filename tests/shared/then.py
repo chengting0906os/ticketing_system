@@ -22,9 +22,6 @@ def verify_status_200(user_state=None, product_state=None, order_state=None):
 def verify_status_201(user_state=None, product_state=None, order_state=None):
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
-    if response.status_code != 201:
-        print(f'Expected 201, got {response.status_code}')
-        print(f'Response body: {response.text}')
     assert response.status_code == 201
 
 

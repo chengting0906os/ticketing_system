@@ -29,7 +29,6 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
     if seller_response.status_code == 201:
         seller = seller_response.json()
         order_state['seller'] = seller
-        print(f'User {seller["email"]} has registered.')
     else:
         # If user exists, try to find one
         order_state['seller'] = {'id': 1}
@@ -246,23 +245,20 @@ def create_users(step, client: TestClient, order_state, execute_sql_statement):
         ).decode('utf-8')
 
         # Insert user directly into database with specified ID
-        try:
-            execute_sql_statement(
-                """
-                    INSERT INTO "user" (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
-                    VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
-                """,
-                {
-                    'id': user_id,
-                    'email': user_data['email'],
-                    'hashed_password': hashed_password,
-                    'name': user_data['name'],
-                    'role': user_data['role'],
-                },
-            )
-            print(f'Inserted user {user_data["email"]} with id={user_id}')
-        except Exception as e:
-            print(f'Failed to insert user {user_data["email"]}: {e}')
+
+        execute_sql_statement(
+            """
+                INSERT INTO "user" (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
+                VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
+            """,
+            {
+                'id': user_id,
+                'email': user_data['email'],
+                'hashed_password': hashed_password,
+                'name': user_data['name'],
+                'role': user_data['role'],
+            },
+        )
 
         order_state['users'][user_id] = {
             'id': user_id,
@@ -337,15 +333,11 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
 
     order_state['orders'] = {}
 
-    print(f'Creating orders, users state: {order_state.get("users", {})}')
-    print(f'Creating orders, products state: {order_state.get("products", {})}')
-
     # Directly insert orders into database for testing
     # Use the order ID from the test data
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         order_data = dict(zip(headers, values, strict=True))
-        print(f'Creating order: {order_data}')
 
         # Get actual product ID from state or use the provided one
         product_key = int(order_data['product_id'])

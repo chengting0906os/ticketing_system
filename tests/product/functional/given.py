@@ -43,7 +43,7 @@ def product_exists(step, client: TestClient, product_state):
 
     # Create seller user and login
     seller_email = 'seller@test.com'
-    user_response = client.post(
+    client.post(
         '/api/users',
         json={
             'email': seller_email,
@@ -52,8 +52,7 @@ def product_exists(step, client: TestClient, product_state):
             'role': 'seller',
         },
     )
-    if user_response.status_code == 201:
-        print(f'User {seller_email} has registered.')
+    #
 
     # Login as seller
     login_response = client.post(
@@ -104,7 +103,6 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
 
     if user_response.status_code == 201:
         seller_id = user_response.json()['id']
-        print(f'User seller{seller_id}@test.com has registered.')
 
     # Login as seller
     login_response = client.post(
@@ -157,7 +155,6 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
 
     if seller_response.status_code == 201:
         seller_id = seller_response.json()['id']
-        print('User list_seller@test.com has registered.')
     else:
         seller_id = 1
 
