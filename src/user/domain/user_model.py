@@ -4,7 +4,7 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.database import Base
+from src.shared.config.db_setting import Base
 from src.user.domain.user_entity import UserRole
 
 

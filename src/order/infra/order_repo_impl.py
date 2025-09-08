@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.order_repo import OrderRepo
 from src.order.infra.order_model import OrderModel
-from src.shared.exceptions import DomainError
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
 

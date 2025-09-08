@@ -8,9 +8,9 @@ from fastapi import Depends
 
 from src.order.domain.order_entity import OrderStatus
 from src.product.domain.product_entity import ProductStatus
-from src.shared.exceptions import DomainError, ForbiddenError, NotFoundError
+from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
 class MockPaymentUseCase:

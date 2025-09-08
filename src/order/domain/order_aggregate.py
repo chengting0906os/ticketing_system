@@ -16,7 +16,7 @@ from src.order.domain.events import (
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.value_objects import BuyerInfo, ProductSnapshot
 from src.product.domain.product_entity import Product, ProductStatus
-from src.shared.exceptions import DomainError
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_entity import UserRole
 

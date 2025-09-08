@@ -7,7 +7,7 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 
-from src.shared.config import settings
+from src.shared.config.core_setting import settings
 from src.user.domain.user_model import User
 from src.user.use_case.manager import get_user_manager
 

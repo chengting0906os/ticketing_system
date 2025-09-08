@@ -12,8 +12,8 @@ sys.path.append(str(Path(__file__).parents[3]))
 # Import your models and database configuration
 from src.order.infra.order_model import OrderModel as OrderModel
 from src.product.infra.product_model import ProductModel as ProductModel
-from src.shared.config import settings
-from src.shared.database import Base
+from src.shared.config.core_setting import settings
+from src.shared.config.db_setting import Base
 from src.user.domain.user_model import User as User
 
 

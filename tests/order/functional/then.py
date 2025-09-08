@@ -1,8 +1,10 @@
 from typing import Any, Dict, List
+
 from fastapi.testclient import TestClient
 from pytest_bdd import then
-from tests.shared.utils import extract_table_data, extract_single_value
-from tests.route_constant import PRODUCT_GET, ORDER_GET
+
+from src.shared.constant.route_constant import ORDER_GET, PRODUCT_GET
+from tests.shared.utils import extract_single_value, extract_table_data
 
 
 def assert_nullable_field(

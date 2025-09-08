@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from src.shared.database import Base
+from src.shared.config.db_setting import Base
 
 
 class OrderModel(Base):

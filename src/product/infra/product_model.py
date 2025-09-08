@@ -3,7 +3,7 @@
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.database import Base
+from src.shared.config.db_setting import Base
 
 
 class ProductModel(Base):

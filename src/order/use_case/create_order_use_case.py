@@ -2,13 +2,13 @@
 
 from fastapi import Depends
 
-from src.shared.logging.loguru_io import Logger
 from src.order.domain.order_aggregate import OrderAggregate
 from src.order.domain.order_entity import Order
 from src.order.use_case.mock_send_email_use_case import MockSendEmailUseCase
-from src.shared.exceptions import DomainError
-from src.shared.mock_email_service import MockEmailService, get_mock_email_service
-from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.exception.exceptions import DomainError
+from src.shared.logging.loguru_io import Logger
+from src.shared.service.mock_email_service import MockEmailService, get_mock_email_service
+from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
 class CreateOrderUseCase:

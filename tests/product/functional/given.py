@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from tests.route_constant import (
+from src.shared.constant.route_constant import (
     AUTH_LOGIN,
     PRODUCT_BASE,
     USER_CREATE,

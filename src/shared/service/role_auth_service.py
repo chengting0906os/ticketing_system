@@ -2,8 +2,8 @@
 
 from fastapi import Depends, HTTPException, status
 
-from src.shared.jwt_auth_service import current_active_user
 from src.shared.logging.loguru_io import Logger
+from src.shared.service.jwt_auth_service import current_active_user
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 

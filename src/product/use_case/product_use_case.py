@@ -6,7 +6,7 @@ from fastapi import Depends
 
 from src.product.domain.product_entity import Product, ProductStatus
 from src.shared.logging.loguru_io import Logger
-from src.shared.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
 class CreateProductUseCase:

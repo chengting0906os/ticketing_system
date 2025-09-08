@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+
+from src.shared.constant.route_constant import USER_CREATE
 from tests.shared.utils import extract_table_data
-from tests.route_constant import USER_CREATE
 
 
 @given('a buyer user exists')

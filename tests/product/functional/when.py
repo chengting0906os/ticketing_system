@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 
-from tests.route_constant import (
+from src.shared.constant.route_constant import (
     PRODUCT_BASE,
     PRODUCT_DELETE,
     PRODUCT_LIST,

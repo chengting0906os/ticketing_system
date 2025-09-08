@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
+
+from src.shared.constant.route_constant import AUTH_LOGIN, USER_CREATE
 from tests.shared.utils import extract_table_data
-from tests.route_constant import AUTH_LOGIN, USER_CREATE
 
 
 @when('I send api')

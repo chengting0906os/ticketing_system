@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.product.domain.product_entity import Product, ProductStatus
 from src.product.domain.product_repo import ProductRepo
 from src.product.infra.product_model import ProductModel
-from src.shared.exceptions import DomainError
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
 

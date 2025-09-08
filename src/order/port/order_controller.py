@@ -15,7 +15,7 @@ from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
 from src.order.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.logging.loguru_io import Logger
-from src.shared.role_auth_service import get_current_user, require_buyer
+from src.shared.service.role_auth_service import get_current_user, require_buyer
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 

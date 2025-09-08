@@ -6,8 +6,8 @@ from typing import Optional
 
 import attrs
 
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.exceptions import DomainError
 
 
 class OrderStatus(str, Enum):

@@ -1,14 +1,14 @@
 """Email notification use case for order domain events."""
 
-from src.shared.logging.loguru_io import Logger
 from src.order.domain.events import (
     DomainEventProtocol,
     OrderCancelledEvent,
     OrderCreatedEvent,
     OrderPaidEvent,
 )
-from src.shared.mock_email_service import MockEmailService
-from src.shared.unit_of_work import AbstractUnitOfWork
+from src.shared.logging.loguru_io import Logger
+from src.shared.service.mock_email_service import MockEmailService
+from src.shared.service.unit_of_work import AbstractUnitOfWork
 
 
 class MockSendEmailUseCase:

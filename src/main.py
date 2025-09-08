@@ -7,9 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.order.port.order_controller import router as order_router
 from src.product.port.product_controller import router as product_router
-from src.shared.config import settings
-from src.shared.database import create_db_and_tables
-from src.shared.exception_handlers import register_exception_handlers
+from src.shared.config.core_setting import settings
+from src.shared.config.db_setting import create_db_and_tables
+from src.shared.exception.exception_handlers import register_exception_handlers
 from src.user.port.user_controller import auth_router, users_router
 
 

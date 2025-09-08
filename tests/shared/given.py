@@ -1,6 +1,6 @@
 from pytest_bdd import given
 
-from tests.route_constant import AUTH_LOGIN
+from src.shared.constant.route_constant import AUTH_LOGIN
 from tests.shared.utils import extract_table_data
 
 
