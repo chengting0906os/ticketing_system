@@ -42,7 +42,7 @@ class CreateOrderUseCase:
 
             aggregate = OrderAggregate.create_order(buyer, product)
             created_order = await self.uow.orders.create(aggregate.order)
-            aggregate.order.id = created_order.id 
+            aggregate.order.id = created_order.id
             updated_product = aggregate.get_product_for_update()
             if updated_product:
                 await self.uow.products.update(updated_product)

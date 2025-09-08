@@ -48,7 +48,9 @@ class GeneratorWrapper:
 
     def throw(self, exc_type, exc_val=None, tb=None):
         try:
-            self._custom_logger.log_args_kwargs_content(exc_type=exc_type, exc_val=exc_val, tb=tb, yield_method=GeneratorMethod.THROW)
+            self._custom_logger.log_args_kwargs_content(
+                exc_type=exc_type, exc_val=exc_val, tb=tb, yield_method=GeneratorMethod.THROW
+            )
             out = self.gen_obj.throw(exc_type, exc_val, tb)
             self._custom_logger.log_return_content(out, yield_method=GeneratorMethod.THROW)
             return out

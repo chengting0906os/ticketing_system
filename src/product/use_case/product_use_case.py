@@ -86,12 +86,10 @@ class DeleteProductUseCase:
     @Logger.io
     async def delete(self, product_id: int) -> bool:
         async with self.uow:
-            # Get existing product to check status
             product = await self.uow.products.get_by_id(product_id)
             if not product:
                 return False
 
-            # Cannot delete reserved or sold products
             if product.status == ProductStatus.RESERVED:
                 raise ValueError('Cannot delete reserved product')
             if product.status == ProductStatus.SOLD:
@@ -113,7 +111,6 @@ class GetProductUseCase:
 
     @Logger.io
     async def get_by_id(self, product_id: int) -> Optional[Product]:
-        """Get a single product by ID."""
         async with self.uow:
             product = await self.uow.products.get_by_id(product_id)
         return product
@@ -129,14 +126,12 @@ class ListProductsUseCase:
 
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Product]:
-        """Get all products for a specific seller."""
         async with self.uow:
             products = await self.uow.products.get_by_seller(seller_id)
         return products
 
     @Logger.io
     async def list_available(self) -> List[Product]:
-        """Get all active and available products (for buyers)."""
         async with self.uow:
             products = await self.uow.products.list_available()
         return products

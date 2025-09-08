@@ -15,7 +15,7 @@ def get_state_with_response(user_state=None, product_state=None, order_state=Non
 def verify_status_200(user_state=None, product_state=None, order_state=None):
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    assert response.status_code == 200, f'Expected 200, got {response.status_code}: {response.text}'
 
 
 @then('get 201')
@@ -23,8 +23,8 @@ def verify_status_201(user_state=None, product_state=None, order_state=None):
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
     if response.status_code != 201:
-        print(f"Expected 201, got {response.status_code}")
-        print(f"Response body: {response.text}")
+        print(f'Expected 201, got {response.status_code}')
+        print(f'Response body: {response.text}')
     assert response.status_code == 201
 
 
@@ -68,18 +68,19 @@ def verify_error_message_with_table(step, user_state=None, product_state=None, o
     """Verify error message using data table."""
     data_table = step.data_table
     rows = data_table.rows
-    
+
     # Get the expected message from the first row
     expected_message = rows[0].cells[0].value
-    
+
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
     response_data = response.json()
-    
+
     # Check if 'detail' field contains the expected message
     if 'detail' in response_data:
         actual_message = response_data['detail']
-        assert expected_message in actual_message, f"Expected '{expected_message}' in '{actual_message}'"
+        assert expected_message in actual_message, (
+            f"Expected '{expected_message}' in '{actual_message}'"
+        )
     else:
         raise AssertionError(f"No 'detail' field in response: {response_data}")
-

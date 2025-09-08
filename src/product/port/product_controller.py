@@ -34,7 +34,7 @@ async def create_product(
     product = await use_case.create(
         name=request.name,
         description=request.description,
-        price=request.price,  
+        price=request.price,
         seller_id=current_user.id,  # Use current user's ID
         is_active=request.is_active,
     )
@@ -51,7 +51,6 @@ async def create_product(
         is_active=product.is_active,
         status=product.status.value,  # Convert enum to string
     )
-
 
 
 @router.patch('/{product_id}', status_code=status.HTTP_200_OK)
@@ -87,14 +86,13 @@ async def update_product(
         is_active=product.is_active,
         status=product.status.value,
     )
-    
 
 
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: int,
     current_user: User = Depends(require_seller),
-    use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends)
+    use_case: DeleteProductUseCase = Depends(DeleteProductUseCase.depends),
 ):
     deleted = await use_case.delete(product_id)
 
@@ -106,11 +104,9 @@ async def delete_product(
     return None
 
 
-
 @router.get('/{product_id}', status_code=status.HTTP_200_OK)
 async def get_product(
-    product_id: int, 
-    use_case: GetProductUseCase = Depends(GetProductUseCase.depends)
+    product_id: int, use_case: GetProductUseCase = Depends(GetProductUseCase.depends)
 ) -> ProductResponse:
     product = await use_case.get_by_id(product_id)
 

@@ -40,10 +40,10 @@ class UserCreate(schemas.BaseUserCreate):
     class Config:
         json_schema_extra = {
             'example': {
-                "email": "seller@test.com",
-                "name": "seller",
-                "password": "P@ssw0rd",
-                "role": "seller"
+                'email': 'seller@test.com',
+                'name': 'seller',
+                'password': 'P@ssw0rd',
+                'role': 'seller',
             }
         }
 
@@ -54,7 +54,7 @@ class UserUpdate(schemas.BaseUserUpdate):
     class Config:
         json_schema_extra = {
             'example': {
-                "email": "seller@test.com",
-                "password": "P@ssw0rd",
+                'email': 'seller@test.com',
+                'password': 'P@ssw0rd',
             }
         }

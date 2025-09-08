@@ -9,12 +9,10 @@ import attrs
 @runtime_checkable
 class DomainEventProtocol(Protocol):
     @property
-    def aggregate_id(self) -> int:
-        ...
-    
+    def aggregate_id(self) -> int: ...
+
     @property
-    def occurred_at(self) -> datetime:
-        ...
+    def occurred_at(self) -> datetime: ...
 
 
 @attrs.define(frozen=True)

@@ -41,27 +41,26 @@ class AbstractUnitOfWork(abc.ABC):
 
 
 class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
-    
     def __init__(self, session: AsyncSession):
         self.session = session
-    
+
     async def __aenter__(self):
         from src.order.infra.order_repo_impl import OrderRepoImpl
         from src.product.infra.product_repo_impl import ProductRepoImpl
         from src.user.infra.user_repo_impl import UserRepoImpl
-        
+
         self.products = ProductRepoImpl(self.session)
         self.orders = OrderRepoImpl(self.session)
         self.users = UserRepoImpl(self.session)
         return await super().__aenter__()
-    
+
     async def __aexit__(self, *args):
         await super().__aexit__(*args)
         await self.session.close()
-    
+
     async def _commit(self):
         await self.session.commit()
-    
+
     async def rollback(self):
         await self.session.rollback()
 

@@ -25,7 +25,7 @@ call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 
 
 class ExtraField(StrEnum):
-    CHAIN_START_TIME = 'chain_start_time'  
+    CHAIN_START_TIME = 'chain_start_time'
     LAYER_MARKER = 'layer_marker'
     ENTRY_MARKER = 'entry_marker'
     EXIT_MARKER = 'exit_marker'
@@ -40,13 +40,13 @@ class GeneratorMethod(StrEnum):
 
 class InterceptHandler(logging.Handler):
     """Handler to intercept standard logging and redirect to loguru."""
-    
+
     def emit(self, record):
         # Skip access logs or adjust level based on status code
         message = record.getMessage()
-        
+
         # Parse HTTP status code from uvicorn access logs
-        if "HTTP/1.1" in message:
+        if 'HTTP/1.1' in message:
             # Extract status code from message like "GET /api/... HTTP/1.1" 404"
             parts = message.split('"')
             if len(parts) >= 3:
@@ -55,15 +55,15 @@ class InterceptHandler(logging.Handler):
                     status_code = int(status_part)
                     # Adjust log level based on status code
                     if status_code >= 500:
-                        level = "CRITICAL"
+                        level = 'CRITICAL'
                     elif status_code >= 400:
-                        level = "ERROR"
+                        level = 'ERROR'
                     elif status_code >= 300:
-                        level = "WARNING"
+                        level = 'WARNING'
                     elif status_code >= 200:
-                        level = "SUCCESS"
+                        level = 'SUCCESS'
                     else:
-                        level = "INFO"
+                        level = 'INFO'
                 except (ValueError, IndexError):
                     # Fallback to original level
                     try:
@@ -90,12 +90,16 @@ class InterceptHandler(logging.Handler):
 
         # Bind empty extra fields to avoid KeyError
         logger_with_extra = loguru_logger.bind(
-            **{ExtraField.CHAIN_START_TIME: '', ExtraField.LAYER_MARKER: '', ExtraField.ENTRY_MARKER: '', ExtraField.EXIT_MARKER: '', ExtraField.CALL_TARGET: ''}
+            **{
+                ExtraField.CHAIN_START_TIME: '',
+                ExtraField.LAYER_MARKER: '',
+                ExtraField.ENTRY_MARKER: '',
+                ExtraField.EXIT_MARKER: '',
+                ExtraField.CALL_TARGET: '',
+            }
         )
-        
-        logger_with_extra.opt(depth=depth, exception=record.exc_info).log(
-            level, message
-        )
+
+        logger_with_extra.opt(depth=depth, exception=record.exc_info).log(level, message)
 
 
 # Log format for LoguruIO decorated functions
@@ -124,7 +128,13 @@ system_log_format = ' | '.join(
 # Configure logger
 loguru_logger.remove()  # Remove default handler to avoid duplicate output and use custom format
 custom_logger = loguru_logger.bind(
-    **{ExtraField.CHAIN_START_TIME: '', ExtraField.LAYER_MARKER: '', ExtraField.ENTRY_MARKER: '', ExtraField.EXIT_MARKER: '', ExtraField.CALL_TARGET: ''}
+    **{
+        ExtraField.CHAIN_START_TIME: '',
+        ExtraField.LAYER_MARKER: '',
+        ExtraField.ENTRY_MARKER: '',
+        ExtraField.EXIT_MARKER: '',
+        ExtraField.CALL_TARGET: '',
+    }
 )
 
 # Add console output with custom format
@@ -145,12 +155,12 @@ logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 # Intercept uvicorn and fastapi loggers
 for logger_name in [
-    "uvicorn",
-    "uvicorn.error",
-    "uvicorn.access",
-    "fastapi",
-    "sqlalchemy.engine",
-    "sqlalchemy.pool",
+    'uvicorn',
+    'uvicorn.error',
+    'uvicorn.access',
+    'fastapi',
+    'sqlalchemy.engine',
+    'sqlalchemy.pool',
 ]:
     logging_logger = logging.getLogger(logger_name)
     logging_logger.handlers = [InterceptHandler()]

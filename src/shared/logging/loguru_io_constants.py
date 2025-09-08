@@ -18,7 +18,7 @@ call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 
 
 class ExtraField(StrEnum):
-    CHAIN_START_TIME = 'chain_start_time'  
+    CHAIN_START_TIME = 'chain_start_time'
     LAYER_MARKER = 'layer_marker'
     ENTRY_MARKER = 'entry_marker'
     EXIT_MARKER = 'exit_marker'

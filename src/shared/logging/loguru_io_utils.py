@@ -31,8 +31,8 @@ def fetch_layer_depth() -> str:
 
 
 def build_call_target_func_path(func: Callable[..., Any]) -> str:
-    lineno =  getsourcelines(func)[1]
-    return f"{basename(getfile(getattr(func, '__func__', func)))}::{func.__qualname__}:{lineno}"
+    lineno = getsourcelines(func)[1]
+    return f'{basename(getfile(getattr(func, "__func__", func)))}::{func.__qualname__}:{lineno}'
 
 
 def reset_call_depth():
@@ -42,19 +42,27 @@ def reset_call_depth():
         chain_start_time_var.set(0)
 
 
-def normalize_args_kwargs(func: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[tuple[Any, ...], dict[Any, Any]]:
+def normalize_args_kwargs(
+    func: Callable[..., Any], *args: Any, **kwargs: Any
+) -> tuple[tuple[Any, ...], dict[Any, Any]]:
     if hasattr(func, '__wrapped__'):
         func = func.__wrapped__  # type: ignore
     full_arg_spec: FullArgSpec = getfullargspec(func)
     spec_args: list[str] = full_arg_spec.args
-    
+
     if not full_arg_spec.varkw:
         kw_list: list[str] = spec_args + full_arg_spec.kwonlyargs
         kwargs = {k: v for k, v in kwargs.items() if k in kw_list}
-    
+
     if not full_arg_spec.varargs:
         spec_default: list[Any] = list(full_arg_spec.defaults) if full_arg_spec.defaults else []
-        args_dict = dict(zip(spec_args, [None] * (len(spec_args) - len(spec_default)) + spec_default, strict=False))
+        args_dict = dict(
+            zip(
+                spec_args,
+                [None] * (len(spec_args) - len(spec_default)) + spec_default,
+                strict=False,
+            )
+        )
         if args_dict := {k: v for k, v in args_dict.items() if k not in kwargs}:
             args_max_len: int = len(args_dict)
             args_min_len: int = len([value for value in args_dict.values() if value is None])
@@ -62,14 +70,18 @@ def normalize_args_kwargs(func: Callable[..., Any], *args: Any, **kwargs: Any) -
                 args = args[:args_max_len]
         else:
             args = ()
-    
+
     return args, kwargs
 
 
 def mask_sensitive(data_str: Any) -> Any:
     try:
         data_str_ = str(data_str)
-        new_data_str = sub(rf"""(\(|,\s)({'|'.join(SENSITIVE_KEYWORDS)})=\S+(\)|,\s)""", r"\1\2='********'\3", data_str_)
+        new_data_str = sub(
+            rf"""(\(|,\s)({'|'.join(SENSITIVE_KEYWORDS)})=\S+(\)|,\s)""",
+            r"\1\2='********'\3",
+            data_str_,
+        )
         return data_str if data_str_ == new_data_str else new_data_str
     except Exception:
         return data_str

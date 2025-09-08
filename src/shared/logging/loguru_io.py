@@ -37,7 +37,9 @@ class LoguruIO:
         self.extra = {}
         self.depth = 2  # Adjusted for wrapper functions
 
-    def log_args_kwargs_content(self, *args, yield_method: Optional[GeneratorMethod] = None, **kwargs):
+    def log_args_kwargs_content(
+        self, *args, yield_method: Optional[GeneratorMethod] = None, **kwargs
+    ):
         call_depth_var.set(call_depth_var.get() + 1)
         self.extra |= {
             ExtraField.CHAIN_START_TIME: get_chain_start_time(),
@@ -57,7 +59,9 @@ class LoguruIO:
         )
 
     def _hide_from_traceback(self, func):
-        func.__code__ = func.__code__.replace(co_filename=cast(types.FunctionType, self._custom_logger.catch).__code__.co_filename)
+        func.__code__ = func.__code__.replace(
+            co_filename=cast(types.FunctionType, self._custom_logger.catch).__code__.co_filename
+        )
         return func
 
     def mask_sensitive(self, data: Any) -> Any:
@@ -69,8 +73,6 @@ class LoguruIO:
         elif isinstance(data, list | tuple):
             return type(data)(self.mask_sensitive(item) for item in data)
         return mask_sensitive(data)
-
-    
 
     def __call__(self, func):
         self.extra[ExtraField.CALL_TARGET] = build_call_target_func_path(func)
@@ -85,11 +87,12 @@ class LoguruIO:
                     self.log_return_content(return_value)
                     return return_value
                 except Exception:
-                    raise 
+                    raise
                 finally:
                     reset_call_depth()
+
             return self._hide_from_traceback(async_wrapper)
-            
+
         elif isgeneratorfunction(func):
 
             @wraps(func)
@@ -100,11 +103,12 @@ class LoguruIO:
                     self.log_return_content(gen_obj)
                     return GeneratorWrapper(gen_obj, self)
                 except Exception:
-                    raise 
+                    raise
                 finally:
                     reset_call_depth()
+
             return self._hide_from_traceback(generator_wrapper)
-            
+
         else:
 
             @wraps(func)
@@ -119,7 +123,9 @@ class LoguruIO:
                     raise
                 finally:
                     reset_call_depth()
+
             return self._hide_from_traceback(sync_wrapper)
+
 
 class Logger:
     base = custom_logger

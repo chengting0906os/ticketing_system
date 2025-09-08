@@ -12,10 +12,9 @@ from src.order.infra.order_model import OrderModel
 
 
 class OrderRepoImpl(OrderRepo):
-    
     def __init__(self, session: AsyncSession):
         self.session = session
-    
+
     @Logger.io
     async def create(self, order: Order) -> Order:
         db_order = OrderModel(
@@ -26,12 +25,12 @@ class OrderRepoImpl(OrderRepo):
             status=order.status.value,
             created_at=order.created_at,
             updated_at=order.updated_at,
-            paid_at=order.paid_at
+            paid_at=order.paid_at,
         )
         self.session.add(db_order)
         await self.session.flush()
         await self.session.refresh(db_order)
-        
+
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
@@ -41,19 +40,17 @@ class OrderRepoImpl(OrderRepo):
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
             paid_at=db_order.paid_at,
-            id=db_order.id
+            id=db_order.id,
         )
-    
+
     @Logger.io
     async def get_by_id(self, order_id: int) -> Optional[Order]:
-        result = await self.session.execute(
-            select(OrderModel).where(OrderModel.id == order_id)
-        )
+        result = await self.session.execute(select(OrderModel).where(OrderModel.id == order_id))
         db_order = result.scalar_one_or_none()
-        
+
         if not db_order:
             return None
-        
+
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
@@ -63,9 +60,9 @@ class OrderRepoImpl(OrderRepo):
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
             paid_at=db_order.paid_at,
-            id=db_order.id
+            id=db_order.id,
         )
-    
+
     @Logger.io
     async def get_by_product_id(self, product_id: int) -> Optional[Order]:
         result = await self.session.execute(
@@ -74,10 +71,10 @@ class OrderRepoImpl(OrderRepo):
             .where(OrderModel.status != OrderStatus.CANCELLED.value)
         )
         db_order = result.scalar_one_or_none()
-        
+
         if not db_order:
             return None
-        
+
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
@@ -87,18 +84,16 @@ class OrderRepoImpl(OrderRepo):
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
             paid_at=db_order.paid_at,
-            id=db_order.id
+            id=db_order.id,
         )
-    
+
     @Logger.io
     async def get_by_buyer(self, buyer_id: int) -> List[Order]:
         result = await self.session.execute(
-            select(OrderModel)
-            .where(OrderModel.buyer_id == buyer_id)
-            .order_by(OrderModel.id)
+            select(OrderModel).where(OrderModel.buyer_id == buyer_id).order_by(OrderModel.id)
         )
         db_orders = result.scalars().all()
-        
+
         return [
             Order(
                 buyer_id=db_order.buyer_id,
@@ -109,20 +104,18 @@ class OrderRepoImpl(OrderRepo):
                 created_at=db_order.created_at,
                 updated_at=db_order.updated_at,
                 paid_at=db_order.paid_at,
-                id=db_order.id
+                id=db_order.id,
             )
             for db_order in db_orders
         ]
-    
+
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Order]:
         result = await self.session.execute(
-            select(OrderModel)
-            .where(OrderModel.seller_id == seller_id)
-            .order_by(OrderModel.id)
+            select(OrderModel).where(OrderModel.seller_id == seller_id).order_by(OrderModel.id)
         )
         db_orders = result.scalars().all()
-        
+
         return [
             Order(
                 buyer_id=db_order.buyer_id,
@@ -133,11 +126,11 @@ class OrderRepoImpl(OrderRepo):
                 created_at=db_order.created_at,
                 updated_at=db_order.updated_at,
                 paid_at=db_order.paid_at,
-                id=db_order.id
+                id=db_order.id,
             )
             for db_order in db_orders
         ]
-    
+
     @Logger.io
     async def update(self, order: Order) -> Order:
         stmt = (
@@ -150,17 +143,17 @@ class OrderRepoImpl(OrderRepo):
                 price=order.price,
                 status=order.status.value,
                 updated_at=order.updated_at,
-                paid_at=order.paid_at
+                paid_at=order.paid_at,
             )
             .returning(OrderModel)
         )
-        
+
         result = await self.session.execute(stmt)
         db_order = result.scalar_one_or_none()
-        
+
         if not db_order:
-            raise ValueError(f"Order with id {order.id} not found")
-        
+            raise ValueError(f'Order with id {order.id} not found')
+
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
@@ -170,5 +163,5 @@ class OrderRepoImpl(OrderRepo):
             created_at=db_order.created_at,
             updated_at=db_order.updated_at,
             paid_at=db_order.paid_at,
-            id=db_order.id
+            id=db_order.id,
         )

@@ -21,8 +21,8 @@ class GetOrderUseCase:
         """Get order by ID."""
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id)
-            
+
             if not order:
-                raise NotFoundException("Order not found")
-            
+                raise NotFoundException('Order not found')
+
             return order

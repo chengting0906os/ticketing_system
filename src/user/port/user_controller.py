@@ -3,8 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.shared.logging.loguru_io import Logger
 from src.shared.jwt_auth_service import auth_backend, fastapi_users
+from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_entity import UserRole
 from src.user.port.user_schema import UserCreate, UserPublic, UserRead, UserUpdate
 from src.user.use_case.manager import get_user_manager
@@ -20,8 +20,9 @@ users_router.include_router(
     ),
 )
 
+
 # Custom login endpoint that returns user data (must be defined before including default router)
-@auth_router.post("/login", response_model=UserPublic)
+@auth_router.post('/login', response_model=UserPublic)
 @Logger.io
 async def login(
     response: Response,
@@ -30,39 +31,30 @@ async def login(
     strategy=Depends(auth_backend.get_strategy),
 ):
     user = await user_manager.authenticate(credentials)
-    
+
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="LOGIN_BAD_CREDENTIALS",
+            detail='LOGIN_BAD_CREDENTIALS',
         )
-    
-    # Generate JWT token
+
+    # 
     token = await strategy.write_token(user)
-    
-    # Set cookie
+
+    # 
     response.set_cookie(
-        key="fastapiusersauth",
+        key='fastapiusersauth',
         value=token,
         max_age=3600,
         httponly=True,
-        samesite="lax",
+        samesite='lax',
         secure=False,  # Set to True in production with HTTPS
     )
-    
-    # Return user data
-    return UserPublic(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        role=user.role
-    )
+
+    return UserPublic(id=user.id, email=user.email, name=user.name, role=user.role)
 
 
-
-# Custom registration endpoint to match BDD requirements
-
-@users_router.post("", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+@users_router.post('', response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 @Logger.io
 async def register_user(
     user_create: UserCreate,
@@ -72,12 +64,8 @@ async def register_user(
     if user_create.role not in valid_roles:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role: {user_create.role}. Must be one of: {', '.join(valid_roles)}"
+            detail=f'Invalid role: {user_create.role}. Must be one of: {", ".join(valid_roles)}',
         )
-    
 
-    user = await user_manager.create(
-        user_create, safe=True, request=None
-    )
+    user = await user_manager.create(user_create, safe=True, request=None)
     return user
-    

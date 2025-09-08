@@ -20,7 +20,7 @@ class OrderStatus(str, Enum):
 @Logger.io
 def validate_positive_price(instance, attribute, value):
     if value <= 0:
-        raise DomainError("Price must be positive", 400)
+        raise DomainError('Price must be positive', 400)
 
 
 @attrs.define
@@ -29,12 +29,14 @@ class Order:
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     product_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     price: int = attrs.field(validator=[attrs.validators.instance_of(int), validate_positive_price])
-    status: OrderStatus = attrs.field(default=OrderStatus.PENDING_PAYMENT, validator=attrs.validators.instance_of(OrderStatus))
+    status: OrderStatus = attrs.field(
+        default=OrderStatus.PENDING_PAYMENT, validator=attrs.validators.instance_of(OrderStatus)
+    )
     created_at: datetime = attrs.field(factory=datetime.now)
     updated_at: datetime = attrs.field(factory=datetime.now)
     paid_at: Optional[datetime] = None
     id: Optional[int] = None
-    
+
     @classmethod
     @Logger.io
     def create(cls, buyer_id: int, seller_id: int, product_id: int, price: int) -> 'Order':
@@ -48,24 +50,15 @@ class Order:
             created_at=now,
             updated_at=now,
             paid_at=None,
-            id=None
+            id=None,
         )
-    
+
     @Logger.io
     def mark_as_paid(self) -> 'Order':
         now = datetime.now()
-        return attrs.evolve(
-            self,
-            status=OrderStatus.PAID,
-            paid_at=now,
-            updated_at=now
-        )
+        return attrs.evolve(self, status=OrderStatus.PAID, paid_at=now, updated_at=now)
 
     @Logger.io
     def cancel(self) -> 'Order':
         now = datetime.now()
-        return attrs.evolve(
-            self,
-            status=OrderStatus.CANCELLED,
-            updated_at=now
-        )
+        return attrs.evolve(self, status=OrderStatus.CANCELLED, updated_at=now)

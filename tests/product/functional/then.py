@@ -8,21 +8,21 @@ def verify_product_created(step, product_state):
     """Verify product was created with expected values."""
     data_table = step.data_table
     rows = data_table.rows
-    
+
     headers = [cell.value for cell in rows[0].cells]
     values = [cell.value for cell in rows[1].cells]
     expected_data = dict(zip(headers, values, strict=True))
-    
+
     response = product_state['response']
     response_json = response.json()
-    
+
     # Check each field in the expected data
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
             # Check that the field exists and is a positive integer
             assert field in response_json, f"Response should contain field '{field}'"
-            assert isinstance(response_json[field], int), f"{field} should be an integer"
-            assert response_json[field] > 0, f"{field} should be positive"
+            assert isinstance(response_json[field], int), f'{field} should be an integer'
+            assert response_json[field] > 0, f'{field} should be positive'
         elif field == 'is_active':
             expected_active = expected_value.lower() == 'true'
             assert response_json['is_active'] == expected_active
@@ -39,16 +39,16 @@ def verify_stock_initialized(step, product_state):
     """Verify stock was initialized correctly."""
     data_table = step.data_table
     rows = data_table.rows
-    
+
     headers = [cell.value for cell in rows[0].cells]
     values = [cell.value for cell in rows[1].cells]
     expected_data = dict(zip(headers, values, strict=True))
-    
+
     response = product_state['response']
     assert response.status_code == 201
-    
+
     response_json = response.json()
-    
+
     # Verify stock quantity (assuming the response includes stock info)
     if 'stock' in response_json:
         assert response_json['stock']['quantity'] == int(expected_data['quantity'])
@@ -56,28 +56,26 @@ def verify_stock_initialized(step, product_state):
         assert response_json['quantity'] == int(expected_data['quantity'])
 
 
-
-
 @then('the product should be updated with')
 def verify_product_updated(step, product_state):
     """Verify product was updated with expected values."""
     data_table = step.data_table
     rows = data_table.rows
-    
+
     headers = [cell.value for cell in rows[0].cells]
     values = [cell.value for cell in rows[1].cells]
     expected_data = dict(zip(headers, values, strict=True))
-    
+
     response = product_state['response']
     response_json = response.json()
-    
+
     # Check each field in the expected data
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
             # Check that the field exists and is a positive integer
             assert field in response_json, f"Response should contain field '{field}'"
-            assert isinstance(response_json[field], int), f"{field} should be an integer"
-            assert response_json[field] > 0, f"{field} should be positive"
+            assert isinstance(response_json[field], int), f'{field} should be an integer'
+            assert response_json[field] > 0, f'{field} should be positive'
         elif field == 'is_active':
             expected_active = expected_value.lower() == 'true'
             assert response_json['is_active'] == expected_active
@@ -87,8 +85,6 @@ def verify_product_updated(step, product_state):
             assert response_json[field] == int(expected_value)
         else:
             assert response_json[field] == expected_value
-
-
 
 
 @then('the product should not exist')
@@ -104,8 +100,9 @@ def _verify_error_contains(product_state, expected_text):
     response = product_state['response']
     response_json = response.json()
     error_msg = str(response_json)
-    assert expected_text in error_msg, f"Expected '{expected_text}' in error message, got: {error_msg}"
-
+    assert expected_text in error_msg, (
+        f"Expected '{expected_text}' in error message, got: {error_msg}"
+    )
 
 
 def _verify_product_count(product_state, count):
@@ -113,7 +110,7 @@ def _verify_product_count(product_state, count):
     response = product_state['response']
     assert response.status_code == 200
     products = response.json()
-    assert len(products) == count, f"Expected {count} products, got {len(products)}"
+    assert len(products) == count, f'Expected {count} products, got {len(products)}'
     return products
 
 
@@ -141,11 +138,13 @@ def verify_products_include_all_statuses(product_state):
     """Verify that products include different statuses."""
     response = product_state['response']
     products = response.json()
-    
+
     statuses = {product['status'] for product in products}
     # Should have at least available, reserved, and sold
     expected_statuses = {'available', 'reserved', 'sold'}
-    assert expected_statuses.issubset(statuses), f"Expected statuses {expected_statuses}, got {statuses}"
+    assert expected_statuses.issubset(statuses), (
+        f'Expected statuses {expected_statuses}, got {statuses}'
+    )
 
 
 @then('the products should be:')
@@ -153,19 +152,21 @@ def verify_specific_products(step, product_state):
     """Verify specific products are in the list."""
     response = product_state['response']
     products = response.json()
-    
+
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
-    
+
     expected_products = []
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         expected_products.append(dict(zip(headers, values, strict=True)))
-    
+
     # Verify we have the right number of products
-    assert len(products) == len(expected_products), f"Expected {len(expected_products)} products, got {len(products)}"
-    
+    assert len(products) == len(expected_products), (
+        f'Expected {len(expected_products)} products, got {len(products)}'
+    )
+
     # Verify each expected product is present
     for expected in expected_products:
         found = False
@@ -177,4 +178,4 @@ def verify_specific_products(step, product_state):
                 assert product['status'] == expected['status']
                 found = True
                 break
-        assert found, f"Product {expected['name']} not found in response"
+        assert found, f'Product {expected["name"]} not found in response'
