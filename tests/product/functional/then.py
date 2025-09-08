@@ -59,7 +59,7 @@ def verify_product_updated(step, product_state):
 @then('the product should not exist')
 def verify_product_not_exist(client, product_state):
     product_id = product_state['product_id']
-    response = client.get(f'/api/products/{product_id}')
+    response = client.get(f'/api/product/{product_id}')
     assert response.status_code == 404
 
 

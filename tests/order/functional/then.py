@@ -20,13 +20,13 @@ def assert_response_status(response, expected_status: int, message: str | None =
 
 
 def get_product_status(client: TestClient, product_id: int) -> str:
-    response = client.get(f'/api/products/{product_id}')
+    response = client.get(f'/api/product/{product_id}')
     assert_response_status(response, 200)
     return response.json()['status']
 
 
 def get_order_details(client: TestClient, order_id: int) -> Dict[str, Any]:
-    response = client.get(f'/api/orders/{order_id}')
+    response = client.get(f'/api/order/{order_id}')
     assert_response_status(response, 200)
     return response.json()
 

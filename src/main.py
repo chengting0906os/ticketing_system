@@ -39,9 +39,9 @@ register_exception_handlers(app)
 
 # endpoints
 app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
-app.include_router(users_router, prefix='/api/users', tags=['users'])
-app.include_router(product_router, prefix='/api/products', tags=['products'])
-app.include_router(order_router, prefix='/api/orders', tags=['orders'])
+app.include_router(users_router, prefix='/api/user', tags=['user'])
+app.include_router(product_router, prefix='/api/product', tags=['product'])
+app.include_router(order_router, prefix='/api/order', tags=['order'])
 
 
 @app.get('/')

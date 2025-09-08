@@ -12,7 +12,7 @@ def send_api_request(step, client: TestClient, user_state):
         'name': row_data['name'],
         'role': row_data['role'],
     }
-    user_state['response'] = client.post('/api/users', json=user_state['request_data'])
+    user_state['response'] = client.post('/api/user', json=user_state['request_data'])
 
 
 @when('I login with')

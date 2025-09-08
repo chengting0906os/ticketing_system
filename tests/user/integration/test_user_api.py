@@ -5,7 +5,7 @@ class TestUserAPI:
     def test_create_user(self, client: TestClient):
         email = 'test@example.com'
         user_data = {'email': email, 'password': 'P@ssw0rd', 'name': 'John Doe', 'role': 'buyer'}
-        response = client.post('/api/users', json=user_data)
+        response = client.post('/api/user', json=user_data)
         assert response.status_code == 201
         data = response.json()
         assert data['email'] == email
@@ -21,7 +21,7 @@ class TestUserAPI:
             'name': 'Jane Smith',
             'role': 'seller',
         }
-        response = client.post('/api/users', json=user_data)
+        response = client.post('/api/user', json=user_data)
         assert response.status_code == 201
         data = response.json()
         assert data['email'] == 'test@example.com'

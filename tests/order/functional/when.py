@@ -5,19 +5,19 @@ from tests.shared.utils import extract_table_data
 
 @when('the buyer creates an order for the product')
 def buyer_creates_order(client: TestClient, order_state):
-    response = client.post('/api/orders', json={'product_id': order_state['product']['id']})
+    response = client.post('/api/order', json={'product_id': order_state['product']['id']})
     order_state['response'] = response
 
 
 @when('the buyer tries to create an order for the product')
 def buyer_tries_to_create_order(client: TestClient, order_state):
-    response = client.post('/api/orders', json={'product_id': order_state['product']['id']})
+    response = client.post('/api/order', json={'product_id': order_state['product']['id']})
     order_state['response'] = response
 
 
 @when('the seller tries to create an order for their own product')
 def seller_tries_to_create_order(client: TestClient, order_state):
-    response = client.post('/api/orders', json={'product_id': order_state['product']['id']})
+    response = client.post('/api/order', json={'product_id': order_state['product']['id']})
     order_state['response'] = response
 
 
@@ -25,7 +25,7 @@ def seller_tries_to_create_order(client: TestClient, order_state):
 def buyer_pays_for_order(step, client: TestClient, order_state):
     payment_data = extract_table_data(step)
     response = client.post(
-        f'/api/orders/{order_state["order"]["id"]}/pay',
+        f'/api/order/{order_state["order"]["id"]}/pay',
         json={'card_number': payment_data['card_number']},
     )
     order_state['response'] = response
@@ -34,7 +34,7 @@ def buyer_pays_for_order(step, client: TestClient, order_state):
 @when('the buyer tries to pay for the order again')
 def buyer_tries_to_pay_again(client: TestClient, order_state):
     response = client.post(
-        f'/api/orders/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
+        f'/api/order/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
     )
     order_state['response'] = response
 
@@ -42,7 +42,7 @@ def buyer_tries_to_pay_again(client: TestClient, order_state):
 @when('the buyer tries to pay for the order')
 def buyer_tries_to_pay(client: TestClient, order_state):
     response = client.post(
-        f'/api/orders/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
+        f'/api/order/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
     )
     order_state['response'] = response
 
@@ -50,7 +50,7 @@ def buyer_tries_to_pay(client: TestClient, order_state):
 @when('another user tries to pay for the order')
 def another_user_tries_to_pay(client: TestClient, order_state):
     client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': 'another_buyer@test.com',
             'password': 'P@ssw0rd',
@@ -66,20 +66,20 @@ def another_user_tries_to_pay(client: TestClient, order_state):
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
     response = client.post(
-        f'/api/orders/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
+        f'/api/order/{order_state["order"]["id"]}/pay', json={'card_number': '4242424242424242'}
     )
     order_state['response'] = response
 
 
 @when('the buyer cancels the order')
 def buyer_cancels_order(client: TestClient, order_state):
-    response = client.delete(f'/api/orders/{order_state["order"]["id"]}')
+    response = client.delete(f'/api/order/{order_state["order"]["id"]}')
     order_state['response'] = response
 
 
 @when('the buyer tries to cancel the order')
 def buyer_tries_to_cancel(client: TestClient, order_state):
-    response = client.delete(f'/api/orders/{order_state["order"]["id"]}')
+    response = client.delete(f'/api/order/{order_state["order"]["id"]}')
     order_state['response'] = response
 
 
@@ -92,7 +92,7 @@ def buyer_3_requests_orders(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders')
+    response = client.get('/api/order/my-orders')
     order_state['response'] = response
 
 
@@ -105,7 +105,7 @@ def buyer_4_requests_orders(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders')
+    response = client.get('/api/order/my-orders')
     order_state['response'] = response
 
 
@@ -118,7 +118,7 @@ def buyer_5_requests_orders(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders')
+    response = client.get('/api/order/my-orders')
     order_state['response'] = response
 
 
@@ -131,7 +131,7 @@ def seller_1_requests_orders(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders')
+    response = client.get('/api/order/my-orders')
     order_state['response'] = response
 
 
@@ -144,7 +144,7 @@ def buyer_3_requests_orders_paid(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders?order_status=paid')
+    response = client.get('/api/order/my-orders?order_status=paid')
     order_state['response'] = response
 
 
@@ -157,5 +157,5 @@ def buyer_3_requests_orders_pending(client: TestClient, order_state):
     )
     if login_response.status_code == 200 and 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    response = client.get('/api/orders/my-orders?order_status=pending_payment')
+    response = client.get('/api/order/my-orders?order_status=pending_payment')
     order_state['response'] = response

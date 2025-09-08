@@ -7,7 +7,7 @@ from tests.shared.utils import extract_table_data
 def create_seller_user_for_product(step, client: TestClient, product_state):
     user_data = extract_table_data(step)
     response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': user_data['email'],
             'password': user_data['password'],
@@ -26,7 +26,7 @@ def product_exists(step, client: TestClient, product_state):
     row_data = extract_table_data(step)
     seller_email = 'seller@test.com'
     client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': seller_email,
             'password': 'P@ssw0rd',
@@ -48,7 +48,7 @@ def product_exists(step, client: TestClient, product_state):
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/products', json=request_data)
+    response = client.post('/api/product', json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product_data = response.json()
     product_state['product_id'] = product_data['id']
@@ -61,7 +61,7 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
     row_data = extract_table_data(step)
     seller_id = int(row_data['seller_id'])
     user_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': f'seller{seller_id}@test.com',
             'password': 'P@ssw0rd',
@@ -85,7 +85,7 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/products', json=request_data)
+    response = client.post('/api/product', json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product_data = response.json()
     product_state['product_id'] = product_data['id']
@@ -102,7 +102,7 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
 @given('a seller with products:')
 def create_seller_with_products(step, client: TestClient, product_state, execute_sql_statement):
     seller_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': 'list_seller@test.com',
             'password': 'P@ssw0rd',
@@ -131,7 +131,7 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
         values = [cell.value for cell in row.cells]
         product_data = dict(zip(headers, values, strict=True))
         create_response = client.post(
-            '/api/products',
+            '/api/product',
             json={
                 'name': product_data['name'],
                 'description': product_data['description'],
@@ -154,7 +154,7 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
 @given('no available products exist')
 def create_no_available_products(step, client: TestClient, product_state, execute_sql_statement):
     seller_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': 'empty_list_seller@test.com',
             'password': 'P@ssw0rd',
@@ -175,7 +175,7 @@ def create_no_available_products(step, client: TestClient, product_state, execut
         values = [cell.value for cell in row.cells]
         product_data = dict(zip(headers, values, strict=True))
         create_response = client.post(
-            '/api/products',
+            '/api/product',
             json={
                 'name': product_data['name'],
                 'description': product_data['description'],

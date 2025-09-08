@@ -12,7 +12,7 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
     values = [cell.value for cell in rows[1].cells]
     product_data = dict(zip(headers, values, strict=True))
     seller_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com',
             'password': 'P@ssw0rd',
@@ -40,7 +40,7 @@ def create_seller_with_product(step, client: TestClient, order_state, execute_sq
         'price': int(product_data['price']),
         'is_active': product_data['is_active'].lower() == 'true',
     }
-    response = client.post('/api/products', json=request_data)
+    response = client.post('/api/product', json=request_data)
     assert response.status_code == 201, f'Failed to create product: {response.text}'
     product = response.json()
     order_state['product'] = product
@@ -60,7 +60,7 @@ def create_buyer(step, client: TestClient, order_state):
     values = [cell.value for cell in rows[1].cells]
     buyer_data = dict(zip(headers, values, strict=True))
     response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': buyer_data['email'],
             'password': buyer_data['password'],
@@ -79,7 +79,7 @@ def create_buyer(step, client: TestClient, order_state):
 def create_pending_order(step, client: TestClient, order_state):
     order_data = extract_table_data(step)
     seller_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': 'seller@test.com',
             'password': 'P@ssw0rd',
@@ -93,7 +93,7 @@ def create_pending_order(step, client: TestClient, order_state):
     else:
         seller_id = int(order_data['seller_id'])
     buyer_response = client.post(
-        '/api/users',
+        '/api/user',
         json={
             'email': 'buyer@test.com',
             'password': 'P@ssw0rd',
@@ -115,7 +115,7 @@ def create_pending_order(step, client: TestClient, order_state):
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
     product_response = client.post(
-        '/api/products',
+        '/api/product',
         json={
             'name': 'Test Product',
             'description': 'Test Description',
@@ -133,7 +133,7 @@ def create_pending_order(step, client: TestClient, order_state):
     assert login_response.status_code == 200, f'Buyer login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    order_response = client.post('/api/orders', json={'product_id': product['id']})
+    order_response = client.post('/api/order', json={'product_id': product['id']})
     assert order_response.status_code == 201, f'Failed to create order: {order_response.text}'
     order = order_response.json()
     order_state['order'] = order
