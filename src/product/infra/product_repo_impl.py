@@ -15,6 +15,19 @@ class ProductRepoImpl(ProductRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @staticmethod
+    def _to_entity(db_product: ProductModel) -> Product:
+        """Convert database model to domain entity."""
+        return Product(
+            name=db_product.name,
+            description=db_product.description,
+            price=db_product.price,
+            seller_id=db_product.seller_id,
+            is_active=db_product.is_active,
+            status=ProductStatus(db_product.status),
+            id=db_product.id,
+        )
+
     @Logger.io
     async def create(self, product: Product) -> Product:
         db_product = ProductModel(
@@ -29,15 +42,7 @@ class ProductRepoImpl(ProductRepo):
         await self.session.flush()
         await self.session.refresh(db_product)
 
-        return Product(
-            name=db_product.name,
-            description=db_product.description,
-            price=db_product.price,
-            seller_id=db_product.seller_id,
-            is_active=db_product.is_active,
-            status=ProductStatus(db_product.status),  # Convert string to enum
-            id=db_product.id,
-        )
+        return ProductRepoImpl._to_entity(db_product)
 
     @Logger.io
     async def get_by_id(self, product_id: int) -> Optional[Product]:
@@ -49,15 +54,7 @@ class ProductRepoImpl(ProductRepo):
         if not db_product:
             return None
 
-        return Product(
-            name=db_product.name,
-            description=db_product.description,
-            price=db_product.price,
-            seller_id=db_product.seller_id,
-            is_active=db_product.is_active,
-            status=ProductStatus(db_product.status),
-            id=db_product.id,
-        )
+        return ProductRepoImpl._to_entity(db_product)
 
     @Logger.io
     async def update(self, product: Product) -> Product:
@@ -80,15 +77,7 @@ class ProductRepoImpl(ProductRepo):
         if not db_product:
             raise ValueError(f'Product with id {product.id} not found')
 
-        return Product(
-            name=db_product.name,
-            description=db_product.description,
-            price=db_product.price,
-            seller_id=db_product.seller_id,
-            is_active=db_product.is_active,
-            status=ProductStatus(db_product.status),
-            id=db_product.id,
-        )
+        return ProductRepoImpl._to_entity(db_product)
 
     @Logger.io
     async def delete(self, product_id: int) -> bool:
@@ -110,18 +99,7 @@ class ProductRepoImpl(ProductRepo):
         )
         db_products = result.scalars().all()
 
-        return [
-            Product(
-                name=db_product.name,
-                description=db_product.description,
-                price=db_product.price,
-                seller_id=db_product.seller_id,
-                is_active=db_product.is_active,
-                status=ProductStatus(db_product.status),
-                id=db_product.id,
-            )
-            for db_product in db_products
-        ]
+        return [ProductRepoImpl._to_entity(db_product) for db_product in db_products]
 
     async def list_available(self) -> List[Product]:
         result = await self.session.execute(
@@ -132,18 +110,7 @@ class ProductRepoImpl(ProductRepo):
         )
         db_products = result.scalars().all()
 
-        return [
-            Product(
-                name=db_product.name,
-                description=db_product.description,
-                price=db_product.price,
-                seller_id=db_product.seller_id,
-                is_active=db_product.is_active,
-                status=ProductStatus(db_product.status),
-                id=db_product.id,
-            )
-            for db_product in db_products
-        ]
+        return [ProductRepoImpl._to_entity(db_product) for db_product in db_products]
 
     @Logger.io
     async def release_product_atomically(self, product_id: int) -> Product:
@@ -166,12 +133,4 @@ class ProductRepoImpl(ProductRepo):
         if not db_product:
             raise BadRequestException('Unable to release product')
 
-        return Product(
-            name=db_product.name,
-            description=db_product.description,
-            price=db_product.price,
-            seller_id=db_product.seller_id,
-            is_active=db_product.is_active,
-            status=ProductStatus(db_product.status),
-            id=db_product.id,
-        )
+        return ProductRepoImpl._to_entity(db_product)

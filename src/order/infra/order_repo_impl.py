@@ -15,6 +15,21 @@ class OrderRepoImpl(OrderRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @staticmethod
+    def _to_entity(db_order: OrderModel) -> Order:
+        """Convert database model to domain entity."""
+        return Order(
+            buyer_id=db_order.buyer_id,
+            seller_id=db_order.seller_id,
+            product_id=db_order.product_id,
+            price=db_order.price,
+            status=OrderStatus(db_order.status),
+            created_at=db_order.created_at,
+            updated_at=db_order.updated_at,
+            paid_at=db_order.paid_at,
+            id=db_order.id,
+        )
+
     @Logger.io
     async def create(self, order: Order) -> Order:
         db_order = OrderModel(
@@ -31,17 +46,7 @@ class OrderRepoImpl(OrderRepo):
         await self.session.flush()
         await self.session.refresh(db_order)
 
-        return Order(
-            buyer_id=db_order.buyer_id,
-            seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
-            price=db_order.price,
-            status=OrderStatus(db_order.status),
-            created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
-            paid_at=db_order.paid_at,
-            id=db_order.id,
-        )
+        return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
     async def get_by_id(self, order_id: int) -> Optional[Order]:
@@ -51,17 +56,7 @@ class OrderRepoImpl(OrderRepo):
         if not db_order:
             return None
 
-        return Order(
-            buyer_id=db_order.buyer_id,
-            seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
-            price=db_order.price,
-            status=OrderStatus(db_order.status),
-            created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
-            paid_at=db_order.paid_at,
-            id=db_order.id,
-        )
+        return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
     async def get_by_product_id(self, product_id: int) -> Optional[Order]:
@@ -75,17 +70,7 @@ class OrderRepoImpl(OrderRepo):
         if not db_order:
             return None
 
-        return Order(
-            buyer_id=db_order.buyer_id,
-            seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
-            price=db_order.price,
-            status=OrderStatus(db_order.status),
-            created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
-            paid_at=db_order.paid_at,
-            id=db_order.id,
-        )
+        return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
     async def get_by_buyer(self, buyer_id: int) -> List[Order]:
@@ -154,17 +139,7 @@ class OrderRepoImpl(OrderRepo):
         if not db_order:
             raise ValueError(f'Order with id {order.id} not found')
 
-        return Order(
-            buyer_id=db_order.buyer_id,
-            seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
-            price=db_order.price,
-            status=OrderStatus(db_order.status),
-            created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
-            paid_at=db_order.paid_at,
-            id=db_order.id,
-        )
+        return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
     async def cancel_order_atomically(self, order_id: int, buyer_id: int) -> Order:
@@ -199,14 +174,4 @@ class OrderRepoImpl(OrderRepo):
             else:
                 raise BadRequestException('Unable to cancel order')
 
-        return Order(
-            buyer_id=db_order.buyer_id,
-            seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
-            price=db_order.price,
-            status=OrderStatus(db_order.status),
-            created_at=db_order.created_at,
-            updated_at=db_order.updated_at,
-            paid_at=db_order.paid_at,
-            id=db_order.id,
-        )
+        return OrderRepoImpl._to_entity(db_order)
