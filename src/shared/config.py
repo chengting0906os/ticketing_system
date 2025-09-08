@@ -27,13 +27,11 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     
     @property
-    def DATABASE_URL(self) -> str:
-        """Get database URL."""
+    def DATABASE_URL_ASYNC(self) -> str:
         return f'postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
     
     @property
     def DATABASE_URL_SYNC(self) -> str:
-        """Get sync database URL for Alembic."""
         return f'postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
     
     # Security
@@ -43,8 +41,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = 'HS256'
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[str] = []  # 如果需要前端訪問，加入前端網址
-    
+    BACKEND_CORS_ORIGINS: List[str] = []  # add your frontend URL here
+
     @field_validator('BACKEND_CORS_ORIGINS', mode='before')
     @classmethod
     def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:

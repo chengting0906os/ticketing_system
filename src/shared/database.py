@@ -9,7 +9,7 @@ from src.shared.config import settings
 
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.DATABASE_URL_ASYNC,
     echo=False,
     future=True,
 )
