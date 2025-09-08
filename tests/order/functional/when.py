@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
+from tests.shared.utils import extract_table_data
 
 
 @when('the buyer creates an order for the product')
@@ -22,11 +23,7 @@ def seller_tries_to_create_order(client: TestClient, order_state):
 
 @when('the buyer pays for the order with:')
 def buyer_pays_for_order(step, client: TestClient, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    payment_data = dict(zip(headers, values, strict=True))
+    payment_data = extract_table_data(step)
     response = client.post(
         f'/api/orders/{order_state["order"]["id"]}/pay',
         json={'card_number': payment_data['card_number']},

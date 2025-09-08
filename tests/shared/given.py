@@ -1,13 +1,10 @@
 from pytest_bdd import given
+from tests.shared.utils import extract_table_data
 
 
 @given('I am logged in as:')
 def login_user_with_table(step, client):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    login_data = dict(zip(headers, values, strict=True))
+    login_data = extract_table_data(step)
     response = client.post(
         '/api/auth/login',
         data={'username': login_data['email'], 'password': login_data['password']},

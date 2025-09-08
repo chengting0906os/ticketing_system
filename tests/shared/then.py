@@ -1,4 +1,5 @@
 from pytest_bdd import then
+from tests.shared.utils import extract_single_value
 
 
 def get_state_with_response(user_state=None, product_state=None, order_state=None):
@@ -10,9 +11,7 @@ def get_state_with_response(user_state=None, product_state=None, order_state=Non
 
 @then('get status code:')
 def verify_status_code(step, user_state=None, product_state=None, order_state=None):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_status = int(rows[0].cells[0].value)
+    expected_status = int(extract_single_value(step))
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
     assert response.status_code == expected_status, (
@@ -22,9 +21,7 @@ def verify_status_code(step, user_state=None, product_state=None, order_state=No
 
 @then('the error message should contain:')
 def verify_error_message_with_table(step, user_state=None, product_state=None, order_state=None):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_message = rows[0].cells[0].value
+    expected_message = extract_single_value(step)
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
     response_data = response.json()

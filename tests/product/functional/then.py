@@ -1,13 +1,10 @@
 from pytest_bdd import then
+from tests.shared.utils import extract_table_data
 
 
 @then('the product should be created with')
 def verify_product_created(step, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected_data = dict(zip(headers, values, strict=True))
+    expected_data = extract_table_data(step)
     response = product_state['response']
     response_json = response.json()
     for field, expected_value in expected_data.items():
@@ -28,11 +25,7 @@ def verify_product_created(step, product_state):
 
 @then('the stock should be initialized with')
 def verify_stock_initialized(step, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected_data = dict(zip(headers, values, strict=True))
+    expected_data = extract_table_data(step)
     response = product_state['response']
     assert response.status_code == 201
     response_json = response.json()
@@ -44,11 +37,7 @@ def verify_stock_initialized(step, product_state):
 
 @then('the product should be updated with')
 def verify_product_updated(step, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected_data = dict(zip(headers, values, strict=True))
+    expected_data = extract_table_data(step)
     response = product_state['response']
     response_json = response.json()
     for field, expected_value in expected_data.items():

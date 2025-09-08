@@ -1,13 +1,10 @@
 from pytest_bdd import then
+from tests.shared.utils import extract_table_data
 
 
 @then('the user details should be:')
 def verify_user_details(step, user_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected = dict(zip(headers, values, strict=True))
+    expected = extract_table_data(step)
     request_data = user_state['request_data']
     assert request_data['email'] == expected['email']
     assert request_data['password'] == expected['password']
@@ -17,11 +14,7 @@ def verify_user_details(step, user_state):
 
 @then('the seller user details should be:')
 def verify_seller_user_details(step, user_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected = dict(zip(headers, values, strict=True))
+    expected = extract_table_data(step)
     request_data = user_state['request_data']
     assert request_data['email'] == expected['email']
     assert request_data['password'] == expected['password']
@@ -31,11 +24,7 @@ def verify_seller_user_details(step, user_state):
 
 @then('the wrong user details should be:')
 def verify_wrong_user_details(step, user_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected = dict(zip(headers, values, strict=True))
+    expected = extract_table_data(step)
     request_data = user_state['request_data']
     assert request_data['email'] == expected['email']
     assert request_data['password'] == expected['password']
@@ -48,11 +37,7 @@ def verify_user_created_201(step, user_state):
     response = user_state['response']
     assert response.status_code == 201
     response_data = user_state['response'].json()
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected = dict(zip(headers, values, strict=True))
+    expected = extract_table_data(step)
     assert response_data['email'] == expected['email']
     assert response_data['role'] == expected['role']
 
@@ -91,11 +76,7 @@ def verify_jwt_cookie(user_state):
 
 @then('the user info should be')
 def verify_user_info(step, user_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    expected = dict(zip(headers, values, strict=True))
+    expected = extract_table_data(step)
     response = user_state['response']
     response_data = response.json()
     assert response_data['email'] == expected['email']

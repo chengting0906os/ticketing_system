@@ -1,13 +1,7 @@
 from typing import Any, Dict, List
 from fastapi.testclient import TestClient
 from pytest_bdd import then
-
-
-def extract_table_data(step) -> Dict[str, str]:
-    rows = step.data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    return dict(zip(headers, values, strict=True))
+from tests.shared.utils import extract_table_data, extract_single_value
 
 
 def assert_nullable_field(
@@ -113,9 +107,7 @@ def verify_payment_details(step, order_state):
 
 @then('the product status should be:')
 def verify_product_status(step, client: TestClient, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_status = rows[0].cells[0].value
+    expected_status = extract_single_value(step)
     product_id = order_state.get('product_id') or order_state['product']['id']
     status = get_product_status(client, product_id)
     assert status == expected_status
@@ -123,9 +115,7 @@ def verify_product_status(step, client: TestClient, order_state):
 
 @then('the order status should be:')
 def verify_order_status(step, client: TestClient, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_status = rows[0].cells[0].value
+    expected_status = extract_single_value(step)
     order_data = get_order_details(client, order_state['order']['id'])
     assert order_data['status'] == expected_status
     order_state['updated_order'] = order_data
@@ -133,9 +123,7 @@ def verify_order_status(step, client: TestClient, order_state):
 
 @then('the response should contain orders:')
 def verify_orders_count_with_table(step, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_count = int(rows[0].cells[0].value)
+    expected_count = int(extract_single_value(step))
     assert_order_count(order_state, expected_count)
 
 
@@ -170,7 +158,5 @@ def verify_orders_details(step, order_state):
 
 @then('all orders should have status:')
 def verify_all_orders_status(step, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    expected_status = rows[0].cells[0].value
+    expected_status = extract_single_value(step)
     assert_all_orders_have_status(order_state['orders_response'], expected_status)

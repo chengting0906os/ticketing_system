@@ -1,6 +1,7 @@
 from datetime import datetime
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+from tests.shared.utils import extract_table_data
 
 
 @given('a seller with a product:')
@@ -76,11 +77,7 @@ def create_buyer(step, client: TestClient, order_state):
 
 @given('an order exists with status "pending_payment":')
 def create_pending_order(step, client: TestClient, order_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    order_data = dict(zip(headers, values, strict=True))
+    order_data = extract_table_data(step)
     seller_response = client.post(
         '/api/users',
         json={
@@ -147,11 +144,7 @@ def create_pending_order(step, client: TestClient, order_state):
 
 @given('an order exists with status "paid":')
 def create_paid_order(step, client: TestClient, order_state, execute_sql_statement):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    order_data = dict(zip(headers, values, strict=True))
+    order_data = extract_table_data(step)
     create_pending_order(step, client, order_state)
     if 'paid_at' in order_data and order_data['paid_at'] == 'not_null':
         execute_sql_statement(

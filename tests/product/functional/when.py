@@ -1,14 +1,11 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
+from tests.shared.utils import extract_table_data
 
 
 @when('I create a product with')
 def create_product(step, client: TestClient, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    row_data = dict(zip(headers, values, strict=True))
+    row_data = extract_table_data(step)
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
@@ -22,11 +19,7 @@ def create_product(step, client: TestClient, product_state):
 
 @when('I update the product to')
 def update_product(step, client: TestClient, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    update_data = dict(zip(headers, values, strict=True))
+    update_data = extract_table_data(step)
     if 'price' in update_data:
         update_data['price'] = int(update_data['price'])
     if 'is_active' in update_data:

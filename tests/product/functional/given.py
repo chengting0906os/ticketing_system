@@ -1,14 +1,11 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+from tests.shared.utils import extract_table_data
 
 
 @given('a seller user exists')
 def create_seller_user_for_product(step, client: TestClient, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    user_data = dict(zip(headers, values, strict=True))
+    user_data = extract_table_data(step)
     response = client.post(
         '/api/users',
         json={
@@ -26,11 +23,7 @@ def create_seller_user_for_product(step, client: TestClient, product_state):
 
 @given('a product exists')
 def product_exists(step, client: TestClient, product_state):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    row_data = dict(zip(headers, values, strict=True))
+    row_data = extract_table_data(step)
     seller_email = 'seller@test.com'
     client.post(
         '/api/users',
@@ -65,11 +58,7 @@ def product_exists(step, client: TestClient, product_state):
 
 @given('a product exists with:')
 def product_exists_with_status(step, client: TestClient, product_state, execute_sql_statement):
-    data_table = step.data_table
-    rows = data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    values = [cell.value for cell in rows[1].cells]
-    row_data = dict(zip(headers, values, strict=True))
+    row_data = extract_table_data(step)
     seller_id = int(row_data['seller_id'])
     user_response = client.post(
         '/api/users',
