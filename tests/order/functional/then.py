@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from pytest_bdd import then
 
 from src.shared.constant.route_constant import ORDER_GET, PRODUCT_GET
-from tests.shared.utils import extract_single_value, extract_table_data
+from tests.shared.utils import extract_single_value, extract_table_data, assert_response_status
 
 
 def assert_nullable_field(
@@ -14,12 +14,6 @@ def assert_nullable_field(
         assert data.get(field) is not None, message or f'{field} should not be null'
     elif expected == 'null':
         assert data.get(field) is None, message or f'{field} should be null'
-
-
-def assert_response_status(response, expected_status: int, message: str | None = None):
-    assert response.status_code == expected_status, (
-        message or f'Expected {expected_status}, got {response.status_code}: {response.text}'
-    )
 
 
 def get_product_status(client: TestClient, product_id: int) -> str:

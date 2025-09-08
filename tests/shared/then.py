@@ -1,5 +1,5 @@
 from pytest_bdd import then
-from tests.shared.utils import extract_single_value
+from tests.shared.utils import extract_single_value, assert_response_status
 
 
 def get_state_with_response(user_state=None, product_state=None, order_state=None):
@@ -14,9 +14,7 @@ def verify_status_code(step, user_state=None, product_state=None, order_state=No
     expected_status = int(extract_single_value(step))
     state = get_state_with_response(user_state, product_state, order_state)
     response = state['response']
-    assert response.status_code == expected_status, (
-        f'Expected {expected_status}, got {response.status_code}: {response.text}'
-    )
+    assert_response_status(response, expected_status)
 
 
 @then('the error message should contain:')

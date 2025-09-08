@@ -14,6 +14,13 @@ ANOTHER_BUYER_EMAIL = 'another_buyer@test.com'
 LIST_SELLER_EMAIL = 'list_seller@test.com'
 EMPTY_LIST_SELLER_EMAIL = 'empty_list_seller@test.com'
 
+# Test Emails for multiple users
+SELLER1_EMAIL = 'seller1@test.com'
+SELLER2_EMAIL = 'seller2@test.com'
+BUYER1_EMAIL = 'buyer1@test.com'
+BUYER2_EMAIL = 'buyer2@test.com'
+BUYER3_EMAIL = 'buyer3@test.com'
+
 # Test Names
 TEST_SELLER_NAME = 'Test Seller'
 TEST_BUYER_NAME = 'Test Buyer'

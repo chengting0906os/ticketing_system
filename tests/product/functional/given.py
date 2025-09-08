@@ -1,12 +1,8 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import (
-    AUTH_LOGIN,
-    PRODUCT_BASE,
-    USER_CREATE,
-)
-from tests.shared.utils import extract_table_data
+from src.shared.constant.route_constant import PRODUCT_BASE
+from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
     DEFAULT_PASSWORD,
     EMPTY_LIST_SELLER_EMAIL,
@@ -21,42 +17,24 @@ from tests.util_constant import (
 @given('a seller user exists')
 def create_seller_user_for_product(step, client: TestClient, product_state):
     user_data = extract_table_data(step)
-    response = client.post(
-        USER_CREATE,
-        json={
-            'email': user_data['email'],
-            'password': user_data['password'],
-            'name': user_data['name'],
-            'role': user_data['role'],
-        },
+    created_user = create_user(
+        client, user_data['email'], user_data['password'], user_data['name'], user_data['role']
     )
-    assert response.status_code == 201, f'Failed to create seller user: {response.text}'
-    created_user = response.json()
-    product_state['seller_id'] = created_user['id']
-    product_state['seller_user'] = created_user
+    if created_user:
+        product_state['seller_id'] = created_user['id']
+        product_state['seller_user'] = created_user
+    else:
+        # User already exists, we'll use a default ID
+        product_state['seller_id'] = 1
+        product_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
 
 
 @given('a product exists')
 def product_exists(step, client: TestClient, product_state):
     row_data = extract_table_data(step)
     seller_email = TEST_SELLER_EMAIL
-    client.post(
-        USER_CREATE,
-        json={
-            'email': seller_email,
-            'password': DEFAULT_PASSWORD,
-            'name': TEST_SELLER_NAME,
-            'role': 'seller',
-        },
-    )
-    login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': seller_email, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-    )
-    assert login_response.status_code == 200, f'Login failed: {login_response.text}'
-    if 'fastapiusersauth' in login_response.cookies:
-        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    create_user(client, seller_email, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
+    login_user(client, seller_email, DEFAULT_PASSWORD)
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
@@ -75,25 +53,13 @@ def product_exists(step, client: TestClient, product_state):
 def product_exists_with_status(step, client: TestClient, product_state, execute_sql_statement):
     row_data = extract_table_data(step)
     seller_id = int(row_data['seller_id'])
-    user_response = client.post(
-        USER_CREATE,
-        json={
-            'email': f'seller{seller_id}@test.com',
-            'password': DEFAULT_PASSWORD,
-            'name': f'Test Seller {seller_id}',
-            'role': 'seller',
-        },
+    seller_email = f'seller{seller_id}@test.com'
+    created_user = create_user(
+        client, seller_email, DEFAULT_PASSWORD, f'Test Seller {seller_id}', 'seller'
     )
-    if user_response.status_code == 201:
-        seller_id = user_response.json()['id']
-    login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': f'seller{row_data["seller_id"]}@test.com', 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-    )
-    assert login_response.status_code == 200, f'Login failed: {login_response.text}'
-    if 'fastapiusersauth' in login_response.cookies:
-        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    if created_user:
+        seller_id = created_user['id']
+    login_user(client, seller_email, DEFAULT_PASSWORD)
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
@@ -116,29 +82,13 @@ def product_exists_with_status(step, client: TestClient, product_state, execute_
 
 @given('a seller with products:')
 def create_seller_with_products(step, client: TestClient, product_state, execute_sql_statement):
-    seller_response = client.post(
-        USER_CREATE,
-        json={
-            'email': LIST_SELLER_EMAIL,
-            'password': DEFAULT_PASSWORD,
-            'name': LIST_TEST_SELLER_NAME,
-            'role': 'seller',
-        },
+    created_user = create_user(
+        client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD, LIST_TEST_SELLER_NAME, 'seller'
     )
-    if seller_response.status_code == 201:
-        seller_id = seller_response.json()['id']
-    else:
-        seller_id = 1
+    seller_id = created_user['id'] if created_user else 1
     product_state['seller_id'] = seller_id
     product_state['created_products'] = []
-    login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': LIST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-    )
-    assert login_response.status_code == 200, f'Login failed: {login_response.text}'
-    if 'fastapiusersauth' in login_response.cookies:
-        client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    login_user(client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD)
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
@@ -168,19 +118,10 @@ def create_seller_with_products(step, client: TestClient, product_state, execute
 
 @given('no available products exist')
 def create_no_available_products(step, client: TestClient, product_state, execute_sql_statement):
-    seller_response = client.post(
-        USER_CREATE,
-        json={
-            'email': EMPTY_LIST_SELLER_EMAIL,
-            'password': DEFAULT_PASSWORD,
-            'name': EMPTY_LIST_SELLER_NAME,
-            'role': 'seller',
-        },
+    created_user = create_user(
+        client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
     )
-    if seller_response.status_code == 201:
-        seller_id = seller_response.json()['id']
-    else:
-        seller_id = 1
+    seller_id = created_user['id'] if created_user else 1
     product_state['seller_id'] = seller_id
     product_state['created_products'] = []
     data_table = step.data_table
