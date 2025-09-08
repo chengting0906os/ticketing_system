@@ -78,6 +78,25 @@ def verify_order_status_paid(client: TestClient, order_state):
     order_state['updated_order'] = order_data
 
 
+@then('the order status should remain:')
+def verify_order_status_remains(step, client: TestClient, order_state):
+    expected_status = extract_single_value(step)
+    order_data = get_order_details(client, order_state['order']['id'])
+    assert order_data['status'] == expected_status, (
+        f'Order status should remain {expected_status}, but got {order_data["status"]}'
+    )
+
+
+@then('the product status should remain:')
+def verify_product_status_remains(step, client: TestClient, order_state):
+    expected_status = extract_single_value(step)
+    product_id = order_state.get('product', {}).get('id') or order_state.get('product_id', 1)
+    actual_status = get_product_status(client, product_id)
+    assert actual_status == expected_status, (
+        f'Product status should remain {expected_status}, but got {actual_status}'
+    )
+
+
 @then('the order should have:')
 def verify_order_has_fields(step, order_state):
     expected_data = extract_table_data(step)

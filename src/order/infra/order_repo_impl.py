@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.order_repo import OrderRepo
 from src.order.infra.order_model import OrderModel
-from src.shared.exception.exceptions import DomainError
+from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 
 
@@ -163,7 +163,9 @@ class OrderRepoImpl(OrderRepo):
             existing_order = check_result.scalar_one_or_none()
 
             if not existing_order:
-                raise DomainError('Order not found')
+                raise NotFoundError('Order not found')
+            elif existing_order.buyer_id != buyer_id:
+                raise ForbiddenError('Only the buyer can cancel this order')
             elif existing_order.status == OrderStatus.PAID.value:
                 raise DomainError('Cannot cancel paid order')
             elif existing_order.status == OrderStatus.CANCELLED.value:

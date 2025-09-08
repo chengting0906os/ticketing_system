@@ -7,16 +7,16 @@ from src.shared.constant.route_constant import (
     ORDER_MY_ORDERS,
     ORDER_PAY,
 )
-from tests.shared.utils import extract_table_data, login_user, create_user
+from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
-    DEFAULT_PASSWORD,
-    TEST_CARD_NUMBER,
     BUYER1_EMAIL,
     BUYER2_EMAIL,
     BUYER3_EMAIL,
+    DEFAULT_PASSWORD,
     SELLER1_EMAIL,
+    TEST_CARD_NUMBER,
 )
 
 
@@ -86,6 +86,25 @@ def buyer_cancels_order(client: TestClient, order_state):
 @when('the buyer tries to cancel the order')
 def buyer_tries_to_cancel(client: TestClient, order_state):
     response = client.delete(ORDER_CANCEL.format(order_id=order_state['order']['id']))
+    order_state['response'] = response
+
+
+@when("the user tries to cancel someone else's order")
+def user_tries_cancel_others_order(client: TestClient, order_state):
+    response = client.delete(ORDER_CANCEL.format(order_id=order_state['order']['id']))
+    order_state['response'] = response
+
+
+@when("the seller tries to cancel the buyer's order")
+def seller_tries_cancel_buyer_order(client: TestClient, order_state):
+    response = client.delete(ORDER_CANCEL.format(order_id=order_state['order']['id']))
+    order_state['response'] = response
+
+
+@when('the buyer tries to cancel a non-existent order')
+def buyer_tries_cancel_nonexistent(client: TestClient, order_state):
+    # Try to cancel an order that doesn't exist (using ID 999999)
+    response = client.delete(ORDER_CANCEL.format(order_id=999999))
     order_state['response'] = response
 
 
