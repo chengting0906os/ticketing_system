@@ -94,9 +94,7 @@ class MockEmailService:
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
-    async def send_order_cancellation(
-        self, buyer_email: str, order_id: int, product_name: str, reason: Optional[str] = None
-    ):
+    async def send_order_cancellation(self, buyer_email: str, order_id: int, product_name: str):
         """Send order cancellation email."""
         subject = f'Order Cancelled - Order #{order_id}'
         body = f"""
@@ -108,7 +106,6 @@ class MockEmailService:
         --------------------
         Order ID: #{order_id}
         Product: {product_name}
-        {f'Reason: {reason}' if reason else ''}
 
         If you have any questions, please contact our support team.
 

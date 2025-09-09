@@ -1,7 +1,7 @@
 """Domain Events for Order Aggregate."""
 
 from datetime import datetime
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import attrs
 
@@ -45,7 +45,6 @@ class OrderCancelledEvent:
     aggregate_id: int
     buyer_id: int
     product_id: int
-    reason: Optional[str] = None
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 

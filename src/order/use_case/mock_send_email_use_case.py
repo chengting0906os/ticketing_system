@@ -62,7 +62,6 @@ class MockSendEmailUseCase:
                 buyer_email=buyer.email,
                 order_id=event.aggregate_id,
                 product_name=product.name,
-                reason=event.reason,
             )
 
     @Logger.io

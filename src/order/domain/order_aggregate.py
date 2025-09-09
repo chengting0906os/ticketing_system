@@ -106,7 +106,7 @@ class OrderAggregate:
         )
 
     @Logger.io
-    def cancel(self, reason: Optional[str] = None) -> None:
+    def cancel(self) -> None:
         if self.order.status == OrderStatus.PAID:
             raise DomainError('Cannot cancel paid order', 400)
         if self.order.status == OrderStatus.CANCELLED:
@@ -120,7 +120,6 @@ class OrderAggregate:
                 aggregate_id=self.order.id or 0,
                 buyer_id=self.order.buyer_id,
                 product_id=self.order.product_id,
-                reason=reason,
             )
         )
 
