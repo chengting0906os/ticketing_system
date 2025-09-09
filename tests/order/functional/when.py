@@ -4,6 +4,7 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     ORDER_BASE,
     ORDER_CANCEL,
+    ORDER_GET,
     ORDER_MY_ORDERS,
     ORDER_PAY,
 )
@@ -48,11 +49,18 @@ def seller_tries_to_create_order(client: TestClient, order_state):
 @when('the buyer pays for the order with:')
 def buyer_pays_for_order(step, client: TestClient, order_state):
     payment_data = extract_table_data(step)
+    order_id = order_state['order']['id']
     response = client.post(
-        ORDER_PAY.format(order_id=order_state['order']['id']),
+        ORDER_PAY.format(order_id=order_id),
         json={'card_number': payment_data['card_number']},
     )
     order_state['response'] = response
+
+    # If payment was successful, fetch the updated order details
+    if response.status_code == 200:
+        order_response = client.get(ORDER_GET.format(order_id=order_id))
+        assert order_response.status_code == 200
+        order_state['updated_order'] = order_response.json()  # Store full order details
 
 
 @when('the buyer tries to pay for the order again')
@@ -86,8 +94,16 @@ def another_user_tries_to_pay(client: TestClient, order_state):
 
 @when('the buyer cancels the order')
 def buyer_cancels_order(client: TestClient, order_state):
-    response = client.delete(ORDER_CANCEL.format(order_id=order_state['order']['id']))
+    order_id = order_state['order']['id']
+    response = client.delete(ORDER_CANCEL.format(order_id=order_id))
     order_state['response'] = response
+    if response.status_code == 204:
+        # Fetch the updated order details after cancellation
+        order_response = client.get(ORDER_GET.format(order_id=order_id))
+        assert order_response.status_code == 200
+        updated_order = order_response.json()
+        order_state['order']['status'] = 'cancelled'
+        order_state['updated_order'] = updated_order  # Store full order details
 
 
 @when('the buyer tries to cancel the order')
@@ -222,7 +238,12 @@ def buyer_pays_for_order_simple(client: TestClient, order_state):
     )
     assert response.status_code == 200, f'Failed to pay for order: {response.text}'
     order_state['payment_response'] = response
-    order_state['order']['status'] = 'paid'
+    order_state['response'] = response  # Set response for Then steps
+
+    # Fetch the updated order details after payment
+    order_response = client.get(ORDER_GET.format(order_id=order_id))
+    assert order_response.status_code == 200
+    order_state['updated_order'] = order_response.json()  # Store full order details
 
 
 @when('the buyer cancels the order to release the product')
@@ -259,3 +280,63 @@ def another_buyer_creates_order_for_same_product(client: TestClient, order_state
 
     order_state['new_order'] = response.json()
     order_state['another_buyer'] = another_buyer
+
+
+@when('the buyer tries to change cancelled order status to pending_payment')
+def buyer_tries_change_cancelled_to_pending(client: TestClient, order_state):
+    """Buyer tries to change cancelled order back to pending_payment."""
+    order_id = order_state['order']['id']
+    # Try to update order status (this endpoint may not exist, but we'll simulate the attempt)
+    response = client.patch(
+        f'{ORDER_BASE}/{order_id}/status',
+        json={'status': 'pending_payment'},
+    )
+    order_state['response'] = response
+
+
+@when('the buyer tries to change paid order status to pending_payment')
+def buyer_tries_change_paid_to_pending(client: TestClient, order_state):
+    """Buyer tries to change paid order back to pending_payment."""
+    order_id = order_state['order']['id']
+    # Try to update order status
+    response = client.patch(
+        f'{ORDER_BASE}/{order_id}/status',
+        json={'status': 'pending_payment'},
+    )
+    order_state['response'] = response
+
+
+@when('the buyer tries to cancel the completed order')
+def buyer_tries_cancel_completed_order(client: TestClient, order_state):
+    """Buyer tries to cancel a completed order."""
+    order_id = order_state['order']['id']
+    response = client.delete(ORDER_CANCEL.format(order_id=order_id))
+    order_state['response'] = response
+
+
+@when('the buyer tries to mark unpaid order as completed')
+def buyer_tries_mark_unpaid_as_completed(client: TestClient, order_state):
+    """Buyer tries to mark an unpaid order as completed."""
+    order_id = order_state['order']['id']
+    # Try to complete order without payment
+    response = client.patch(
+        f'{ORDER_BASE}/{order_id}/complete',
+        json={},
+    )
+    order_state['response'] = response
+
+
+@when('the seller marks the order as completed')
+def seller_marks_order_completed(client: TestClient, order_state):
+    """Seller marks the order as completed."""
+    # First, login as seller
+    login_user(client, 'seller@test.com', 'P@ssw0rd')
+
+    order_id = order_state['order']['id']
+    response = client.patch(
+        f'{ORDER_BASE}/{order_id}/complete',
+        json={},
+    )
+    order_state['response'] = response
+    if response.status_code == 200:
+        order_state['order']['status'] = 'completed'

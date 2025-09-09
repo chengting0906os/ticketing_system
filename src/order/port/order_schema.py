@@ -36,6 +36,13 @@ class OrderResponse(BaseModel):
         }
 
 
+class OrderStatusUpdateRequest(BaseModel):
+    status: str
+
+    class Config:
+        json_schema_extra = {'example': {'status': 'pending_payment'}}
+
+
 class PaymentRequest(BaseModel):
     card_number: str
 

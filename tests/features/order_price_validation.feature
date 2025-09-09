@@ -16,16 +16,20 @@ Feature: Order Price Validation
       | name          | description        | price | seller_id | is_active | status    |
       | Test Product  | Test Description   | -100  | 1         | true      | available |
     When the buyer tries to create an order for the negative price product
-    Then the response should be 400
-    And the error message should contain "Price must be positive"
+    Then the response should be:
+      | 400 |
+    And the error message should contain:
+      | Price must be positive |
 
   Scenario: Cannot create order with zero price product
     Given a product exists with zero price:
       | name          | description        | price | seller_id | is_active | status    |
       | Free Product  | Test Description   | 0     | 1         | true      | available |
     When the buyer tries to create an order for the zero price product
-    Then the response should be 400
-    And the error message should contain "Price must be positive"
+    Then the response should be:
+      | 400 |
+    And the error message should contain:
+      | Price must be positive |
 
   Scenario: Order price matches product price at creation time
     Given a product exists:

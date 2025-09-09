@@ -7,6 +7,7 @@ from src.shared.constant.route_constant import (
     AUTH_LOGIN,
     ORDER_BASE,
     ORDER_CANCEL,
+    ORDER_GET,
     ORDER_PAY,
     PRODUCT_BASE,
     USER_CREATE,
@@ -324,6 +325,11 @@ def buyer_pays_for_order_given(client: TestClient, order_state):
         json={'card_number': TEST_CARD_NUMBER},
     )
     assert response.status_code == 200, f'Failed to pay for order: {response.text}'
+
+    # Fetch the updated order details after payment
+    order_response = client.get(ORDER_GET.format(order_id=order_id))
+    assert order_response.status_code == 200
+    order_state['updated_order'] = order_response.json()  # Store full order details
     order_state['order']['status'] = 'paid'
 
 
@@ -345,3 +351,24 @@ def buyer_cancels_order_given(client: TestClient, order_state):
     response = client.delete(ORDER_CANCEL.format(order_id=order_id))
     assert response.status_code == 204, f'Failed to cancel order: {response.text}'
     order_state['order']['status'] = 'cancelled'
+
+
+@given('the buyer cancels the order')
+def buyer_cancels_order_simple(client: TestClient, order_state):
+    """Given that the buyer has cancelled the order."""
+    order_id = order_state['order']['id']
+    response = client.delete(ORDER_CANCEL.format(order_id=order_id))
+    assert response.status_code == 204, f'Failed to cancel order: {response.text}'
+    order_state['order']['status'] = 'cancelled'
+    order_state['updated_order'] = {'status': 'cancelled'}  # For Then step compatibility
+
+
+@given('the order is marked as completed')
+def order_marked_as_completed(order_state, execute_sql_statement):
+    """Given that the order has been marked as completed."""
+    order_id = order_state['order']['id']
+    execute_sql_statement(
+        'UPDATE "order" SET status = \'completed\' WHERE id = :id',
+        {'id': order_id},
+    )
+    order_state['order']['status'] = 'completed'

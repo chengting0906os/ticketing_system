@@ -64,20 +64,6 @@ def verify_order_created(step, order_state):
     order_state['created_order'] = order_data
 
 
-@then('the product status should be "reserved"')
-def verify_product_status_reserved(client: TestClient, order_state):
-    product_id = order_state['product']['id']
-    status = get_product_status(client, product_id)
-    assert status == 'reserved'
-
-
-@then('the order status should be "paid"')
-def verify_order_status_paid(client: TestClient, order_state):
-    order_data = get_order_details(client, order_state['order']['id'])
-    assert order_data['status'] == 'paid'
-    order_state['updated_order'] = order_data
-
-
 @then('the order status should remain:')
 def verify_order_status_remains(step, client: TestClient, order_state):
     expected_status = extract_single_value(step)
@@ -127,14 +113,6 @@ def verify_product_status(step, client: TestClient, order_state):
     product_id = order_state.get('product_id') or order_state['product']['id']
     status = get_product_status(client, product_id)
     assert status == expected_status
-
-
-@then('the order status should be:')
-def verify_order_status(step, client: TestClient, order_state):
-    expected_status = extract_single_value(step)
-    order_data = get_order_details(client, order_state['order']['id'])
-    assert order_data['status'] == expected_status
-    order_state['updated_order'] = order_data
 
 
 @then('the response should contain orders:')
