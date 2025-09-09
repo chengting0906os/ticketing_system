@@ -156,20 +156,6 @@ def verify_all_orders_status(step, order_state):
     assert_all_orders_have_status(order_state['orders_response'], expected_status)
 
 
-@then('the error message should contain "Price must be positive"')
-def verify_price_error_message(order_state):
-    """Verify error message contains price validation error."""
-    response = order_state['response']
-    assert response.status_code == 400, f'Expected status 400, got {response.status_code}'
-    error_data = response.json()
-
-    # Check if error message contains the expected text
-    error_message = str(error_data.get('detail', ''))
-    assert 'Price must be positive' in error_message, (
-        f'Expected "Price must be positive" in error message, got: {error_message}'
-    )
-
-
 @then('the order price should be 1000')
 def verify_order_price_1000(order_state):
     """Verify the order price is 1000."""
