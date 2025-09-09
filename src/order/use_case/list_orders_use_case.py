@@ -73,6 +73,7 @@ class ListOrdersUseCase:
             for order in orders:
                 product = await self.uow.products.get_by_id(order.product_id)
                 seller = await self.uow.users.get_by_id(order.seller_id)
+                buyer = await self.uow.users.get_by_id(order.buyer_id)
                 if order.id is None:
                     continue
                 order_detail = OrderDetailResponse(
@@ -85,7 +86,7 @@ class ListOrdersUseCase:
                     created_at=order.created_at,
                     paid_at=order.paid_at,
                     product_name=product.name if product else 'Unknown Product',
-                    buyer_name='',  # Not needed for buyer's view
+                    buyer_name=buyer.name if buyer else 'Unknown Buyer',
                     seller_name=seller.name if seller else 'Unknown Seller',
                 )
                 enriched_orders.append(order_detail.to_dict())
@@ -105,6 +106,7 @@ class ListOrdersUseCase:
             for order in orders:
                 product = await self.uow.products.get_by_id(order.product_id)
                 buyer = await self.uow.users.get_by_id(order.buyer_id)
+                seller = await self.uow.users.get_by_id(order.seller_id)
                 if order.id is None:
                     continue
                 order_detail = OrderDetailResponse(
@@ -118,7 +120,7 @@ class ListOrdersUseCase:
                     paid_at=order.paid_at,
                     product_name=product.name if product else 'Unknown Product',
                     buyer_name=buyer.name if buyer else 'Unknown Buyer',
-                    seller_name='',  # Not needed for seller's view
+                    seller_name=seller.name if seller else 'Unknown Seller',
                 )
                 enriched_orders.append(order_detail.to_dict())
 
