@@ -1,5 +1,3 @@
-"""Mock Email Service for demonstration."""
-
 from datetime import datetime
 from typing import List, Optional
 
@@ -7,11 +5,8 @@ from src.shared.logging.loguru_io import Logger
 
 
 class MockEmailService:
-    """Mock email service that prints to console instead of sending real emails."""
-
-    def __init__(self, debug: bool = True):
-        self.debug = debug
-        self.sent_emails: List[dict] = []  # Store sent emails for testing
+    def __init__(self):
+        self.sent_emails: List[dict] = []
 
     @Logger.io
     async def send_email(
@@ -27,19 +22,18 @@ class MockEmailService:
 
         self.sent_emails.append(email_data)
 
-        if self.debug:
-            print('\n' + '=' * 50)
-            print('📧 MOCK EMAIL SENT')
-            print('=' * 50)
-            print(f'To: {to}')
-            if cc:
-                print(f'CC: {", ".join(cc)}')
-            print(f'Subject: {subject}')
-            print(f'Time: {email_data["sent_at"].strftime("%Y-%m-%d %H:%M:%S")}')
-            print('-' * 50)
-            print('Body:')
-            print(body)
-            print('=' * 50 + '\n')
+        print('\n' + '=' * 50)
+        print('📧 MOCK EMAIL SENT')
+        print('=' * 50)
+        print(f'To: {to}')
+        if cc:
+            print(f'CC: {", ".join(cc)}')
+        print(f'Subject: {subject}')
+        print(f'Time: {email_data["sent_at"].strftime("%Y-%m-%d %H:%M:%S")}')
+        print('-' * 50)
+        print('Body:')
+        print(body)
+        print('=' * 50 + '\n')
 
         return True
 
@@ -47,7 +41,8 @@ class MockEmailService:
     async def send_order_confirmation(
         self, buyer_email: str, order_id: int, product_name: str, price: int
     ):
-        """Send order confirmation email."""
+        if not order_id or order_id <= 0:
+            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
         subject = f'Order Confirmation - Order #{order_id}'
         body = f"""
         Dear Customer,
@@ -58,7 +53,7 @@ class MockEmailService:
         --------------
         Order ID: #{order_id}
         Product: {product_name}
-        Price: ${price / 100:.2f}
+        Price: ${price:,}
         Status: Pending Payment
 
         Please complete your payment to process this order.
@@ -72,7 +67,8 @@ class MockEmailService:
     async def send_payment_confirmation(
         self, buyer_email: str, order_id: int, product_name: str, paid_amount: int
     ):
-        """Send payment confirmation email."""
+        if not order_id or order_id <= 0:
+            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
         subject = f'Payment Confirmed - Order #{order_id}'
         body = f"""
         Dear Customer,
@@ -83,7 +79,7 @@ class MockEmailService:
         ----------------
         Order ID: #{order_id}
         Product: {product_name}
-        Amount Paid: ${paid_amount / 100:.2f}
+        Amount Paid: ${paid_amount:,}
         Status: Paid
 
         Your order is now being processed.
@@ -95,7 +91,8 @@ class MockEmailService:
 
     @Logger.io
     async def send_order_cancellation(self, buyer_email: str, order_id: int, product_name: str):
-        """Send order cancellation email."""
+        if not order_id or order_id <= 0:
+            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
         subject = f'Order Cancelled - Order #{order_id}'
         body = f"""
         Dear Customer,
@@ -118,7 +115,8 @@ class MockEmailService:
     async def notify_seller_new_order(
         self, seller_email: str, order_id: int, product_name: str, buyer_name: str, price: int
     ):
-        """Notify seller about new order."""
+        if not order_id or order_id <= 0:
+            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
         subject = f'New Order Received - Order #{order_id}'
         body = f"""
         Dear Seller,
@@ -130,7 +128,7 @@ class MockEmailService:
         Order ID: #{order_id}
         Product: {product_name}
         Buyer: {buyer_name}
-        Price: ${price / 100:.2f}
+        Price: ${price:,}
 
         The buyer will complete payment soon.
 
@@ -141,7 +139,7 @@ class MockEmailService:
 
 
 # Global instance for dependency injection
-mock_email_service = MockEmailService(debug=True)
+mock_email_service = MockEmailService()
 
 
 @Logger.io

@@ -43,12 +43,18 @@ class CreateOrderUseCase:
             aggregate = OrderAggregate.create_order(buyer, product)
             created_order = await self.uow.orders.create(aggregate.order)
             aggregate.order.id = created_order.id
-            updated_product = aggregate.get_product_for_update()
-            if updated_product:
-                await self.uow.products.update(updated_product)
+
+            # Recreate events with the correct order ID
+            if created_order.id:
+                aggregate.recreate_events_with_order_id(created_order.id)
+
             events = aggregate.collect_events()
             for event in events:
                 await self.email_use_case.handle(event)
+
+            updated_product = aggregate.get_product_for_update()
+            if updated_product:
+                await self.uow.products.update(updated_product)
 
             await self.uow.commit()
 

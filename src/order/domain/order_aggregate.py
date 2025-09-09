@@ -161,3 +161,28 @@ class OrderAggregate:
     @Logger.io
     def get_product_for_update(self) -> Optional[Product]:
         return self._product
+
+    def recreate_events_with_order_id(self, order_id: int) -> None:
+        """Recreate events with the actual order ID after saving to database."""
+        self._events.clear()
+
+        # Recreate OrderCreatedEvent with correct ID
+        self._add_event(
+            OrderCreatedEvent(
+                aggregate_id=order_id,
+                buyer_id=self.order.buyer_id,
+                seller_id=self.order.seller_id,
+                product_id=self.order.product_id,
+                price=self.order.price,
+            )
+        )
+
+        # Recreate ProductReservedEvent if product was reserved
+        if self._product and self._product.status == ProductStatus.RESERVED:
+            self._add_event(
+                ProductReservedEvent(
+                    aggregate_id=order_id,
+                    product_id=self._product.id or 0,
+                    order_id=order_id,
+                )
+            )
