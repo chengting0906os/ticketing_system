@@ -1,86 +1,100 @@
-# pytest-bdd Configuration for API and Entity Testing
-# This configuration defines patterns and constraints for BDD scenarios
+# BDD Test Pattern Configuration
 
-api_patterns:
-  - name: API call
-    given_format: 'the API endpoint "{endpoint}"'
-    when_format: 'I call the API with:'
-    constraints:
-      - API endpoint must be a valid URL path
-      - Request parameters must match the API specification
-      - DataTable columns should map to request parameters (query params + body)
+given_patterns:
+  entity_creation:
+    single: 'a {entity} exists:'
+    multiple: '{entities} exist:'
+    with_qualifier: 'a {entity} exists with {qualifier}:'
     example: |
-      Given the API endpoint "/api/v1/users/register"
-      When I call the API with:
-        | email              | password | first_name | last_name |
-        | alice@example.com  | Pass123! | Alice      | Chen      |
+      Given a user exists:
+        | id | email | name | role |
 
-  - name: API response validation
-    then_format: 'the response status code should be:'
-    constraints:
-      - Response fields must match API response schema
-      - Use dot notation for nested fields (e.g., "user.id", "user.email")
-      - Array items use bracket notation (e.g., "items[0].name")
+  authentication:
+    pattern: 'I am logged in as:'
+    example: |
+      Given I am logged in as:
+        | email | password |
+
+  state_setup:
+    pattern: 'the {entity} {action}'
+    example: 'the buyer pays for the order'
+
+when_patterns:
+  action:
+    success: 'the {actor} {action}'
+    attempt: 'the {actor} tries to {action}'
+    with_data: 'the {actor} {action} with:'
+    example: |
+      When the buyer creates an order for the product
+      When the buyer tries to cancel the order
+      When the buyer pays with:
+        | card_number |
+
+  query:
+    pattern: '{actor} with id {id} requests {resource}'
+    with_filter: '{actor} with id {id} requests {resource} with {filter}'
+
+then_patterns:
+  status_validation:
+    formats:
+      - 'the response status code should be:'
+      - 'get status code:'
     example: |
       Then the response status code should be:
-        | status_code | user.id | user.email         | user.status |
-        | 201         | 1       | alice@example.com  | active      |
+        | 201 |
 
-  - name: API response status only
-    then_format: 'the response status should be {status_code}'
+  error_validation:
+    pattern: 'the error message should contain:'
     example: |
-      Then the response status should be 204
+      Then the error message should contain:
+        | Cannot perform this action |
 
-  - name: API error response
-    then_format: 'the request should fail with message "{message}"'
+  entity_state:
+    current: 'the {entity} should be:'
+    unchanged: 'the {entity} should remain:'
+    fields: 'the {entity} should have:'
     example: |
-      Then the request should fail with message "Email already exists"
+      Then the order status should be:
+        | paid |
 
-entity_patterns:
-  - name: Entity setup
-    given_format: 'a {entity} exists with:'
-    constraints:
-      - Entity must be defined in the domain 
-      - Use dot notation for nested properties (e.g., "email.host")
-      - All required fields must be provided
-    example: |
-      Given a User exists with:
-        | id | email              | first_name | last_name | status |
-        | 1  | john@example.com   | John       | Doe       | active |
+  creation_result:
+    pattern: 'the {entity} should be created with:'
+    validates: 'Created entity fields with 201 status'
 
-  - name: Entity validation
-    then_format: 'the {entity} should have:'
-    constraints:
-      - Entity must exist in the test context
-      - Properties must match entity schema
-      - Use dot notation for nested properties
-    example: |
-      Then the User should have:
-        | id | email              | first_name | last_name | created_at        |
-        | 1  | john@example.com   | John       | Doe       | 2025-01-24T10:00Z |
+  list_result:
+    count: 'the response should contain {entities}:'
+    details: 'the {entities} should include:'
+    filter: 'all {entities} should have {field}:'
 
-  - name: Entity count validation
-    then_format: 'there should be {count} {entity}(s)'
-    with_filter: 'there should be {count} {entity}(s) with:'
-    example: |
-      Then there should be 3 Users with:
-        | status |
-        | active |
+datatable_formats:
+  single_value: |
+    | value |
+    Used for: status codes, single assertions
 
-relationship_patterns:
-  - name: Relationship setup
-    given_format: 'the {entity1} with id "{id}" has {count} {entity2}(s):'
-    example: |
-      Given the User with id "1" has 2 Posts:
-        | post_id | title                  | status    |
-        | 101     | Introduction to Python | published |
-        | 102     | Django Best Practices  | draft     |
+  key_value: |
+    | field1 | field2 | field3 |
+    | value1 | value2 | value3 |
+    Used for: entity creation, multi-field validation
 
-  - name: Relationship validation
-    then_format: 'the {entity1} with id "{id}" should have {count} {entity2}(s)'
-    with_details: 'the {entity1} with id "{id}" should have {count} {entity2}(s):'
-    example: |
-      Then the User with id "1" should have 2 Posts:
-        | post_id | title                  | view_count |
-        | 101     | Introduction to Python | 1250       |
-        | 102     | Django Best Practices  | 850        |
+  multi_row: |
+    | id | name | status |
+    | 1  | foo  | active |
+    | 2  | bar  | inactive |
+    Used for: batch creation, list validation
+
+special_values:
+  nullability:
+    - 'not_null': Must have value
+    - 'null': Must be empty
+  patterns:
+    - 'MOCK_*': Wildcard pattern matching
+
+conventions:
+  naming:
+    - Use lowercase with underscores for status values
+    - Use datatable for all assertions (consistency)
+  
+  step_reusability:
+    - Prefer parameterized steps over specific ones
+    - Use 'tries to' prefix for expected failures
+    - Use 'should remain' for unchanged state verification
