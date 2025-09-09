@@ -10,7 +10,7 @@ Feature: Order Payment
     When the buyer pays for the order with:
       | card_number      |
       | 4242424242424242 |
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the order status should be:
       | paid |
@@ -28,7 +28,7 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price | paid_at  |
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to pay for the order again
-    Then get status code:
+    Then the response status code should be:
       | 400 |
     And the error message should contain:
       | Order already paid |
@@ -38,7 +38,7 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When the buyer tries to pay for the order
-    Then get status code:
+    Then the response status code should be:
       | 400 |
     And the error message should contain:
       | Cannot pay for cancelled order |
@@ -48,7 +48,7 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When another user tries to pay for the order
-    Then get status code:
+    Then the response status code should be:
       | 403 |
     And the error message should contain:
       | Only the buyer can pay for this order |
@@ -58,7 +58,7 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price |
       |        2 |         1 |          1 |  1000 |
     When the buyer cancels the order
-    Then get status code:
+    Then the response status code should be:
       | 204 |
     And the order status should be:
       | cancelled |
@@ -73,7 +73,7 @@ Feature: Order Payment
       | buyer_id | seller_id | product_id | price | paid_at  |
       |        2 |         1 |          1 |  1000 | not_null |
     When the buyer tries to cancel the order
-    Then get status code:
+    Then the response status code should be:
       | 400 |
     And the error message should contain:
       | Cannot cancel paid order |

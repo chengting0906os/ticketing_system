@@ -16,7 +16,7 @@ Feature: User Login
       | email          | password |
       | buyer@test.com | P@ssw0rd |
     Then the login response should be successful
-    And get status code:
+    And the response status code should be:
       | 200 |
     And the response should contain a JWT cookie
     And the user info should be
@@ -28,7 +28,7 @@ Feature: User Login
       | email           | password |
       | seller@test.com | P@ssw0rd |
     Then the login response should be successful
-    And get status code:
+    And the response status code should be:
       | 200 |
     And the response should contain a JWT cookie
     And the user info should be

@@ -10,7 +10,7 @@ Feature: User Creation
     Then the user details should be:
       | email            | password | name     | role  |
       | test@example.com | P@ssw0rd | John Doe | buyer |
-    And get status code:
+    And the response status code should be:
       | 201 |
 
   Scenario: Create a new seller user
@@ -20,7 +20,7 @@ Feature: User Creation
     Then the seller user details should be:
       | email            | password | name | role   |
       | test@example.com | P@ssw0rd | Ryan | seller |
-    And get status code:
+    And the response status code should be:
       | 201 |
 
   Scenario: Create a new wrong user
@@ -30,5 +30,5 @@ Feature: User Creation
     Then the wrong user details should be:
       | email            | password | name | role       |
       | test@example.com | P@ssw0rd | Max  | wrong_user |
-    And get status code:
+    And the response status code should be:
       | 400 |

@@ -30,7 +30,7 @@ Feature: Order List
 
   Scenario: Buyer lists their orders
     When buyer with id 3 requests their orders
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the response should contain orders:
       | 3 |
@@ -42,7 +42,7 @@ Feature: Order List
 
   Scenario: Seller lists orders for their products
     When seller with id 1 requests their orders
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the response should contain orders:
       | 3 |
@@ -54,14 +54,14 @@ Feature: Order List
 
   Scenario: Buyer with no orders gets empty list
     When buyer with id 5 requests their orders
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the response should contain orders:
       | 0 |
 
   Scenario: Filter orders by status - paid orders only
     When buyer with id 3 requests their orders with status "paid"
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the response should contain orders:
       | 2 |
@@ -70,7 +70,7 @@ Feature: Order List
 
   Scenario: Filter orders by status - pending payment only
     When buyer with id 3 requests their orders with status "pending_payment"
-    Then get status code:
+    Then the response status code should be:
       | 200 |
     And the response should contain orders:
       | 1 |

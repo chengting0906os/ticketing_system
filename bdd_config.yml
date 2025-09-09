@@ -16,13 +16,13 @@ api_patterns:
         | alice@example.com  | Pass123! | Alice      | Chen      |
 
   - name: API response validation
-    then_format: 'the response should be:'
+    then_format: 'the response status code should be:'
     constraints:
       - Response fields must match API response schema
       - Use dot notation for nested fields (e.g., "user.id", "user.email")
       - Array items use bracket notation (e.g., "items[0].name")
     example: |
-      Then the response should be:
+      Then the response status code should be:
         | status_code | user.id | user.email         | user.status |
         | 201         | 1       | alice@example.com  | active      |
 
