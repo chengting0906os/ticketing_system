@@ -27,12 +27,6 @@ if TYPE_CHECKING:
 
 @attrs.define
 class OrderAggregate:
-    """
-    This is the main entry point for all order-related operations.
-    It ensures all business invariants are maintained and manages the lifecycle
-    of the order and its related entities.
-    """
-
     order: Order
     product_snapshot: ProductSnapshot
     buyer_info: BuyerInfo
@@ -43,7 +37,7 @@ class OrderAggregate:
     @Logger.io
     def create_order(
         cls,
-        buyer: 'User',  # User entity
+        buyer: 'User',
         product: Product,
     ) -> 'OrderAggregate':
         if buyer.role != UserRole.BUYER.value:
@@ -61,25 +55,36 @@ class OrderAggregate:
             product_id=product.id or 0,
             price=product.price,
         )
-
         product_snapshot = ProductSnapshot.from_product(product)
         buyer_info = BuyerInfo.from_user(buyer)
-
         aggregate = cls(order=order, product_snapshot=product_snapshot, buyer_info=buyer_info)
-
         aggregate._product = product
         aggregate._reserve_product()
-        aggregate._add_event(
+
+        return aggregate
+
+    def emit_creation_events(self) -> None:
+        if not self.order.id:
+            raise ValueError('Order must have an ID before emitting events')
+
+        self._add_event(
             OrderCreatedEvent(
-                aggregate_id=order.id or 0,
-                buyer_id=buyer.id,
-                seller_id=product.seller_id,
-                product_id=product.id or 0,
-                price=product.price,
+                aggregate_id=self.order.id,
+                buyer_id=self.order.buyer_id,
+                seller_id=self.order.seller_id,
+                product_id=self.order.product_id,
+                price=self.order.price,
             )
         )
 
-        return aggregate
+        if self._product and self._product.status == ProductStatus.RESERVED:
+            self._add_event(
+                ProductReservedEvent(
+                    aggregate_id=self.order.id,
+                    product_id=self._product.id or 0,
+                    order_id=self.order.id,
+                )
+            )
 
     @Logger.io
     def process_payment(self) -> None:
@@ -92,7 +97,6 @@ class OrderAggregate:
                 raise DomainError('Invalid order status for payment', 400)
 
         self.order = self.order.mark_as_paid()
-
         if self._product:
             self._product.status = ProductStatus.SOLD
 
@@ -128,14 +132,6 @@ class OrderAggregate:
         if self._product:
             self._product.status = ProductStatus.RESERVED
 
-            self._add_event(
-                ProductReservedEvent(
-                    aggregate_id=self.order.id or 0,
-                    product_id=self._product.id or 0,
-                    order_id=self.order.id or 0,
-                )
-            )
-
     @Logger.io
     def _release_product(self) -> None:
         if self._product:
@@ -161,28 +157,3 @@ class OrderAggregate:
     @Logger.io
     def get_product_for_update(self) -> Optional[Product]:
         return self._product
-
-    def recreate_events_with_order_id(self, order_id: int) -> None:
-        """Recreate events with the actual order ID after saving to database."""
-        self._events.clear()
-
-        # Recreate OrderCreatedEvent with correct ID
-        self._add_event(
-            OrderCreatedEvent(
-                aggregate_id=order_id,
-                buyer_id=self.order.buyer_id,
-                seller_id=self.order.seller_id,
-                product_id=self.order.product_id,
-                price=self.order.price,
-            )
-        )
-
-        # Recreate ProductReservedEvent if product was reserved
-        if self._product and self._product.status == ProductStatus.RESERVED:
-            self._add_event(
-                ProductReservedEvent(
-                    aggregate_id=order_id,
-                    product_id=self._product.id or 0,
-                    order_id=order_id,
-                )
-            )

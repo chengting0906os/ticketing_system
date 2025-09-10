@@ -23,7 +23,6 @@ class MockPaymentUseCase:
 
     @Logger.io
     async def pay_order(self, order_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
-        """Process payment for an order."""
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id)
             if not order:

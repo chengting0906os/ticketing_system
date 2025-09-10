@@ -35,19 +35,10 @@ class CreateOrderUseCase:
             if not product:
                 raise DomainError('Product not found', 404)
 
-            if product.id:
-                existing_order = await self.uow.orders.get_by_product_id(product.id)
-                if existing_order:
-                    raise DomainError('Product already has an active order', 400)
-
             aggregate = OrderAggregate.create_order(buyer, product)
             created_order = await self.uow.orders.create(aggregate.order)
             aggregate.order.id = created_order.id
-
-            # Recreate events with the correct order ID
-            if created_order.id:
-                aggregate.recreate_events_with_order_id(created_order.id)
-
+            aggregate.emit_creation_events()
             events = aggregate.collect_events()
             for event in events:
                 await self.email_use_case.handle(event)
