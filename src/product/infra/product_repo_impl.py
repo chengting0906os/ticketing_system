@@ -10,6 +10,7 @@ from src.product.domain.product_repo import ProductRepo
 from src.product.infra.product_model import ProductModel
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
+from src.user.domain.user_model import User
 
 
 class ProductRepoImpl(ProductRepo):
@@ -18,7 +19,6 @@ class ProductRepoImpl(ProductRepo):
 
     @staticmethod
     def _to_entity(db_product: ProductModel) -> Product:
-        """Convert database model to domain entity."""
         return Product(
             name=db_product.name,
             description=db_product.description,
@@ -56,6 +56,25 @@ class ProductRepoImpl(ProductRepo):
             return None
 
         return ProductRepoImpl._to_entity(db_product)
+
+    @Logger.io
+    async def get_by_id_with_seller(
+        self, product_id: int
+    ) -> tuple[Optional[Product], Optional[User]]:
+        result = await self.session.execute(
+            select(ProductModel, User)
+            .join(User, ProductModel.seller_id == User.id)
+            .where(ProductModel.id == product_id)
+        )
+        row = result.first()
+
+        if not row:
+            return None, None
+
+        db_product, user = row
+        product = ProductRepoImpl._to_entity(db_product)
+
+        return product, user
 
     @Logger.io
     async def update(self, product: Product) -> Product:

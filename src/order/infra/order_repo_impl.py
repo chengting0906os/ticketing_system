@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.order_repo import OrderRepo
@@ -157,7 +158,6 @@ class OrderRepoImpl(OrderRepo):
         db_order = result.scalar_one_or_none()
 
         if not db_order:
-            # Need to check the actual reason for better error messages
             check_stmt = select(OrderModel).where(OrderModel.id == order_id)
             check_result = await self.session.execute(check_stmt)
             existing_order = check_result.scalar_one_or_none()
@@ -174,3 +174,65 @@ class OrderRepoImpl(OrderRepo):
                 raise DomainError('Unable to cancel order')
 
         return OrderRepoImpl._to_entity(db_order)
+
+    @Logger.io
+    async def get_buyer_orders_with_details(self, buyer_id: int) -> List[dict]:
+        result = await self.session.execute(
+            select(OrderModel)
+            .options(
+                selectinload(OrderModel.product),
+                selectinload(OrderModel.buyer),
+                selectinload(OrderModel.seller),
+            )
+            .where(OrderModel.buyer_id == buyer_id)
+            .order_by(OrderModel.id)
+        )
+        db_orders = result.scalars().all()
+
+        return [
+            {
+                'id': db_order.id,
+                'buyer_id': db_order.buyer_id,
+                'seller_id': db_order.seller_id,
+                'product_id': db_order.product_id,
+                'price': db_order.price,
+                'status': db_order.status,
+                'created_at': db_order.created_at,
+                'paid_at': db_order.paid_at,
+                'product_name': db_order.product.name if db_order.product else 'Unknown Product',
+                'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
+                'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
+            }
+            for db_order in db_orders
+        ]
+
+    @Logger.io
+    async def get_seller_orders_with_details(self, seller_id: int) -> List[dict]:
+        result = await self.session.execute(
+            select(OrderModel)
+            .options(
+                selectinload(OrderModel.product),
+                selectinload(OrderModel.buyer),
+                selectinload(OrderModel.seller),
+            )
+            .where(OrderModel.seller_id == seller_id)
+            .order_by(OrderModel.id)
+        )
+        db_orders = result.scalars().all()
+
+        return [
+            {
+                'id': db_order.id,
+                'buyer_id': db_order.buyer_id,
+                'seller_id': db_order.seller_id,
+                'product_id': db_order.product_id,
+                'price': db_order.price,
+                'status': db_order.status,
+                'created_at': db_order.created_at,
+                'paid_at': db_order.paid_at,
+                'product_name': db_order.product.name if db_order.product else 'Unknown Product',
+                'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
+                'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
+            }
+            for db_order in db_orders
+        ]

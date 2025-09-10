@@ -8,64 +8,48 @@ from src.order.domain.events import (
 )
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.mock_email_service import MockEmailService
-from src.shared.service.unit_of_work import AbstractUnitOfWork
 
 
 class MockSendEmailUseCase:
-    def __init__(self, email_service: MockEmailService, uow: AbstractUnitOfWork):
+    def __init__(self, email_service: MockEmailService):
         self.email_service = email_service
-        self.uow = uow
 
     @Logger.io
     async def handle_order_created(self, event: OrderCreatedEvent):
-        buyer = await self.uow.users.get_by_id(event.buyer_id)
-        product = await self.uow.products.get_by_id(event.product_id)
-        seller = await self.uow.users.get_by_id(event.seller_id)
+        await self.email_service.send_order_confirmation(
+            buyer_email=event.buyer_email,
+            order_id=event.aggregate_id,
+            product_name=event.product_name,
+            price=event.price,
+        )
 
-        if buyer and product:
-            await self.email_service.send_order_confirmation(
-                buyer_email=buyer.email,
-                order_id=event.aggregate_id,
-                product_name=product.name,
-                price=event.price,
-            )
-
-        if seller and product and buyer:
-            await self.email_service.notify_seller_new_order(
-                seller_email=seller.email,
-                order_id=event.aggregate_id,
-                product_name=product.name,
-                buyer_name=buyer.name,
-                price=event.price,
-            )
+        await self.email_service.notify_seller_new_order(
+            seller_email=event.seller_email,
+            order_id=event.aggregate_id,
+            product_name=event.product_name,
+            buyer_name=event.buyer_name,
+            price=event.price,
+        )
 
     @Logger.io
     async def handle_order_paid(self, event: OrderPaidEvent):
-        buyer = await self.uow.users.get_by_id(event.buyer_id)
-        product = await self.uow.products.get_by_id(event.product_id)
-
-        if buyer and product:
-            await self.email_service.send_payment_confirmation(
-                buyer_email=buyer.email,
-                order_id=event.aggregate_id,
-                product_name=product.name,
-                paid_amount=product.price,
-            )
+        await self.email_service.send_payment_confirmation(
+            buyer_email=event.buyer_email,
+            order_id=event.aggregate_id,
+            product_name=event.product_name,
+            paid_amount=event.paid_amount,
+        )
 
     @Logger.io
     async def handle_order_cancelled(self, event: OrderCancelledEvent):
-        buyer = await self.uow.users.get_by_id(event.buyer_id)
-        product = await self.uow.products.get_by_id(event.product_id)
-
-        if buyer and product:
-            await self.email_service.send_order_cancellation(
-                buyer_email=buyer.email,
-                order_id=event.aggregate_id,
-                product_name=product.name,
-            )
+        await self.email_service.send_order_cancellation(
+            buyer_email=event.buyer_email,
+            order_id=event.aggregate_id,
+            product_name=event.product_name,
+        )
 
     @Logger.io
-    async def handle(self, event: DomainEventProtocol):
+    async def handle_notification(self, event: DomainEventProtocol):
         if isinstance(event, OrderCreatedEvent):
             await self.handle_order_created(event)
         elif isinstance(event, OrderPaidEvent):

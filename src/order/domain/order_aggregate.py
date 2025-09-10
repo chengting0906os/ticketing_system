@@ -14,7 +14,7 @@ from src.order.domain.events import (
     ProductReservedEvent,
 )
 from src.order.domain.order_entity import Order, OrderStatus
-from src.order.domain.value_objects import BuyerInfo, ProductSnapshot
+from src.order.domain.value_objects import BuyerInfo, ProductSnapshot, SellerInfo
 from src.product.domain.product_entity import Product, ProductStatus
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
@@ -30,6 +30,7 @@ class OrderAggregate:
     order: Order
     product_snapshot: ProductSnapshot
     buyer_info: BuyerInfo
+    seller_info: SellerInfo
     _events: List[DomainEventProtocol] = attrs.field(factory=list, init=False)
     _product: Optional[Product] = attrs.field(default=None, init=False)
 
@@ -39,6 +40,7 @@ class OrderAggregate:
         cls,
         buyer: 'User',
         product: Product,
+        seller: 'User',
     ) -> 'OrderAggregate':
         if buyer.role != UserRole.BUYER.value:
             raise DomainError('Only buyers can create orders', 403)
@@ -57,7 +59,13 @@ class OrderAggregate:
         )
         product_snapshot = ProductSnapshot.from_product(product)
         buyer_info = BuyerInfo.from_user(buyer)
-        aggregate = cls(order=order, product_snapshot=product_snapshot, buyer_info=buyer_info)
+        seller_info = SellerInfo.from_user(seller)
+        aggregate = cls(
+            order=order,
+            product_snapshot=product_snapshot,
+            buyer_info=buyer_info,
+            seller_info=seller_info,
+        )
         aggregate._product = product
         aggregate._reserve_product()
 
@@ -74,6 +82,11 @@ class OrderAggregate:
                 seller_id=self.order.seller_id,
                 product_id=self.order.product_id,
                 price=self.order.price,
+                buyer_email=self.buyer_info.email,
+                buyer_name=self.buyer_info.name,
+                seller_email=self.seller_info.email,
+                seller_name=self.seller_info.name,
+                product_name=self.product_snapshot.name,
             )
         )
 
@@ -106,6 +119,10 @@ class OrderAggregate:
                 buyer_id=self.order.buyer_id,
                 product_id=self.order.product_id,
                 paid_at=self.order.paid_at or datetime.now(),
+                # Rich data to avoid N+1 queries
+                buyer_email=self.buyer_info.email,
+                product_name=self.product_snapshot.name,
+                paid_amount=self.order.price,
             )
         )
 
@@ -124,6 +141,8 @@ class OrderAggregate:
                 aggregate_id=self.order.id or 0,
                 buyer_id=self.order.buyer_id,
                 product_id=self.order.product_id,
+                buyer_email=self.buyer_info.email,
+                product_name=self.product_snapshot.name,
             )
         )
 

@@ -31,3 +31,14 @@ class BuyerInfo:
     @classmethod
     def from_user(cls, user) -> 'BuyerInfo':
         return cls(buyer_id=user.id, name=user.name, email=user.email)
+
+
+@attrs.define(frozen=True)
+class SellerInfo:
+    seller_id: int
+    name: str
+    email: str
+
+    @classmethod
+    def from_user(cls, user) -> 'SellerInfo':
+        return cls(seller_id=user.id, name=user.name, email=user.email)

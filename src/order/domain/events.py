@@ -28,6 +28,11 @@ class OrderCreatedEvent:
     seller_id: int
     product_id: int
     price: int
+    buyer_email: str
+    buyer_name: str
+    seller_email: str
+    seller_name: str
+    product_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 
@@ -37,6 +42,9 @@ class OrderPaidEvent:
     buyer_id: int
     product_id: int
     paid_at: datetime
+    buyer_email: str
+    product_name: str
+    paid_amount: int
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 
@@ -45,6 +53,8 @@ class OrderCancelledEvent:
     aggregate_id: int
     buyer_id: int
     product_id: int
+    buyer_email: str
+    product_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 

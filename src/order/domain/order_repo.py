@@ -34,3 +34,11 @@ class OrderRepo(ABC):
     @abstractmethod
     async def cancel_order_atomically(self, order_id: int, buyer_id: int) -> Order:
         pass
+
+    @abstractmethod
+    async def get_buyer_orders_with_details(self, buyer_id: int) -> List[dict]:
+        pass
+
+    @abstractmethod
+    async def get_seller_orders_with_details(self, seller_id: int) -> List[dict]:
+        pass
