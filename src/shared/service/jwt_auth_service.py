@@ -13,8 +13,6 @@ from src.user.use_case.manager import get_user_manager
 
 
 class JWTAuthService:
-    """JWT-based authentication service implementation."""
-
     def __init__(self):
         self.cookie_transport = CookieTransport(
             cookie_name='fastapiusersauth',
@@ -25,7 +23,7 @@ class JWTAuthService:
         )
 
         self.jwt_strategy = JWTStrategy(
-            secret=settings.SECRET_KEY,
+            secret=settings.SECRET_KEY.get_secret_value(),
             lifetime_seconds=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             algorithm=settings.ALGORITHM,
         )
@@ -37,16 +35,13 @@ class JWTAuthService:
         )
 
     async def create_session(self, user: User) -> str:
-        """Create JWT token for authenticated user."""
         token = await self.jwt_strategy.write_token(user)
         return token
 
 
-# Create singleton instance
 jwt_auth_service = JWTAuthService()
 
 
-# FastAPI Users configuration (kept for compatibility)
 def get_jwt_strategy() -> JWTStrategy:
     return jwt_auth_service.jwt_strategy
 

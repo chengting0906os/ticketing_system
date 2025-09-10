@@ -13,8 +13,8 @@ from src.user.infra.get_user_db import get_user_db
 
 
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
-    reset_password_token_secret = settings.RESET_PASSWORD_TOKEN_SECRET
-    verification_token_secret = settings.VERIFICATION_TOKEN_SECRET
+    reset_password_token_secret = settings.RESET_PASSWORD_TOKEN_SECRET.get_secret_value()
+    verification_token_secret = settings.VERIFICATION_TOKEN_SECRET.get_secret_value()
 
     @Logger.io
     async def on_after_register(self, user: User, request: Optional[Request] = None):

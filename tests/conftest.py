@@ -4,13 +4,16 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
+# Override POSTGRES_DB environment variable to use a dedicated test database
 os.environ['POSTGRES_DB'] = 'shopping_test_db'
+
 from src.main import app
 from tests.order.functional.fixtures import *  # noqa: F403
 from tests.order.functional.given import *  # noqa: F403
@@ -31,11 +34,15 @@ from tests.user.functional.then import *  # noqa: F403
 from tests.user.functional.when import *  # noqa: F403
 
 
+# Load environment variables from .env or .env.example
+env_file = '.env' if Path('.env').exists() else '.env.example'
+load_dotenv(env_file)
+
 DB_CONFIG = {
-    'user': 'py_arch_lab',
-    'password': 'py_arch_lab',
-    'host': 'localhost',
-    'port': '5432',
+    'user': os.getenv('POSTGRES_USER'),
+    'password': os.getenv('POSTGRES_PASSWORD'),
+    'host': os.getenv('POSTGRES_SERVER'),
+    'port': os.getenv('POSTGRES_PORT'),
     'test_db': 'shopping_test_db',
 }
 TEST_DATABASE_URL = f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'

@@ -37,6 +37,9 @@ class UserCreate(schemas.BaseUserCreate):
     password: str = Field(..., min_length=8)
     role: str = 'buyer'
 
+    def __repr__(self) -> str:
+        return f"UserCreate(email='{self.email}', password='********', is_active={self.is_active}, is_superuser={self.is_superuser}, is_verified={self.is_verified}, name='{self.name}', role='{self.role}')"
+
     class Config:
         json_schema_extra = {
             'example': {
