@@ -5,11 +5,14 @@ from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    _env_file = '.env' if Path('.env').exists() else '.env.example'  # Use .env.example (LAB ONLY!)
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_ENV_PATH = _PROJECT_ROOT / '.env'
+_ENV_FILE = _ENV_PATH if _ENV_PATH.exists() else (_PROJECT_ROOT / '.env.example')
 
+
+class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=_env_file,
+        env_file=str(_ENV_FILE),
         env_ignore_empty=True,
         extra='ignore',
     )

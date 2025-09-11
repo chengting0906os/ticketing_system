@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   
 jobs:
   lint:
@@ -110,22 +110,14 @@ jobs:
         run: |
           uv sync --all-extras --dev
           
+      - name: Setup environment variables for database migration
+        run: |
+          cp .env.example .env
+          
       - name: Run database migrations
-        env:
-          POSTGRES_SERVER: localhost
-          POSTGRES_USER: py_arch_lab
-          POSTGRES_PASSWORD: py_arch_lab  # For production, use environment variables or secrets management
-          POSTGRES_DB: shopping_db
-          POSTGRES_PORT: 5432
         run: |
           cd src/shared/alembic && uv run alembic upgrade head
           
       - name: Run tests
-        env:
-          POSTGRES_SERVER: localhost  
-          POSTGRES_USER: py_arch_lab
-          POSTGRES_PASSWORD: py_arch_lab  # For production, use environment variables or secrets management
-          POSTGRES_DB: shopping_db
-          POSTGRES_PORT: 5432
         run: |
           uv run pytest -v --tb=short
