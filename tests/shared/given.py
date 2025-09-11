@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import PRODUCT_BASE, USER_CREATE
+from src.shared.constant.route_constant import EVENT_BASE, USER_CREATE
 from tests.shared.utils import create_user, extract_table_data, login_user
 
 
@@ -13,7 +13,7 @@ def login_user_with_table(step, client):
 
 @given('a buyer exists:')
 def create_buyer_shared(
-    step, client: TestClient, order_state=None, product_state=None, user_state=None
+    step, client: TestClient, order_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating a buyer user."""
     buyer_data = extract_table_data(step)
@@ -26,8 +26,8 @@ def create_buyer_shared(
     # Store in appropriate state based on what's available
     if order_state is not None:
         order_state['buyer'] = buyer
-    if product_state is not None:
-        product_state['buyer'] = buyer
+    if event_state is not None:
+        event_state['buyer'] = buyer
     if user_state is not None:
         user_state['buyer'] = buyer
 
@@ -36,7 +36,7 @@ def create_buyer_shared(
 
 @given('a seller exists:')
 def create_seller_shared(
-    step, client: TestClient, order_state=None, product_state=None, user_state=None
+    step, client: TestClient, order_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating a seller user."""
     seller_data = extract_table_data(step)
@@ -53,8 +53,8 @@ def create_seller_shared(
     # Store in appropriate state based on what's available
     if order_state is not None:
         order_state['seller'] = seller
-    if product_state is not None:
-        product_state['seller'] = seller
+    if event_state is not None:
+        event_state['seller'] = seller
     if user_state is not None:
         user_state['seller'] = seller
 
@@ -63,7 +63,7 @@ def create_seller_shared(
 
 @given('another buyer exists:')
 def create_another_buyer_shared(
-    step, client: TestClient, order_state=None, product_state=None, user_state=None
+    step, client: TestClient, order_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating another buyer user."""
     buyer_data = extract_table_data(step)
@@ -76,8 +76,8 @@ def create_another_buyer_shared(
     # Store in appropriate state based on what's available
     if order_state is not None:
         order_state['another_buyer'] = another_buyer
-    if product_state is not None:
-        product_state['another_buyer'] = another_buyer
+    if event_state is not None:
+        event_state['another_buyer'] = another_buyer
     if user_state is not None:
         user_state['another_buyer'] = another_buyer
 
@@ -86,7 +86,7 @@ def create_another_buyer_shared(
 
 @given('a buyer user exists')
 def create_buyer_user_simple(
-    step, client: TestClient, user_state=None, order_state=None, product_state=None
+    step, client: TestClient, user_state=None, order_state=None, event_state=None
 ):
     """Simple buyer creation without table data."""
     buyer_data = extract_table_data(step)
@@ -100,15 +100,15 @@ def create_buyer_user_simple(
         user_state['buyer'] = buyer
     if order_state is not None:
         order_state['buyer'] = buyer
-    if product_state is not None:
-        product_state['buyer'] = buyer
+    if event_state is not None:
+        event_state['buyer'] = buyer
 
     return buyer
 
 
 @given('a seller user exists')
 def create_seller_user_simple(
-    step, client: TestClient, product_state=None, order_state=None, user_state=None
+    step, client: TestClient, event_state=None, order_state=None, user_state=None
 ):
     """Simple seller creation without table data."""
     user_data = extract_table_data(step)
@@ -118,9 +118,9 @@ def create_seller_user_simple(
 
     if created:
         # Store in appropriate state
-        if product_state is not None:
-            product_state['seller_id'] = created['id']
-            product_state['seller_user'] = created
+        if event_state is not None:
+            event_state['seller_id'] = created['id']
+            event_state['seller_user'] = created
         if order_state is not None:
             order_state['seller_id'] = created['id']
             order_state['seller_user'] = created
@@ -129,9 +129,9 @@ def create_seller_user_simple(
             user_state['seller_user'] = created
     else:
         # User already exists, use default ID
-        if product_state is not None:
-            product_state['seller_id'] = 1
-            product_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
+        if event_state is not None:
+            event_state['seller_id'] = 1
+            event_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
         if order_state is not None:
             order_state['seller_id'] = 1
             order_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
@@ -142,15 +142,15 @@ def create_seller_user_simple(
     return created
 
 
-@given('a seller with a product:')
-def create_seller_with_product_shared(
-    step, client: TestClient, order_state=None, product_state=None, execute_sql_statement=None
+@given('a seller with a event:')
+def create_seller_with_event_shared(
+    step, client: TestClient, order_state=None, event_state=None, execute_sql_statement=None
 ):
-    """Shared step for creating a seller with a product."""
-    product_data = extract_table_data(step)
+    """Shared step for creating a seller with a event."""
+    event_data = extract_table_data(step)
 
     # Create seller
-    seller_email = f'seller_{product_data["name"].lower().replace(" ", "_")}@test.com'
+    seller_email = f'seller_{event_data["name"].lower().replace(" ", "_")}@test.com'
     seller = create_user(client, seller_email, 'P@ssw0rd', 'Test Seller', 'seller')
 
     seller_id = seller['id'] if seller else 1
@@ -158,75 +158,75 @@ def create_seller_with_product_shared(
     # Store seller in appropriate state
     if order_state is not None:
         order_state['seller'] = {'id': seller_id, 'email': seller_email}
-    if product_state is not None:
-        product_state['seller'] = {'id': seller_id, 'email': seller_email}
+    if event_state is not None:
+        event_state['seller'] = {'id': seller_id, 'email': seller_email}
 
     # Login as seller
     login_user(client, seller_email, 'P@ssw0rd')
 
-    # Create product
+    # Create event
     request_data = {
-        'name': product_data['name'],
-        'description': product_data['description'],
-        'price': int(product_data['price']),
-        'is_active': product_data['is_active'].lower() == 'true',
+        'name': event_data['name'],
+        'description': event_data['description'],
+        'price': int(event_data['price']),
+        'is_active': event_data['is_active'].lower() == 'true',
     }
 
-    response = client.post(PRODUCT_BASE, json=request_data)
-    assert response.status_code == 201, f'Failed to create product: {response.text}'
-    product = response.json()
+    response = client.post(EVENT_BASE, json=request_data)
+    assert response.status_code == 201, f'Failed to create event: {response.text}'
+    event = response.json()
 
-    # Update product status if needed
-    if 'status' in product_data and product_data['status'] != 'available' and execute_sql_statement:
+    # Update event status if needed
+    if 'status' in event_data and event_data['status'] != 'available' and execute_sql_statement:
         execute_sql_statement(
-            'UPDATE product SET status = :status WHERE id = :id',
-            {'status': product_data['status'], 'id': product['id']},
+            'UPDATE event SET status = :status WHERE id = :id',
+            {'status': event_data['status'], 'id': event['id']},
         )
-        product['status'] = product_data['status']
+        event['status'] = event_data['status']
 
-    # Store product in appropriate state
+    # Store event in appropriate state
     if order_state is not None:
-        order_state['product'] = product
-    if product_state is not None:
-        product_state['product'] = product
-        product_state['product_id'] = product['id']
-        product_state['original_product'] = product
-        product_state['request_data'] = request_data
+        order_state['event'] = event
+    if event_state is not None:
+        event_state['event'] = event
+        event_state['event_id'] = event['id']
+        event_state['original_event'] = event
+        event_state['request_data'] = request_data
 
-    return product
+    return event
 
 
-@given('a product exists:')
-def create_product_shared(
-    step, client: TestClient, order_state=None, product_state=None, execute_sql_statement=None
+@given('a event exists:')
+def create_event_shared(
+    step, client: TestClient, order_state=None, event_state=None, execute_sql_statement=None
 ):
-    """Shared step for creating a product (inserts directly into database)."""
-    product_data = extract_table_data(step)
-    seller_id = int(product_data.get('seller_id', 1))
+    """Shared step for creating a event (inserts directly into database)."""
+    event_data = extract_table_data(step)
+    seller_id = int(event_data.get('seller_id', 1))
 
     if execute_sql_statement:
-        # Create product directly in database
+        # Create event directly in database
         execute_sql_statement(
             """
-            INSERT INTO product (name, description, price, seller_id, is_active, status)
+            INSERT INTO event (name, description, price, seller_id, is_active, status)
             VALUES (:name, :description, :price, :seller_id, :is_active, :status)
             """,
             {
-                'name': product_data['name'],
-                'description': product_data['description'],
-                'price': int(product_data['price']),
+                'name': event_data['name'],
+                'description': event_data['description'],
+                'price': int(event_data['price']),
                 'seller_id': seller_id,
-                'is_active': product_data.get('is_active', 'true').lower() == 'true',
-                'status': product_data.get('status', 'available'),
+                'is_active': event_data.get('is_active', 'true').lower() == 'true',
+                'status': event_data.get('status', 'available'),
             },
         )
 
-        # Get the created product ID
+        # Get the created event ID
         result = execute_sql_statement(
-            'SELECT id FROM product WHERE name = :name ORDER BY id DESC LIMIT 1',
-            {'name': product_data['name']},
+            'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
+            {'name': event_data['name']},
         )
-        product_id = result[0]['id'] if result else 1
+        event_id = result[0]['id'] if result else 1
     else:
         # Fallback: create via API
         seller_email = f'seller{seller_id}@test.com'
@@ -234,34 +234,34 @@ def create_product_shared(
         login_user(client, seller_email, 'P@ssw0rd')
 
         request_data = {
-            'name': product_data['name'],
-            'description': product_data['description'],
-            'price': int(product_data['price']),
-            'is_active': product_data.get('is_active', 'true').lower() == 'true',
+            'name': event_data['name'],
+            'description': event_data['description'],
+            'price': int(event_data['price']),
+            'is_active': event_data.get('is_active', 'true').lower() == 'true',
         }
 
-        response = client.post(PRODUCT_BASE, json=request_data)
-        assert response.status_code == 201, f'Failed to create product: {response.text}'
-        product_result = response.json()
-        product_id = product_result['id']
+        response = client.post(EVENT_BASE, json=request_data)
+        assert response.status_code == 201, f'Failed to create event: {response.text}'
+        event_result = response.json()
+        event_id = event_result['id']
 
-    product = {
-        'id': product_id,
-        'name': product_data['name'],
-        'price': int(product_data['price']),
-        'status': product_data.get('status', 'available'),
+    event = {
+        'id': event_id,
+        'name': event_data['name'],
+        'price': int(event_data['price']),
+        'status': event_data.get('status', 'available'),
     }
 
-    # Store product in appropriate state
+    # Store event in appropriate state
     if order_state is not None:
-        order_state['product'] = product
-        order_state['product_id'] = product_id
-    if product_state is not None:
-        product_state['product'] = product
-        product_state['product_id'] = product_id
-        product_state['original_product'] = product
+        order_state['event'] = event
+        order_state['event_id'] = event_id
+    if event_state is not None:
+        event_state['event'] = event
+        event_state['event_id'] = event_id
+        event_state['original_event'] = event
 
-    return product
+    return event
 
 
 @given('I am not logged in')

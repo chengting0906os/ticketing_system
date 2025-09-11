@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.order.port.order_controller import router as order_router
-from src.product.port.product_controller import router as product_router
+from src.event.port.event_controller import router as event_router
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import create_db_and_tables
 from src.shared.exception.exception_handlers import register_exception_handlers
@@ -40,11 +40,11 @@ register_exception_handlers(app)
 # endpoints
 app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
 app.include_router(users_router, prefix='/api/user', tags=['user'])
-app.include_router(product_router, prefix='/api/product', tags=['product'])
+app.include_router(event_router, prefix='/api/event', tags=['event'])
 app.include_router(order_router, prefix='/api/order', tags=['order'])
 
 
 @app.get('/')
 async def root():
     """Root endpoint."""
-    return {'message': 'Shopping System API'}
+    return {'message': 'Ticketing System API'}

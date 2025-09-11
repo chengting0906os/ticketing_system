@@ -10,12 +10,12 @@ from src.order.domain.events import (
     OrderCancelledEvent,
     OrderCreatedEvent,
     OrderPaidEvent,
-    ProductReleasedEvent,
-    ProductReservedEvent,
+    EventReleasedEvent,
+    EventReservedEvent,
 )
 from src.order.domain.order_entity import Order, OrderStatus
-from src.order.domain.value_objects import BuyerInfo, ProductSnapshot, SellerInfo
-from src.product.domain.product_entity import Product, ProductStatus
+from src.order.domain.value_objects import BuyerInfo, EventSnapshot, SellerInfo
+from src.event.domain.event_entity import Event, EventStatus
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_entity import UserRole
@@ -28,46 +28,46 @@ if TYPE_CHECKING:
 @attrs.define
 class OrderAggregate:
     order: Order
-    product_snapshot: ProductSnapshot
+    event_snapshot: EventSnapshot
     buyer_info: BuyerInfo
     seller_info: SellerInfo
     _events: List[DomainEventProtocol] = attrs.field(factory=list, init=False)
-    _product: Optional[Product] = attrs.field(default=None, init=False)
+    _event: Optional[Event] = attrs.field(default=None, init=False)
 
     @classmethod
     @Logger.io
     def create_order(
         cls,
         buyer: 'User',
-        product: Product,
+        event: Event,
         seller: 'User',
     ) -> 'OrderAggregate':
         if buyer.role != UserRole.BUYER.value:
             raise DomainError('Only buyers can create orders', 403)
-        if buyer.id == product.seller_id:
-            raise DomainError('Cannot buy your own product', 403)
-        if not product.is_active:
-            raise DomainError('Product not active', 400)
-        if product.status != ProductStatus.AVAILABLE:
-            raise DomainError('Product not available', 400)
+        if buyer.id == event.seller_id:
+            raise DomainError('Cannot buy your own event', 403)
+        if not event.is_active:
+            raise DomainError('Event not active', 400)
+        if event.status != EventStatus.AVAILABLE:
+            raise DomainError('Event not available', 400)
 
         order = Order.create(
             buyer_id=buyer.id,
-            seller_id=product.seller_id,
-            product_id=product.id or 0,
-            price=product.price,
+            seller_id=event.seller_id,
+            event_id=event.id or 0,
+            price=event.price,
         )
-        product_snapshot = ProductSnapshot.from_product(product)
+        event_snapshot = EventSnapshot.from_event(event)
         buyer_info = BuyerInfo.from_user(buyer)
         seller_info = SellerInfo.from_user(seller)
         aggregate = cls(
             order=order,
-            product_snapshot=product_snapshot,
+            event_snapshot=event_snapshot,
             buyer_info=buyer_info,
             seller_info=seller_info,
         )
-        aggregate._product = product
-        aggregate._reserve_product()
+        aggregate._event = event
+        aggregate._reserve_event()
 
         return aggregate
 
@@ -80,21 +80,21 @@ class OrderAggregate:
                 aggregate_id=self.order.id,
                 buyer_id=self.order.buyer_id,
                 seller_id=self.order.seller_id,
-                product_id=self.order.product_id,
+                event_id=self.order.event_id,
                 price=self.order.price,
                 buyer_email=self.buyer_info.email,
                 buyer_name=self.buyer_info.name,
                 seller_email=self.seller_info.email,
                 seller_name=self.seller_info.name,
-                product_name=self.product_snapshot.name,
+                event_name=self.event_snapshot.name,
             )
         )
 
-        if self._product and self._product.status == ProductStatus.RESERVED:
+        if self._event and self._event.status == EventStatus.RESERVED:
             self._add_event(
-                ProductReservedEvent(
+                EventReservedEvent(
                     aggregate_id=self.order.id,
-                    product_id=self._product.id or 0,
+                    event_id=self._event.id or 0,
                     order_id=self.order.id,
                 )
             )
@@ -110,18 +110,18 @@ class OrderAggregate:
                 raise DomainError('Invalid order status for payment', 400)
 
         self.order = self.order.mark_as_paid()
-        if self._product:
-            self._product.status = ProductStatus.SOLD
+        if self._event:
+            self._event.status = EventStatus.SOLD
 
         self._add_event(
             OrderPaidEvent(
                 aggregate_id=self.order.id or 0,
                 buyer_id=self.order.buyer_id,
-                product_id=self.order.product_id,
+                event_id=self.order.event_id,
                 paid_at=self.order.paid_at or datetime.now(),
                 # Rich data to avoid N+1 queries
                 buyer_email=self.buyer_info.email,
-                product_name=self.product_snapshot.name,
+                event_name=self.event_snapshot.name,
                 paid_amount=self.order.price,
             )
         )
@@ -133,33 +133,33 @@ class OrderAggregate:
         if self.order.status == OrderStatus.CANCELLED:
             raise DomainError('Order already cancelled', 400)
         self.order = self.order.cancel()
-        if self._product and self._product.status == ProductStatus.RESERVED:
-            self._release_product()
+        if self._event and self._event.status == EventStatus.RESERVED:
+            self._release_event()
 
         self._add_event(
             OrderCancelledEvent(
                 aggregate_id=self.order.id or 0,
                 buyer_id=self.order.buyer_id,
-                product_id=self.order.product_id,
+                event_id=self.order.event_id,
                 buyer_email=self.buyer_info.email,
-                product_name=self.product_snapshot.name,
+                event_name=self.event_snapshot.name,
             )
         )
 
     @Logger.io
-    def _reserve_product(self) -> None:
-        if self._product:
-            self._product.status = ProductStatus.RESERVED
+    def _reserve_event(self) -> None:
+        if self._event:
+            self._event.status = EventStatus.RESERVED
 
     @Logger.io
-    def _release_product(self) -> None:
-        if self._product:
-            self._product.status = ProductStatus.AVAILABLE
+    def _release_event(self) -> None:
+        if self._event:
+            self._event.status = EventStatus.AVAILABLE
 
             self._add_event(
-                ProductReleasedEvent(
+                EventReleasedEvent(
                     aggregate_id=self.order.id or 0,
-                    product_id=self._product.id or 0,
+                    event_id=self._event.id or 0,
                     order_id=self.order.id or 0,
                 )
             )
@@ -174,5 +174,5 @@ class OrderAggregate:
         return events
 
     @Logger.io
-    def get_product_for_update(self) -> Optional[Product]:
-        return self._product
+    def get_event_for_update(self) -> Optional[Event]:
+        return self._event

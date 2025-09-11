@@ -19,14 +19,14 @@ class MockSendEmailUseCase:
         await self.email_service.send_order_confirmation(
             buyer_email=event.buyer_email,
             order_id=event.aggregate_id,
-            product_name=event.product_name,
+            event_name=event.event_name,
             price=event.price,
         )
 
         await self.email_service.notify_seller_new_order(
             seller_email=event.seller_email,
             order_id=event.aggregate_id,
-            product_name=event.product_name,
+            event_name=event.event_name,
             buyer_name=event.buyer_name,
             price=event.price,
         )
@@ -36,7 +36,7 @@ class MockSendEmailUseCase:
         await self.email_service.send_payment_confirmation(
             buyer_email=event.buyer_email,
             order_id=event.aggregate_id,
-            product_name=event.product_name,
+            event_name=event.event_name,
             paid_amount=event.paid_amount,
         )
 
@@ -45,7 +45,7 @@ class MockSendEmailUseCase:
         await self.email_service.send_order_cancellation(
             buyer_email=event.buyer_email,
             order_id=event.aggregate_id,
-            product_name=event.product_name,
+            event_name=event.event_name,
         )
 
     @Logger.io

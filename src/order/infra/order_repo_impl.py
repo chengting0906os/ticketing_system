@@ -23,7 +23,7 @@ class OrderRepoImpl(OrderRepo):
         return Order(
             buyer_id=db_order.buyer_id,
             seller_id=db_order.seller_id,
-            product_id=db_order.product_id,
+            event_id=db_order.event_id,
             price=db_order.price,
             status=OrderStatus(db_order.status),
             created_at=db_order.created_at,
@@ -37,7 +37,7 @@ class OrderRepoImpl(OrderRepo):
         db_order = OrderModel(
             buyer_id=order.buyer_id,
             seller_id=order.seller_id,
-            product_id=order.product_id,
+            event_id=order.event_id,
             price=order.price,
             status=order.status.value,
             created_at=order.created_at,
@@ -61,10 +61,10 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_product_id(self, product_id: int) -> Optional[Order]:
+    async def get_by_event_id(self, event_id: int) -> Optional[Order]:
         result = await self.session.execute(
             select(OrderModel)
-            .where(OrderModel.product_id == product_id)
+            .where(OrderModel.event_id == event_id)
             .where(OrderModel.status != OrderStatus.CANCELLED.value)
         )
         db_order = result.scalar_one_or_none()
@@ -85,7 +85,7 @@ class OrderRepoImpl(OrderRepo):
             Order(
                 buyer_id=db_order.buyer_id,
                 seller_id=db_order.seller_id,
-                product_id=db_order.product_id,
+                event_id=db_order.event_id,
                 price=db_order.price,
                 status=OrderStatus(db_order.status),
                 created_at=db_order.created_at,
@@ -107,7 +107,7 @@ class OrderRepoImpl(OrderRepo):
             Order(
                 buyer_id=db_order.buyer_id,
                 seller_id=db_order.seller_id,
-                product_id=db_order.product_id,
+                event_id=db_order.event_id,
                 price=db_order.price,
                 status=OrderStatus(db_order.status),
                 created_at=db_order.created_at,
@@ -126,7 +126,7 @@ class OrderRepoImpl(OrderRepo):
             .values(
                 buyer_id=order.buyer_id,
                 seller_id=order.seller_id,
-                product_id=order.product_id,
+                event_id=order.event_id,
                 price=order.price,
                 status=order.status.value,
                 updated_at=order.updated_at,
@@ -180,7 +180,7 @@ class OrderRepoImpl(OrderRepo):
         result = await self.session.execute(
             select(OrderModel)
             .options(
-                selectinload(OrderModel.product),
+                selectinload(OrderModel.event),
                 selectinload(OrderModel.buyer),
                 selectinload(OrderModel.seller),
             )
@@ -194,12 +194,12 @@ class OrderRepoImpl(OrderRepo):
                 'id': db_order.id,
                 'buyer_id': db_order.buyer_id,
                 'seller_id': db_order.seller_id,
-                'product_id': db_order.product_id,
+                'event_id': db_order.event_id,
                 'price': db_order.price,
                 'status': db_order.status,
                 'created_at': db_order.created_at,
                 'paid_at': db_order.paid_at,
-                'product_name': db_order.product.name if db_order.product else 'Unknown Product',
+                'event_name': db_order.event.name if db_order.event else 'Unknown Event',
                 'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
                 'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
             }
@@ -211,7 +211,7 @@ class OrderRepoImpl(OrderRepo):
         result = await self.session.execute(
             select(OrderModel)
             .options(
-                selectinload(OrderModel.product),
+                selectinload(OrderModel.event),
                 selectinload(OrderModel.buyer),
                 selectinload(OrderModel.seller),
             )
@@ -225,12 +225,12 @@ class OrderRepoImpl(OrderRepo):
                 'id': db_order.id,
                 'buyer_id': db_order.buyer_id,
                 'seller_id': db_order.seller_id,
-                'product_id': db_order.product_id,
+                'event_id': db_order.event_id,
                 'price': db_order.price,
                 'status': db_order.status,
                 'created_at': db_order.created_at,
                 'paid_at': db_order.paid_at,
-                'product_name': db_order.product.name if db_order.product else 'Unknown Product',
+                'event_name': db_order.event.name if db_order.event else 'Unknown Event',
                 'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
                 'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
             }

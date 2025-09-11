@@ -9,7 +9,7 @@ from src.shared.constant.route_constant import (
     ORDER_CANCEL,
     ORDER_GET,
     ORDER_PAY,
-    PRODUCT_BASE,
+    EVENT_BASE,
     USER_CREATE,
 )
 from tests.shared.utils import extract_table_data
@@ -18,8 +18,8 @@ from tests.util_constant import (
     TEST_BUYER_EMAIL,
     TEST_BUYER_NAME,
     TEST_CARD_NUMBER,
-    TEST_PRODUCT_DESCRIPTION,
-    TEST_PRODUCT_NAME,
+    TEST_EVENT_DESCRIPTION,
+    TEST_EVENT_NAME,
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
@@ -64,17 +64,17 @@ def create_pending_order(step, client: TestClient, order_state):
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    product_response = client.post(
-        PRODUCT_BASE,
+    event_response = client.post(
+        EVENT_BASE,
         json={
-            'name': TEST_PRODUCT_NAME,
-            'description': TEST_PRODUCT_DESCRIPTION,
+            'name': TEST_EVENT_NAME,
+            'description': TEST_EVENT_DESCRIPTION,
             'price': int(order_data['price']),
             'is_active': True,
         },
     )
-    assert product_response.status_code == 201, f'Failed to create product: {product_response.text}'
-    product = product_response.json()
+    assert event_response.status_code == 201, f'Failed to create event: {event_response.text}'
+    event = event_response.json()
     login_response = client.post(
         AUTH_LOGIN,
         data={'username': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
@@ -83,13 +83,13 @@ def create_pending_order(step, client: TestClient, order_state):
     assert login_response.status_code == 200, f'Buyer login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    order_response = client.post(ORDER_BASE, json={'product_id': product['id']})
+    order_response = client.post(ORDER_BASE, json={'event_id': event['id']})
     assert order_response.status_code == 201, f'Failed to create order: {order_response.text}'
     order = order_response.json()
     order_state['order'] = order
     order_state['buyer_id'] = buyer_id
     order_state['seller_id'] = seller_id
-    order_state['product_id'] = product['id']
+    order_state['event_id'] = event['id']
 
 
 @given('an order exists with status "paid":')
@@ -113,7 +113,7 @@ def create_cancelled_order(step, client: TestClient, order_state, execute_sql_st
         {'id': order_state['order']['id']},
     )
     execute_sql_statement(
-        "UPDATE product SET status = 'available' WHERE id = :id", {'id': order_state['product_id']}
+        "UPDATE event SET status = 'available' WHERE id = :id", {'id': order_state['event_id']}
     )
     order_state['order']['status'] = 'cancelled'
 
@@ -154,38 +154,38 @@ def create_users(step, client: TestClient, order_state, execute_sql_statement):
     )
 
 
-@given('products exist:')
-def create_products(step, client: TestClient, order_state, execute_sql_statement):
+@given('events exist:')
+def create_events(step, client: TestClient, order_state, execute_sql_statement):
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
-    order_state['products'] = {}
+    order_state['events'] = {}
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
-        product_data = dict(zip(headers, values, strict=True))
-        product_id = int(product_data['id'])
-        seller_id = int(product_data['seller_id'])
+        event_data = dict(zip(headers, values, strict=True))
+        event_id = int(event_data['id'])
+        seller_id = int(event_data['seller_id'])
         execute_sql_statement(
-            '\n                INSERT INTO product (id, seller_id, name, description, price, is_active, status)\n                VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status)\n            ',
+            '\n                INSERT INTO event (id, seller_id, name, description, price, is_active, status)\n                VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status)\n            ',
             {
-                'id': product_id,
+                'id': event_id,
                 'seller_id': seller_id,
-                'name': product_data['name'],
-                'description': f'Description for {product_data["name"]}',
-                'price': int(product_data['price']),
+                'name': event_data['name'],
+                'description': f'Description for {event_data["name"]}',
+                'price': int(event_data['price']),
                 'is_active': True,
-                'status': product_data['status'],
+                'status': event_data['status'],
             },
         )
-        order_state['products'][product_id] = {
-            'id': product_id,
+        order_state['events'][event_id] = {
+            'id': event_id,
             'seller_id': seller_id,
-            'name': product_data['name'],
-            'price': int(product_data['price']),
-            'status': product_data['status'],
+            'name': event_data['name'],
+            'price': int(event_data['price']),
+            'status': event_data['status'],
         }
     execute_sql_statement(
-        "SELECT setval('product_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM product), false)", {}
+        "SELECT setval('event_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM event), false)", {}
     )
 
 
@@ -198,32 +198,32 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         order_data = dict(zip(headers, values, strict=True))
-        product_key = int(order_data['product_id'])
-        if 'products' in order_state and product_key in order_state['products']:
-            product_id = order_state['products'][product_key]['id']
+        event_key = int(order_data['event_id'])
+        if 'events' in order_state and event_key in order_state['events']:
+            event_id = order_state['events'][event_key]['id']
         else:
-            product_id = product_key
+            event_id = event_key
         order_id = int(order_data['id'])
         if order_data.get('paid_at') == 'not_null' and order_data['status'] == 'paid':
             execute_sql_statement(
-                '\n                    INSERT INTO "order" (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at, paid_at)\n                    VALUES (:id, :buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW(), NOW())\n                ',
+                '\n                    INSERT INTO "order" (id, buyer_id, seller_id, event_id, price, status, created_at, updated_at, paid_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :price, :status, NOW(), NOW(), NOW())\n                ',
                 {
                     'id': order_id,
                     'buyer_id': int(order_data['buyer_id']),
                     'seller_id': int(order_data['seller_id']),
-                    'product_id': product_id,
+                    'event_id': event_id,
                     'price': int(order_data['price']),
                     'status': order_data['status'],
                 },
             )
         else:
             execute_sql_statement(
-                '\n                    INSERT INTO "order" (id, buyer_id, seller_id, product_id, price, status, created_at, updated_at)\n                    VALUES (:id, :buyer_id, :seller_id, :product_id, :price, :status, NOW(), NOW())\n                ',
+                '\n                    INSERT INTO "order" (id, buyer_id, seller_id, event_id, price, status, created_at, updated_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :price, :status, NOW(), NOW())\n                ',
                 {
                     'id': order_id,
                     'buyer_id': int(order_data['buyer_id']),
                     'seller_id': int(order_data['seller_id']),
-                    'product_id': product_id,
+                    'event_id': event_id,
                     'price': int(order_data['price']),
                     'status': order_data['status'],
                 },
@@ -234,83 +234,81 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
     )
 
 
-@given('a product exists with negative price:')
-def create_product_with_negative_price(
-    step, client: TestClient, order_state, execute_sql_statement
-):
-    """Create a product with negative price for testing validation."""
-    product_data = extract_table_data(step)
-    seller_id = int(product_data.get('seller_id', 1))
+@given('a event exists with negative price:')
+def create_event_with_negative_price(step, client: TestClient, order_state, execute_sql_statement):
+    """Create a event with negative price for testing validation."""
+    event_data = extract_table_data(step)
+    seller_id = int(event_data.get('seller_id', 1))
 
-    # Store product data but don't create it yet (will fail on order creation)
-    order_state['invalid_product'] = {
-        'name': product_data['name'],
-        'description': product_data['description'],
-        'price': int(product_data['price']),  # Negative price
+    # Store event data but don't create it yet (will fail on order creation)
+    order_state['invalid_event'] = {
+        'name': event_data['name'],
+        'description': event_data['description'],
+        'price': int(event_data['price']),  # Negative price
         'seller_id': seller_id,
-        'is_active': product_data.get('is_active', 'true').lower() == 'true',
-        'status': product_data.get('status', 'available'),
+        'is_active': event_data.get('is_active', 'true').lower() == 'true',
+        'status': event_data.get('status', 'available'),
     }
 
-    # Create product directly in database to bypass API validation
+    # Create event directly in database to bypass API validation
     execute_sql_statement(
         """
-        INSERT INTO product (name, description, price, seller_id, is_active, status)
+        INSERT INTO event (name, description, price, seller_id, is_active, status)
         VALUES (:name, :description, :price, :seller_id, :is_active, :status)
         """,
-        order_state['invalid_product'],
+        order_state['invalid_event'],
     )
 
-    # Get the created product ID
+    # Get the created event ID
     result = execute_sql_statement(
-        'SELECT id FROM product WHERE name = :name ORDER BY id DESC LIMIT 1',
-        {'name': product_data['name']},
+        'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
+        {'name': event_data['name']},
     )
-    product_id = result[0]['id'] if result else 1
-    order_state['invalid_product']['id'] = product_id
-    order_state['product_id'] = product_id
+    event_id = result[0]['id'] if result else 1
+    order_state['invalid_event']['id'] = event_id
+    order_state['event_id'] = event_id
 
 
-@given('a product exists with zero price:')
-def create_product_with_zero_price(step, client: TestClient, order_state, execute_sql_statement):
-    """Create a product with zero price for testing validation."""
-    product_data = extract_table_data(step)
-    seller_id = int(product_data.get('seller_id', 1))
+@given('a event exists with zero price:')
+def create_event_with_zero_price(step, client: TestClient, order_state, execute_sql_statement):
+    """Create a event with zero price for testing validation."""
+    event_data = extract_table_data(step)
+    seller_id = int(event_data.get('seller_id', 1))
 
-    # Store product data
-    order_state['invalid_product'] = {
-        'name': product_data['name'],
-        'description': product_data['description'],
+    # Store event data
+    order_state['invalid_event'] = {
+        'name': event_data['name'],
+        'description': event_data['description'],
         'price': 0,  # Zero price
         'seller_id': seller_id,
-        'is_active': product_data.get('is_active', 'true').lower() == 'true',
-        'status': product_data.get('status', 'available'),
+        'is_active': event_data.get('is_active', 'true').lower() == 'true',
+        'status': event_data.get('status', 'available'),
     }
 
-    # Create product directly in database to bypass API validation
+    # Create event directly in database to bypass API validation
     execute_sql_statement(
         """
-        INSERT INTO product (name, description, price, seller_id, is_active, status)
+        INSERT INTO event (name, description, price, seller_id, is_active, status)
         VALUES (:name, :description, :price, :seller_id, :is_active, :status)
         """,
-        order_state['invalid_product'],
+        order_state['invalid_event'],
     )
 
-    # Get the created product ID
+    # Get the created event ID
     result = execute_sql_statement(
-        'SELECT id FROM product WHERE name = :name ORDER BY id DESC LIMIT 1',
-        {'name': product_data['name']},
+        'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
+        {'name': event_data['name']},
     )
-    product_id = result[0]['id'] if result else 1
-    order_state['invalid_product']['id'] = product_id
-    order_state['product_id'] = product_id
+    event_id = result[0]['id'] if result else 1
+    order_state['invalid_event']['id'] = event_id
+    order_state['event_id'] = event_id
 
 
-@given('the buyer creates an order for the product')
+@given('the buyer creates an order for the event')
 def buyer_creates_order_given(client: TestClient, order_state):
     """Given that a buyer has already created an order."""
     # The buyer should already be logged in
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
     assert response.status_code == 201, f'Failed to create order: {response.text}'
     order_state['order'] = response.json()
     order_state['response'] = response
@@ -333,18 +331,18 @@ def buyer_pays_for_order_given(client: TestClient, order_state):
     order_state['order']['status'] = 'paid'
 
 
-@given('the product price is updated to 2000')
-def product_price_updated_to_2000_given(order_state, execute_sql_statement):
-    """Given that the product price has been updated."""
-    product_id = order_state['product']['id']
+@given('the event price is updated to 2000')
+def event_price_updated_to_2000_given(order_state, execute_sql_statement):
+    """Given that the event price has been updated."""
+    event_id = order_state['event']['id']
     execute_sql_statement(
-        'UPDATE product SET price = :price WHERE id = :id',
-        {'price': 2000, 'id': product_id},
+        'UPDATE event SET price = :price WHERE id = :id',
+        {'price': 2000, 'id': event_id},
     )
-    order_state['product']['price'] = 2000
+    order_state['event']['price'] = 2000
 
 
-@given('the buyer cancels the order to release the product')
+@given('the buyer cancels the order to release the event')
 def buyer_cancels_order_given(client: TestClient, order_state):
     """Given that the buyer has cancelled the order."""
     order_id = order_state['order']['id']

@@ -21,12 +21,12 @@ from tests.util_constant import (
 )
 
 
-@when('the buyer creates an order for the product')
+@when('the buyer creates an order for the event')
 def buyer_creates_order(client: TestClient, order_state):
     # The buyer should already be logged in via "I am logged in as:" step
     # If not, we don't login here - let the test control authentication
 
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
     order_state['response'] = response
 
     # Store order if created successfully
@@ -34,15 +34,15 @@ def buyer_creates_order(client: TestClient, order_state):
         order_state['order'] = response.json()
 
 
-@when('the buyer tries to create an order for the product')
+@when('the buyer tries to create an order for the event')
 def buyer_tries_to_create_order(client: TestClient, order_state):
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
     order_state['response'] = response
 
 
-@when('the seller tries to create an order for their own product')
+@when('the seller tries to create an order for their own event')
 def seller_tries_to_create_order(client: TestClient, order_state):
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
     order_state['response'] = response
 
 
@@ -173,54 +173,54 @@ def buyer_3_requests_orders_pending(client: TestClient, order_state):
     order_state['response'] = response
 
 
-@when('the buyer tries to create an order for the negative price product')
-def buyer_tries_to_create_order_for_negative_price_product(client: TestClient, order_state):
-    """Try to create an order for a product with negative price."""
+@when('the buyer tries to create an order for the negative price event')
+def buyer_tries_to_create_order_for_negative_price_event(client: TestClient, order_state):
+    """Try to create an order for a event with negative price."""
     # Login as buyer
     buyer = order_state['buyer']
     login_user(client, buyer['email'], 'P@ssw0rd')
 
     # Try to create order
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product_id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event_id']})
     order_state['response'] = response
 
 
-@when('the buyer tries to create an order for the zero price product')
-def buyer_tries_to_create_order_for_zero_price_product(client: TestClient, order_state):
-    """Try to create an order for a product with zero price."""
+@when('the buyer tries to create an order for the zero price event')
+def buyer_tries_to_create_order_for_zero_price_event(client: TestClient, order_state):
+    """Try to create an order for a event with zero price."""
     # Login as buyer
     buyer = order_state['buyer']
     login_user(client, buyer['email'], 'P@ssw0rd')
 
     # Try to create order
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product_id']})
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event_id']})
     order_state['response'] = response
 
 
-@when('the product price is updated to 2000')
-def update_product_price_to_2000(client: TestClient, order_state, execute_sql_statement):
-    """Update the product price in the database."""
-    product_id = order_state['product']['id']
+@when('the event price is updated to 2000')
+def update_event_price_to_2000(client: TestClient, order_state, execute_sql_statement):
+    """Update the event price in the database."""
+    event_id = order_state['event']['id']
 
-    # Update product price directly in database
+    # Update event price directly in database
     execute_sql_statement(
-        'UPDATE product SET price = :price WHERE id = :id',
-        {'price': 2000, 'id': product_id},
+        'UPDATE event SET price = :price WHERE id = :id',
+        {'price': 2000, 'id': event_id},
     )
-    order_state['product']['price'] = 2000
+    order_state['event']['price'] = 2000
 
 
-@when('the product price is updated to 3000')
-def update_product_price_to_3000(client: TestClient, order_state, execute_sql_statement):
-    """Update the product price in the database."""
-    product_id = order_state['product']['id']
+@when('the event price is updated to 3000')
+def update_event_price_to_3000(client: TestClient, order_state, execute_sql_statement):
+    """Update the event price in the database."""
+    event_id = order_state['event']['id']
 
-    # Update product price directly in database
+    # Update event price directly in database
     execute_sql_statement(
-        'UPDATE product SET price = :price WHERE id = :id',
-        {'price': 3000, 'id': product_id},
+        'UPDATE event SET price = :price WHERE id = :id',
+        {'price': 3000, 'id': event_id},
     )
-    order_state['product']['price'] = 3000
+    order_state['event']['price'] = 3000
 
 
 @when('the buyer pays for the order')
@@ -246,9 +246,9 @@ def buyer_pays_for_order_simple(client: TestClient, order_state):
     order_state['updated_order'] = order_response.json()  # Store full order details
 
 
-@when('the buyer cancels the order to release the product')
-def buyer_cancels_order_to_release_product(client: TestClient, order_state):
-    """Buyer cancels their order to release the product."""
+@when('the buyer cancels the order to release the event')
+def buyer_cancels_order_to_release_event(client: TestClient, order_state):
+    """Buyer cancels their order to release the event."""
     # Login as buyer
     buyer = order_state['buyer']
     login_user(client, buyer['email'], 'P@ssw0rd')
@@ -260,9 +260,9 @@ def buyer_cancels_order_to_release_product(client: TestClient, order_state):
     order_state['order']['status'] = 'cancelled'
 
 
-@when('another buyer creates an order for the same product')
-def another_buyer_creates_order_for_same_product(client: TestClient, order_state):
-    """Another buyer creates an order for the same product."""
+@when('another buyer creates an order for the same event')
+def another_buyer_creates_order_for_same_event(client: TestClient, order_state):
+    """Another buyer creates an order for the same event."""
     # Create another buyer
     another_buyer_email = 'another_buyer@test.com'
     another_buyer = create_user(client, another_buyer_email, 'P@ssw0rd', 'Another Buyer', 'buyer')
@@ -274,8 +274,8 @@ def another_buyer_creates_order_for_same_product(client: TestClient, order_state
     # Login as the other buyer
     login_user(client, another_buyer_email, 'P@ssw0rd')
 
-    # Create order for the same product
-    response = client.post(ORDER_BASE, json={'product_id': order_state['product']['id']})
+    # Create order for the same event
+    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
     assert response.status_code == 201, f'Failed to create new order: {response.text}'
 
     order_state['new_order'] = response.json()

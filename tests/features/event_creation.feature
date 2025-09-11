@@ -1,6 +1,6 @@
-Feature: Product Creation
+Feature: Event Creation
   As a seller
-  I want to create new products
+  I want to create new events
   So that buyers can purchase them
 
   Background:
@@ -11,18 +11,18 @@ Feature: Product Creation
       | email           | password |
       | seller@test.com | P@ssw0rd |
 
-  Scenario: Create a new product successfully
-    When I create a product with
+  Scenario: Create a new event successfully
+    When I create a event with
       | name      | description             | price |
       | iPhone 18 | Latest Apple smartphone |  1500 |
-    Then the product should be created with
+    Then the event should be created with
       | id        | seller_id | name      | description             | price | is_active |
       | {any_int} | {any_int} | iPhone 18 | Latest Apple smartphone |  1500 | true      |
     And the response status code should be:
       | 201 |
 
-  Scenario: Create product with negative price
-    When I create a product with
+  Scenario: Create event with negative price
+    When I create a event with
       | name      | description | price |
       | iPhone 25 | Apple phone |  -500 |
     Then the response status code should be:
@@ -30,24 +30,24 @@ Feature: Product Creation
     And the error message should contain:
       | Price must be positive |
 
-  Scenario: Create inactive product
-    When I create a product with
+  Scenario: Create inactive event
+    When I create a event with
       | name     | description         | price | is_active |
       | iPad Pro | Professional tablet |  2000 | false     |
-    Then the product should be created with
+    Then the event should be created with
       | id        | seller_id | name     | description         | price | is_active | status    |
       | {any_int} | {any_int} | iPad Pro | Professional tablet |  2000 | false     | available |
     And the response status code should be:
       | 201 |
 
-  Scenario: Buyer cannot create product
+  Scenario: Buyer cannot create event
     Given a buyer user exists
       | email          | password | name  | role  |
       | buyer@test.com | P@ssw0rd | Alice | buyer |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    When I create a product with
+    When I create a event with
       | name    | description  | price |
       | MacBook | Apple laptop |  3000 |
     Then the response status code should be:

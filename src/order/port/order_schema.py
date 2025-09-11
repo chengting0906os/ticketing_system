@@ -5,17 +5,17 @@ from pydantic import BaseModel
 
 
 class OrderCreateRequest(BaseModel):
-    product_id: int
+    event_id: int
 
     class Config:
-        json_schema_extra = {'example': {'product_id': 1}}
+        json_schema_extra = {'example': {'event_id': 1}}
 
 
 class OrderResponse(BaseModel):
     id: int
     buyer_id: int
     seller_id: int
-    product_id: int
+    event_id: int
     price: int
     status: str
     created_at: datetime
@@ -27,7 +27,7 @@ class OrderResponse(BaseModel):
                 'id': 1,
                 'buyer_id': 2,
                 'seller_id': 1,
-                'product_id': 1,
+                'event_id': 1,
                 'price': 39900,
                 'status': 'pending_payment',
                 'created_at': '2025-01-10T10:30:00',

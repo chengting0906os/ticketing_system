@@ -1,15 +1,15 @@
-"""Product use cases."""
+"""Event use cases."""
 
 from typing import List, Optional
 
 from fastapi import Depends
 
-from src.product.domain.product_entity import Product, ProductStatus
+from src.event.domain.event_entity import Event, EventStatus
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
 
-class CreateProductUseCase:
+class CreateEventUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
@@ -20,9 +20,9 @@ class CreateProductUseCase:
     @Logger.io
     async def create(
         self, name: str, description: str, price: int, seller_id: int, is_active: bool = True
-    ) -> Product:
+    ) -> Event:
         async with self.uow:
-            product = Product.create(
+            event = Event.create(
                 name=name,
                 description=description,
                 price=price,
@@ -30,13 +30,13 @@ class CreateProductUseCase:
                 is_active=is_active,
             )
 
-            created_product = await self.uow.products.create(product)
+            created_event = await self.uow.events.create(event)
             await self.uow.commit()
         # raise Exception('Simulated error for testing rollback')  # --- IGNORE ---
-        return created_product
+        return created_event
 
 
-class UpdateProductUseCase:
+class UpdateEventUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
@@ -47,35 +47,35 @@ class UpdateProductUseCase:
     @Logger.io
     async def update(
         self,
-        product_id: int,
+        event_id: int,
         name: Optional[str] = None,
         description: Optional[str] = None,
         price: Optional[int] = None,
         is_active: Optional[bool] = None,
-    ) -> Optional[Product]:
+    ) -> Optional[Event]:
         async with self.uow:
-            # Get existing product
-            product = await self.uow.products.get_by_id(product_id)
-            if not product:
+            # Get existing event
+            event = await self.uow.events.get_by_id(event_id)
+            if not event:
                 return None
 
             # Update only provided fields
             if name is not None:
-                product.name = name
+                event.name = name
             if description is not None:
-                product.description = description
+                event.description = description
             if price is not None:
-                product.price = price
+                event.price = price
             if is_active is not None:
-                product.is_active = is_active
+                event.is_active = is_active
 
-            updated_product = await self.uow.products.update(product)
+            updated_event = await self.uow.events.update(event)
             await self.uow.commit()
 
-        return updated_product
+        return updated_event
 
 
-class DeleteProductUseCase:
+class DeleteEventUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
@@ -84,24 +84,24 @@ class DeleteProductUseCase:
         return cls(uow)
 
     @Logger.io
-    async def delete(self, product_id: int) -> bool:
+    async def delete(self, event_id: int) -> bool:
         async with self.uow:
-            product = await self.uow.products.get_by_id(product_id)
-            if not product:
+            event = await self.uow.events.get_by_id(event_id)
+            if not event:
                 return False
 
-            if product.status == ProductStatus.RESERVED:
-                raise ValueError('Cannot delete reserved product')
-            if product.status == ProductStatus.SOLD:
-                raise ValueError('Cannot delete sold product')
+            if event.status == EventStatus.RESERVED:
+                raise ValueError('Cannot delete reserved event')
+            if event.status == EventStatus.SOLD:
+                raise ValueError('Cannot delete sold event')
 
-            deleted = await self.uow.products.delete(product_id)
+            deleted = await self.uow.events.delete(event_id)
             await self.uow.commit()
 
         return deleted
 
 
-class GetProductUseCase:
+class GetEventUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
@@ -110,13 +110,13 @@ class GetProductUseCase:
         return cls(uow)
 
     @Logger.io
-    async def get_by_id(self, product_id: int) -> Optional[Product]:
+    async def get_by_id(self, event_id: int) -> Optional[Event]:
         async with self.uow:
-            product = await self.uow.products.get_by_id(product_id)
-        return product
+            event = await self.uow.events.get_by_id(event_id)
+        return event
 
 
-class ListProductsUseCase:
+class ListEventsUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
@@ -125,13 +125,13 @@ class ListProductsUseCase:
         return cls(uow)
 
     @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[Product]:
+    async def get_by_seller(self, seller_id: int) -> List[Event]:
         async with self.uow:
-            products = await self.uow.products.get_by_seller(seller_id)
-        return products
+            events = await self.uow.events.get_by_seller(seller_id)
+        return events
 
     @Logger.io
-    async def list_available(self) -> List[Product]:
+    async def list_available(self) -> List[Event]:
         async with self.uow:
-            products = await self.uow.products.list_available()
-        return products
+            events = await self.uow.events.list_available()
+        return events

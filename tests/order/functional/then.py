@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from fastapi.testclient import TestClient
 from pytest_bdd import then
 
-from src.shared.constant.route_constant import ORDER_GET, PRODUCT_GET
+from src.shared.constant.route_constant import ORDER_GET, EVENT_GET
 from tests.shared.utils import extract_single_value, extract_table_data, assert_response_status
 
 
@@ -16,8 +16,8 @@ def assert_nullable_field(
         assert data.get(field) is None, message or f'{field} should be null'
 
 
-def get_product_status(client: TestClient, product_id: int) -> str:
-    response = client.get(PRODUCT_GET.format(product_id=product_id))
+def get_event_status(client: TestClient, event_id: int) -> str:
+    response = client.get(EVENT_GET.format(event_id=event_id))
     assert_response_status(response, 200)
     return response.json()['status']
 
@@ -73,13 +73,13 @@ def verify_order_status_remains(step, client: TestClient, order_state):
     )
 
 
-@then('the product status should remain:')
-def verify_product_status_remains(step, client: TestClient, order_state):
+@then('the event status should remain:')
+def verify_event_status_remains(step, client: TestClient, order_state):
     expected_status = extract_single_value(step)
-    product_id = order_state.get('product', {}).get('id') or order_state.get('product_id', 1)
-    actual_status = get_product_status(client, product_id)
+    event_id = order_state.get('event', {}).get('id') or order_state.get('event_id', 1)
+    actual_status = get_event_status(client, event_id)
     assert actual_status == expected_status, (
-        f'Product status should remain {expected_status}, but got {actual_status}'
+        f'Event status should remain {expected_status}, but got {actual_status}'
     )
 
 
@@ -107,11 +107,11 @@ def verify_payment_details(step, order_state):
         )
 
 
-@then('the product status should be:')
-def verify_product_status(step, client: TestClient, order_state):
+@then('the event status should be:')
+def verify_event_status(step, client: TestClient, order_state):
     expected_status = extract_single_value(step)
-    product_id = order_state.get('product_id') or order_state['product']['id']
-    status = get_product_status(client, product_id)
+    event_id = order_state.get('event_id') or order_state['event']['id']
+    status = get_event_status(client, event_id)
     assert status == expected_status
 
 
@@ -133,7 +133,7 @@ def verify_orders_details(step, order_state):
         order = next((o for o in orders if o['id'] == order_id), None)
         assert order is not None, f'Order with id {order_id} not found in response'
         field_mappings = {
-            'product_name': ('product_name', str),
+            'event_name': ('event_name', str),
             'price': ('price', int),
             'status': ('status', str),
             'seller_name': ('seller_name', str),
@@ -165,7 +165,7 @@ def verify_order_price_1000(order_state):
 
 @then('the existing order price should remain 1000')
 def verify_existing_order_price_remains_1000(client: TestClient, order_state):
-    """Verify the existing order price remains 1000 after product price change."""
+    """Verify the existing order price remains 1000 after event price change."""
     order_id = order_state['order']['id']
     order_data = get_order_details(client, order_id)
     assert order_data['price'] == 1000, (
@@ -182,7 +182,7 @@ def verify_new_order_has_price_2000(order_state):
 
 @then('the paid order price should remain 1500')
 def verify_paid_order_price_remains_1500(client: TestClient, order_state):
-    """Verify the paid order price remains 1500 after product price change."""
+    """Verify the paid order price remains 1500 after event price change."""
     order_id = order_state['order']['id']
     order_data = get_order_details(client, order_id)
     assert order_data['price'] == 1500, (
@@ -200,13 +200,13 @@ def verify_order_status_remains_paid(client: TestClient, order_state):
     )
 
 
-@then('the product status should be "reserved"')
-def verify_product_status_is_reserved(client: TestClient, order_state):
-    """Verify the product status is reserved."""
-    product_id = order_state['product']['id']
-    response = client.get(PRODUCT_GET.format(product_id=product_id))
-    assert response.status_code == 200, f'Failed to get product: {response.text}'
-    product_data = response.json()
-    assert product_data['status'] == 'reserved', (
-        f'Expected product status "reserved", got {product_data["status"]}'
+@then('the event status should be "reserved"')
+def verify_event_status_is_reserved(client: TestClient, order_state):
+    """Verify the event status is reserved."""
+    event_id = order_state['event']['id']
+    response = client.get(EVENT_GET.format(event_id=event_id))
+    assert response.status_code == 200, f'Failed to get event: {response.text}'
+    event_data = response.json()
+    assert event_data['status'] == 'reserved', (
+        f'Expected event status "reserved", got {event_data["status"]}'
     )

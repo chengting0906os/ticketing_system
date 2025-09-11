@@ -16,7 +16,7 @@ class OrderModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey('product.id'))
+    event_id: Mapped[int] = mapped_column(Integer, ForeignKey('event.id'))
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='pending_payment', nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -30,4 +30,4 @@ class OrderModel(Base):
     #
     buyer = relationship('User', foreign_keys=[buyer_id], lazy='select')
     seller = relationship('User', foreign_keys=[seller_id], lazy='select')
-    product = relationship('ProductModel', lazy='select')
+    event = relationship('EventModel', lazy='select')

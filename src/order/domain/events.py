@@ -26,13 +26,13 @@ class OrderCreatedEvent:
     aggregate_id: int
     buyer_id: int
     seller_id: int
-    product_id: int
+    event_id: int
     price: int
     buyer_email: str
     buyer_name: str
     seller_email: str
     seller_name: str
-    product_name: str
+    event_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 
@@ -40,10 +40,10 @@ class OrderCreatedEvent:
 class OrderPaidEvent:
     aggregate_id: int
     buyer_id: int
-    product_id: int
+    event_id: int
     paid_at: datetime
     buyer_email: str
-    product_name: str
+    event_name: str
     paid_amount: int
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
@@ -52,23 +52,23 @@ class OrderPaidEvent:
 class OrderCancelledEvent:
     aggregate_id: int
     buyer_id: int
-    product_id: int
+    event_id: int
     buyer_email: str
-    product_name: str
+    event_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 
 @attrs.define(frozen=True)
-class ProductReservedEvent:
+class EventReservedEvent:
     aggregate_id: int
-    product_id: int
+    event_id: int
     order_id: int
     occurred_at: datetime = attrs.field(factory=datetime.now)
 
 
 @attrs.define(frozen=True)
-class ProductReleasedEvent:
+class EventReleasedEvent:
     aggregate_id: int
-    product_id: int
+    event_id: int
     order_id: int
     occurred_at: datetime = attrs.field(factory=datetime.now)

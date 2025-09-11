@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-class ProductCreateRequest(BaseModel):
+class EventCreateRequest(BaseModel):
     name: str
     description: str
     price: int
@@ -20,7 +20,7 @@ class ProductCreateRequest(BaseModel):
         }
 
 
-class ProductResponse(BaseModel):
+class EventResponse(BaseModel):
     id: int
     name: str
     description: str
@@ -43,7 +43,7 @@ class ProductResponse(BaseModel):
         }
 
 
-class ProductUpdateRequest(BaseModel):
+class EventUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[int] = None

@@ -7,7 +7,7 @@ from typing import Any, Dict
 from fastapi import Depends
 
 from src.order.domain.order_entity import OrderStatus
-from src.product.domain.product_entity import ProductStatus
+from src.event.domain.event_entity import EventStatus
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
@@ -38,10 +38,10 @@ class MockPaymentUseCase:
 
             paid_order = order.mark_as_paid()
             updated_order = await self.uow.orders.update(paid_order)
-            product = await self.uow.products.get_by_id(order.product_id)
-            if product:
-                product.status = ProductStatus.SOLD
-                await self.uow.products.update(product)
+            event = await self.uow.events.get_by_id(order.event_id)
+            if event:
+                event.status = EventStatus.SOLD
+                await self.uow.events.update(event)
             payment_id = (
                 f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'
             )
@@ -59,6 +59,6 @@ class MockPaymentUseCase:
         async with self.uow:
             cancelled_order = await self.uow.orders.cancel_order_atomically(order_id, buyer_id)
 
-            await self.uow.products.release_product_atomically(cancelled_order.product_id)
+            await self.uow.events.release_event_atomically(cancelled_order.event_id)
 
             await self.uow.commit()

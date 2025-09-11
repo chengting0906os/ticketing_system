@@ -1,32 +1,32 @@
-Feature: Product Deletion
+Feature: Event Deletion
   As a seller
-  I want to delete my products when != reserved
+  I want to delete my events when != reserved
 
-  Scenario: Delete an available product
-    Given a product exists with:
+  Scenario: Delete an available event
+    Given a event exists with:
       | seller_id | name      | description    | price | is_active | status    |
       |         1 | Test Item | Item to delete |  1000 | true      | available |
-    When I delete the product
+    When I delete the event
     Then the response status code should be:
       | 204 |
-    And the product should not exist
+    And the event should not exist
 
-  Scenario: Cannot delete a reserved product
-    Given a product exists with:
+  Scenario: Cannot delete a reserved event
+    Given a event exists with:
       | seller_id | name      | description   | price | is_active | status   |
       |         1 | Test Item | Reserved item |  1000 | true      | reserved |
-    When I try to delete the product
+    When I try to delete the event
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Cannot delete reserved product |
+      | Cannot delete reserved event |
 
-  Scenario: Cannot delete a sold product
-    Given a product exists with:
+  Scenario: Cannot delete a sold event
+    Given a event exists with:
       | seller_id | name      | description | price | is_active | status |
       |         1 | Test Item | Sold item   |  1000 | true      | sold   |
-    When I try to delete the product
+    When I try to delete the event
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Cannot delete sold product |
+      | Cannot delete sold event |

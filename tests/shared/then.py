@@ -3,25 +3,25 @@ from pytest_bdd import then
 from tests.shared.utils import assert_response_status, extract_single_value
 
 
-def get_state_with_response(user_state=None, product_state=None, order_state=None):
-    for state in [order_state, product_state, user_state]:
+def get_state_with_response(user_state=None, event_state=None, order_state=None):
+    for state in [order_state, event_state, user_state]:
         if state and state.get('response'):
             return state
-    return order_state or product_state or user_state or {}
+    return order_state or event_state or user_state or {}
 
 
 @then('the response status code should be:')
-def verify_status_code(step, user_state=None, product_state=None, order_state=None):
+def verify_status_code(step, user_state=None, event_state=None, order_state=None):
     expected_status = int(extract_single_value(step))
-    state = get_state_with_response(user_state, product_state, order_state)
+    state = get_state_with_response(user_state, event_state, order_state)
     response = state['response']
     assert_response_status(response, expected_status)
 
 
 @then('the error message should contain:')
-def verify_error_message_with_table(step, user_state=None, product_state=None, order_state=None):
+def verify_error_message_with_table(step, user_state=None, event_state=None, order_state=None):
     expected_text = extract_single_value(step)
-    state = get_state_with_response(user_state, product_state, order_state)
+    state = get_state_with_response(user_state, event_state, order_state)
     response = state['response']
     error_data = response.json()
     error_message = str(error_data.get('detail', ''))

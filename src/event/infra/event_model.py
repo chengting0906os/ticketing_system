@@ -1,4 +1,4 @@
-"""Product database models."""
+"""Event database models."""
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -6,8 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.shared.config.db_setting import Base
 
 
-class ProductModel(Base):
-    __tablename__ = 'product'
+class EventModel(Base):
+    __tablename__ = 'event'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)

@@ -1,7 +1,7 @@
 Feature: Order Cancellation
   As a buyer
   I want to cancel my unpaid orders
-  So that I can release products I no longer want to purchase
+  So that I can release events I no longer want to purchase
 
   Background:
     Given a seller exists:
@@ -12,11 +12,11 @@ Feature: Order Cancellation
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
 
   Scenario: Successfully cancel unpaid order
-    Given a product exists:
+    Given a event exists:
       | name         | description     | price | is_active | status    | seller_id |
-      | Test Product | For cancel test |  2000 | true      | available |         1 |
+      | Test Event | For cancel test |  2000 | true      | available |         1 |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | product_id | price |
+      | buyer_id | seller_id | event_id | price |
       |        2 |         1 |          1 |  2000 |
     And I am logged in as:
       | email          | password |
@@ -26,15 +26,15 @@ Feature: Order Cancellation
       | 204 |
     And the order status should be:
       | cancelled |
-    And the product status should be:
+    And the event status should be:
       | available |
 
   Scenario: Cannot cancel paid order
-    Given a product exists:
+    Given a event exists:
       | name         | description  | price | is_active | status | seller_id |
-      | Test Product | Already paid |  3000 | true      | sold   |         1 |
+      | Test Event | Already paid |  3000 | true      | sold   |         1 |
     And an order exists with status "paid":
-      | buyer_id | seller_id | product_id | price | paid_at  |
+      | buyer_id | seller_id | event_id | price | paid_at  |
       |        2 |         1 |          1 |  3000 | not_null |
     And I am logged in as:
       | email          | password |
@@ -46,15 +46,15 @@ Feature: Order Cancellation
       | Cannot cancel paid order |
     And the order status should remain:
       | paid |
-    And the product status should remain:
+    And the event status should remain:
       | sold |
 
   Scenario: Cannot cancel already cancelled order
-    Given a product exists:
+    Given a event exists:
       | name         | description       | price | is_active | status    | seller_id |
-      | Test Product | Already cancelled |  1500 | true      | available |         1 |
+      | Test Event | Already cancelled |  1500 | true      | available |         1 |
     And an order exists with status "cancelled":
-      | buyer_id | seller_id | product_id | price |
+      | buyer_id | seller_id | event_id | price |
       |        2 |         1 |          1 |  1500 |
     And I am logged in as:
       | email          | password |
@@ -66,14 +66,14 @@ Feature: Order Cancellation
       | Order already cancelled |
 
   Scenario: Only buyer can cancel their own order
-    Given a product exists:
+    Given a event exists:
       | name         | description       | price | is_active | status   | seller_id |
-      | Test Product | Not buyer's order |  2500 | true      | reserved |         1 |
+      | Test Event | Not buyer's order |  2500 | true      | reserved |         1 |
     And another buyer exists:
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | product_id | price |
+      | buyer_id | seller_id | event_id | price |
       |        2 |         1 |          1 |  2500 |
     And I am logged in as:
       | email            | password |
@@ -85,15 +85,15 @@ Feature: Order Cancellation
       | Only the buyer can cancel this order |
     And the order status should remain:
       | pending_payment |
-    And the product status should remain:
+    And the event status should remain:
       | reserved |
 
   Scenario: Seller cannot cancel buyer's order
-    Given a product exists:
+    Given a event exists:
       | name         | description      | price | is_active | status   | seller_id |
-      | Test Product | Seller's product |  4000 | true      | reserved |         1 |
+      | Test Event | Seller's event |  4000 | true      | reserved |         1 |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | product_id | price |
+      | buyer_id | seller_id | event_id | price |
       |        2 |         1 |          1 |  4000 |
     And I am logged in as:
       | email           | password |
@@ -105,13 +105,13 @@ Feature: Order Cancellation
       | Only buyers can perform this action |
     And the order status should remain:
       | pending_payment |
-    And the product status should remain:
+    And the event status should remain:
       | reserved |
 
-  Scenario: Cannot cancel non-existent order for available product
-    Given a product exists:
+  Scenario: Cannot cancel non-existent order for available event
+    Given a event exists:
       | name         | description       | price | is_active | status    | seller_id |
-      | Test Product | Available product |  1800 | true      | available |         1 |
+      | Test Event | Available event |  1800 | true      | available |         1 |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -120,5 +120,5 @@ Feature: Order Cancellation
       | 404 |
     And the error message should contain:
       | Order not found |
-    And the product status should remain:
+    And the event status should remain:
       | available |

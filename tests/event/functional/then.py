@@ -1,13 +1,13 @@
 from pytest_bdd import then
 
-from src.shared.constant.route_constant import PRODUCT_GET
+from src.shared.constant.route_constant import EVENT_GET
 from tests.shared.utils import extract_table_data
 
 
-@then('the product should be created with')
-def verify_product_created(step, product_state):
+@then('the event should be created with')
+def verify_event_created(step, event_state):
     expected_data = extract_table_data(step)
-    response = product_state['response']
+    response = event_state['response']
     response_json = response.json()
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
@@ -26,9 +26,9 @@ def verify_product_created(step, product_state):
 
 
 @then('the stock should be initialized with')
-def verify_stock_initialized(step, product_state):
+def verify_stock_initialized(step, event_state):
     expected_data = extract_table_data(step)
-    response = product_state['response']
+    response = event_state['response']
     assert response.status_code == 201
     response_json = response.json()
     if 'stock' in response_json:
@@ -37,10 +37,10 @@ def verify_stock_initialized(step, product_state):
         assert response_json['quantity'] == int(expected_data['quantity'])
 
 
-@then('the product should be updated with')
-def verify_product_updated(step, product_state):
+@then('the event should be updated with')
+def verify_event_updated(step, event_state):
     expected_data = extract_table_data(step)
-    response = product_state['response']
+    response = event_state['response']
     response_json = response.json()
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
@@ -58,15 +58,15 @@ def verify_product_updated(step, product_state):
             assert response_json[field] == expected_value
 
 
-@then('the product should not exist')
-def verify_product_not_exist(client, product_state):
-    product_id = product_state['product_id']
-    response = client.get(PRODUCT_GET.format(product_id=product_id))
+@then('the event should not exist')
+def verify_event_not_exist(client, event_state):
+    event_id = event_state['event_id']
+    response = client.get(EVENT_GET.format(event_id=event_id))
     assert response.status_code == 404
 
 
-def _verify_error_contains(product_state, expected_text):
-    response = product_state['response']
+def _verify_error_contains(event_state, expected_text):
+    response = event_state['response']
     response_json = response.json()
     error_msg = str(response_json)
     assert expected_text in error_msg, (
@@ -74,65 +74,65 @@ def _verify_error_contains(product_state, expected_text):
     )
 
 
-def _verify_product_count(product_state, count):
-    response = product_state['response']
+def _verify_event_count(event_state, count):
+    response = event_state['response']
     assert response.status_code == 200
-    products = response.json()
-    assert len(products) == count, f'Expected {count} products, got {len(products)}'
-    return products
+    events = response.json()
+    assert len(events) == count, f'Expected {count} events, got {len(events)}'
+    return events
 
 
-@then('the seller should see 5 products')
-def verify_seller_sees_5_products(product_state):
-    _verify_product_count(product_state, 5)
+@then('the seller should see 5 events')
+def verify_seller_sees_5_events(event_state):
+    _verify_event_count(event_state, 5)
 
 
-@then('the buyer should see 2 products')
-def verify_buyer_sees_2_products(product_state):
-    products = _verify_product_count(product_state, 2)
-    for p in products:
+@then('the buyer should see 2 events')
+def verify_buyer_sees_2_events(event_state):
+    events = _verify_event_count(event_state, 2)
+    for p in events:
         assert p['is_active'] is True
         assert p['status'] == 'available'
 
 
-@then('the buyer should see 0 products')
-def verify_buyer_sees_0_products(product_state):
-    _verify_product_count(product_state, 0)
+@then('the buyer should see 0 events')
+def verify_buyer_sees_0_events(event_state):
+    _verify_event_count(event_state, 0)
 
 
-@then('the products should include all statuses')
-def verify_products_include_all_statuses(product_state):
-    response = product_state['response']
-    products = response.json()
-    statuses = {product['status'] for product in products}
+@then('the events should include all statuses')
+def verify_events_include_all_statuses(event_state):
+    response = event_state['response']
+    events = response.json()
+    statuses = {event['status'] for event in events}
     expected_statuses = {'available', 'reserved', 'sold'}
     assert expected_statuses.issubset(statuses), (
         f'Expected statuses {expected_statuses}, got {statuses}'
     )
 
 
-@then('the products should be:')
-def verify_specific_products(step, product_state):
-    response = product_state['response']
-    products = response.json()
+@then('the events should be:')
+def verify_specific_events(step, event_state):
+    response = event_state['response']
+    events = response.json()
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
-    expected_products = []
+    expected_events = []
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
-        expected_products.append(dict(zip(headers, values, strict=True)))
-    assert len(products) == len(expected_products), (
-        f'Expected {len(expected_products)} products, got {len(products)}'
+        expected_events.append(dict(zip(headers, values, strict=True)))
+    assert len(events) == len(expected_events), (
+        f'Expected {len(expected_events)} events, got {len(events)}'
     )
-    for expected in expected_products:
+    for expected in expected_events:
         found = False
-        for product in products:
-            if product['name'] == expected['name']:
-                assert product['description'] == expected['description']
-                assert str(product['price']) == expected['price']
-                assert str(product['is_active']).lower() == expected['is_active'].lower()
-                assert product['status'] == expected['status']
+        for event in events:
+            if event['name'] == expected['name']:
+                assert event['description'] == expected['description']
+                assert str(event['price']) == expected['price']
+                assert str(event['is_active']).lower() == expected['is_active'].lower()
+                assert event['status'] == expected['status']
                 found = True
                 break
-        assert found, f'Product {expected["name"]} not found in response'
+        assert found, f'Event {expected["name"]} not found in response'

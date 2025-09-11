@@ -39,7 +39,7 @@ class MockEmailService:
 
     @Logger.io
     async def send_order_confirmation(
-        self, buyer_email: str, order_id: int, product_name: str, price: int
+        self, buyer_email: str, order_id: int, event_name: str, price: int
     ):
         if not order_id or order_id <= 0:
             raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
@@ -52,20 +52,20 @@ class MockEmailService:
         Order Details:
         --------------
         Order ID: #{order_id}
-        Product: {product_name}
+        Event: {event_name}
         Price: ${price:,}
         Status: Pending Payment
 
         Please complete your payment to process this order.
 
         Best regards,
-        Shopping Platform Team
+        Ticketing System Team
         """
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
     async def send_payment_confirmation(
-        self, buyer_email: str, order_id: int, product_name: str, paid_amount: int
+        self, buyer_email: str, order_id: int, event_name: str, paid_amount: int
     ):
         if not order_id or order_id <= 0:
             raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
@@ -78,19 +78,19 @@ class MockEmailService:
         Payment Details:
         ----------------
         Order ID: #{order_id}
-        Product: {product_name}
+        Event: {event_name}
         Amount Paid: ${paid_amount:,}
         Status: Paid
 
         Your order is now being processed.
 
         Best regards,
-        Shopping Platform Team
+        Ticketing System Team
         """
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
-    async def send_order_cancellation(self, buyer_email: str, order_id: int, product_name: str):
+    async def send_order_cancellation(self, buyer_email: str, order_id: int, event_name: str):
         if not order_id or order_id <= 0:
             raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
         subject = f'Order Cancelled - Order #{order_id}'
@@ -102,18 +102,18 @@ class MockEmailService:
         Cancellation Details:
         --------------------
         Order ID: #{order_id}
-        Product: {product_name}
+        Event: {event_name}
 
         If you have any questions, please contact our support team.
 
         Best regards,
-        Shopping Platform Team
+        Ticketing System Team
         """
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
     async def notify_seller_new_order(
-        self, seller_email: str, order_id: int, product_name: str, buyer_name: str, price: int
+        self, seller_email: str, order_id: int, event_name: str, buyer_name: str, price: int
     ):
         if not order_id or order_id <= 0:
             raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
@@ -126,14 +126,14 @@ class MockEmailService:
         Order Details:
         --------------
         Order ID: #{order_id}
-        Product: {product_name}
+        Event: {event_name}
         Buyer: {buyer_name}
         Price: ${price:,}
 
         The buyer will complete payment soon.
 
         Best regards,
-        Shopping Platform Team
+        Ticketing System Team
         """
         await self.send_email(seller_email, subject, body.strip())
 

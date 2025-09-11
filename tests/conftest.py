@@ -12,17 +12,17 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # Override POSTGRES_DB environment variable to use a dedicated test database
-os.environ['POSTGRES_DB'] = 'shopping_test_db'
+os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
 
 from src.main import app
 from tests.order.functional.fixtures import *  # noqa: F403
 from tests.order.functional.given import *  # noqa: F403
 from tests.order.functional.then import *  # noqa: F403
 from tests.order.functional.when import *  # noqa: F403
-from tests.product.functional.fixtures import *  # noqa: F403
-from tests.product.functional.given import *  # noqa: F403
-from tests.product.functional.then import *  # noqa: F403
-from tests.product.functional.when import *  # noqa: F403
+from tests.event.functional.fixtures import *  # noqa: F403
+from tests.event.functional.given import *  # noqa: F403
+from tests.event.functional.then import *  # noqa: F403
+from tests.event.functional.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: F403
@@ -43,7 +43,7 @@ DB_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD'),
     'host': os.getenv('POSTGRES_SERVER'),
     'port': os.getenv('POSTGRES_PORT'),
-    'test_db': 'shopping_test_db',
+    'test_db': 'ticketing_system_test_db',
 }
 TEST_DATABASE_URL = f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'
 

@@ -2,5 +2,5 @@ import pytest
 
 
 @pytest.fixture
-def product_state():
+def event_state():
     return {}

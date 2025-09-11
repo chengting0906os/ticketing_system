@@ -12,7 +12,7 @@ from src.user.domain.user_model import User
 class RoleAuthService:
     @staticmethod
     @Logger.io
-    def can_create_product(user: User) -> bool:
+    def can_create_event(user: User) -> bool:
         return user.role == UserRole.SELLER
 
     @staticmethod
@@ -35,7 +35,7 @@ def require_buyer(current_user: User = Depends(get_current_user)) -> User:
 
 @Logger.io
 def require_seller(current_user: User = Depends(get_current_user)) -> User:
-    if not RoleAuthService.can_create_product(current_user):
+    if not RoleAuthService.can_create_event(current_user):
         raise ForbiddenError('Only sellers can perform this action')
     return current_user
 

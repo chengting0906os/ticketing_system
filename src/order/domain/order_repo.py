@@ -16,7 +16,7 @@ class OrderRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_by_product_id(self, product_id: int) -> Optional[Order]:
+    async def get_by_event_id(self, event_id: int) -> Optional[Order]:
         pass
 
     @abstractmethod

@@ -10,15 +10,15 @@ Feature: Order State Transition
     And a buyer exists:
       | email          | password | name       | role  |
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
-    And a product exists:
+    And a event exists:
       | name         | description      | price | seller_id | is_active | status    |
-      | Test Product | Test Description |  1000 |         1 | true      | available |
+      | Test Event | Test Description |  1000 |         1 | true      | available |
 
   Scenario: Cannot cancel PAID order
     Given I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the product
+    And the buyer creates an order for the event
     And the buyer pays for the order
     When the buyer tries to cancel the order
     Then the response status code should be:
@@ -30,7 +30,7 @@ Feature: Order State Transition
     Given I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the product
+    And the buyer creates an order for the event
     And the buyer cancels the order
     When the buyer tries to pay for the order
     Then the response status code should be:
@@ -42,7 +42,7 @@ Feature: Order State Transition
     Given I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the product
+    And the buyer creates an order for the event
     And the buyer cancels the order
     When the buyer tries to cancel the order
     Then the response status code should be:
@@ -54,7 +54,7 @@ Feature: Order State Transition
     Given I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the product
+    And the buyer creates an order for the event
     When the buyer pays for the order
     Then the response status code should be:
       | 200 |
@@ -65,7 +65,7 @@ Feature: Order State Transition
     Given I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the product
+    And the buyer creates an order for the event
     When the buyer cancels the order
     Then the response status code should be:
       | 204 |

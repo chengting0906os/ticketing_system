@@ -17,7 +17,7 @@ class JWTAuthService:
         self.cookie_transport = CookieTransport(
             cookie_name='fastapiusersauth',
             cookie_max_age=3600,
-            cookie_secure=False,  # Set to True in production with HTTPS
+            cookie_secure=False,  # Set to True in evention with HTTPS
             cookie_httponly=True,
             cookie_samesite='lax',
         )

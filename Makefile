@@ -81,7 +81,7 @@ docker-logs:
 
 .PHONY: db-shell psql
 db-shell psql:
-	@docker exec -it shopping_db psql -U py_arch_lab -d shopping_db
+	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
 
 # Help
 .PHONY: help

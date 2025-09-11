@@ -31,7 +31,7 @@ async def create_order(
     use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends),
 ) -> OrderResponse:
     # Use authenticated buyer's ID instead of request.buyer_id
-    order = await use_case.create_order(buyer_id=current_user.id, product_id=request.product_id)
+    order = await use_case.create_order(buyer_id=current_user.id, event_id=request.event_id)
 
     if order.id is None:
         raise ValueError('Order ID should not be None after creation.')
@@ -40,7 +40,7 @@ async def create_order(
         id=order.id,
         buyer_id=order.buyer_id,
         seller_id=order.seller_id,
-        product_id=order.product_id,
+        event_id=order.event_id,
         price=order.price,
         status=order.status.value,
         created_at=order.created_at,
@@ -76,7 +76,7 @@ async def get_order(
         id=order_id,
         buyer_id=order.buyer_id,
         seller_id=order.seller_id,
-        product_id=order.product_id,
+        event_id=order.event_id,
         price=order.price,
         status=order.status.value,
         created_at=order.created_at,

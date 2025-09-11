@@ -80,7 +80,7 @@ jobs:
           # For production, use environment variables or secrets management
           POSTGRES_USER: py_arch_lab
           POSTGRES_PASSWORD: py_arch_lab
-          POSTGRES_DB: shopping_db
+          POSTGRES_DB: ticketing_system_db
         options: >-
           --health-cmd pg_isready
           --health-interval 10s

@@ -59,18 +59,18 @@ def create_user(
         return None
 
 
-def create_product(
+def create_event(
     client: TestClient, name: str, description: str, price: int, is_active: bool = True
 ) -> Dict[str, Any]:
-    """Helper function to create a product."""
-    from src.shared.constant.route_constant import PRODUCT_BASE
+    """Helper function to create a event."""
+    from src.shared.constant.route_constant import EVENT_BASE
 
-    product_data = {
+    event_data = {
         'name': name,
         'description': description,
         'price': price,
         'is_active': is_active,
     }
-    response = client.post(PRODUCT_BASE, json=product_data)
-    assert_response_status(response, 201, 'Failed to create product')
+    response = client.post(EVENT_BASE, json=event_data)
+    assert_response_status(response, 201, 'Failed to create event')
     return response.json()

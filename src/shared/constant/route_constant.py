@@ -16,13 +16,13 @@ AUTH_LOGIN = f'{AUTH_BASE}/login'
 AUTH_LOGOUT = f'{AUTH_BASE}/logout'
 AUTH_REGISTER = f'{AUTH_BASE}/register'
 
-# Product routes
-PRODUCT_BASE = f'{API_BASE}/product'
-PRODUCT_CREATE = PRODUCT_BASE
-PRODUCT_LIST = PRODUCT_BASE
-PRODUCT_GET = f'{PRODUCT_BASE}/{{product_id}}'
-PRODUCT_UPDATE = f'{PRODUCT_BASE}/{{product_id}}'
-PRODUCT_DELETE = f'{PRODUCT_BASE}/{{product_id}}'
+# Event routes
+EVENT_BASE = f'{API_BASE}/event'
+EVENT_CREATE = EVENT_BASE
+EVENT_LIST = EVENT_BASE
+EVENT_GET = f'{EVENT_BASE}/{{event_id}}'
+EVENT_UPDATE = f'{EVENT_BASE}/{{event_id}}'
+EVENT_DELETE = f'{EVENT_BASE}/{{event_id}}'
 
 # Order routes
 ORDER_BASE = f'{API_BASE}/order'

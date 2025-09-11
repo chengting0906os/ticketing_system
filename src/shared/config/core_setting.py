@@ -17,9 +17,9 @@ class Settings(BaseSettings):
         extra='ignore',
     )
 
-    PROJECT_NAME: str = 'Shopping System'
+    PROJECT_NAME: str = 'Ticketing System'
     VERSION: str = '0.1.0'
-    DEBUG: bool = True  # Set to False in production
+    DEBUG: bool = True  # Set to False in evention
 
     # Database
     POSTGRES_SERVER: str

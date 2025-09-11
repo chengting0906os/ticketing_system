@@ -28,6 +28,6 @@ ANOTHER_BUYER_NAME = 'Another Buyer'
 LIST_TEST_SELLER_NAME = 'List Test Seller'
 EMPTY_LIST_SELLER_NAME = 'Empty List Seller'
 
-# Test Product Data
-TEST_PRODUCT_NAME = 'Test Product'
-TEST_PRODUCT_DESCRIPTION = 'Test Description'
+# Test Event Data
+TEST_EVENT_NAME = 'Test Event'
+TEST_EVENT_DESCRIPTION = 'Test Description'

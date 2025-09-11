@@ -4,21 +4,21 @@ import attrs
 
 
 @attrs.define(frozen=True)
-class ProductSnapshot:
-    product_id: int
+class EventSnapshot:
+    event_id: int
     name: str
     description: str
     price: int
     seller_id: int
 
     @classmethod
-    def from_product(cls, product) -> 'ProductSnapshot':
+    def from_event(cls, event) -> 'EventSnapshot':
         return cls(
-            product_id=product.id or 0,
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            seller_id=product.seller_id,
+            event_id=event.id or 0,
+            name=event.name,
+            description=event.description,
+            price=event.price,
+            seller_id=event.seller_id,
         )
 
 

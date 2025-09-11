@@ -42,7 +42,7 @@ class TestMockEmailService:
     @pytest.mark.asyncio
     async def test_send_order_confirmation(self, email_service):
         await email_service.send_order_confirmation(
-            buyer_email='buyer@example.com', order_id=123, product_name='Test Product', price=10000
+            buyer_email='buyer@example.com', order_id=123, event_name='Test Event', price=10000
         )
 
         assert len(email_service.sent_emails) == 1
@@ -51,7 +51,7 @@ class TestMockEmailService:
         assert sent_email['to'] == 'buyer@example.com'
         assert 'Order Confirmation - Order #123' in sent_email['subject']
         assert 'Order ID: #123' in sent_email['body']
-        assert 'Test Product' in sent_email['body']
+        assert 'Test Event' in sent_email['body']
         assert '$10,000' in sent_email['body']
         assert 'Pending Payment' in sent_email['body']
 
@@ -60,7 +60,7 @@ class TestMockEmailService:
         await email_service.send_payment_confirmation(
             buyer_email='buyer@example.com',
             order_id=456,
-            product_name='Another Product',
+            event_name='Another Event',
             paid_amount=25050,
         )
 
@@ -70,14 +70,14 @@ class TestMockEmailService:
         assert sent_email['to'] == 'buyer@example.com'
         assert 'Payment Confirmed - Order #456' in sent_email['subject']
         assert 'Order ID: #456' in sent_email['body']
-        assert 'Another Product' in sent_email['body']
+        assert 'Another Event' in sent_email['body']
         assert '$25,050' in sent_email['body']
         assert 'Status: Paid' in sent_email['body']
 
     @pytest.mark.asyncio
     async def test_send_order_cancellation(self, email_service):
         await email_service.send_order_cancellation(
-            buyer_email='buyer@example.com', order_id=789, product_name='Cancelled Product'
+            buyer_email='buyer@example.com', order_id=789, event_name='Cancelled Event'
         )
 
         assert len(email_service.sent_emails) == 1
@@ -86,7 +86,7 @@ class TestMockEmailService:
         assert sent_email['to'] == 'buyer@example.com'
         assert 'Order Cancelled - Order #789' in sent_email['subject']
         assert 'Order ID: #789' in sent_email['body']
-        assert 'Cancelled Product' in sent_email['body']
+        assert 'Cancelled Event' in sent_email['body']
         assert 'cancelled' in sent_email['body'].lower()
 
     @pytest.mark.asyncio
@@ -94,7 +94,7 @@ class TestMockEmailService:
         await email_service.notify_seller_new_order(
             seller_email='seller@example.com',
             order_id=321,
-            product_name='Hot Product',
+            event_name='Hot Event',
             buyer_name='John Doe',
             price=5099,
         )
@@ -105,7 +105,7 @@ class TestMockEmailService:
         assert sent_email['to'] == 'seller@example.com'
         assert 'New Order Received - Order #321' in sent_email['subject']
         assert 'Order ID: #321' in sent_email['body']
-        assert 'Hot Product' in sent_email['body']
+        assert 'Hot Event' in sent_email['body']
         assert 'John Doe' in sent_email['body']
         assert '$5,099' in sent_email['body']
 
@@ -116,7 +116,7 @@ class TestMockEmailService:
             await email_service.send_order_confirmation(
                 buyer_email='buyer@example.com',
                 order_id=order_id,
-                product_name='Test Product',
+                event_name='Test Event',
                 price=10000,
             )
         assert f'Invalid order_id: {order_id}' in str(exc_info.value)
@@ -127,7 +127,7 @@ class TestMockEmailService:
         # Test send_order_cancellation
         with pytest.raises(ValueError):
             await email_service.send_order_cancellation(
-                buyer_email='buyer@example.com', order_id=0, product_name='Test Product'
+                buyer_email='buyer@example.com', order_id=0, event_name='Test Event'
             )
 
         # Test notify_seller_new_order
@@ -135,7 +135,7 @@ class TestMockEmailService:
             await email_service.notify_seller_new_order(
                 seller_email='seller@example.com',
                 order_id=0,
-                product_name='Test Product',
+                event_name='Test Event',
                 buyer_name='Test Buyer',
                 price=10000,
             )
