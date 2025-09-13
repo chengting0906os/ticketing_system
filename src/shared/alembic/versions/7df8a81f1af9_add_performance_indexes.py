@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add performance indexes for commonly queried columns."""
     # Order table indexes for performance optimization
     op.create_index('idx_order_buyer_id', 'order', ['buyer_id'])
     op.create_index('idx_order_seller_id', 'order', ['seller_id'])
@@ -36,7 +35,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove performance indexes."""
     # Drop order table indexes
     op.drop_index('idx_order_buyer_id', 'order')
     op.drop_index('idx_order_seller_id', 'order')

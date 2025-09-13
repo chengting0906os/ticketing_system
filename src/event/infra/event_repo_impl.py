@@ -1,5 +1,3 @@
-"""Event repository implementation."""
-
 from typing import List, Optional
 
 from sqlalchemy import delete as sql_delete, select, update as sql_update
@@ -32,7 +30,7 @@ class EventRepoImpl(EventRepo):
         )
 
     @Logger.io
-    async def create(self, event: Event) -> Event:
+    async def create(self, *, event: Event) -> Event:
         db_event = EventModel(
             name=event.name,
             description=event.description,
@@ -50,7 +48,7 @@ class EventRepoImpl(EventRepo):
         return EventRepoImpl._to_entity(db_event)
 
     @Logger.io
-    async def get_by_id(self, event_id: int) -> Optional[Event]:
+    async def get_by_id(self, *, event_id: int) -> Optional[Event]:
         result = await self.session.execute(select(EventModel).where(EventModel.id == event_id))
         db_event = result.scalar_one_or_none()
 
@@ -60,7 +58,9 @@ class EventRepoImpl(EventRepo):
         return EventRepoImpl._to_entity(db_event)
 
     @Logger.io
-    async def get_by_id_with_seller(self, event_id: int) -> tuple[Optional[Event], Optional[User]]:
+    async def get_by_id_with_seller(
+        self, *, event_id: int
+    ) -> tuple[Optional[Event], Optional[User]]:
         result = await self.session.execute(
             select(EventModel, User)
             .join(User, EventModel.seller_id == User.id)
@@ -77,7 +77,7 @@ class EventRepoImpl(EventRepo):
         return event, user
 
     @Logger.io
-    async def update(self, event: Event) -> Event:
+    async def update(self, *, event: Event) -> Event:
         stmt = (
             sql_update(EventModel)
             .where(EventModel.id == event.id)
@@ -102,7 +102,7 @@ class EventRepoImpl(EventRepo):
         return EventRepoImpl._to_entity(db_event)
 
     @Logger.io
-    async def delete(self, event_id: int) -> bool:
+    async def delete(self, *, event_id: int) -> bool:
         stmt = sql_delete(EventModel).where(EventModel.id == event_id).returning(EventModel.id)
 
         result = await self.session.execute(stmt)
@@ -111,7 +111,7 @@ class EventRepoImpl(EventRepo):
         return deleted_id is not None
 
     @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[Event]:
+    async def get_by_seller(self, *, seller_id: int) -> List[Event]:
         result = await self.session.execute(
             select(EventModel).where(EventModel.seller_id == seller_id).order_by(EventModel.id)
         )
@@ -131,7 +131,7 @@ class EventRepoImpl(EventRepo):
         return [EventRepoImpl._to_entity(db_event) for db_event in db_events]
 
     @Logger.io
-    async def release_event_atomically(self, event_id: int) -> Event:
+    async def release_event_atomically(self, *, event_id: int) -> Event:
         stmt = (
             sql_update(EventModel)
             .where(EventModel.id == event_id)

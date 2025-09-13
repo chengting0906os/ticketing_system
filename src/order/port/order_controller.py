@@ -1,5 +1,3 @@
-"""Order controller."""
-
 from fastapi import APIRouter, Depends, status
 
 from src.order.port.order_schema import (

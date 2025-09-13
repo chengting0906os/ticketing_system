@@ -1,5 +1,3 @@
-"""Centralized logging configuration."""
-
 from contextvars import ContextVar
 from enum import StrEnum
 import logging
@@ -39,8 +37,6 @@ class GeneratorMethod(StrEnum):
 
 
 class InterceptHandler(logging.Handler):
-    """Handler to intercept standard logging and redirect to loguru."""
-
     def emit(self, record):
         # Skip access logs or adjust level based on status code
         message = record.getMessage()

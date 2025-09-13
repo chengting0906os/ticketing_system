@@ -1,5 +1,3 @@
-"""Main FastAPI application."""
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,7 +17,6 @@ from src.user.port.user_controller import auth_router, users_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application startup and shutdown."""
     await create_db_and_tables()
     yield
 
@@ -52,5 +49,4 @@ app.include_router(ticket_operations_router, prefix='/api', tags=['ticket-operat
 
 @app.get('/')
 async def root():
-    """Root endpoint."""
     return {'message': 'Ticketing System API'}

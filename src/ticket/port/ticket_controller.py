@@ -1,5 +1,3 @@
-"""Ticket controller."""
-
 from fastapi import APIRouter, Depends, status
 
 from src.shared.logging.loguru_io import Logger
@@ -37,7 +35,6 @@ async def create_tickets_for_event(
     current_user: User = Depends(require_seller),
     use_case: CreateTicketsUseCase = Depends(CreateTicketsUseCase.depends),
 ) -> CreateTicketsResponse:
-    """Create all tickets for an event (seller only)."""
     tickets = await use_case.create_all_tickets_for_event(
         event_id=event_id,
         price=request.price,
@@ -52,7 +49,6 @@ async def create_tickets_for_event(
 
 
 def _ticket_to_response(ticket) -> TicketResponse:
-    """Convert ticket entity to response format."""
     return TicketResponse(
         id=ticket.id,
         event_id=ticket.event_id,
@@ -73,7 +69,6 @@ async def list_tickets_by_event(
     current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsResponse:
-    """List tickets for an event. Sellers see all tickets, buyers see available only."""
     # Determine if user is a seller for this event
     seller_id = None
     if current_user.role == 'seller':
@@ -102,7 +97,6 @@ async def list_tickets_by_section(
     current_user: User = Depends(require_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
-    """List tickets for specific section/subsection of an event (seller only)."""
     tickets = await use_case.list_tickets_by_section(
         event_id=event_id,
         section=section,
@@ -129,7 +123,6 @@ async def reserve_tickets_for_event(
     current_user: User = Depends(require_buyer),
     use_case: ReserveTicketsUseCase = Depends(ReserveTicketsUseCase.depends),
 ) -> ReserveTicketsResponse:
-    """Reserve tickets for an event (buyer only)."""
     reservation_data = await use_case.reserve_tickets(
         event_id=event_id,
         ticket_count=request.ticket_count,
@@ -146,7 +139,6 @@ async def cancel_reservation(
     current_user: User = Depends(require_buyer),
     use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ) -> CancelReservationResponse:
-    """Cancel a reservation (buyer only)."""
     result = await use_case.cancel_reservation(
         reservation_id=reservation_id,
         buyer_id=current_user.id,

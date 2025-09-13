@@ -20,7 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create ticket table."""
     op.create_table(
         'ticket',
         sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
@@ -77,7 +76,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop ticket table."""
     op.drop_index('idx_ticket_seat_lookup', 'ticket')
     op.drop_index('idx_ticket_order_id', 'ticket')
     op.drop_index('idx_ticket_buyer_id', 'ticket')

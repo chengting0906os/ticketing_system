@@ -1,5 +1,3 @@
-"""Event database models."""
-
 from sqlalchemy import Boolean, ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 

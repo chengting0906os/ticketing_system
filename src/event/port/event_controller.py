@@ -1,5 +1,3 @@
-"""Event controller."""
-
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, status
@@ -105,7 +103,7 @@ async def delete_event(
 async def get_event(
     event_id: int, use_case: GetEventUseCase = Depends(GetEventUseCase.depends)
 ) -> EventResponse:
-    event = await use_case.get_by_id(event_id)
+    event = await use_case.get_by_id(event_id=event_id)
 
     if not event:
         raise NotFoundError(f'Event with id {event_id} not found')

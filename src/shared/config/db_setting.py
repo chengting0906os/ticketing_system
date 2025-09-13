@@ -1,5 +1,3 @@
-"""Database configuration."""
-
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -22,8 +20,6 @@ async_session_maker = async_sessionmaker(
 
 
 class Base(DeclarativeBase):
-    """Base model class."""
-
     pass
 
 

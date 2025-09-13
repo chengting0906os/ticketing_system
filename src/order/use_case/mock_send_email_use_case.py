@@ -1,5 +1,3 @@
-"""Email notification use case for order domain events."""
-
 from src.order.domain.events import (
     DomainEventProtocol,
     OrderCancelledEvent,

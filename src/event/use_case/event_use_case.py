@@ -1,5 +1,3 @@
-"""Event use cases."""
-
 from typing import Dict, List, Optional
 
 from fastapi import Depends
@@ -39,7 +37,7 @@ class CreateEventUseCase:
                 is_active=is_active,
             )
 
-            created_event = await self.uow.events.create(event)
+            created_event = await self.uow.events.create(event=event)
             await self.uow.commit()
         # raise Exception('Simulated error for testing rollback')  # --- IGNORE ---
         return created_event
@@ -66,7 +64,7 @@ class UpdateEventUseCase:
     ) -> Optional[Event]:
         async with self.uow:
             # Get existing event
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 return None
 
@@ -84,7 +82,7 @@ class UpdateEventUseCase:
             if is_active is not None:
                 event.is_active = is_active
 
-            updated_event = await self.uow.events.update(event)
+            updated_event = await self.uow.events.update(event=event)
             await self.uow.commit()
 
         return updated_event
@@ -101,7 +99,7 @@ class DeleteEventUseCase:
     @Logger.io
     async def delete(self, event_id: int) -> bool:
         async with self.uow:
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 return False
 
@@ -110,7 +108,7 @@ class DeleteEventUseCase:
             if event.status == EventStatus.SOLD:
                 raise ValueError('Cannot delete sold event')
 
-            deleted = await self.uow.events.delete(event_id)
+            deleted = await self.uow.events.delete(event_id=event_id)
             await self.uow.commit()
 
         return deleted
@@ -127,7 +125,7 @@ class GetEventUseCase:
     @Logger.io
     async def get_by_id(self, event_id: int) -> Optional[Event]:
         async with self.uow:
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
         return event
 
 
@@ -142,7 +140,7 @@ class ListEventsUseCase:
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Event]:
         async with self.uow:
-            events = await self.uow.events.get_by_seller(seller_id)
+            events = await self.uow.events.get_by_seller(seller_id=seller_id)
         return events
 
     @Logger.io

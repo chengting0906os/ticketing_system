@@ -1,5 +1,3 @@
-"""Constants and shared variables for LoguruIO."""
-
 from contextvars import ContextVar
 from enum import StrEnum
 

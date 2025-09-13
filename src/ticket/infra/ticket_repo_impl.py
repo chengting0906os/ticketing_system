@@ -1,5 +1,3 @@
-"""Ticket repository implementation."""
-
 from typing import List
 
 from sqlalchemy import select
@@ -52,8 +50,7 @@ class TicketRepoImpl(TicketRepo):
         )
 
     @Logger.io
-    async def create_batch(self, tickets: List[Ticket]) -> List[Ticket]:
-        """Create multiple tickets in batch."""
+    async def create_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         db_tickets = [self._to_model(ticket) for ticket in tickets]
 
         self.session.add_all(db_tickets)
@@ -66,8 +63,7 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
-    async def get_by_event_id(self, event_id: int) -> List[Ticket]:
-        """Get all tickets for an event."""
+    async def get_by_event_id(self, *, event_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
@@ -83,9 +79,8 @@ class TicketRepoImpl(TicketRepo):
 
     @Logger.io
     async def get_by_event_and_section(
-        self, event_id: int, section: str, subsection: int | None = None
+        self, *, event_id: int, section: str, subsection: int | None = None
     ) -> List[Ticket]:
-        """Get tickets for specific section/subsection of an event."""
         query = (
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
@@ -102,16 +97,14 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
-    async def check_tickets_exist_for_event(self, event_id: int) -> bool:
-        """Check if any tickets exist for an event."""
+    async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
         result = await self.session.execute(
             select(TicketModel.id).where(TicketModel.event_id == event_id).limit(1)
         )
         return result.scalar_one_or_none() is not None
 
     @Logger.io
-    async def count_tickets_by_event(self, event_id: int) -> int:
-        """Count total tickets for an event."""
+    async def count_tickets_by_event(self, *, event_id: int) -> int:
         from sqlalchemy import func
 
         result = await self.session.execute(
@@ -120,8 +113,7 @@ class TicketRepoImpl(TicketRepo):
         return result.scalar() or 0
 
     @Logger.io
-    async def get_available_tickets_by_event(self, event_id: int) -> List[Ticket]:
-        """Get all available tickets for an event."""
+    async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
@@ -138,9 +130,8 @@ class TicketRepoImpl(TicketRepo):
 
     @Logger.io
     async def get_available_tickets_for_event(
-        self, event_id: int, limit: int | None = None
+        self, *, event_id: int, limit: int | None = None
     ) -> List[Ticket]:
-        """Get available tickets for an event with optional limit."""
         query = (
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
@@ -161,8 +152,7 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
-    async def get_reserved_tickets_for_event(self, event_id: int) -> List[Ticket]:
-        """Get all reserved tickets for an event."""
+    async def get_reserved_tickets_for_event(self, *, event_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
@@ -178,8 +168,7 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
-    async def get_reserved_tickets_by_buyer(self, buyer_id: int) -> List[Ticket]:
-        """Get all reserved tickets for a buyer."""
+    async def get_reserved_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)
             .where(TicketModel.buyer_id == buyer_id)
@@ -190,7 +179,6 @@ class TicketRepoImpl(TicketRepo):
 
     @Logger.io
     async def get_all_reserved_tickets(self) -> List[Ticket]:
-        """Get all reserved tickets in the system."""
         result = await self.session.execute(
             select(TicketModel).where(TicketModel.status == TicketStatus.RESERVED.value)
         )
@@ -198,8 +186,7 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
-    async def update_batch(self, tickets: List[Ticket]) -> List[Ticket]:
-        """Update multiple tickets in batch."""
+    async def update_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         for ticket in tickets:
             # Find the existing model
             result = await self.session.execute(

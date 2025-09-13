@@ -1,5 +1,3 @@
-"""Cancel reservation use case."""
-
 from typing import Any, Dict
 
 from fastapi import Depends
@@ -19,12 +17,10 @@ class CancelReservationUseCase:
         return cls(uow=uow)
 
     @Logger.io
-    async def cancel_reservation(self, reservation_id: int, buyer_id: int) -> Dict[str, Any]:
-        """Cancel a reservation by its ID."""
-
+    async def cancel_reservation(self, *, reservation_id: int, buyer_id: int) -> Dict[str, Any]:
         async with self.uow:
             # Find tickets by reservation_id (using ticket ID as reservation ID for simplicity)
-            tickets = await self.uow.tickets.get_reserved_tickets_by_buyer(buyer_id)
+            tickets = await self.uow.tickets.get_reserved_tickets_by_buyer(buyer_id=buyer_id)
 
             if not tickets:
                 raise NotFoundError('Reservation not found')
@@ -38,10 +34,10 @@ class CancelReservationUseCase:
 
             # Cancel all reservation tickets
             for ticket in reservation_tickets:
-                ticket.cancel_reservation(buyer_id)
+                ticket.cancel_reservation(buyer_id=buyer_id)
 
             # Update tickets in database
-            await self.uow.tickets.update_batch(reservation_tickets)
+            await self.uow.tickets.update_batch(tickets=reservation_tickets)
             await self.uow.commit()
 
             return {

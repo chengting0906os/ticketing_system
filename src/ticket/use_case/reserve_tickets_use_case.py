@@ -1,5 +1,3 @@
-"""Reserve tickets use case."""
-
 from typing import Any, Dict
 
 from fastapi import Depends
@@ -19,27 +17,27 @@ class ReserveTicketsUseCase:
 
     @Logger.io
     async def reserve_tickets(
-        self, event_id: int, ticket_count: int, buyer_id: int
+        self, *, event_id: int, ticket_count: int, buyer_id: int
     ) -> Dict[str, Any]:
-        """Reserve tickets for a buyer."""
-
         async with self.uow:
             # Validate ticket count limit
             if ticket_count > 4:
                 raise DomainError('Maximum 4 tickets per person')
 
             # Get event
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 raise NotFoundError('Event not found')
 
             # Get available tickets
             available_tickets = await self.uow.tickets.get_available_tickets_for_event(
-                event_id, limit=ticket_count
+                event_id=event_id, limit=ticket_count
             )
 
             # Check for existing reservations that would conflict
-            reserved_tickets = await self.uow.tickets.get_reserved_tickets_for_event(event_id)
+            reserved_tickets = await self.uow.tickets.get_reserved_tickets_for_event(
+                event_id=event_id
+            )
             if len(reserved_tickets) > 0:
                 raise ConflictError('Some tickets are already reserved')
 
@@ -49,10 +47,10 @@ class ReserveTicketsUseCase:
             # Reserve the tickets
             tickets_to_reserve = available_tickets[:ticket_count]
             for ticket in tickets_to_reserve:
-                ticket.reserve(buyer_id)
+                ticket.reserve(buyer_id=buyer_id)
 
             # Update tickets in database
-            await self.uow.tickets.update_batch(tickets_to_reserve)
+            await self.uow.tickets.update_batch(tickets=tickets_to_reserve)
             await self.uow.commit()
 
             # Return reservation details

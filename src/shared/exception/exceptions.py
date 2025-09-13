@@ -1,6 +1,3 @@
-"""Shared exceptions for the application."""
-
-
 class DomainError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         self.message = message

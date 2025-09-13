@@ -1,5 +1,3 @@
-"""Payment use case for order management."""
-
 import random
 import string
 from typing import Any, Dict
@@ -24,7 +22,7 @@ class MockPaymentUseCase:
     @Logger.io
     async def pay_order(self, order_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
         async with self.uow:
-            order = await self.uow.orders.get_by_id(order_id)
+            order = await self.uow.orders.get_by_id(order_id=order_id)
             if not order:
                 raise NotFoundError('Order not found')
             if order.buyer_id != buyer_id:
@@ -37,11 +35,11 @@ class MockPaymentUseCase:
                 raise DomainError('Order is not in a payable state')
 
             paid_order = order.mark_as_paid()
-            updated_order = await self.uow.orders.update(paid_order)
-            event = await self.uow.events.get_by_id(order.event_id)
+            updated_order = await self.uow.orders.update(order=paid_order)
+            event = await self.uow.events.get_by_id(event_id=order.event_id)
             if event:
                 event.status = EventStatus.SOLD
-                await self.uow.events.update(event)
+                await self.uow.events.update(event=event)
             payment_id = (
                 f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'
             )
@@ -57,8 +55,10 @@ class MockPaymentUseCase:
     @Logger.io
     async def cancel_order(self, order_id: int, buyer_id: int) -> None:
         async with self.uow:
-            cancelled_order = await self.uow.orders.cancel_order_atomically(order_id, buyer_id)
+            cancelled_order = await self.uow.orders.cancel_order_atomically(
+                order_id=order_id, buyer_id=buyer_id
+            )
 
-            await self.uow.events.release_event_atomically(cancelled_order.event_id)
+            await self.uow.events.release_event_atomically(event_id=cancelled_order.event_id)
 
             await self.uow.commit()

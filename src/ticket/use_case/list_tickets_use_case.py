@@ -1,5 +1,3 @@
-"""Use case for listing tickets."""
-
 from typing import List
 
 from fastapi import Depends
@@ -14,12 +12,11 @@ class ListTicketsUseCase:
         self.uow = uow
 
     async def list_tickets_by_event(
-        self, event_id: int, seller_id: int | None = None
+        self, *, event_id: int, seller_id: int | None = None
     ) -> List[Ticket]:
-        """List tickets for an event. Sellers see all tickets, buyers see available only."""
         async with self.uow:
             # Verify event exists
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 raise NotFoundError('Event not found')
 
@@ -27,20 +24,19 @@ class ListTicketsUseCase:
             if seller_id is not None:
                 if event.seller_id != seller_id:
                     raise ForbiddenError('Not authorized to view tickets for this event')
-                tickets = await self.uow.tickets.get_by_event_id(event_id)
+                tickets = await self.uow.tickets.get_by_event_id(event_id=event_id)
             else:
                 # For buyers, return only available tickets
-                tickets = await self.uow.tickets.get_available_tickets_by_event(event_id)
+                tickets = await self.uow.tickets.get_available_tickets_by_event(event_id=event_id)
 
             return tickets
 
     async def list_tickets_by_section(
-        self, event_id: int, section: str, subsection: int | None, seller_id: int
+        self, *, event_id: int, section: str, subsection: int | None, seller_id: int
     ) -> List[Ticket]:
-        """List tickets for specific section/subsection of an event (seller only)."""
         async with self.uow:
             # Verify seller owns the event
-            event = await self.uow.events.get_by_id(event_id)
+            event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 raise NotFoundError('Event not found')
 

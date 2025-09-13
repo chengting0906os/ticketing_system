@@ -1,5 +1,3 @@
-"""Order repository implementation."""
-
 from datetime import datetime
 from typing import List
 
@@ -49,7 +47,7 @@ class OrderRepoImpl(OrderRepo):
         }
 
     @Logger.io
-    async def create(self, order: Order) -> Order:
+    async def create(self, *, order: Order) -> Order:
         db_order = OrderModel(
             buyer_id=order.buyer_id,
             seller_id=order.seller_id,
@@ -67,7 +65,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_id(self, order_id: int) -> Order | None:
+    async def get_by_id(self, *, order_id: int) -> Order | None:
         result = await self.session.execute(select(OrderModel).where(OrderModel.id == order_id))
         db_order = result.scalar_one_or_none()
 
@@ -77,7 +75,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_event_id(self, event_id: int) -> Order | None:
+    async def get_by_event_id(self, *, event_id: int) -> Order | None:
         result = await self.session.execute(
             select(OrderModel)
             .where(OrderModel.event_id == event_id)
@@ -91,7 +89,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_buyer(self, buyer_id: int) -> List[Order]:
+    async def get_by_buyer(self, *, buyer_id: int) -> List[Order]:
         result = await self.session.execute(
             select(OrderModel).where(OrderModel.buyer_id == buyer_id).order_by(OrderModel.id)
         )
@@ -100,7 +98,7 @@ class OrderRepoImpl(OrderRepo):
         return [OrderRepoImpl._to_entity(db_order) for db_order in db_orders]
 
     @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[Order]:
+    async def get_by_seller(self, *, seller_id: int) -> List[Order]:
         result = await self.session.execute(
             select(OrderModel).where(OrderModel.seller_id == seller_id).order_by(OrderModel.id)
         )
@@ -109,7 +107,7 @@ class OrderRepoImpl(OrderRepo):
         return [OrderRepoImpl._to_entity(db_order) for db_order in db_orders]
 
     @Logger.io
-    async def update(self, order: Order) -> Order:
+    async def update(self, *, order: Order) -> Order:
         stmt = (
             sql_update(OrderModel)
             .where(OrderModel.id == order.id)
@@ -134,7 +132,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def cancel_order_atomically(self, order_id: int, buyer_id: int) -> Order:
+    async def cancel_order_atomically(self, *, order_id: int, buyer_id: int) -> Order:
         stmt = (
             sql_update(OrderModel)
             .where(OrderModel.id == order_id)
@@ -166,7 +164,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_buyer_orders_with_details(self, buyer_id: int, status: str) -> List[dict]:
+    async def get_buyer_orders_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         query = (
             select(OrderModel)
             .options(
@@ -186,7 +184,7 @@ class OrderRepoImpl(OrderRepo):
         return [OrderRepoImpl._to_order_dict(db_order) for db_order in db_orders]
 
     @Logger.io
-    async def get_seller_orders_with_details(self, seller_id: int, status: str) -> List[dict]:
+    async def get_seller_orders_with_details(self, *, seller_id: int, status: str) -> List[dict]:
         query = (
             select(OrderModel)
             .options(

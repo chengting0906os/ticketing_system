@@ -1,5 +1,3 @@
-"""Utility functions for LoguruIO."""
-
 from inspect import FullArgSpec, getfile, getfullargspec, getsourcelines
 from os.path import basename
 from re import sub
@@ -77,8 +75,7 @@ def normalize_args_kwargs(
 def mask_sensitive(data_str: Any) -> Any:
     try:
         data_str_ = str(data_str)
-        new_data_str = sub(
-            rf"""(\(|,\s)({'|'.join(SENSITIVE_KEYWORDS)})=\S+(\)|,\s)""",
+        new_data_str = sub(  # type: ignore
             r"\1\2='********'\3",
             data_str_,
         )

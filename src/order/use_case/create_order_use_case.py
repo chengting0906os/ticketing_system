@@ -1,5 +1,3 @@
-"""Create order use case."""
-
 from fastapi import Depends
 
 from src.order.domain.order_aggregate import OrderAggregate
@@ -28,18 +26,18 @@ class CreateOrderUseCase:
     @Logger.io
     async def create_order(self, buyer_id: int, event_id: int) -> Order:
         async with self.uow:
-            buyer = await self.uow.users.get_by_id(buyer_id)
+            buyer = await self.uow.users.get_by_id(user_id=buyer_id)
             if not buyer:
                 raise DomainError('Buyer not found', 404)
             # Get event and seller in one JOIN query
-            event, seller = await self.uow.events.get_by_id_with_seller(event_id)
+            event, seller = await self.uow.events.get_by_id_with_seller(event_id=event_id)
             if not event:
                 raise DomainError('Event not found', 404)
             if not seller:
                 raise DomainError('Seller not found', 404)
 
             aggregate = OrderAggregate.create_order(buyer, event, seller)
-            created_order = await self.uow.orders.create(aggregate.order)
+            created_order = await self.uow.orders.create(order=aggregate.order)
             aggregate.order.id = created_order.id
             aggregate.emit_creation_events()
             events = aggregate.collect_events()
@@ -48,7 +46,7 @@ class CreateOrderUseCase:
 
             updated_event = aggregate.get_event_for_update()
             if updated_event:
-                await self.uow.events.update(updated_event)
+                await self.uow.events.update(event=updated_event)
 
             await self.uow.commit()
 

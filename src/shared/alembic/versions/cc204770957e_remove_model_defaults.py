@@ -19,14 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Remove inappropriate default values."""
     # Remove only inappropriate default values from event table
     op.alter_column('event', 'venue_name', server_default=None)
     op.alter_column('event', 'seating_config', server_default=None)
 
 
 def downgrade() -> None:
-    """Restore inappropriate default values."""
     # Restore inappropriate default values to event table
     op.alter_column('event', 'venue_name', server_default='Default Venue')
     op.alter_column(

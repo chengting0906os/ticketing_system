@@ -1,5 +1,3 @@
-"""User repository implementation."""
-
 from typing import Optional
 
 from sqlalchemy import select
@@ -15,6 +13,6 @@ class UserRepoImpl(UserRepo):
         self.session = session
 
     @Logger.io
-    async def get_by_id(self, user_id: int) -> Optional[User]:
+    async def get_by_id(self, *, user_id: int) -> Optional[User]:
         result = await self.session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()

@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
     # First, rename the product table to event
     op.rename_table('product', 'event')
 
@@ -37,7 +36,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
     # Drop the foreign key constraint
     op.drop_constraint('order_event_id_fkey', 'order', type_='foreignkey')
 

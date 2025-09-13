@@ -94,13 +94,13 @@ class TestListTicketsUseCase:
         use_case = ListTicketsUseCase(mock_uow)
 
         # When
-        result = await use_case.list_tickets_by_event(event_id, seller_id)
+        result = await use_case.list_tickets_by_event(event_id=event_id, seller_id=seller_id)
 
         # Then
         assert len(result) == 2
         assert result == sample_tickets
-        mock_uow.events.get_by_id.assert_called_once_with(event_id)
-        mock_uow.tickets.get_by_event_id.assert_called_once_with(event_id)
+        mock_uow.events.get_by_id.assert_called_once_with(event_id=event_id)
+        mock_uow.tickets.get_by_event_id.assert_called_once_with(event_id=event_id)
 
     @pytest.mark.asyncio
     async def test_buyer_can_only_list_available_tickets(
@@ -116,13 +116,13 @@ class TestListTicketsUseCase:
         use_case = ListTicketsUseCase(mock_uow)
 
         # When
-        result = await use_case.list_tickets_by_event(event_id, seller_id)
+        result = await use_case.list_tickets_by_event(event_id=event_id, seller_id=seller_id)
 
         # Then
         assert len(result) == 1
         assert result == available_tickets
-        mock_uow.events.get_by_id.assert_called_once_with(event_id)
-        mock_uow.tickets.get_available_tickets_by_event.assert_called_once_with(event_id)
+        mock_uow.events.get_by_id.assert_called_once_with(event_id=event_id)
+        mock_uow.tickets.get_available_tickets_by_event.assert_called_once_with(event_id=event_id)
 
     @pytest.mark.asyncio
     async def test_seller_cannot_list_tickets_for_other_sellers_event(self, mock_uow, sample_event):
@@ -137,7 +137,7 @@ class TestListTicketsUseCase:
 
         # When / Then
         with pytest.raises(ForbiddenError, match='Not authorized to view tickets for this event'):
-            await use_case.list_tickets_by_event(event_id, seller_id)
+            await use_case.list_tickets_by_event(event_id=event_id, seller_id=seller_id)
 
     @pytest.mark.asyncio
     async def test_list_tickets_for_nonexistent_event(self, mock_uow):
@@ -151,7 +151,7 @@ class TestListTicketsUseCase:
 
         # When / Then
         with pytest.raises(NotFoundError, match='Event not found'):
-            await use_case.list_tickets_by_event(event_id, seller_id)
+            await use_case.list_tickets_by_event(event_id=event_id, seller_id=seller_id)
 
     @pytest.mark.asyncio
     async def test_seller_can_list_tickets_by_section(self, mock_uow, sample_event, sample_tickets):
@@ -167,12 +167,14 @@ class TestListTicketsUseCase:
         use_case = ListTicketsUseCase(mock_uow)
 
         # When
-        result = await use_case.list_tickets_by_section(event_id, section, subsection, seller_id)
+        result = await use_case.list_tickets_by_section(
+            event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
+        )
 
         # Then
         assert len(result) == 2
         assert result == sample_tickets
-        mock_uow.events.get_by_id.assert_called_once_with(event_id)
+        mock_uow.events.get_by_id.assert_called_once_with(event_id=event_id)
         mock_uow.tickets.get_by_event_and_section.assert_called_once_with(
             event_id=event_id, section=section, subsection=subsection
         )
@@ -192,4 +194,6 @@ class TestListTicketsUseCase:
 
         # When / Then
         with pytest.raises(ForbiddenError, match='Not authorized to view tickets for this event'):
-            await use_case.list_tickets_by_section(event_id, section, subsection, seller_id)
+            await use_case.list_tickets_by_section(
+                event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
+            )

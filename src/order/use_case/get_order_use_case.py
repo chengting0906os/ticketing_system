@@ -1,5 +1,3 @@
-"""Get order use case."""
-
 from fastapi import Depends
 
 from src.order.domain.order_entity import Order
@@ -19,7 +17,7 @@ class GetOrderUseCase:
     @Logger.io
     async def get_order(self, order_id: int) -> Order:
         async with self.uow:
-            order = await self.uow.orders.get_by_id(order_id)
+            order = await self.uow.orders.get_by_id(order_id=order_id)
 
             if not order:
                 raise NotFoundError('Order not found')

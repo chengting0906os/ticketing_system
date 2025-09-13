@@ -1,5 +1,3 @@
-"""Value Objects for Order Aggregate."""
-
 import attrs
 
 

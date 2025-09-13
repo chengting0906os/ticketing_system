@@ -17,11 +17,15 @@ class ListOrdersUseCase:
     @Logger.io
     async def list_buyer_orders(self, buyer_id: int, status: str) -> List[Dict[str, Any]]:
         async with self.uow:
-            orders = await self.uow.orders.get_buyer_orders_with_details(buyer_id, status)
+            orders = await self.uow.orders.get_buyer_orders_with_details(
+                buyer_id=buyer_id, status=status
+            )
             return orders
 
     @Logger.io
     async def list_seller_orders(self, seller_id: int, status: str) -> List[Dict[str, Any]]:
         async with self.uow:
-            orders = await self.uow.orders.get_seller_orders_with_details(seller_id, status)
+            orders = await self.uow.orders.get_seller_orders_with_details(
+                seller_id=seller_id, status=status
+            )
             return orders

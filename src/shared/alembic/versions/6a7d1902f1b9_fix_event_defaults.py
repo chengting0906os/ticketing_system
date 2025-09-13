@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Fix event table default values."""
     # Set default values for existing rows
     op.execute(
         "UPDATE event SET venue_name = 'Default Venue' WHERE venue_name IS NULL OR venue_name = ''"
@@ -38,7 +37,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove default values."""
     # Remove server defaults
     op.alter_column('event', 'venue_name', server_default=None)
     op.alter_column('event', 'seating_config', server_default=None)

@@ -1,4 +1,3 @@
-"""User manager for FastAPI Users integration."""
 # https://fastapi-users.github.io/fastapi-users/10.1/configuration/user-manager/
 
 from typing import Optional

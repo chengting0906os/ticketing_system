@@ -1,5 +1,3 @@
-"""Ticket domain entity."""
-
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -41,7 +39,7 @@ class Ticket:
     def seat_identifier(self) -> str:
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
-    def reserve(self, buyer_id: int) -> None:
+    def reserve(self, *, buyer_id: int) -> None:
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
 
@@ -68,7 +66,7 @@ class Ticket:
         self.reserved_at = None
         self.updated_at = datetime.now(timezone.utc)
 
-    def cancel_reservation(self, buyer_id: int) -> None:
+    def cancel_reservation(self, *, buyer_id: int) -> None:
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot cancel reservation for ticket with status {self.status}')
 

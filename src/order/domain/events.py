@@ -1,5 +1,3 @@
-"""Domain Events for Order Aggregate."""
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

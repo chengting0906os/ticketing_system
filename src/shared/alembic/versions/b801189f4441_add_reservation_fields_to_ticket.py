@@ -19,12 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
     # Add new reservation field to ticket table
     op.add_column('ticket', sa.Column('reserved_at', sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
     # Remove reservation field from ticket table
     op.drop_column('ticket', 'reserved_at')

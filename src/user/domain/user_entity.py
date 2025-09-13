@@ -1,5 +1,3 @@
-"""User models."""
-
 from enum import Enum
 
 

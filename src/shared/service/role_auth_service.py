@@ -1,5 +1,3 @@
-"""Shared dependencies for authentication and authorization."""
-
 from fastapi import Depends
 
 from src.shared.exception.exceptions import ForbiddenError

@@ -1,5 +1,3 @@
-"""Generator wrapper for LoguruIO."""
-
 from typing import TYPE_CHECKING
 
 from src.shared.logging.loguru_io_config import GeneratorMethod
