@@ -6,6 +6,8 @@ from tests.shared.utils import extract_table_data
 
 @then('the event should be created with')
 def verify_event_created(step, event_state):
+    import json
+
     expected_data = extract_table_data(step)
     response = event_state['response']
     response_json = response.json()
@@ -21,6 +23,12 @@ def verify_event_created(step, event_state):
             assert response_json['status'] == expected_value
         elif field in ['price', 'seller_id', 'id']:
             assert response_json[field] == int(expected_value)
+        elif field == 'seating_config':
+            # Handle JSON comparison for seating_config
+            expected_json = json.loads(expected_value)
+            assert response_json[field] == expected_json, (
+                f'seating_config mismatch: expected {expected_json}, got {response_json[field]}'
+            )
         else:
             assert response_json[field] == expected_value
 
@@ -39,6 +47,8 @@ def verify_stock_initialized(step, event_state):
 
 @then('the event should be updated with')
 def verify_event_updated(step, event_state):
+    import json
+
     expected_data = extract_table_data(step)
     response = event_state['response']
     response_json = response.json()
@@ -54,6 +64,12 @@ def verify_event_updated(step, event_state):
             assert response_json['status'] == expected_value
         elif field in ['price', 'seller_id', 'id']:
             assert response_json[field] == int(expected_value)
+        elif field == 'seating_config':
+            # Handle JSON comparison for seating_config
+            expected_json = json.loads(expected_value)
+            assert response_json[field] == expected_json, (
+                f'seating_config mismatch: expected {expected_json}, got {response_json[field]}'
+            )
         else:
             assert response_json[field] == expected_value
 

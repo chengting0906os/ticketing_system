@@ -11,8 +11,8 @@ Feature: Order State Transition
       | email          | password | name       | role  |
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
     And a event exists:
-      | name         | description      | price | seller_id | is_active | status    |
-      | Test Event | Test Description |  1000 |         1 | true      | available |
+      | name       | description      | price | seller_id | is_active | status    | venue_name   | seating_config                                                                                 |
+      | Test Event | Test Description |  1000 |         1 | true      | available | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
 
   Scenario: Cannot cancel PAID order
     Given I am logged in as:

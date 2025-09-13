@@ -11,16 +11,16 @@ Feature: Event Update
       | email           | password |
       | seller@test.com | P@ssw0rd |
     And a event exists
-      | seller_id | name      | description             | price | is_active |
-      |         1 | iPhone 18 | Latest Apple smartphone |  1500 | true      |
+      | seller_id | name      | description             | price | is_active | venue_name   | seating_config                                                                                 |
+      |         1 | iPhone 18 | Latest Apple smartphone |  1500 | true      | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
 
   Scenario: Deactivate a event
     When I update the event to
       | is_active |
       | false     |
     Then the event should be updated with
-      | id        | seller_id | name      | description             | price | is_active | status    |
-      | {any_int} |         1 | iPhone 18 | Latest Apple smartphone |  1500 | false     | available |
+      | id        | seller_id | name      | description             | price | is_active | status    | venue_name   | seating_config                                                                                 |
+      | {any_int} |         1 | iPhone 18 | Latest Apple smartphone |  1500 | false     | available | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And the response status code should be:
       | 200 |
 
@@ -29,8 +29,8 @@ Feature: Event Update
       | price |
       |  1299 |
     Then the event should be updated with
-      | id        | seller_id | name      | description             | price | is_active | status    |
-      | {any_int} |         1 | iPhone 18 | Latest Apple smartphone |  1299 | true      | available |
+      | id        | seller_id | name      | description             | price | is_active | status    | venue_name   | seating_config                                                                                 |
+      | {any_int} |         1 | iPhone 18 | Latest Apple smartphone |  1299 | true      | available | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And the response status code should be:
       | 200 |
 

@@ -134,28 +134,28 @@ def buyer_tries_cancel_nonexistent(client: TestClient, order_state):
 @when('buyer with id 3 requests their orders')
 def buyer_3_requests_orders(client: TestClient, order_state):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(ORDER_MY_ORDERS)
+    response = client.get(f'{ORDER_MY_ORDERS}?order_status=')
     order_state['response'] = response
 
 
 @when('buyer with id 4 requests their orders')
 def buyer_4_requests_orders(client: TestClient, order_state):
     login_user(client, BUYER2_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(ORDER_MY_ORDERS)
+    response = client.get(f'{ORDER_MY_ORDERS}?order_status=')
     order_state['response'] = response
 
 
 @when('buyer with id 5 requests their orders')
 def buyer_5_requests_orders(client: TestClient, order_state):
     login_user(client, BUYER3_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(ORDER_MY_ORDERS)
+    response = client.get(f'{ORDER_MY_ORDERS}?order_status=')
     order_state['response'] = response
 
 
 @when('seller with id 1 requests their orders')
 def seller_1_requests_orders(client: TestClient, order_state):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(ORDER_MY_ORDERS)
+    response = client.get(f'{ORDER_MY_ORDERS}?order_status=')
     order_state['response'] = response
 
 

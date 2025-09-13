@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -7,6 +7,8 @@ class EventCreateRequest(BaseModel):
     name: str
     description: str
     price: int
+    venue_name: str
+    seating_config: Dict
     is_active: bool = True
 
     class Config:
@@ -26,6 +28,8 @@ class EventResponse(BaseModel):
     description: str
     price: int
     seller_id: int
+    venue_name: str
+    seating_config: Dict
     is_active: bool
     status: str
 
@@ -47,6 +51,8 @@ class EventUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[int] = None
+    venue_name: Optional[str] = None
+    seating_config: Optional[Dict] = None
     is_active: Optional[bool] = None
 
     class Config:

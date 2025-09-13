@@ -13,7 +13,7 @@ Feature: Order Price Validation
 
   Scenario: Cannot create order with negative price event
     Given a event exists with negative price:
-      | name         | description      | price | seller_id | is_active | status    |
+      | name       | description      | price | seller_id | is_active | status    |
       | Test Event | Test Description |  -100 |         1 | true      | available |
     When the buyer tries to create an order for the negative price event
     Then the response status code should be:
@@ -23,7 +23,7 @@ Feature: Order Price Validation
 
   Scenario: Cannot create order with zero price event
     Given a event exists with zero price:
-      | name         | description      | price | seller_id | is_active | status    |
+      | name       | description      | price | seller_id | is_active | status    |
       | Free Event | Test Description |     0 |         1 | true      | available |
     When the buyer tries to create an order for the zero price event
     Then the response status code should be:
@@ -33,8 +33,8 @@ Feature: Order Price Validation
 
   Scenario: Order price matches event price at creation time
     Given a event exists:
-      | name         | description      | price | seller_id | is_active | status    |
-      | Test Event | Test Description |  1000 |         1 | true      | available |
+      | name       | description      | price | seller_id | is_active | status    | venue_name   | seating_config                                                                                 |
+      | Test Event | Test Description |  1000 |         1 | true      | available | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -46,8 +46,8 @@ Feature: Order Price Validation
 
   Scenario: Event price changes do not affect existing orders
     Given a event exists:
-      | name         | description      | price | seller_id | is_active | status    |
-      | Test Event | Test Description |  1000 |         1 | true      | available |
+      | name       | description      | price | seller_id | is_active | status    | venue_name  | seating_config                                                                                 |
+      | Test Event | Test Description |  1000 |         1 | true      | available | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -58,8 +58,8 @@ Feature: Order Price Validation
 
   Scenario: New orders use updated event price
     Given a event exists:
-      | name         | description      | price | seller_id | is_active | status    |
-      | Test Event | Test Description |  1000 |         1 | true      | available |
+      | name       | description      | price | seller_id | is_active | status    | venue_name   | seating_config                                                                                 |
+      | Test Event | Test Description |  1000 |         1 | true      | available | Taipei Arena | {"sections": [{"name": "C", "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -71,8 +71,8 @@ Feature: Order Price Validation
 
   Scenario: Paid order price remains unchanged after event price update
     Given a event exists:
-      | name         | description      | price | seller_id | is_active | status    |
-      | Test Event | Test Description |  1500 |         1 | true      | available |
+      | name       | description      | price | seller_id | is_active | status    | venue_name  | seating_config                                                                                 |
+      | Test Event | Test Description |  1500 |         1 | true      | available | Taipei Dome | {"sections": [{"name": "D", "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |

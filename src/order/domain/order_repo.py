@@ -36,9 +36,9 @@ class OrderRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_buyer_orders_with_details(self, buyer_id: int) -> List[dict]:
+    async def get_buyer_orders_with_details(self, buyer_id: int, status: str) -> List[dict]:
         pass
 
     @abstractmethod
-    async def get_seller_orders_with_details(self, seller_id: int) -> List[dict]:
+    async def get_seller_orders_with_details(self, seller_id: int, status: str) -> List[dict]:
         pass

@@ -24,6 +24,8 @@ class EventRepoImpl(EventRepo):
             description=db_event.description,
             price=db_event.price,
             seller_id=db_event.seller_id,
+            venue_name=db_event.venue_name,
+            seating_config=db_event.seating_config,
             is_active=db_event.is_active,
             status=EventStatus(db_event.status),
             id=db_event.id,
@@ -36,6 +38,8 @@ class EventRepoImpl(EventRepo):
             description=event.description,
             price=event.price,
             seller_id=event.seller_id,
+            venue_name=event.venue_name,
+            seating_config=event.seating_config,
             is_active=event.is_active,
             status=event.status.value,  # Convert enum to string
         )
@@ -81,6 +85,8 @@ class EventRepoImpl(EventRepo):
                 name=event.name,
                 description=event.description,
                 price=event.price,
+                venue_name=event.venue_name,
+                seating_config=event.seating_config,
                 is_active=event.is_active,
                 status=event.status.value,
             )

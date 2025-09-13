@@ -1,7 +1,5 @@
 """Order controller."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, status
 
 from src.order.port.order_schema import (
@@ -51,7 +49,7 @@ async def create_order(
 @router.get('/my-orders')
 @Logger.io
 async def list_my_orders(
-    order_status: Optional[str] = None,
+    order_status: str,
     current_user: User = Depends(get_current_user),
     use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
@@ -119,7 +117,7 @@ async def cancel_order(
 @Logger.io
 async def list_seller_orders(
     seller_id: int,
-    order_status: Optional[str] = None,
+    order_status: str,
     use_case: ListOrdersUseCase = Depends(ListOrdersUseCase.depends),
 ):
     return await use_case.list_seller_orders(seller_id, order_status)

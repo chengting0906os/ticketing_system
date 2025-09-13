@@ -12,12 +12,18 @@ from tests.shared.utils import extract_table_data
 
 @when('I create a event with')
 def create_event(step, client: TestClient, event_state):
+    import json
+
     row_data = extract_table_data(step)
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
         'price': int(row_data['price']),
     }
+    if 'venue_name' in row_data:
+        request_data['venue_name'] = row_data['venue_name']
+    if 'seating_config' in row_data:
+        request_data['seating_config'] = json.loads(row_data['seating_config'])
     if 'is_active' in row_data:
         request_data['is_active'] = row_data['is_active'].lower() == 'true'
     event_state['request_data'] = request_data

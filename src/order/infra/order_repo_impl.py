@@ -1,7 +1,7 @@
 """Order repository implementation."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,22 @@ class OrderRepoImpl(OrderRepo):
             id=db_order.id,
         )
 
+    @staticmethod
+    def _to_order_dict(db_order: OrderModel) -> dict:
+        return {
+            'id': db_order.id,
+            'buyer_id': db_order.buyer_id,
+            'seller_id': db_order.seller_id,
+            'event_id': db_order.event_id,
+            'price': db_order.price,
+            'status': db_order.status,
+            'created_at': db_order.created_at,
+            'paid_at': db_order.paid_at,
+            'event_name': db_order.event.name if db_order.event else 'Unknown Event',
+            'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
+            'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
+        }
+
     @Logger.io
     async def create(self, order: Order) -> Order:
         db_order = OrderModel(
@@ -51,7 +67,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_id(self, order_id: int) -> Optional[Order]:
+    async def get_by_id(self, order_id: int) -> Order | None:
         result = await self.session.execute(select(OrderModel).where(OrderModel.id == order_id))
         db_order = result.scalar_one_or_none()
 
@@ -61,7 +77,7 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_by_event_id(self, event_id: int) -> Optional[Order]:
+    async def get_by_event_id(self, event_id: int) -> Order | None:
         result = await self.session.execute(
             select(OrderModel)
             .where(OrderModel.event_id == event_id)
@@ -81,20 +97,7 @@ class OrderRepoImpl(OrderRepo):
         )
         db_orders = result.scalars().all()
 
-        return [
-            Order(
-                buyer_id=db_order.buyer_id,
-                seller_id=db_order.seller_id,
-                event_id=db_order.event_id,
-                price=db_order.price,
-                status=OrderStatus(db_order.status),
-                created_at=db_order.created_at,
-                updated_at=db_order.updated_at,
-                paid_at=db_order.paid_at,
-                id=db_order.id,
-            )
-            for db_order in db_orders
-        ]
+        return [OrderRepoImpl._to_entity(db_order) for db_order in db_orders]
 
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[Order]:
@@ -103,20 +106,7 @@ class OrderRepoImpl(OrderRepo):
         )
         db_orders = result.scalars().all()
 
-        return [
-            Order(
-                buyer_id=db_order.buyer_id,
-                seller_id=db_order.seller_id,
-                event_id=db_order.event_id,
-                price=db_order.price,
-                status=OrderStatus(db_order.status),
-                created_at=db_order.created_at,
-                updated_at=db_order.updated_at,
-                paid_at=db_order.paid_at,
-                id=db_order.id,
-            )
-            for db_order in db_orders
-        ]
+        return [OrderRepoImpl._to_entity(db_order) for db_order in db_orders]
 
     @Logger.io
     async def update(self, order: Order) -> Order:
@@ -176,8 +166,8 @@ class OrderRepoImpl(OrderRepo):
         return OrderRepoImpl._to_entity(db_order)
 
     @Logger.io
-    async def get_buyer_orders_with_details(self, buyer_id: int) -> List[dict]:
-        result = await self.session.execute(
+    async def get_buyer_orders_with_details(self, buyer_id: int, status: str) -> List[dict]:
+        query = (
             select(OrderModel)
             .options(
                 selectinload(OrderModel.event),
@@ -185,30 +175,19 @@ class OrderRepoImpl(OrderRepo):
                 selectinload(OrderModel.seller),
             )
             .where(OrderModel.buyer_id == buyer_id)
-            .order_by(OrderModel.id)
         )
+
+        if status:
+            query = query.where(OrderModel.status == status)
+
+        result = await self.session.execute(query.order_by(OrderModel.id))
         db_orders = result.scalars().all()
 
-        return [
-            {
-                'id': db_order.id,
-                'buyer_id': db_order.buyer_id,
-                'seller_id': db_order.seller_id,
-                'event_id': db_order.event_id,
-                'price': db_order.price,
-                'status': db_order.status,
-                'created_at': db_order.created_at,
-                'paid_at': db_order.paid_at,
-                'event_name': db_order.event.name if db_order.event else 'Unknown Event',
-                'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
-                'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
-            }
-            for db_order in db_orders
-        ]
+        return [OrderRepoImpl._to_order_dict(db_order) for db_order in db_orders]
 
     @Logger.io
-    async def get_seller_orders_with_details(self, seller_id: int) -> List[dict]:
-        result = await self.session.execute(
+    async def get_seller_orders_with_details(self, seller_id: int, status: str) -> List[dict]:
+        query = (
             select(OrderModel)
             .options(
                 selectinload(OrderModel.event),
@@ -216,23 +195,12 @@ class OrderRepoImpl(OrderRepo):
                 selectinload(OrderModel.seller),
             )
             .where(OrderModel.seller_id == seller_id)
-            .order_by(OrderModel.id)
         )
+
+        if status:
+            query = query.where(OrderModel.status == status)
+
+        result = await self.session.execute(query.order_by(OrderModel.id))
         db_orders = result.scalars().all()
 
-        return [
-            {
-                'id': db_order.id,
-                'buyer_id': db_order.buyer_id,
-                'seller_id': db_order.seller_id,
-                'event_id': db_order.event_id,
-                'price': db_order.price,
-                'status': db_order.status,
-                'created_at': db_order.created_at,
-                'paid_at': db_order.paid_at,
-                'event_name': db_order.event.name if db_order.event else 'Unknown Event',
-                'buyer_name': db_order.buyer.name if db_order.buyer else 'Unknown Buyer',
-                'seller_name': db_order.seller.name if db_order.seller else 'Unknown Seller',
-            }
-            for db_order in db_orders
-        ]
+        return [OrderRepoImpl._to_order_dict(db_order) for db_order in db_orders]

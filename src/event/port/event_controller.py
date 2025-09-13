@@ -37,6 +37,8 @@ async def create_event(
         description=request.description,
         price=request.price,
         seller_id=current_user.id,  # Use current user's ID
+        venue_name=request.venue_name,
+        seating_config=request.seating_config,
         is_active=request.is_active,
     )
 
@@ -49,6 +51,8 @@ async def create_event(
         description=event.description,
         price=event.price,
         seller_id=event.seller_id,
+        venue_name=event.venue_name,
+        seating_config=event.seating_config,
         is_active=event.is_active,
         status=event.status.value,  # Convert enum to string
     )
@@ -66,6 +70,8 @@ async def update_event(
         name=request.name,
         description=request.description,
         price=request.price,
+        venue_name=request.venue_name,
+        seating_config=request.seating_config,
         is_active=request.is_active,
     )
 
@@ -78,6 +84,8 @@ async def update_event(
         description=event.description,
         price=event.price,
         seller_id=event.seller_id,
+        venue_name=event.venue_name,
+        seating_config=event.seating_config,
         is_active=event.is_active,
         status=event.status.value,
     )
@@ -108,6 +116,8 @@ async def get_event(
         description=event.description,
         price=event.price,
         seller_id=event.seller_id,
+        venue_name=event.venue_name,
+        seating_config=event.seating_config,
         is_active=event.is_active,
         status=event.status.value,
     )
@@ -133,6 +143,8 @@ async def list_events(
                     description=event.description,
                     price=event.price,
                     seller_id=event.seller_id,
+                    venue_name=event.venue_name,
+                    seating_config=event.seating_config,
                     is_active=event.is_active,
                     status=event.status.value,
                 )

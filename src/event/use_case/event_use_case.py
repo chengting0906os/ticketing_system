@@ -1,6 +1,6 @@
 """Event use cases."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import Depends
 
@@ -19,7 +19,14 @@ class CreateEventUseCase:
 
     @Logger.io
     async def create(
-        self, name: str, description: str, price: int, seller_id: int, is_active: bool = True
+        self,
+        name: str,
+        description: str,
+        price: int,
+        seller_id: int,
+        venue_name: str,
+        seating_config: Dict,
+        is_active: bool = True,
     ) -> Event:
         async with self.uow:
             event = Event.create(
@@ -27,6 +34,8 @@ class CreateEventUseCase:
                 description=description,
                 price=price,
                 seller_id=seller_id,
+                venue_name=venue_name,
+                seating_config=seating_config,
                 is_active=is_active,
             )
 
@@ -51,6 +60,8 @@ class UpdateEventUseCase:
         name: Optional[str] = None,
         description: Optional[str] = None,
         price: Optional[int] = None,
+        venue_name: Optional[str] = None,
+        seating_config: Optional[Dict] = None,
         is_active: Optional[bool] = None,
     ) -> Optional[Event]:
         async with self.uow:
@@ -66,6 +77,10 @@ class UpdateEventUseCase:
                 event.description = description
             if price is not None:
                 event.price = price
+            if venue_name is not None:
+                event.venue_name = venue_name
+            if seating_config is not None:
+                event.seating_config = seating_config
             if is_active is not None:
                 event.is_active = is_active
 

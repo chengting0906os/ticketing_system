@@ -16,17 +16,17 @@ Feature: Order List
       | buyer2@test.com  | P@ssw0rd | Test Buyer2  | buyer  |  4 |
       | buyer3@test.com  | P@ssw0rd | Test Buyer3  | buyer  |  5 |
     And events exist:
-      | name      | price | seller_id | status    | id |
-      | Event A |  1000 |         1 | sold      |  1 |
-      | Event B |  2000 |         1 | sold      |  2 |
-      | Event C |  3000 |         2 | sold      |  3 |
-      | Event D |  4000 |         1 | available |  4 |
+      | name    | price | seller_id | status    | id | venue_name   | seating_config                                                                                 |
+      | Event A |  1000 |         1 | sold      |  1 | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | Event B |  2000 |         1 | sold      |  2 | Taipei Dome  | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | Event C |  3000 |         2 | sold      |  3 | Taipei Arena | {"sections": [{"name": "C", "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
+      | Event D |  4000 |         1 | available |  4 | Taipei Dome  | {"sections": [{"name": "D", "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
     And orders exist:
       | buyer_id | seller_id | event_id | price | status          | paid_at  | id |
-      |        3 |         1 |          1 |  1000 | paid            | not_null |  1 |
-      |        3 |         1 |          2 |  2000 | paid            | not_null |  2 |
-      |        3 |         2 |          3 |  3000 | pending_payment | null     |  3 |
-      |        4 |         1 |          4 |  4000 | cancelled       | null     |  4 |
+      |        3 |         1 |        1 |  1000 | paid            | not_null |  1 |
+      |        3 |         1 |        2 |  2000 | paid            | not_null |  2 |
+      |        3 |         2 |        3 |  3000 | pending_payment | null     |  3 |
+      |        4 |         1 |        4 |  4000 | cancelled       | null     |  4 |
 
   Scenario: Buyer lists their orders
     When buyer with id 3 requests their orders

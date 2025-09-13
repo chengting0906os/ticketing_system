@@ -5,11 +5,11 @@ from pytest_bdd import given
 
 from src.shared.constant.route_constant import (
     AUTH_LOGIN,
+    EVENT_BASE,
     ORDER_BASE,
     ORDER_CANCEL,
     ORDER_GET,
     ORDER_PAY,
-    EVENT_BASE,
     USER_CREATE,
 )
 from tests.shared.utils import extract_table_data
@@ -64,6 +64,8 @@ def create_pending_order(step, client: TestClient, order_state):
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
+    from tests.event_test_constants import DEFAULT_SEATING_CONFIG, TAIPEI_ARENA
+
     event_response = client.post(
         EVENT_BASE,
         json={
@@ -71,6 +73,8 @@ def create_pending_order(step, client: TestClient, order_state):
             'description': TEST_EVENT_DESCRIPTION,
             'price': int(order_data['price']),
             'is_active': True,
+            'venue_name': TAIPEI_ARENA,
+            'seating_config': DEFAULT_SEATING_CONFIG,
         },
     )
     assert event_response.status_code == 201, f'Failed to create event: {event_response.text}'
@@ -165,8 +169,10 @@ def create_events(step, client: TestClient, order_state, execute_sql_statement):
         event_data = dict(zip(headers, values, strict=True))
         event_id = int(event_data['id'])
         seller_id = int(event_data['seller_id'])
+        from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+
         execute_sql_statement(
-            '\n                INSERT INTO event (id, seller_id, name, description, price, is_active, status)\n                VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status)\n            ',
+            '\n                INSERT INTO event (id, seller_id, name, description, price, is_active, status, venue_name, seating_config)\n                VALUES (:id, :seller_id, :name, :description, :price, :is_active, :status, :venue_name, :seating_config)\n            ',
             {
                 'id': event_id,
                 'seller_id': seller_id,
@@ -175,6 +181,8 @@ def create_events(step, client: TestClient, order_state, execute_sql_statement):
                 'price': int(event_data['price']),
                 'is_active': True,
                 'status': event_data['status'],
+                'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
+                'seating_config': event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON),
             },
         )
         order_state['events'][event_id] = {
@@ -237,6 +245,8 @@ def create_orders(step, client: TestClient, order_state, execute_sql_statement):
 @given('a event exists with negative price:')
 def create_event_with_negative_price(step, client: TestClient, order_state, execute_sql_statement):
     """Create a event with negative price for testing validation."""
+    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+
     event_data = extract_table_data(step)
     seller_id = int(event_data.get('seller_id', 1))
 
@@ -253,10 +263,14 @@ def create_event_with_negative_price(step, client: TestClient, order_state, exec
     # Create event directly in database to bypass API validation
     execute_sql_statement(
         """
-        INSERT INTO event (name, description, price, seller_id, is_active, status)
-        VALUES (:name, :description, :price, :seller_id, :is_active, :status)
+        INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
+        VALUES (:name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
         """,
-        order_state['invalid_event'],
+        {
+            **order_state['invalid_event'],
+            'venue_name': DEFAULT_VENUE_NAME,
+            'seating_config': DEFAULT_SEATING_CONFIG_JSON,
+        },
     )
 
     # Get the created event ID
@@ -272,6 +286,8 @@ def create_event_with_negative_price(step, client: TestClient, order_state, exec
 @given('a event exists with zero price:')
 def create_event_with_zero_price(step, client: TestClient, order_state, execute_sql_statement):
     """Create a event with zero price for testing validation."""
+    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+
     event_data = extract_table_data(step)
     seller_id = int(event_data.get('seller_id', 1))
 
@@ -288,10 +304,14 @@ def create_event_with_zero_price(step, client: TestClient, order_state, execute_
     # Create event directly in database to bypass API validation
     execute_sql_statement(
         """
-        INSERT INTO event (name, description, price, seller_id, is_active, status)
-        VALUES (:name, :description, :price, :seller_id, :is_active, :status)
+        INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
+        VALUES (:name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
         """,
-        order_state['invalid_event'],
+        {
+            **order_state['invalid_event'],
+            'venue_name': DEFAULT_VENUE_NAME,
+            'seating_config': DEFAULT_SEATING_CONFIG_JSON,
+        },
     )
 
     # Get the created event ID

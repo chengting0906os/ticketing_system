@@ -1,6 +1,6 @@
 """Event database models."""
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.config.db_setting import Base
@@ -16,3 +16,5 @@ class EventModel(Base):
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)
+    venue_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    seating_config: Mapped[dict] = mapped_column(JSON, nullable=False)

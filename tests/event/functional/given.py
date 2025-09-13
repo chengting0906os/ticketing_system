@@ -26,6 +26,18 @@ def event_exists(step, client: TestClient, event_state):
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
+    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+    from tests.shared.utils import parse_seating_config
+
+    if 'venue_name' in row_data:
+        request_data['venue_name'] = row_data['venue_name']
+    else:
+        request_data['venue_name'] = DEFAULT_VENUE_NAME
+
+    if 'seating_config' in row_data:
+        request_data['seating_config'] = parse_seating_config(row_data['seating_config'])
+    else:
+        request_data['seating_config'] = parse_seating_config(DEFAULT_SEATING_CONFIG_JSON)
     response = client.post(EVENT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create event: {response.text}'
     event_data = response.json()
@@ -51,6 +63,18 @@ def event_exists_with_status(step, client: TestClient, event_state, execute_sql_
         'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
+    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+    from tests.shared.utils import parse_seating_config
+
+    if 'venue_name' in row_data:
+        request_data['venue_name'] = row_data['venue_name']
+    else:
+        request_data['venue_name'] = DEFAULT_VENUE_NAME
+
+    if 'seating_config' in row_data:
+        request_data['seating_config'] = parse_seating_config(row_data['seating_config'])
+    else:
+        request_data['seating_config'] = parse_seating_config(DEFAULT_SEATING_CONFIG_JSON)
     response = client.post(EVENT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create event: {response.text}'
     event_data = response.json()
@@ -67,6 +91,8 @@ def event_exists_with_status(step, client: TestClient, event_state, execute_sql_
 
 @given('a seller with events:')
 def create_seller_with_events(step, client: TestClient, event_state, execute_sql_statement):
+    import json
+
     created_user = create_user(
         client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD, LIST_TEST_SELLER_NAME, 'seller'
     )
@@ -80,15 +106,17 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         event_data = dict(zip(headers, values, strict=True))
-        create_response = client.post(
-            EVENT_BASE,
-            json={
-                'name': event_data['name'],
-                'description': event_data['description'],
-                'price': int(event_data['price']),
-                'is_active': event_data['is_active'].lower() == 'true',
-            },
-        )
+        request_json = {
+            'name': event_data['name'],
+            'description': event_data['description'],
+            'price': int(event_data['price']),
+            'is_active': event_data['is_active'].lower() == 'true',
+        }
+        if 'venue_name' in event_data:
+            request_json['venue_name'] = event_data['venue_name']
+        if 'seating_config' in event_data:
+            request_json['seating_config'] = json.loads(event_data['seating_config'])
+        create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
             event_id = created_event['id']
@@ -103,28 +131,32 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
 
 @given('no available events exist')
 def create_no_available_events(step, client: TestClient, event_state, execute_sql_statement):
+    import json
+
     created_user = create_user(
         client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
     )
     seller_id = created_user['id'] if created_user else 1
     event_state['seller_id'] = seller_id
     event_state['created_events'] = []
+    login_user(client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD)
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         event_data = dict(zip(headers, values, strict=True))
-        create_response = client.post(
-            EVENT_BASE,
-            json={
-                'name': event_data['name'],
-                'description': event_data['description'],
-                'price': int(event_data['price']),
-                'seller_id': seller_id,
-                'is_active': event_data['is_active'].lower() == 'true',
-            },
-        )
+        request_json = {
+            'name': event_data['name'],
+            'description': event_data['description'],
+            'price': int(event_data['price']),
+            'is_active': event_data['is_active'].lower() == 'true',
+        }
+        if 'venue_name' in event_data:
+            request_json['venue_name'] = event_data['venue_name']
+        if 'seating_config' in event_data:
+            request_json['seating_config'] = json.loads(event_data['seating_config'])
+        create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
             event_id = created_event['id']
