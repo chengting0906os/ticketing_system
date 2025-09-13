@@ -24,6 +24,7 @@ from src.shared.logging.loguru_io_utils import (
     normalize_args_kwargs,
     reset_call_depth,
     should_mask_keyword,
+    truncate_content,
 )
 
 
@@ -31,9 +32,10 @@ T = TypeVar('T', bound=Callable[..., Any])
 
 
 class LoguruIO:
-    def __init__(self, custom_logger, reraise: bool = True):
+    def __init__(self, custom_logger, reraise: bool = True, truncate_content: bool = False):
         self._custom_logger = custom_logger
         self.reraise = reraise
+        self.truncate_content = truncate_content
         self.extra = {}
         self.depth = 2  # Adjusted for wrapper functions
 
@@ -69,10 +71,16 @@ class LoguruIO:
             new_data = {}
             for key, value in data.items():
                 new_data[key] = self.mask_sensitive(should_mask_keyword(key, value))
-            return new_data
+            processed_data = new_data
         elif isinstance(data, list | tuple):
-            return type(data)(self.mask_sensitive(item) for item in data)
-        return mask_sensitive(data)
+            processed_data = type(data)(self.mask_sensitive(item) for item in data)
+        else:
+            processed_data = mask_sensitive(data)
+
+        # Apply truncation if enabled
+        if self.truncate_content:
+            return truncate_content(processed_data)
+        return processed_data
 
     def __call__(self, func):
         self.extra[ExtraField.CALL_TARGET] = build_call_target_func_path(func)
@@ -131,7 +139,11 @@ class Logger:
     base = custom_logger
 
     @staticmethod
-    def io(func=None, *, reraise=True):
+    def io(func=None, *, reraise=True, truncate_content=False):
         if func:
-            return LoguruIO(custom_logger=custom_logger, reraise=reraise)(func)
-        return LoguruIO(custom_logger=custom_logger, reraise=reraise)
+            return LoguruIO(
+                custom_logger=custom_logger, reraise=reraise, truncate_content=truncate_content
+            )(func)
+        return LoguruIO(
+            custom_logger=custom_logger, reraise=reraise, truncate_content=truncate_content
+        )

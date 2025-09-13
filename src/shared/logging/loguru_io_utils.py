@@ -86,3 +86,25 @@ def mask_sensitive(data_str: Any) -> Any:
 
 def should_mask_keyword(keyword: Any, value: Any) -> Any:
     return '********' if keyword in SENSITIVE_KEYWORDS else value
+
+
+def truncate_content(data: Any, max_words: int = 100) -> Any:
+    if not isinstance(data, (str, dict, list, tuple)):
+        data_str = str(data)
+    else:
+        data_str = str(data)
+
+    # Split into words and check if truncation is needed
+    words = data_str.split()
+    if len(words) <= max_words:
+        return data
+
+    # Truncate and add ellipsis
+    truncated_words = words[:max_words]
+    truncated_str = ' '.join(truncated_words) + '...'
+
+    # Try to maintain the original data type structure for simple cases
+    if isinstance(data, str):
+        return truncated_str
+    else:
+        return f'{type(data).__name__}({truncated_str})'
