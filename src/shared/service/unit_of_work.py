@@ -15,12 +15,14 @@ if TYPE_CHECKING:
     from src.order.domain.order_repo import OrderRepo
     from src.event.domain.event_repo import EventRepo
     from src.user.domain.user_repo import UserRepo
+    from src.ticket.domain.ticket_repo import TicketRepo
 
 
 class AbstractUnitOfWork(abc.ABC):
     events: EventRepo
     orders: OrderRepo
     users: UserRepo
+    tickets: TicketRepo
 
     async def __aenter__(self) -> AbstractUnitOfWork:
         return self
@@ -48,10 +50,12 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         from src.order.infra.order_repo_impl import OrderRepoImpl
         from src.event.infra.event_repo_impl import EventRepoImpl
         from src.user.infra.user_repo_impl import UserRepoImpl
+        from src.ticket.infra.ticket_repo_impl import TicketRepoImpl
 
         self.events = EventRepoImpl(self.session)
         self.orders = OrderRepoImpl(self.session)
         self.users = UserRepoImpl(self.session)
+        self.tickets = TicketRepoImpl(self.session)
         return await super().__aenter__()
 
     async def __aexit__(self, *args):

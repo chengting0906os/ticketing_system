@@ -32,3 +32,6 @@ ORDER_GET = f'{ORDER_BASE}/{{order_id}}'
 ORDER_PAY = f'{ORDER_BASE}/{{order_id}}/pay'
 ORDER_CANCEL = f'{ORDER_BASE}/{{order_id}}'
 ORDER_MY_ORDERS = f'{ORDER_BASE}/my-orders'
+
+# Ticket routes
+TICKET_BASE = f'{API_BASE}/ticket'

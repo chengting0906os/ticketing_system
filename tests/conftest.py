@@ -23,6 +23,10 @@ from tests.event.functional.fixtures import *  # noqa: F403
 from tests.event.functional.given import *  # noqa: F403
 from tests.event.functional.then import *  # noqa: F403
 from tests.event.functional.when import *  # noqa: F403
+from tests.ticket.functional.fixtures import *  # noqa: F403
+from tests.ticket.functional.given import *  # noqa: F403
+from tests.ticket.functional.then import *  # noqa: F403
+from tests.ticket.functional.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: F403

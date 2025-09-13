@@ -1,0 +1,33 @@
+"""Ticket controller."""
+
+from fastapi import APIRouter, Depends, status
+
+from src.shared.logging.loguru_io import Logger
+from src.shared.service.role_auth_service import require_seller
+from src.ticket.port.ticket_schema import CreateTicketsRequest, CreateTicketsResponse
+from src.ticket.use_case.create_tickets_use_case import CreateTicketsUseCase
+from src.user.domain.user_model import User
+
+router = APIRouter(prefix='/events', tags=['tickets'])
+
+
+@router.post('/{event_id}/tickets', status_code=status.HTTP_201_CREATED)
+@Logger.io
+async def create_tickets_for_event(
+    event_id: int,
+    request: CreateTicketsRequest,
+    current_user: User = Depends(require_seller),
+    use_case: CreateTicketsUseCase = Depends(CreateTicketsUseCase.depends),
+) -> CreateTicketsResponse:
+    """Create all tickets for an event (seller only)."""
+    tickets = await use_case.create_all_tickets_for_event(
+        event_id=event_id,
+        price=request.price,
+        seller_id=current_user.id,
+    )
+
+    return CreateTicketsResponse(
+        tickets_created=len(tickets),
+        event_id=event_id,
+        message=f'Successfully created {len(tickets)} tickets',
+    )
