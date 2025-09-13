@@ -301,3 +301,31 @@ def buyer_has_active_reservation(step, execute_sql_statement):
                 'reserved_at': now,
             },
         )
+
+
+@given('tickets exist for events:')
+def tickets_exist_for_events(step, execute_sql_statement):
+    """Create tickets for events."""
+    rows = step.data_table.rows
+    # Skip the header row
+    for row in rows[1:]:
+        event_id = int(row.cells[0].value)
+        ticket_count = int(row.cells[1].value)
+        price = int(row.cells[2].value)
+        status = row.cells[3].value
+
+        # Create tickets using the seating configuration
+        for i in range(ticket_count):
+            execute_sql_statement(
+                """
+                INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
+                VALUES (:event_id, 'A', 1, :row_number, :seat_number, :price, :status)
+                """,
+                {
+                    'event_id': event_id,
+                    'row_number': (i // 10) + 1,
+                    'seat_number': (i % 10) + 1,
+                    'price': price,
+                    'status': status,
+                },
+            )

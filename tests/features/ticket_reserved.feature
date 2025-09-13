@@ -7,9 +7,9 @@ Feature: Ticket Reservation by Buyer
     Given the following users exist:
       | user_id | email            | role   |
       |       1 | seller1@test.com | seller |
-      |       2 | seller2@test.com | seller |
-      |       3 | buyer1@test.com  | buyer  |
-      |       4 | buyer2@test.com  | buyer  |
+      |       2 | buyer1@test.com  | buyer  |
+      |       3 | buyer2@test.com  | buyer  |
+      |       4 | seller2@test.com | seller |
     And the following events exist:
       | event_id | name           | venue            | date       | seller_id | seating_config                                                                                                                                  |
       |        1 | Concert A      | Madison Square   | 2025-10-01 |         1 | {"sections": [{"section": "A", "subsections": [{"subsection": 1, "rows": 5, "seats_per_row": 10}]}]}                                          |

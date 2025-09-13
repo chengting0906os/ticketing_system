@@ -233,3 +233,81 @@ def tickets_return_to_available(step, execute_sql_statement):
     )
     actual_count = result[0]['count']
     assert actual_count >= expected_count  # At least this many should be available
+
+
+@then('tickets should transition to reserved status:')
+def tickets_should_be_reserved(step, execute_sql_statement):
+    """Check that tickets have transitioned to reserved status."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    expected_status = data['status']
+    expected_count = int(data['count'])
+    buyer_id = int(data['buyer_id'])
+
+    # Check ticket status and buyer
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status AND buyer_id = :buyer_id',
+        {'event_id': event_id, 'status': expected_status, 'buyer_id': buyer_id},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count == expected_count, (
+        f'Expected {expected_count} {expected_status} tickets, got {actual_count}'
+    )
+
+
+@then('order should be created with status:')
+def order_should_be_created(step, context):
+    """Check that order was created with the correct status."""
+    response = context['response']
+    data = extract_table_data(step)
+    expected_status = data['status']
+
+    assert response.status_code in [200, 201], (
+        f'Expected 200/201, got {response.status_code}: {response.text}'
+    )
+
+    order_data = response.json()
+    actual_status = order_data.get('status')
+    assert actual_status == expected_status, (
+        f'Expected order status {expected_status}, got {actual_status}'
+    )
+
+
+@then('order status should transition to:')
+def order_status_should_transition(step, context):
+    """Check that order status has transitioned correctly."""
+    data = extract_table_data(step)
+    expected_status = data['status']
+
+    response = context['response']
+    assert response.status_code == 200, (
+        f'Payment failed with {response.status_code}: {response.text}'
+    )
+
+    payment_data = response.json()
+    actual_status = payment_data.get('status')
+    assert actual_status == expected_status, (
+        f'Expected order status {expected_status}, got {actual_status}'
+    )
+
+
+@then('reserved tickets should transition to sold:')
+def reserved_tickets_should_be_sold(step, execute_sql_statement):
+    """Check that reserved tickets have transitioned to sold status."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    expected_status = data['status']
+    expected_count = int(data['count'])
+    buyer_id = int(data['buyer_id'])
+
+    # Check ticket status
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status AND buyer_id = :buyer_id',
+        {'event_id': event_id, 'status': expected_status, 'buyer_id': buyer_id},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count == expected_count, (
+        f'Expected {expected_count} {expected_status} tickets, got {actual_count}'
+    )

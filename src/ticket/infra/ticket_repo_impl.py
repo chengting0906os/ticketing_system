@@ -178,6 +178,19 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
+    async def get_reserved_tickets_by_buyer_and_event(
+        self, *, buyer_id: int, event_id: int
+    ) -> List[Ticket]:
+        result = await self.session.execute(
+            select(TicketModel)
+            .where(TicketModel.buyer_id == buyer_id)
+            .where(TicketModel.event_id == event_id)
+            .where(TicketModel.status == TicketStatus.RESERVED.value)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
     async def get_all_reserved_tickets(self) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel).where(TicketModel.status == TicketStatus.RESERVED.value)

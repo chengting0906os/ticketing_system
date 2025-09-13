@@ -46,6 +46,12 @@ class TicketRepo(ABC):
         pass
 
     @abstractmethod
+    async def get_reserved_tickets_by_buyer_and_event(
+        self, *, buyer_id: int, event_id: int
+    ) -> List[Ticket]:
+        pass
+
+    @abstractmethod
     async def get_all_reserved_tickets(self) -> List[Ticket]:
         pass
 

@@ -190,8 +190,8 @@ def buyer_reserves_tickets(step, client, context, reservation_state):
     event_id = int(data['event_id'])
     ticket_count = int(data['ticket_count'])
 
-    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
-    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    # Login as buyer - buyer_id 2 maps to buyer1@test.com, buyer_id 3 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 1}@test.com'
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Reserve tickets
@@ -212,8 +212,8 @@ def buyer_attempts_to_reserve_tickets(step, client, context):
     event_id = int(data['event_id'])
     ticket_count = int(data['ticket_count'])
 
-    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
-    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    # Login as buyer - buyer_id 2 maps to buyer1@test.com, buyer_id 3 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 1}@test.com'
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Attempt to reserve tickets
@@ -232,8 +232,8 @@ def buyer_attempts_to_reserve_same_tickets(step, client, context):
     event_id = int(data['event_id'])
     ticket_count = int(data['ticket_count'])
 
-    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
-    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    # Login as buyer - buyer_id 2 maps to buyer1@test.com, buyer_id 3 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 1}@test.com'
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Attempt to reserve tickets
@@ -259,10 +259,49 @@ def buyer_cancels_reservation(step, client, context):
     buyer_id = int(data['buyer_id'])
     reservation_id = int(data['reservation_id'])
 
-    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
-    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    # Login as buyer - buyer_id 2 maps to buyer1@test.com, buyer_id 3 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 1}@test.com'
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Cancel reservation
     response = client.delete(f'/api/ticket/reservations/{reservation_id}')
+    context['response'] = response
+
+
+@when('buyer creates order for reserved tickets:')
+def buyer_creates_order_for_reserved_tickets(step, client, context):
+    """Create order for specific reserved tickets."""
+    data = extract_table_data(step)
+
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+
+    # Login as buyer
+    buyer_email = f'buyer{buyer_id - 1}@test.com'  # buyer_id 2 -> buyer1@test.com
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Create order for reserved tickets
+    response = client.post('/api/order', json={'event_id': event_id})
+    context['response'] = response
+    context['client'] = client
+
+    # Store order_id for later use
+    if response.status_code == 201:
+        order_data = response.json()
+        context['order_id'] = order_data.get('id')
+
+
+@when('buyer pays for the order within time limit')
+def buyer_pays_for_order(step, client, context):
+    """Pay for the order within the time limit."""
+    order_id = context.get('order_id')
+
+    if not order_id:
+        raise ValueError('No order_id found in context')
+
+    # Make payment
+    response = client.post(
+        f'/api/order/{order_id}/pay',
+        json={'card_number': '4111111111111111', 'payment_method': 'mock'},
+    )
     context['response'] = response

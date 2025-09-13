@@ -21,6 +21,10 @@ class MockPaymentUseCase:
 
     @Logger.io
     async def pay_order(self, order_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
+        # In a real implementation, card_number would be used for payment processing
+        # For mock payment, we just validate it's present
+        if not card_number:
+            raise DomainError('Card number is required for payment')
         async with self.uow:
             order = await self.uow.orders.get_by_id(order_id=order_id)
             if not order:
@@ -40,6 +44,21 @@ class MockPaymentUseCase:
             if event:
                 event.status = EventStatus.SOLD
                 await self.uow.events.update(event=event)
+
+            # Update reserved tickets to sold status when order is paid
+            reserved_tickets = await self.uow.tickets.get_reserved_tickets_by_buyer_and_event(
+                buyer_id=buyer_id, event_id=order.event_id
+            )
+            if reserved_tickets:
+                from src.ticket.domain.ticket_entity import TicketStatus
+
+                # Update all reserved tickets to sold and link them to the order
+                sold_tickets = []
+                for ticket in reserved_tickets:
+                    ticket.status = TicketStatus.SOLD
+                    ticket.order_id = order_id
+                    sold_tickets.append(ticket)
+                await self.uow.tickets.update_batch(tickets=sold_tickets)
             payment_id = (
                 f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'
             )
