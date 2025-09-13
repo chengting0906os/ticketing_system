@@ -74,3 +74,91 @@ def seller_views_tickets(step, client, context):
     response = client.get(f'{TICKET_BASE}/events/{event_id}/tickets/section/{section}')
 
     context['response'] = response
+
+
+@when('seller lists all tickets with:')
+def seller_lists_all_tickets(step, client, context):
+    """Seller lists all tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Login as seller
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List all tickets
+    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+
+    context['response'] = response
+
+
+@when('seller lists tickets by section with:')
+def seller_lists_tickets_by_section(step, client, context):
+    """Seller lists tickets for specific section."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    section = data['section']
+
+    # Login as seller
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List tickets by section
+    response = client.get(f'/api/ticket/events/{event_id}/tickets/section/{section}')
+
+    context['response'] = response
+
+
+@when('buyer attempts to list tickets with:')
+def buyer_attempts_to_list_tickets(step, client, context):
+    """Buyer attempts to list tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Try to list tickets
+    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+
+    context['response'] = response
+
+
+@when('buyer lists available tickets with:')
+def buyer_lists_available_tickets(step, client, context):
+    """Buyer lists available tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List available tickets
+    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+
+    context['response'] = response
+
+
+@when('buyer attempts to access section tickets with:')
+def buyer_attempts_to_access_section_tickets(step, client, context):
+    """Buyer attempts to access section-specific tickets (seller-only functionality)."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    section = data['section']
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Try to access section-specific tickets (should fail)
+    response = client.get(f'/api/ticket/events/{event_id}/tickets/section/{section}')
+
+    context['response'] = response
+
+
+@when('buyer lists available tickets with detailed view:')
+def buyer_lists_tickets_with_detail(step, context, client):
+    """Buyer lists tickets with detailed view for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+    context['response'] = response

@@ -13,9 +13,11 @@ from tests.util_constant import DEFAULT_PASSWORD, SELLER1_EMAIL, SELLER2_EMAIL
 def event_exists(step, execute_sql_statement):
     event_data = extract_table_data(step)
     event_id = int(event_data['event_id'])
-    seller_id = int(event_data['seller_id'])
+    expected_seller_id = int(event_data['seller_id'])
 
-    # Skip user creation here - assume seller already exists from previous step
+    # Use the seller_id as provided in the test scenario
+    # The BDD steps should ensure the seller exists before the event is created
+    actual_seller_id = expected_seller_id
 
     event_info = {
         'name': 'Test Event',
@@ -45,7 +47,7 @@ def event_exists(step, execute_sql_statement):
             'name': event_info['name'],
             'description': event_info['description'],
             'price': event_info['price'],
-            'seller_id': seller_id,
+            'seller_id': actual_seller_id,
             'is_active': True,
             'status': 'available',
             'venue_name': event_info['venue_name'],
@@ -111,17 +113,55 @@ def other_seller_event_exists(step, execute_sql_statement):
 
 
 @given('all tickets exist with:')
-def tickets_already_exist(
-    step, execute_sql_statement, client
-):  # execute_sql_statement unused - using API instead
+def tickets_already_exist(step, client):
     """Create all tickets for an event (setup for duplicate creation test)."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
     price = int(data['price'])
 
-    # Login as seller
-    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+    # Simple mapping based on event_id patterns from the feature file
+    # Event 3 is owned by seller2 (from "another seller and event exist")
+    # All other events are owned by seller1
+    if event_id == 3:
+        seller_email = SELLER2_EMAIL
+    else:
+        seller_email = SELLER1_EMAIL
+
+    # Login as the appropriate seller
+    login_user(client, seller_email, DEFAULT_PASSWORD)
 
     # Create tickets
     response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
     assert response.status_code == 201
+
+
+@given('mixed status tickets exist with:')
+def mixed_status_tickets_exist(step, client, execute_sql_statement):
+    """Create tickets with mixed status (some available, some sold)."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    sold_count = int(data['sold_count'])
+
+    # Login as seller to create tickets
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Create all tickets first
+    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': 1000})
+    assert response.status_code == 201
+
+    # Update some tickets to sold status via SQL
+    # (This simulates tickets that were purchased by other buyers)
+    execute_sql_statement(
+        """
+        UPDATE ticket
+        SET status = 'sold'
+        WHERE event_id = :event_id
+        AND id IN (
+            SELECT id FROM ticket
+            WHERE event_id = :event_id
+            ORDER BY id
+            LIMIT :sold_count
+        )
+        """,
+        {'event_id': event_id, 'sold_count': sold_count},
+    )
