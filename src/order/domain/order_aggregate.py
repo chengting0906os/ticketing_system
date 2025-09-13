@@ -69,6 +69,7 @@ class OrderAggregate:
 
         return aggregate
 
+    @Logger.io
     def emit_creation_events(self) -> None:
         if not self.order.id:
             raise ValueError('Order must have an ID before emitting events')
@@ -162,6 +163,7 @@ class OrderAggregate:
                 )
             )
 
+    @Logger.io
     def _add_event(self, event: DomainEventProtocol) -> None:
         self._events.append(event)
 

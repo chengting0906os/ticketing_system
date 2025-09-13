@@ -3,6 +3,7 @@ from typing import List
 from fastapi import Depends
 
 from src.shared.exception.exceptions import ForbiddenError, NotFoundError
+from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.ticket.domain.ticket_entity import Ticket
 
@@ -11,6 +12,7 @@ class ListTicketsUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
+    @Logger.io
     async def list_tickets_by_event(
         self, *, event_id: int, seller_id: int | None = None
     ) -> List[Ticket]:
@@ -31,6 +33,7 @@ class ListTicketsUseCase:
 
             return tickets
 
+    @Logger.io
     async def list_tickets_by_section(
         self, *, event_id: int, section: str, subsection: int | None, seller_id: int
     ) -> List[Ticket]:

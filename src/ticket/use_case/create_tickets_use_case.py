@@ -44,6 +44,7 @@ class CreateTicketsUseCase:
 
             return created_tickets
 
+    @Logger.io
     def _generate_tickets_from_config(
         self, event_id: int, price: int, seating_config: dict
     ) -> List[Ticket]:

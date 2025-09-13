@@ -4,6 +4,8 @@ from typing import Optional
 
 import attrs
 
+from src.shared.logging.loguru_io import Logger
+
 
 class TicketStatus(Enum):
     AVAILABLE = 'available'
@@ -29,6 +31,7 @@ class Ticket:
     updated_at: Optional[datetime] = None
     reserved_at: Optional[datetime] = None
 
+    @Logger.io
     def __attrs_post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now(timezone.utc)
@@ -36,9 +39,11 @@ class Ticket:
             self.updated_at = datetime.now(timezone.utc)
 
     @property
+    @Logger.io
     def seat_identifier(self) -> str:
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
+    @Logger.io
     def reserve(self, *, buyer_id: int) -> None:
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
@@ -49,6 +54,7 @@ class Ticket:
         self.reserved_at = now
         self.updated_at = now
 
+    @Logger.io
     def sell(self) -> None:
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot sell ticket with status {self.status}')
@@ -56,6 +62,7 @@ class Ticket:
         self.status = TicketStatus.SOLD
         self.updated_at = datetime.now(timezone.utc)
 
+    @Logger.io
     def release(self) -> None:
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot release ticket with status {self.status}')
@@ -66,6 +73,7 @@ class Ticket:
         self.reserved_at = None
         self.updated_at = datetime.now(timezone.utc)
 
+    @Logger.io
     def cancel_reservation(self, *, buyer_id: int) -> None:
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot cancel reservation for ticket with status {self.status}')

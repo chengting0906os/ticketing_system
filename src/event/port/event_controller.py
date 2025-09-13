@@ -57,6 +57,7 @@ async def create_event(
 
 
 @router.patch('/{event_id}', status_code=status.HTTP_200_OK)
+@Logger.io
 async def update_event(
     event_id: int,
     request: EventUpdateRequest,
@@ -90,6 +91,7 @@ async def update_event(
 
 
 @router.delete('/{event_id}', status_code=status.HTTP_204_NO_CONTENT)
+@Logger.io
 async def delete_event(
     event_id: int,
     current_user: User = Depends(require_seller),
@@ -100,6 +102,7 @@ async def delete_event(
 
 
 @router.get('/{event_id}', status_code=status.HTTP_200_OK)
+@Logger.io
 async def get_event(
     event_id: int, use_case: GetEventUseCase = Depends(GetEventUseCase.depends)
 ) -> EventResponse:
@@ -122,6 +125,7 @@ async def get_event(
 
 
 @router.get('', status_code=status.HTTP_200_OK)
+@Logger.io
 async def list_events(
     seller_id: Optional[int] = None,
     use_case: ListEventsUseCase = Depends(ListEventsUseCase.depends),
