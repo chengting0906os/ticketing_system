@@ -38,3 +38,30 @@ class TicketRepo(ABC):
     async def get_available_tickets_by_event(self, event_id: int) -> List[Ticket]:
         """Get all available tickets for an event."""
         pass
+
+    @abstractmethod
+    async def get_available_tickets_for_event(
+        self, event_id: int, limit: int | None = None
+    ) -> List[Ticket]:
+        """Get available tickets for an event with optional limit."""
+        pass
+
+    @abstractmethod
+    async def get_reserved_tickets_for_event(self, event_id: int) -> List[Ticket]:
+        """Get all reserved tickets for an event."""
+        pass
+
+    @abstractmethod
+    async def get_reserved_tickets_by_buyer(self, buyer_id: int) -> List[Ticket]:
+        """Get all reserved tickets for a buyer."""
+        pass
+
+    @abstractmethod
+    async def get_all_reserved_tickets(self) -> List[Ticket]:
+        """Get all reserved tickets in the system."""
+        pass
+
+    @abstractmethod
+    async def update_batch(self, tickets: List[Ticket]) -> List[Ticket]:
+        """Update multiple tickets in batch."""
+        pass

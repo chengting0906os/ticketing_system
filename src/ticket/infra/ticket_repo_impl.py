@@ -30,6 +30,7 @@ class TicketRepoImpl(TicketRepo):
             buyer_id=db_ticket.buyer_id,
             created_at=db_ticket.created_at,
             updated_at=db_ticket.updated_at,
+            reserved_at=db_ticket.reserved_at,
         )
 
     @staticmethod
@@ -47,6 +48,7 @@ class TicketRepoImpl(TicketRepo):
             buyer_id=ticket.buyer_id,
             created_at=ticket.created_at,
             updated_at=ticket.updated_at,
+            reserved_at=ticket.reserved_at,
         )
 
     @Logger.io
@@ -133,3 +135,95 @@ class TicketRepoImpl(TicketRepo):
         )
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_available_tickets_for_event(
+        self, event_id: int, limit: int | None = None
+    ) -> List[Ticket]:
+        """Get available tickets for an event with optional limit."""
+        query = (
+            select(TicketModel)
+            .where(TicketModel.event_id == event_id)
+            .where(TicketModel.status == TicketStatus.AVAILABLE.value)
+            .order_by(
+                TicketModel.section,
+                TicketModel.subsection,
+                TicketModel.row_number,
+                TicketModel.seat_number,
+            )
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await self.session.execute(query)
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_reserved_tickets_for_event(self, event_id: int) -> List[Ticket]:
+        """Get all reserved tickets for an event."""
+        result = await self.session.execute(
+            select(TicketModel)
+            .where(TicketModel.event_id == event_id)
+            .where(TicketModel.status == TicketStatus.RESERVED.value)
+            .order_by(
+                TicketModel.section,
+                TicketModel.subsection,
+                TicketModel.row_number,
+                TicketModel.seat_number,
+            )
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_reserved_tickets_by_buyer(self, buyer_id: int) -> List[Ticket]:
+        """Get all reserved tickets for a buyer."""
+        result = await self.session.execute(
+            select(TicketModel)
+            .where(TicketModel.buyer_id == buyer_id)
+            .where(TicketModel.status == TicketStatus.RESERVED.value)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_all_reserved_tickets(self) -> List[Ticket]:
+        """Get all reserved tickets in the system."""
+        result = await self.session.execute(
+            select(TicketModel).where(TicketModel.status == TicketStatus.RESERVED.value)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def update_batch(self, tickets: List[Ticket]) -> List[Ticket]:
+        """Update multiple tickets in batch."""
+        for ticket in tickets:
+            # Find the existing model
+            result = await self.session.execute(
+                select(TicketModel).where(TicketModel.id == ticket.id)
+            )
+            db_ticket = result.scalar_one()
+
+            # Update the fields
+            db_ticket.status = ticket.status.value
+            db_ticket.buyer_id = ticket.buyer_id
+            db_ticket.order_id = ticket.order_id
+            db_ticket.reserved_at = ticket.reserved_at
+            if ticket.updated_at is not None:
+                db_ticket.updated_at = ticket.updated_at
+
+        await self.session.flush()
+
+        # Return updated entities
+        updated_tickets = []
+        for ticket in tickets:
+            result = await self.session.execute(
+                select(TicketModel).where(TicketModel.id == ticket.id)
+            )
+            db_ticket = result.scalar_one()
+            updated_tickets.append(self._to_entity(db_ticket))
+
+        return updated_tickets

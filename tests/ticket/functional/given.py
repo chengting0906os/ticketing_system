@@ -165,3 +165,139 @@ def mixed_status_tickets_exist(step, client, execute_sql_statement):
         """,
         {'event_id': event_id, 'sold_count': sold_count},
     )
+
+
+@given('tickets exist for event:')
+def tickets_exist_for_event(step, client):
+    """Create tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    price = int(data['price'])
+
+    # Login as seller1 to create tickets
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Create tickets
+    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
+    assert response.status_code == 201
+
+
+@given('tickets exist with limited availability:')
+def tickets_exist_with_limited_availability(step, client, execute_sql_statement):
+    """Create tickets with limited availability."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    available_count = int(data['available_count'])
+    sold_count = int(data['sold_count'])
+
+    # Login as seller1 to create tickets
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Create only the limited number of tickets
+    for i in range(available_count + sold_count):
+        execute_sql_statement(
+            """
+            INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
+            VALUES (:event_id, 'A', 1, :row_number, :seat_number, 1000, :status)
+            """,
+            {
+                'event_id': event_id,
+                'row_number': (i // 10) + 1,
+                'seat_number': (i % 10) + 1,
+                'status': 'sold' if i < sold_count else 'available',
+            },
+        )
+
+
+@given('tickets are already reserved:')
+def tickets_are_already_reserved(step, execute_sql_statement):
+    """Create tickets that are already reserved."""
+    from datetime import datetime
+
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    reserved_by = int(data['reserved_by'])
+    ticket_count = int(data['ticket_count'])
+
+    # Create reserved tickets
+    now = datetime.now()
+
+    for i in range(ticket_count):
+        execute_sql_statement(
+            """
+            INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status, buyer_id, reserved_at)
+            VALUES (:event_id, 'A', 1, :row_number, :seat_number, 1000, 'reserved', :buyer_id, :reserved_at)
+            """,
+            {
+                'event_id': event_id,
+                'row_number': (i // 10) + 1,
+                'seat_number': (i % 10) + 1,
+                'buyer_id': reserved_by,
+                'reserved_at': now,
+            },
+        )
+
+
+@given('buyer has reserved tickets:')
+def buyer_has_reserved_tickets(step, execute_sql_statement):
+    """Create tickets reserved by buyer in the past."""
+    from datetime import datetime, timedelta
+
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+    reserved_at = data['reserved_at']
+
+    # Parse reserved_at to determine actual datetime
+    if reserved_at == '20_minutes_ago':
+        actual_reserved_at = datetime.now() - timedelta(minutes=20)
+    else:
+        actual_reserved_at = datetime.now() - timedelta(minutes=5)
+
+    # Create reserved tickets
+    for i in range(ticket_count):
+        execute_sql_statement(
+            """
+            INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status, buyer_id, reserved_at)
+            VALUES (:event_id, 'A', 1, :row_number, :seat_number, 1000, 'reserved', :buyer_id, :reserved_at)
+            """,
+            {
+                'event_id': event_id,
+                'row_number': (i // 10) + 1,
+                'seat_number': (i % 10) + 1,
+                'buyer_id': buyer_id,
+                'reserved_at': actual_reserved_at,
+            },
+        )
+
+
+@given('buyer has active reservation:')
+def buyer_has_active_reservation(step, execute_sql_statement):
+    """Create an active reservation for a buyer."""
+    from datetime import datetime
+
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+    reservation_id = int(data['reservation_id'])
+
+    # Create reserved tickets
+    now = datetime.now()
+
+    for i in range(ticket_count):
+        execute_sql_statement(
+            """
+            INSERT INTO ticket (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, reserved_at)
+            VALUES (:id, :event_id, 'A', 1, :row_number, :seat_number, 1000, 'reserved', :buyer_id, :reserved_at)
+            """,
+            {
+                'id': reservation_id * 1000 + i,  # Generate unique IDs
+                'event_id': event_id,
+                'row_number': (i // 10) + 1,
+                'seat_number': (i % 10) + 1,
+                'buyer_id': buyer_id,
+                'reserved_at': now,
+            },
+        )

@@ -16,3 +16,8 @@ class ForbiddenError(DomainError):
 class NotFoundError(DomainError):
     def __init__(self, message: str):
         super().__init__(message, 404)
+
+
+class ConflictError(DomainError):
+    def __init__(self, message: str):
+        super().__init__(message, 409)

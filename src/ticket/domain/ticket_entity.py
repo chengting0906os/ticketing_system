@@ -1,6 +1,6 @@
 """Ticket domain entity."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -29,42 +29,50 @@ class Ticket:
     )
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    reserved_at: Optional[datetime] = None
 
     def __attrs_post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.now()
+            self.created_at = datetime.now(timezone.utc)
         if self.updated_at is None:
-            self.updated_at = datetime.now()
+            self.updated_at = datetime.now(timezone.utc)
 
     @property
     def seat_identifier(self) -> str:
-        """Generate unique seat identifier."""
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
-    def reserve(self, order_id: int, buyer_id: int) -> None:
-        """Reserve ticket for an order."""
+    def reserve(self, buyer_id: int) -> None:
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
 
+        now = datetime.now(timezone.utc)
         self.status = TicketStatus.RESERVED
-        self.order_id = order_id
         self.buyer_id = buyer_id
-        self.updated_at = datetime.now()
+        self.reserved_at = now
+        self.updated_at = now
 
     def sell(self) -> None:
-        """Mark ticket as sold."""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot sell ticket with status {self.status}')
 
         self.status = TicketStatus.SOLD
-        self.updated_at = datetime.now()
+        self.updated_at = datetime.now(timezone.utc)
 
     def release(self) -> None:
-        """Release ticket reservation back to available."""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot release ticket with status {self.status}')
 
         self.status = TicketStatus.AVAILABLE
         self.order_id = None
         self.buyer_id = None
-        self.updated_at = datetime.now()
+        self.reserved_at = None
+        self.updated_at = datetime.now(timezone.utc)
+
+    def cancel_reservation(self, buyer_id: int) -> None:
+        if self.status != TicketStatus.RESERVED:
+            raise ValueError(f'Cannot cancel reservation for ticket with status {self.status}')
+
+        if self.buyer_id != buyer_id:
+            raise ValueError('Cannot cancel reservation that belongs to another buyer')
+
+        self.release()

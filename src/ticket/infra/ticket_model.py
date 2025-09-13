@@ -23,6 +23,7 @@ class TicketModel(Base):
     status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)
     order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('order.id'), nullable=True)
     buyer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)
+    reserved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

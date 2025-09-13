@@ -278,3 +278,95 @@ def create_event_shared(
 def logout_user(client: TestClient):
     """Clear authentication cookies to simulate unauthenticated state."""
     client.cookies.clear()
+
+
+@given('the following users exist:')
+def create_multiple_users(step, client: TestClient, execute_sql_statement):
+    """Create multiple users from a table."""
+    import bcrypt
+
+    from tests.util_constant import DEFAULT_PASSWORD
+
+    # Parse the step table using the data_table structure
+    rows = step.data_table.rows
+    users = []
+
+    hashed_password = bcrypt.hashpw(DEFAULT_PASSWORD.encode('utf-8'), bcrypt.gensalt()).decode(
+        'utf-8'
+    )
+
+    # Skip the header row
+    for row in rows[1:]:
+        user_id = int(row.cells[0].value)
+        email = row.cells[1].value
+        role = row.cells[2].value
+
+        # Insert user directly into database
+        execute_sql_statement(
+            """
+            INSERT INTO "user" (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
+            VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            {
+                'id': user_id,
+                'email': email,
+                'hashed_password': hashed_password,
+                'name': f'Test User {user_id}',
+                'role': role,
+            },
+        )
+
+        users.append({'id': user_id, 'email': email, 'role': role})
+
+    return users
+
+
+@given('the following events exist:')
+def create_multiple_events(step, client: TestClient, execute_sql_statement):
+    """Create multiple events from a table."""
+    import json
+
+    # Parse the step table using the data_table structure
+    rows = step.data_table.rows
+    events = []
+
+    # Skip the header row
+    for row in rows[1:]:
+        event_id = int(row.cells[0].value)
+        name = row.cells[1].value
+        venue = row.cells[2].value
+        seller_id = int(row.cells[4].value)
+        seating_config = json.loads(row.cells[5].value)
+
+        # Insert event directly into database
+        execute_sql_statement(
+            """
+            INSERT INTO event (id, name, description, price, seller_id, is_active, status, venue_name, seating_config)
+            VALUES (:id, :name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            {
+                'id': event_id,
+                'name': name,
+                'description': f'Event at {venue}',
+                'price': 1000,
+                'seller_id': seller_id,
+                'is_active': True,
+                'status': 'available',
+                'venue_name': venue,
+                'seating_config': json.dumps(seating_config),
+            },
+        )
+
+        events.append(
+            {
+                'id': event_id,
+                'name': name,
+                'venue_name': venue,
+                'seller_id': seller_id,
+                'seating_config': seating_config,
+            }
+        )
+
+    return events

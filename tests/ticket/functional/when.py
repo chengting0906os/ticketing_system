@@ -162,3 +162,107 @@ def buyer_lists_tickets_with_detail(step, context, client):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
     response = client.get(f'/api/ticket/events/{event_id}/tickets')
     context['response'] = response
+
+
+@when('buyer attempts to reserve too many tickets:')
+def buyer_attempts_to_reserve_too_many_tickets(step, client, context, reservation_state):
+    """Buyer attempts to reserve too many tickets (should fail due to 4-ticket limit)."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Attempt to reserve tickets
+    response = client.post(
+        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+    )
+
+    context['response'] = response
+
+
+@when('buyer reserves tickets:')
+def buyer_reserves_tickets(step, client, context, reservation_state):
+    """Buyer reserves tickets for an event."""
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+
+    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Reserve tickets
+    response = client.post(
+        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+    )
+
+    context['response'] = response
+    if response.status_code == 200:
+        reservation_state.reservation_data = response.json()
+
+
+@when('buyer attempts to reserve tickets:')
+def buyer_attempts_to_reserve_tickets(step, client, context):
+    """Buyer attempts to reserve tickets for an event."""
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+
+    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Attempt to reserve tickets
+    response = client.post(
+        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+    )
+
+    context['response'] = response
+
+
+@when('buyer attempts to reserve same tickets:')
+def buyer_attempts_to_reserve_same_tickets(step, client, context):
+    """Buyer attempts to reserve tickets that are already reserved."""
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    event_id = int(data['event_id'])
+    ticket_count = int(data['ticket_count'])
+
+    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Attempt to reserve tickets
+    response = client.post(
+        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+    )
+
+    context['response'] = response
+
+
+@when('system checks expired reservations')
+def system_checks_expired_reservations(client, context):
+    """System checks for expired reservations."""
+    # Call the system endpoint to check for expired reservations
+    response = client.post('/api/ticket/cleanup-expired-reservations')
+    context['response'] = response
+
+
+@when('buyer cancels reservation:')
+def buyer_cancels_reservation(step, client, context):
+    """Buyer cancels their reservation."""
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    reservation_id = int(data['reservation_id'])
+
+    # Login as buyer - buyer_id 3 maps to buyer1@test.com, buyer_id 4 maps to buyer2@test.com
+    buyer_email = f'buyer{buyer_id - 2}@test.com'
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Cancel reservation
+    response = client.delete(f'/api/ticket/reservations/{reservation_id}')
+    context['response'] = response

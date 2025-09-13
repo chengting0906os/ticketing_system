@@ -140,3 +140,96 @@ def verify_ticket_details(step, context):
             if data.get(column) == 'true':
                 assert field in ticket, f"Expected field '{field}' not found in ticket response"
                 assert ticket[field] is not None, f"Field '{field}' should not be None"
+
+
+@then('reservation is created with:')
+def reservation_created_successfully(step, context, reservation_state):
+    """Verify reservation was created successfully."""
+    data_dict = extract_table_data(step)
+    expected_buyer_id = int(data_dict['buyer_id'])
+    expected_ticket_count = int(data_dict['ticket_count'])
+    expected_status = data_dict['status']
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    assert 'reservation_id' in data
+    assert data['buyer_id'] == expected_buyer_id
+    assert data['ticket_count'] == expected_ticket_count
+    assert data['status'] == expected_status
+
+    # Store reservation data for later use
+    reservation_state.reservation_id = data['reservation_id']
+    reservation_state.buyer_id = data['buyer_id']
+
+
+@then('reserved tickets status should be:')
+def reserved_tickets_status(step, execute_sql_statement):
+    """Verify tickets have correct reservation status."""
+    data_dict = extract_table_data(step)
+    expected_status = data_dict['status']
+    expected_count = int(data_dict['count'])
+
+    # Check tickets in database
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE status = :status',
+        {'status': expected_status},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count == expected_count
+
+
+@then('error message should contain:')
+def error_message_contains(step, context):
+    """Verify error message contains expected text."""
+    expected_message = extract_single_value(step)
+
+    response = context['response']
+    data = response.json()
+
+    # Check if it's a validation error or regular error
+    if 'detail' in data:
+        error_message = str(data['detail'])
+    elif 'message' in data:
+        error_message = data['message']
+    else:
+        error_message = str(data)
+
+    assert expected_message in error_message
+
+
+@then('reservation status should be:')
+def reservation_status_should_be(step, execute_sql_statement):
+    """Verify reservation status in database."""
+    data_dict = extract_table_data(step)
+    expected_status = data_dict['status']
+
+    # For expiration scenario, check if tickets changed status
+    if expected_status == 'expired':
+        # After expiration, tickets should be available again
+        result = execute_sql_statement(
+            "SELECT COUNT(*) as count FROM ticket WHERE status = 'available' AND reserved_at IS NULL",
+            {},
+            fetch=True,
+        )
+        # At least some tickets should be available now
+        assert result[0]['count'] > 0
+
+
+@then('tickets should return to available:')
+def tickets_return_to_available(step, execute_sql_statement):
+    """Verify tickets returned to available status."""
+    data_dict = extract_table_data(step)
+    expected_status = data_dict['status']
+    expected_count = int(data_dict['count'])
+
+    # Check that tickets are now available
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE status = :status AND reserved_at IS NULL',
+        {'status': expected_status},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count >= expected_count  # At least this many should be available

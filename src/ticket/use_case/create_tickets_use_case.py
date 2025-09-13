@@ -54,11 +54,43 @@ class CreateTicketsUseCase:
         """Generate ticket entities from seating configuration."""
         tickets = []
 
-        # Expected format: {"sections": ["A","B",...], "subsections": [1,2,...], ...}
-        sections = seating_config.get('sections', [])
-        subsections = seating_config.get('subsections', [])
-        rows_per_subsection = seating_config.get('rows_per_subsection', 20)
-        seats_per_row = seating_config.get('seats_per_row', 25)
+        # Handle both formats: legacy and new nested format
+        if 'sections' in seating_config and isinstance(seating_config['sections'], list):
+            # Check if it's the new nested format
+            if seating_config['sections'] and isinstance(seating_config['sections'][0], dict):
+                # New nested format: {"sections": [{"section": "A", "subsections": [{"subsection": 1, "rows": 5, "seats_per_row": 10}]}]}
+                for section_config in seating_config['sections']:
+                    section_name = section_config.get('section')
+                    for subsection_config in section_config.get('subsections', []):
+                        subsection = subsection_config.get('subsection')
+                        rows = subsection_config.get('rows', 20)
+                        seats_per_row = subsection_config.get('seats_per_row', 25)
+
+                        for row in range(1, rows + 1):
+                            for seat in range(1, seats_per_row + 1):
+                                ticket = Ticket(
+                                    event_id=event_id,
+                                    section=section_name,
+                                    subsection=subsection,
+                                    row=row,
+                                    seat=seat,
+                                    price=price,
+                                    status=TicketStatus.AVAILABLE,
+                                )
+                                tickets.append(ticket)
+                return tickets
+            else:
+                # Legacy format: {"sections": ["A","B",...], "subsections": [1,2,...], ...}
+                sections = seating_config.get('sections', [])
+                subsections = seating_config.get('subsections', [])
+                rows_per_subsection = seating_config.get('rows_per_subsection', 20)
+                seats_per_row = seating_config.get('seats_per_row', 25)
+        else:
+            # Fallback to empty
+            sections = []
+            subsections = []
+            rows_per_subsection = 20
+            seats_per_row = 25
 
         for section in sections:
             for subsection in subsections:
