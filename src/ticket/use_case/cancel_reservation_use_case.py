@@ -17,7 +17,7 @@ class CancelReservationUseCase:
         return cls(uow=uow)
 
     @Logger.io
-    async def cancel_reservation(self, *, reservation_id: int, buyer_id: int) -> Dict[str, Any]:
+    async def cancel_reservation(self, *, buyer_id: int) -> Dict[str, Any]:
         async with self.uow:
             # Find tickets by reservation_id (using ticket ID as reservation ID for simplicity)
             tickets = await self.uow.tickets.get_reserved_tickets_by_buyer(buyer_id=buyer_id)
@@ -41,7 +41,6 @@ class CancelReservationUseCase:
             await self.uow.commit()
 
             return {
-                'reservation_id': reservation_id,
-                'status': 'cancelled',
+                'status': 'ok',
                 'cancelled_tickets': len(reservation_tickets),
             }

@@ -66,8 +66,8 @@ Feature: Ticket Reservation by Buyer
     Then the response status code should be:
       | 200 |
     And reservation status should be:
-      | status    |
-      | cancelled |
+      | status |
+      | ok     |
     And tickets should return to available:
       | status    | count |
       | available |     3 |

@@ -132,15 +132,13 @@ async def reserve_tickets_for_event(
     return ReserveTicketsResponse(**reservation_data)
 
 
-@ticket_router.delete('/reservations/{reservation_id}', status_code=status.HTTP_200_OK)
+@ticket_router.delete('/cancel-reservation', status_code=status.HTTP_200_OK)
 @Logger.io
 async def cancel_reservation(
-    reservation_id: int,
     current_user: User = Depends(require_buyer),
     use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ) -> CancelReservationResponse:
     result = await use_case.cancel_reservation(
-        reservation_id=reservation_id,
         buyer_id=current_user.id,
     )
 

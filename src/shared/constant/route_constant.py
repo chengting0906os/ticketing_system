@@ -42,4 +42,4 @@ TICKET_BY_SUBSECTION = (
 )
 TICKET_RESERVE = f'{TICKET_BASE}/events/{{event_id}}/reserve'
 TICKET_CLEANUP_EXPIRED = f'{TICKET_BASE}/cleanup-expired-reservations'
-TICKET_RESERVATIONS = f'{TICKET_BASE}/reservations/{{reservation_id}}'
+TICKET_CANCEL_RESERVATION = f'{TICKET_BASE}/cancel-reservation'

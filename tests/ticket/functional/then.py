@@ -201,10 +201,17 @@ def error_message_contains(step, context):
 
 
 @then('reservation status should be:')
-def reservation_status_should_be(step, execute_sql_statement):
-    """Verify reservation status in database."""
+def reservation_status_should_be(step, context, execute_sql_statement):
+    """Verify reservation status in response or database."""
     data_dict = extract_table_data(step)
     expected_status = data_dict['status']
+
+    # If this is checking API response status
+    if expected_status == 'ok':
+        response = context['response']
+        data = response.json()
+        assert data['status'] == expected_status
+        return
 
     # For expiration scenario, check if tickets changed status
     if expected_status == 'expired':

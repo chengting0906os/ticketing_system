@@ -58,6 +58,5 @@ class ReserveTicketsResponse(BaseModel):
 
 
 class CancelReservationResponse(BaseModel):
-    reservation_id: int
     status: str
     cancelled_tickets: int
