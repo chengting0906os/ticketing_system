@@ -3,31 +3,31 @@ from pytest_bdd import then
 from tests.shared.utils import assert_response_status, extract_single_value
 
 
-def get_state_with_response(user_state=None, event_state=None, order_state=None, context=None):
+def get_state_with_response(user_state=None, event_state=None, booking_state=None, context=None):
     # Check context first (used by ticket tests)
     if context and context.get('response'):
         return context
     # Then check other states
-    for state in [order_state, event_state, user_state]:
+    for state in [booking_state, event_state, user_state]:
         if state and state.get('response'):
             return state
-    return context or order_state or event_state or user_state or {}
+    return context or booking_state or event_state or user_state or {}
 
 
 @then('the response status code should be:')
-def verify_status_code(step, user_state=None, event_state=None, order_state=None, context=None):
+def verify_status_code(step, user_state=None, event_state=None, booking_state=None, context=None):
     expected_status = int(extract_single_value(step))
-    state = get_state_with_response(user_state, event_state, order_state, context)
+    state = get_state_with_response(user_state, event_state, booking_state, context)
     response = state['response']
     assert_response_status(response, expected_status)
 
 
 @then('the error message should contain:')
 def verify_error_message_with_table(
-    step, user_state=None, event_state=None, order_state=None, context=None
+    step, user_state=None, event_state=None, booking_state=None, context=None
 ):
     expected_text = extract_single_value(step)
-    state = get_state_with_response(user_state, event_state, order_state, context)
+    state = get_state_with_response(user_state, event_state, booking_state, context)
     response = state['response']
     error_data = response.json()
     error_message = str(error_data.get('detail', ''))
@@ -36,18 +36,18 @@ def verify_error_message_with_table(
     )
 
 
-@then('the order status should be:')
-def verify_order_status_with_table(step, order_state=None):
+@then('the booking status should be:')
+def verify_booking_status_with_table(step, booking_state=None):
     expected_status = extract_single_value(step)
 
-    # If order_state has 'updated_order', use that, otherwise use 'order'
-    if order_state and 'updated_order' in order_state:
-        actual_status = order_state['updated_order']['status']
-    elif order_state and 'order' in order_state:
-        actual_status = order_state['order']['status']
+    # If booking_state has 'updated_booking', use that, otherwise use 'booking'
+    if booking_state and 'updated_booking' in booking_state:
+        actual_status = booking_state['updated_booking']['status']
+    elif booking_state and 'booking' in booking_state:
+        actual_status = booking_state['booking']['status']
     else:
-        raise AssertionError('No order found in state to check status')
+        raise AssertionError('No booking found in state to check status')
 
     assert actual_status == expected_status, (
-        f'Expected order status "{expected_status}", got "{actual_status}"'
+        f'Expected booking status "{expected_status}", got "{actual_status}"'
     )

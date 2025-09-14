@@ -16,44 +16,44 @@ class CancelReservationUseCase:
         return cls(uow=uow)
 
     @Logger.io
-    async def cancel_reservation(self, *, order_id: int, buyer_id: int) -> Dict[str, Any]:
+    async def cancel_reservation(self, *, booking_id: int, buyer_id: int) -> Dict[str, Any]:
         async with self.uow:
-            # Get the order first to verify ownership and status
-            order = await self.uow.orders.get_by_id(order_id=order_id)
-            if not order:
+            # Get the booking first to verify ownership and status
+            booking = await self.uow.bookings.get_by_id(booking_id=booking_id)
+            if not booking:
                 raise NotFoundError('Order not found')
 
-            # Verify order belongs to requesting buyer
-            if order.buyer_id != buyer_id:
+            # Verify booking belongs to requesting buyer
+            if booking.buyer_id != buyer_id:
                 from src.shared.exception.exceptions import ForbiddenError
 
-                raise ForbiddenError('Only the buyer can cancel this order')
+                raise ForbiddenError('Only the buyer can cancel this booking')
 
-            # Check if order can be cancelled
-            from src.order.domain.order_entity import OrderStatus
+            # Check if booking can be cancelled
+            from src.booking.domain.booking_entity import BookingStatus
 
-            if order.status == OrderStatus.PAID:
+            if booking.status == BookingStatus.PAID:
                 from src.shared.exception.exceptions import DomainError
 
-                raise DomainError('Cannot cancel paid order', 400)
-            elif order.status == OrderStatus.CANCELLED:
+                raise DomainError('Cannot cancel paid booking', 400)
+            elif booking.status == BookingStatus.CANCELLED:
                 from src.shared.exception.exceptions import DomainError
 
                 raise DomainError('Order already cancelled', 400)
 
-            # Find tickets by order_id
-            tickets = await self.uow.tickets.get_tickets_by_order_id(order_id=order_id)
+            # Find tickets by booking_id
+            tickets = await self.uow.tickets.get_tickets_by_booking_id(booking_id=booking_id)
 
             if not tickets:
                 raise NotFoundError('Order not found')
 
-            # Cancel all tickets associated with this order (release them back to available)
+            # Cancel all tickets associated with this booking (release them back to available)
             for ticket in tickets:
                 ticket.cancel_reservation(buyer_id=buyer_id)
 
-            # Update order status to cancelled
-            cancelled_order = order.cancel()
-            await self.uow.orders.update(order=cancelled_order)
+            # Update booking status to cancelled
+            cancelled_booking = booking.cancel()
+            await self.uow.bookings.update(booking=cancelled_booking)
 
             # Update tickets in database
             await self.uow.tickets.update_batch(tickets=tickets)

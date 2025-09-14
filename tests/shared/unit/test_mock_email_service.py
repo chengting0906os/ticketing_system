@@ -40,9 +40,9 @@ class TestMockEmailService:
         assert sent_email['cc'] == cc_list
 
     @pytest.mark.asyncio
-    async def test_send_order_confirmation(self, email_service):
-        await email_service.send_order_confirmation(
-            buyer_email='buyer@example.com', order_id=123, event_name='Test Event', price=10000
+    async def test_send_booking_confirmation(self, email_service):
+        await email_service.send_booking_confirmation(
+            buyer_email='buyer@example.com', booking_id=123, event_name='Test Event', price=10000
         )
 
         assert len(email_service.sent_emails) == 1
@@ -59,7 +59,7 @@ class TestMockEmailService:
     async def test_send_payment_confirmation(self, email_service):
         await email_service.send_payment_confirmation(
             buyer_email='buyer@example.com',
-            order_id=456,
+            booking_id=456,
             event_name='Another Event',
             paid_amount=25050,
         )
@@ -75,9 +75,9 @@ class TestMockEmailService:
         assert 'Status: Paid' in sent_email['body']
 
     @pytest.mark.asyncio
-    async def test_send_order_cancellation(self, email_service):
-        await email_service.send_order_cancellation(
-            buyer_email='buyer@example.com', order_id=789, event_name='Cancelled Event'
+    async def test_send_booking_cancellation(self, email_service):
+        await email_service.send_booking_cancellation(
+            buyer_email='buyer@example.com', booking_id=789, event_name='Cancelled Event'
         )
 
         assert len(email_service.sent_emails) == 1
@@ -90,10 +90,10 @@ class TestMockEmailService:
         assert 'cancelled' in sent_email['body'].lower()
 
     @pytest.mark.asyncio
-    async def test_notify_seller_new_order(self, email_service):
-        await email_service.notify_seller_new_order(
+    async def test_notify_seller_new_booking(self, email_service):
+        await email_service.notify_seller_new_booking(
             seller_email='seller@example.com',
-            order_id=321,
+            booking_id=321,
             event_name='Hot Event',
             buyer_name='John Doe',
             price=5099,
@@ -110,31 +110,31 @@ class TestMockEmailService:
         assert '$5,099' in sent_email['body']
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize('order_id', [0, -100])
-    async def test_invalid_order_id_raises_error(self, email_service, order_id):
+    @pytest.mark.parametrize('booking_id', [0, -100])
+    async def test_invalid_booking_id_raises_error(self, email_service, booking_id):
         with pytest.raises(ValueError) as exc_info:
-            await email_service.send_order_confirmation(
+            await email_service.send_booking_confirmation(
                 buyer_email='buyer@example.com',
-                order_id=order_id,
+                booking_id=booking_id,
                 event_name='Test Event',
                 price=10000,
             )
-        assert f'Invalid order_id: {order_id}' in str(exc_info.value)
+        assert f'Invalid booking_id: {booking_id}' in str(exc_info.value)
         assert 'Order ID must be positive' in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_all_email_methods_validate_order_id(self, email_service):
-        # Test send_order_cancellation
+    async def test_all_email_methods_validate_booking_id(self, email_service):
+        # Test send_booking_cancellation
         with pytest.raises(ValueError):
-            await email_service.send_order_cancellation(
-                buyer_email='buyer@example.com', order_id=0, event_name='Test Event'
+            await email_service.send_booking_cancellation(
+                buyer_email='buyer@example.com', booking_id=0, event_name='Test Event'
             )
 
-        # Test notify_seller_new_order
+        # Test notify_seller_new_booking
         with pytest.raises(ValueError):
-            await email_service.notify_seller_new_order(
+            await email_service.notify_seller_new_booking(
                 seller_email='seller@example.com',
-                order_id=0,
+                booking_id=0,
                 event_name='Test Event',
                 buyer_name='Test Buyer',
                 price=10000,

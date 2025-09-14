@@ -23,14 +23,14 @@ EVENT_LIST = EVENT_BASE
 EVENT_GET = f'{EVENT_BASE}/{{event_id}}'
 EVENT_UPDATE = f'{EVENT_BASE}/{{event_id}}'
 
-# Order routes
-ORDER_BASE = f'{API_BASE}/order'
-ORDER_CREATE = ORDER_BASE
-ORDER_LIST = ORDER_BASE
-ORDER_GET = f'{ORDER_BASE}/{{order_id}}'
-ORDER_PAY = f'{ORDER_BASE}/{{order_id}}/pay'
-ORDER_CANCEL = f'{ORDER_BASE}/{{order_id}}'
-ORDER_MY_ORDERS = f'{ORDER_BASE}/my-orders'
+# Booking routes
+BOOKING_BASE = f'{API_BASE}/booking'
+BOOKING_CREATE = BOOKING_BASE
+BOOKING_LIST = BOOKING_BASE
+BOOKING_GET = f'{BOOKING_BASE}/{{booking_id}}'
+BOOKING_PAY = f'{BOOKING_BASE}/{{booking_id}}/pay'
+BOOKING_CANCEL = f'{BOOKING_BASE}/{{booking_id}}'
+BOOKING_MY_BOOKINGS = f'{BOOKING_BASE}/my-bookings'
 
 # Ticket routes
 TICKET_BASE = f'{API_BASE}/ticket'
@@ -42,4 +42,4 @@ TICKET_BY_SUBSECTION = (
 )
 TICKET_RESERVE = f'{TICKET_BASE}/events/{{event_id}}/reserve'
 TICKET_CLEANUP_EXPIRED = f'{TICKET_BASE}/cleanup-expired-reservations'
-ORDER_CANCEL_RESERVATION = f'{ORDER_BASE}/{{order_id}}/cancel-reservation'
+BOOKING_CANCEL_RESERVATION = f'{BOOKING_BASE}/{{booking_id}}/cancel-reservation'

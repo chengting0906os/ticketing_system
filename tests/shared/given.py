@@ -13,7 +13,7 @@ def login_user_with_table(step, client):
 
 @given('a buyer exists:')
 def create_buyer_shared(
-    step, client: TestClient, order_state=None, event_state=None, user_state=None
+    step, client: TestClient, booking_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating a buyer user."""
     buyer_data = extract_table_data(step)
@@ -24,8 +24,8 @@ def create_buyer_shared(
     buyer = created if created else {'id': 2, 'email': buyer_data['email']}
 
     # Store in appropriate state based on what's available
-    if order_state is not None:
-        order_state['buyer'] = buyer
+    if booking_state is not None:
+        booking_state['buyer'] = buyer
     if event_state is not None:
         event_state['buyer'] = buyer
     if user_state is not None:
@@ -36,7 +36,7 @@ def create_buyer_shared(
 
 @given('a seller exists:')
 def create_seller_shared(
-    step, client: TestClient, order_state=None, event_state=None, user_state=None
+    step, client: TestClient, booking_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating a seller user."""
     seller_data = extract_table_data(step)
@@ -51,8 +51,8 @@ def create_seller_shared(
     seller = created if created else {'id': 1, 'email': seller_data['email']}
 
     # Store in appropriate state based on what's available
-    if order_state is not None:
-        order_state['seller'] = seller
+    if booking_state is not None:
+        booking_state['seller'] = seller
     if event_state is not None:
         event_state['seller'] = seller
     if user_state is not None:
@@ -63,7 +63,7 @@ def create_seller_shared(
 
 @given('another buyer exists:')
 def create_another_buyer_shared(
-    step, client: TestClient, order_state=None, event_state=None, user_state=None
+    step, client: TestClient, booking_state=None, event_state=None, user_state=None
 ):
     """Shared step for creating another buyer user."""
     buyer_data = extract_table_data(step)
@@ -74,8 +74,8 @@ def create_another_buyer_shared(
     another_buyer = created if created else {'id': 3, 'email': buyer_data['email']}
 
     # Store in appropriate state based on what's available
-    if order_state is not None:
-        order_state['another_buyer'] = another_buyer
+    if booking_state is not None:
+        booking_state['another_buyer'] = another_buyer
     if event_state is not None:
         event_state['another_buyer'] = another_buyer
     if user_state is not None:
@@ -86,7 +86,7 @@ def create_another_buyer_shared(
 
 @given('a buyer user exists')
 def create_buyer_user_simple(
-    step, client: TestClient, user_state=None, order_state=None, event_state=None
+    step, client: TestClient, user_state=None, booking_state=None, event_state=None
 ):
     """Simple buyer creation without table data."""
     buyer_data = extract_table_data(step)
@@ -98,8 +98,8 @@ def create_buyer_user_simple(
     # Store in appropriate state
     if user_state is not None:
         user_state['buyer'] = buyer
-    if order_state is not None:
-        order_state['buyer'] = buyer
+    if booking_state is not None:
+        booking_state['buyer'] = buyer
     if event_state is not None:
         event_state['buyer'] = buyer
 
@@ -108,7 +108,7 @@ def create_buyer_user_simple(
 
 @given('a seller user exists')
 def create_seller_user_simple(
-    step, client: TestClient, event_state=None, order_state=None, user_state=None
+    step, client: TestClient, event_state=None, booking_state=None, user_state=None
 ):
     """Simple seller creation without table data."""
     user_data = extract_table_data(step)
@@ -121,9 +121,9 @@ def create_seller_user_simple(
         if event_state is not None:
             event_state['seller_id'] = created['id']
             event_state['seller_user'] = created
-        if order_state is not None:
-            order_state['seller_id'] = created['id']
-            order_state['seller_user'] = created
+        if booking_state is not None:
+            booking_state['seller_id'] = created['id']
+            booking_state['seller_user'] = created
         if user_state is not None:
             user_state['seller_id'] = created['id']
             user_state['seller_user'] = created
@@ -132,9 +132,9 @@ def create_seller_user_simple(
         if event_state is not None:
             event_state['seller_id'] = 1
             event_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
-        if order_state is not None:
-            order_state['seller_id'] = 1
-            order_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
+        if booking_state is not None:
+            booking_state['seller_id'] = 1
+            booking_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
         if user_state is not None:
             user_state['seller_id'] = 1
             user_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
@@ -144,7 +144,7 @@ def create_seller_user_simple(
 
 @given('a seller with a event:')
 def create_seller_with_event_shared(
-    step, client: TestClient, order_state=None, event_state=None, execute_sql_statement=None
+    step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
 ):
     """Shared step for creating a seller with a event."""
     event_data = extract_table_data(step)
@@ -156,8 +156,8 @@ def create_seller_with_event_shared(
     seller_id = seller['id'] if seller else 1
 
     # Store seller in appropriate state
-    if order_state is not None:
-        order_state['seller'] = {'id': seller_id, 'email': seller_email}
+    if booking_state is not None:
+        booking_state['seller'] = {'id': seller_id, 'email': seller_email}
     if event_state is not None:
         event_state['seller'] = {'id': seller_id, 'email': seller_email}
 
@@ -203,8 +203,8 @@ def create_seller_with_event_shared(
         )
         event['status'] = event_data['status']
 
-    # Create tickets for this event (for order tests)
-    if order_state is not None:
+    # Create tickets for this event (for booking tests)
+    if booking_state is not None:
         # Still logged in as seller, create tickets
         from src.shared.constant.route_constant import TICKET_CREATE
 
@@ -220,12 +220,12 @@ def create_seller_with_event_shared(
             # For the first event (ID 1), tickets are IDs 1-500
             # For the second event (ID 2), tickets are IDs 501-1000, etc.
             start_ticket_id = (event['id'] - 1) * 500 + 1
-            order_state['ticket_ids'] = [start_ticket_id, start_ticket_id + 1]
-            order_state['event_id'] = event['id']
+            booking_state['ticket_ids'] = [start_ticket_id, start_ticket_id + 1]
+            booking_state['event_id'] = event['id']
 
     # Store event in appropriate state
-    if order_state is not None:
-        order_state['event'] = event
+    if booking_state is not None:
+        booking_state['event'] = event
     if event_state is not None:
         event_state['event'] = event
         event_state['event_id'] = event['id']
@@ -237,7 +237,7 @@ def create_seller_with_event_shared(
 
 @given('a event exists:')
 def create_event_shared(
-    step, client: TestClient, order_state=None, event_state=None, execute_sql_statement=None
+    step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
 ):
     """Shared step for creating a event (inserts directly into database)."""
     from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
@@ -299,9 +299,9 @@ def create_event_shared(
     }
 
     # Store event in appropriate state
-    if order_state is not None:
-        order_state['event'] = event
-        order_state['event_id'] = event_id
+    if booking_state is not None:
+        booking_state['event'] = event
+        booking_state['event_id'] = event_id
     if event_state is not None:
         event_state['event'] = event
         event_state['event_id'] = event_id

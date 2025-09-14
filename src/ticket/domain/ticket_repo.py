@@ -56,7 +56,7 @@ class TicketRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_order_id(self, *, order_id: int) -> List[Ticket]:
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[Ticket]:
         pass
 
     @abstractmethod

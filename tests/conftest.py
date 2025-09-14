@@ -15,24 +15,24 @@ from sqlalchemy.ext.asyncio import create_async_engine
 os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
 
 from src.main import app
-from tests.order.functional.fixtures import *  # noqa: F403
-from tests.order.functional.given import *  # noqa: F403
-from tests.order.functional.then import *  # noqa: F403
-from tests.order.functional.when import *  # noqa: F403
+from tests.booking.functional.fixtures import *  # noqa: F403
+from tests.booking.functional.given import *  # noqa: F403
+from tests.booking.functional.then import *  # noqa: F403
+from tests.booking.functional.when import *  # noqa: F403
 from tests.event.functional.fixtures import *  # noqa: F403
 from tests.event.functional.given import *  # noqa: F403
 from tests.event.functional.then import *  # noqa: F403
 from tests.event.functional.when import *  # noqa: F403
-from tests.ticket.functional.fixtures import *  # noqa: F403
-from tests.ticket.functional.given import *  # noqa: F403
-from tests.ticket.functional.then import *  # noqa: F403
-from tests.ticket.functional.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: F403
 from tests.pytest_bdd_ng_example.when import *  # noqa: F403
 from tests.shared.given import *  # noqa: F403
 from tests.shared.then import *  # noqa: F403
+from tests.ticket.functional.fixtures import *  # noqa: F403
+from tests.ticket.functional.given import *  # noqa: F403
+from tests.ticket.functional.then import *  # noqa: F403
+from tests.ticket.functional.when import *  # noqa: F403
 from tests.user.functional.fixtures import *  # noqa: F403
 from tests.user.functional.then import *  # noqa: F403
 from tests.user.functional.when import *  # noqa: F403

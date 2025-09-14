@@ -23,5 +23,5 @@ https://fastapi-users.github.io/fastapi-users/10.1/
 - As a buyer, I can browse product
 - As a buyer, I can buy product
 - As a buyer, I can make payment
-- As a buyer, I can view my orders
+- As a buyer, I can view my bookings
 

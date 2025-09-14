@@ -38,25 +38,25 @@ class MockEmailService:
         return True
 
     @Logger.io
-    async def send_order_confirmation(
-        self, buyer_email: str, order_id: int, event_name: str, price: int
+    async def send_booking_confirmation(
+        self, buyer_email: str, booking_id: int, event_name: str, price: int
     ):
-        if not order_id or order_id <= 0:
-            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
-        subject = f'Order Confirmation - Order #{order_id}'
+        if not booking_id or booking_id <= 0:
+            raise ValueError(f'Invalid booking_id: {booking_id}. Order ID must be positive.')
+        subject = f'Order Confirmation - Order #{booking_id}'
         body = f"""
         Dear Customer,
 
-        Thank you for your order!
+        Thank you for your booking!
 
         Order Details:
         --------------
-        Order ID: #{order_id}
+        Order ID: #{booking_id}
         Event: {event_name}
         Price: ${price:,}
         Status: Pending Payment
 
-        Please complete your payment to process this order.
+        Please complete your payment to process this booking.
 
         Best regards,
         Ticketing System Team
@@ -65,11 +65,11 @@ class MockEmailService:
 
     @Logger.io
     async def send_payment_confirmation(
-        self, buyer_email: str, order_id: int, event_name: str, paid_amount: int
+        self, buyer_email: str, booking_id: int, event_name: str, paid_amount: int
     ):
-        if not order_id or order_id <= 0:
-            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
-        subject = f'Payment Confirmed - Order #{order_id}'
+        if not booking_id or booking_id <= 0:
+            raise ValueError(f'Invalid booking_id: {booking_id}. Order ID must be positive.')
+        subject = f'Payment Confirmed - Order #{booking_id}'
         body = f"""
         Dear Customer,
 
@@ -77,12 +77,12 @@ class MockEmailService:
 
         Payment Details:
         ----------------
-        Order ID: #{order_id}
+        Order ID: #{booking_id}
         Event: {event_name}
         Amount Paid: ${paid_amount:,}
         Status: Paid
 
-        Your order is now being processed.
+        Your booking is now being processed.
 
         Best regards,
         Ticketing System Team
@@ -90,18 +90,18 @@ class MockEmailService:
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
-    async def send_order_cancellation(self, buyer_email: str, order_id: int, event_name: str):
-        if not order_id or order_id <= 0:
-            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
-        subject = f'Order Cancelled - Order #{order_id}'
+    async def send_booking_cancellation(self, buyer_email: str, booking_id: int, event_name: str):
+        if not booking_id or booking_id <= 0:
+            raise ValueError(f'Invalid booking_id: {booking_id}. Order ID must be positive.')
+        subject = f'Order Cancelled - Order #{booking_id}'
         body = f"""
         Dear Customer,
 
-        Your order has been cancelled.
+        Your booking has been cancelled.
 
         Cancellation Details:
         --------------------
-        Order ID: #{order_id}
+        Order ID: #{booking_id}
         Event: {event_name}
 
         If you have any questions, please contact our support team.
@@ -112,20 +112,20 @@ class MockEmailService:
         await self.send_email(buyer_email, subject, body.strip())
 
     @Logger.io
-    async def notify_seller_new_order(
-        self, seller_email: str, order_id: int, event_name: str, buyer_name: str, price: int
+    async def notify_seller_new_booking(
+        self, seller_email: str, booking_id: int, event_name: str, buyer_name: str, price: int
     ):
-        if not order_id or order_id <= 0:
-            raise ValueError(f'Invalid order_id: {order_id}. Order ID must be positive.')
-        subject = f'New Order Received - Order #{order_id}'
+        if not booking_id or booking_id <= 0:
+            raise ValueError(f'Invalid booking_id: {booking_id}. Order ID must be positive.')
+        subject = f'New Order Received - Order #{booking_id}'
         body = f"""
         Dear Seller,
 
-        You have received a new order!
+        You have received a new booking!
 
         Order Details:
         --------------
-        Order ID: #{order_id}
+        Order ID: #{booking_id}
         Event: {event_name}
         Buyer: {buyer_name}
         Price: ${price:,}

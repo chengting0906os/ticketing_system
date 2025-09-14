@@ -17,7 +17,7 @@ given_patterns:
 
   state_setup:
     pattern: 'the {entity} {action}'
-    example: 'the buyer pays for the order'
+    example: 'the buyer pays for the booking'
 
 when_patterns:
   action:
@@ -25,8 +25,8 @@ when_patterns:
     attempt: 'the {actor} tries to {action}'
     with_data: 'the {actor} {action} with:'
     example: |
-      When the buyer creates an order for the product
-      When the buyer tries to cancel the order
+      When the buyer creates an booking for the product
+      When the buyer tries to cancel the booking
       When the buyer pays with:
         | card_number |
 
@@ -54,7 +54,7 @@ then_patterns:
     unchanged: 'the {entity} should remain:'
     fields: 'the {entity} should have:'
     example: |
-      Then the order status should be:
+      Then the booking status should be:
         | paid |
 
   creation_result:

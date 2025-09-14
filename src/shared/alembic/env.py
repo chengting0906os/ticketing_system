@@ -10,7 +10,7 @@ from sqlalchemy import engine_from_config, pool
 sys.path.append(str(Path(__file__).parents[3]))
 
 # Import your models and database configuration
-from src.order.infra.order_model import OrderModel as OrderModel
+from src.booking.infra.booking_model import BookingModel as BookingModel
 from src.event.infra.event_model import EventModel as EventModel
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import Base

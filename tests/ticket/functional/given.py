@@ -1,12 +1,11 @@
 """Given steps for ticket BDD tests."""
 
 import json
-import bcrypt
 
+import bcrypt
 from pytest_bdd import given
 
 from src.shared.constant.route_constant import TICKET_CREATE
-
 from tests.shared.utils import extract_table_data, login_user
 from tests.util_constant import DEFAULT_PASSWORD, SELLER1_EMAIL, SELLER2_EMAIL
 
@@ -230,7 +229,7 @@ def mixed_status_tickets_exist(step, client, execute_sql_statement):
     )
 
 
-# Removed duplicate step definition - using the one from order/functional/given.py instead
+# Removed duplicate step definition - using the one from booking/functional/given.py instead
 
 
 @given('tickets exist with limited availability:')

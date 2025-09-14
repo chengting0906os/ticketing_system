@@ -259,9 +259,9 @@ def system_checks_expired_reservations(client, context):
     context['response'] = response
 
 
-@when('buyer creates order for reserved tickets:')
-def buyer_creates_order_for_reserved_tickets(step, client, context):
-    """Create order for specific reserved tickets."""
+@when('buyer creates booking for reserved tickets:')
+def buyer_creates_booking_for_reserved_tickets(step, client, context):
+    """Create booking for specific reserved tickets."""
     data = extract_table_data(step)
 
     buyer_id = int(data['buyer_id'])
@@ -271,40 +271,40 @@ def buyer_creates_order_for_reserved_tickets(step, client, context):
     buyer_email = f'buyer{buyer_id - 1}@test.com'  # buyer_id 2 -> buyer1@test.com
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
-    # Create order for reserved tickets
-    response = client.post('/api/order', json={'event_id': event_id})
+    # Create booking for reserved tickets
+    response = client.post('/api/booking', json={'event_id': event_id})
     context['response'] = response
     context['client'] = client
 
-    # Store order_id for later use
+    # Store booking_id for later use
     if response.status_code == 201:
-        order_data = response.json()
-        context['order_id'] = order_data.get('id')
+        booking_data = response.json()
+        context['booking_id'] = booking_data.get('id')
 
 
-@when('buyer pays for the order within time limit')
-def buyer_pays_for_order(step, client, context):
-    """Pay for the order within the time limit."""
-    order_id = context.get('order_id')
+@when('buyer pays for the booking within time limit')
+def buyer_pays_for_booking(step, client, context):
+    """Pay for the booking within the time limit."""
+    booking_id = context.get('booking_id')
 
-    if not order_id:
-        raise ValueError('No order_id found in context')
+    if not booking_id:
+        raise ValueError('No booking_id found in context')
 
     # Make payment
     response = client.post(
-        f'/api/order/{order_id}/pay',
+        f'/api/booking/{booking_id}/pay',
         json={'card_number': '4111111111111111', 'payment_method': 'mock'},
     )
     context['response'] = response
 
 
-@when('buyer cancels the order')
-def buyer_cancels_order(client, context):
-    """Buyer cancels their order."""
-    order_id = context.get('order_id')
-    if not order_id:
-        raise ValueError('No order_id found in context')
+@when('buyer cancels the booking')
+def buyer_cancels_booking(client, context):
+    """Buyer cancels their booking."""
+    booking_id = context.get('booking_id')
+    if not booking_id:
+        raise ValueError('No booking_id found in context')
 
-    # Cancel the order
-    response = client.delete(f'/api/order/{order_id}')
+    # Cancel the booking
+    response = client.delete(f'/api/booking/{booking_id}')
     context['response'] = response

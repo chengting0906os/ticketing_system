@@ -2,7 +2,7 @@
 
 from pytest_bdd import then
 
-from tests.shared.utils import extract_table_data, extract_single_value
+from tests.shared.utils import extract_single_value, extract_table_data
 
 
 @then('tickets are created successfully with:')
@@ -343,9 +343,9 @@ def reserved_tickets_should_return_to_available(step, execute_sql_statement):
     )
 
 
-@then('order should be created with status:')
-def order_should_be_created(step, context):
-    """Check that order was created with the correct status."""
+@then('booking should be created with status:')
+def booking_should_be_created(step, context):
+    """Check that booking was created with the correct status."""
     response = context['response']
     data = extract_table_data(step)
     expected_status = data['status']
@@ -354,16 +354,16 @@ def order_should_be_created(step, context):
         f'Expected 200/201, got {response.status_code}: {response.text}'
     )
 
-    order_data = response.json()
-    actual_status = order_data.get('status')
+    booking_data = response.json()
+    actual_status = booking_data.get('status')
     assert actual_status == expected_status, (
-        f'Expected order status {expected_status}, got {actual_status}'
+        f'Expected booking status {expected_status}, got {actual_status}'
     )
 
 
-@then('order status should transition to:')
-def order_status_should_transition(step, context):
-    """Check that order status has transitioned correctly."""
+@then('booking status should transition to:')
+def booking_status_should_transition(step, context):
+    """Check that booking status has transitioned correctly."""
     data = extract_table_data(step)
     expected_status = data['status']
 
@@ -375,7 +375,7 @@ def order_status_should_transition(step, context):
     payment_data = response.json()
     actual_status = payment_data.get('status')
     assert actual_status == expected_status, (
-        f'Expected order status {expected_status}, got {actual_status}'
+        f'Expected booking status {expected_status}, got {actual_status}'
     )
 
 

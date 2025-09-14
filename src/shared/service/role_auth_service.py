@@ -15,7 +15,7 @@ class RoleAuthService:
 
     @staticmethod
     @Logger.io
-    def can_create_order(user: User) -> bool:
+    def can_create_booking(user: User) -> bool:
         return user.role == UserRole.BUYER
 
 
@@ -26,7 +26,7 @@ def get_current_user(current_user: User = Depends(current_active_user)) -> User:
 
 @Logger.io
 def require_buyer(current_user: User = Depends(get_current_user)) -> User:
-    if not RoleAuthService.can_create_order(current_user):
+    if not RoleAuthService.can_create_booking(current_user):
         raise ForbiddenError('Only buyers can perform this action')
     return current_user
 

@@ -10,15 +10,15 @@ from src.shared.config.db_setting import get_async_session
 
 
 if TYPE_CHECKING:
-    from src.order.domain.order_repo import OrderRepo
+    from src.booking.domain.booking_repo import BookingRepo
     from src.event.domain.event_repo import EventRepo
-    from src.user.domain.user_repo import UserRepo
     from src.ticket.domain.ticket_repo import TicketRepo
+    from src.user.domain.user_repo import UserRepo
 
 
 class AbstractUnitOfWork(abc.ABC):
     events: EventRepo
-    orders: OrderRepo
+    bookings: BookingRepo
     users: UserRepo
     tickets: TicketRepo
 
@@ -45,13 +45,13 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         self.session = session
 
     async def __aenter__(self):
-        from src.order.infra.order_repo_impl import OrderRepoImpl
+        from src.booking.infra.booking_repo_impl import BookingRepoImpl
         from src.event.infra.event_repo_impl import EventRepoImpl
-        from src.user.infra.user_repo_impl import UserRepoImpl
         from src.ticket.infra.ticket_repo_impl import TicketRepoImpl
+        from src.user.infra.user_repo_impl import UserRepoImpl
 
         self.events = EventRepoImpl(self.session)
-        self.orders = OrderRepoImpl(self.session)
+        self.bookings = BookingRepoImpl(self.session)
         self.users = UserRepoImpl(self.session)
         self.tickets = TicketRepoImpl(self.session)
         return await super().__aenter__()
