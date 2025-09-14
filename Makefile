@@ -51,8 +51,8 @@ lint:
 format:
 	@uv run ruff format .
 
-.PHONY: typecheck
-typecheck:
+.PHONY: pyright
+pyright:
 	@uv run pyright
 
 # Development
