@@ -10,16 +10,17 @@ Feature: Order State Transition
     And a buyer exists:
       | email          | password | name       | role  |
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
-    And a event exists:
-      | name       | description      | price | seller_id | is_active | status    | venue_name   | seating_config                                                                                 |
-      | Test Event | Test Description |  1000 |         1 | true      | available | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+    And tickets exist for event:
+      | event_id | status    | price |
+      |        1 | available |  1000 |
 
   Scenario: Cannot cancel PAID order
-    Given I am logged in as:
+    Given an order exists with status "paid":
+      | buyer_id | seller_id | event_id | total_price | paid_at  |
+      |        2 |         1 |        1 |        2000 | not_null |
+    And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the event
-    And the buyer pays for the order
     When the buyer tries to cancel the order
     Then the response status code should be:
       | 400 |
@@ -27,11 +28,12 @@ Feature: Order State Transition
       | Cannot cancel paid order |
 
   Scenario: Cannot pay for CANCELLED order
-    Given I am logged in as:
+    Given an order exists with status "cancelled":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2000 |
+    And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the event
-    And the buyer cancels the order
     When the buyer tries to pay for the order
     Then the response status code should be:
       | 400 |
@@ -39,11 +41,12 @@ Feature: Order State Transition
       | Cannot pay for cancelled order |
 
   Scenario: Cannot re-cancel CANCELLED order
-    Given I am logged in as:
+    Given an order exists with status "cancelled":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2000 |
+    And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the event
-    And the buyer cancels the order
     When the buyer tries to cancel the order
     Then the response status code should be:
       | 400 |
@@ -51,10 +54,12 @@ Feature: Order State Transition
       | Order already cancelled |
 
   Scenario: Valid state transition from PENDING_PAYMENT to PAID
-    Given I am logged in as:
+    Given an order exists with status "pending_payment":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2000 |
+    And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the event
     When the buyer pays for the order
     Then the response status code should be:
       | 200 |
@@ -62,10 +67,12 @@ Feature: Order State Transition
       | paid |
 
   Scenario: Valid state transition from PENDING_PAYMENT to CANCELLED
-    Given I am logged in as:
+    Given an order exists with status "pending_payment":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2000 |
+    And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
-    And the buyer creates an order for the event
     When the buyer cancels the order
     Then the response status code should be:
       | 204 |

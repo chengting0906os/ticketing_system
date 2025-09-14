@@ -13,11 +13,11 @@ Feature: Order Cancellation
 
   Scenario: Successfully cancel unpaid order
     Given a event exists:
-      | name       | description     | price | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
-      | Test Event | For cancel test |  2000 | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
+      | Rock Concert | For cancel test | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |        1 |  2000 |
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2000 |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -31,11 +31,11 @@ Feature: Order Cancellation
 
   Scenario: Cannot cancel paid order
     Given a event exists:
-      | name       | description  | price | is_active | status   | seller_id | venue_name  | seating_config                                                                                 |
-      | Test Event | Already paid |  3000 | true      | sold_out |         1 | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | name          | description  | is_active | status   | seller_id | venue_name  | seating_config                                                                                 |
+      | Jazz Festival | Already paid | true      | sold_out |         1 | Taipei Dome | {"sections": [{"name": "B", "price": 1200, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And an order exists with status "paid":
-      | buyer_id | seller_id | event_id | price | paid_at  |
-      |        2 |         1 |        1 |  3000 | not_null |
+      | buyer_id | seller_id | event_id | total_price | paid_at  |
+      |        2 |         1 |        1 |        3000 | not_null |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -51,11 +51,11 @@ Feature: Order Cancellation
 
   Scenario: Cannot cancel already cancelled order
     Given a event exists:
-      | name       | description       | price | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
-      | Test Event | Already cancelled |  1500 | true      | available |         1 | Taipei Arena | {"sections": [{"name": "C", "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
+      | name        | description       | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
+      | Opera Night | Already cancelled | true      | available |         1 | Taipei Arena | {"sections": [{"name": "C", "price": 800, "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
     And an order exists with status "cancelled":
-      | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |        1 |  1500 |
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        1500 |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -67,14 +67,14 @@ Feature: Order Cancellation
 
   Scenario: Only buyer can cancel their own order
     Given a event exists:
-      | name       | description       | price | is_active | status   | seller_id | venue_name  | seating_config                                                                                 |
-      | Test Event | Not buyer's order |  2500 | true      | reserved |         1 | Taipei Dome | {"sections": [{"name": "D", "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
+      | name        | description       | is_active | status    | seller_id | venue_name  | seating_config                                                                                 |
+      | Pop Concert | Not buyer's order | true      | available |         1 | Taipei Dome | {"sections": [{"name": "D", "price": 1500, "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
     And another buyer exists:
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |        1 |  2500 |
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        2500 |
     And I am logged in as:
       | email            | password |
       | another@test.com | P@ssw0rd |
@@ -86,15 +86,15 @@ Feature: Order Cancellation
     And the order status should remain:
       | pending_payment |
     And the event status should remain:
-      | reserved |
+      | available |
 
   Scenario: Seller cannot cancel buyer's order
     Given a event exists:
-      | name       | description    | price | is_active | status   | seller_id | venue_name   | seating_config                                                                                 |
-      | Test Event | Seller's event |  4000 | true      | reserved |         1 | Taipei Arena | {"sections": [{"name": "E", "subsections": [{"number": 5, "rows": 25, "seats_per_row": 20}]}]} |
+      | name        | description    | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
+      | Comedy Show | Seller's event | true      | available |         1 | Taipei Arena | {"sections": [{"name": "E", "price": 900, "subsections": [{"number": 5, "rows": 25, "seats_per_row": 20}]}]} |
     And an order exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |        1 |  4000 |
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        4000 |
     And I am logged in as:
       | email           | password |
       | seller@test.com | P@ssw0rd |
@@ -106,12 +106,12 @@ Feature: Order Cancellation
     And the order status should remain:
       | pending_payment |
     And the event status should remain:
-      | reserved |
+      | available |
 
   Scenario: Cannot cancel non-existent order for available event
     Given a event exists:
-      | name       | description     | price | is_active | status    | seller_id | venue_name  | seating_config                                                                                 |
-      | Test Event | Available event |  1800 | true      | available |         1 | Taipei Dome | {"sections": [{"name": "F", "subsections": [{"number": 6, "rows": 30, "seats_per_row": 25}]}]} |
+      | name          | description     | is_active | status    | seller_id | venue_name  | seating_config                                                                                 |
+      | Dance Concert | Available event | true      | available |         1 | Taipei Dome | {"sections": [{"name": "F", "price": 1100, "subsections": [{"number": 6, "rows": 30, "seats_per_row": 25}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -122,3 +122,25 @@ Feature: Order Cancellation
       | Order not found |
     And the event status should remain:
       | available |
+
+  Scenario: Buyer can cancel their own reservation
+    Given a event exists:
+      | name           | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                 |
+      | Musical Theatre| For reservation | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+    And an order exists with status "pending_payment":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |        3000 |
+    And I am logged in as:
+      | email          | password |
+      | buyer@test.com | P@ssw0rd |
+    When buyer cancels reservation:
+      | buyer_id | order_id |
+      |        2 |        1 |
+    Then the response status code should be:
+      | 200 |
+    And reservation status should be:
+      | status |
+      | ok     |
+    And tickets should return to available:
+      | status    | count |
+      | available |     3 |

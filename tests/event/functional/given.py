@@ -23,7 +23,6 @@ def event_exists(step, client: TestClient, event_state):
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
-        'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
     from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
@@ -60,7 +59,6 @@ def event_exists_with_status(step, client: TestClient, event_state, execute_sql_
     request_data = {
         'name': row_data['name'],
         'description': row_data['description'],
-        'price': int(row_data['price']),
         'is_active': row_data['is_active'].lower() == 'true',
     }
     from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
@@ -109,7 +107,6 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
         request_json = {
             'name': event_data['name'],
             'description': event_data['description'],
-            'price': int(event_data['price']),
             'is_active': event_data['is_active'].lower() == 'true',
         }
         if 'venue_name' in event_data:
@@ -149,7 +146,6 @@ def create_no_available_events(step, client: TestClient, event_state, execute_sq
         request_json = {
             'name': event_data['name'],
             'description': event_data['description'],
-            'price': int(event_data['price']),
             'is_active': event_data['is_active'].lower() == 'true',
         }
         if 'venue_name' in event_data:

@@ -5,7 +5,6 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     TICKET_BY_SECTION,
     TICKET_BY_SUBSECTION,
-    TICKET_CANCEL_RESERVATION,
     TICKET_CLEANUP_EXPIRED,
     TICKET_CREATE,
     TICKET_LIST,
@@ -257,21 +256,6 @@ def system_checks_expired_reservations(client, context):
     """System checks for expired reservations."""
     # Call the system endpoint to check for expired reservations
     response = client.post(TICKET_CLEANUP_EXPIRED)
-    context['response'] = response
-
-
-@when('buyer cancels reservation:')
-def buyer_cancels_reservation(step, client, context):
-    """Buyer cancels their reservation."""
-    data = extract_table_data(step)
-    buyer_id = int(data['buyer_id'])
-
-    # Login as buyer - buyer_id 2 maps to buyer1@test.com, buyer_id 3 maps to buyer2@test.com
-    buyer_email = f'buyer{buyer_id - 1}@test.com'
-    login_user(client, buyer_email, DEFAULT_PASSWORD)
-
-    # Cancel reservation
-    response = client.delete(TICKET_CANCEL_RESERVATION)
     context['response'] = response
 
 

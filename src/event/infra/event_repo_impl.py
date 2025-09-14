@@ -20,7 +20,6 @@ class EventRepoImpl(EventRepo):
         return Event(
             name=db_event.name,
             description=db_event.description,
-            price=db_event.price,
             seller_id=db_event.seller_id,
             venue_name=db_event.venue_name,
             seating_config=db_event.seating_config,
@@ -34,7 +33,6 @@ class EventRepoImpl(EventRepo):
         db_event = EventModel(
             name=event.name,
             description=event.description,
-            price=event.price,
             seller_id=event.seller_id,
             venue_name=event.venue_name,
             seating_config=event.seating_config,
@@ -84,7 +82,6 @@ class EventRepoImpl(EventRepo):
             .values(
                 name=event.name,
                 description=event.description,
-                price=event.price,
                 venue_name=event.venue_name,
                 seating_config=event.seating_config,
                 is_active=event.is_active,
@@ -132,10 +129,11 @@ class EventRepoImpl(EventRepo):
 
     @Logger.io
     async def release_event_atomically(self, *, event_id: int) -> Event:
+        # This method is no longer needed since events don't have RESERVED status
+        # Events are either AVAILABLE, SOLD_OUT, or ENDED
         stmt = (
             sql_update(EventModel)
             .where(EventModel.id == event_id)
-            .where(EventModel.status == EventStatus.RESERVED.value)
             .values(status=EventStatus.AVAILABLE.value)
             .returning(EventModel)
         )
@@ -144,6 +142,6 @@ class EventRepoImpl(EventRepo):
         db_event = result.scalar_one_or_none()
 
         if not db_event:
-            raise DomainError('Unable to release event')
+            raise DomainError('Unable to update event status')
 
         return EventRepoImpl._to_entity(db_event)

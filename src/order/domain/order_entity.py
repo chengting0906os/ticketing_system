@@ -26,7 +26,9 @@ class Order:
     buyer_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     event_id: int = attrs.field(validator=attrs.validators.instance_of(int))
-    price: int = attrs.field(validator=[attrs.validators.instance_of(int), validate_positive_price])
+    total_price: int = attrs.field(
+        validator=[attrs.validators.instance_of(int), validate_positive_price]
+    )
     status: OrderStatus = attrs.field(
         default=OrderStatus.PENDING_PAYMENT, validator=attrs.validators.instance_of(OrderStatus)
     )
@@ -37,13 +39,13 @@ class Order:
 
     @classmethod
     @Logger.io
-    def create(cls, buyer_id: int, seller_id: int, event_id: int, price: int) -> 'Order':
+    def create(cls, buyer_id: int, seller_id: int, event_id: int, total_price: int) -> 'Order':
         now = datetime.now()
         return cls(
             buyer_id=buyer_id,
             seller_id=seller_id,
             event_id=event_id,
-            price=price,
+            total_price=total_price,
             status=OrderStatus.PENDING_PAYMENT,
             created_at=now,
             updated_at=now,

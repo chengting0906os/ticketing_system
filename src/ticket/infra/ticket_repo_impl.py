@@ -3,15 +3,21 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.logging.loguru_io import Logger
 from src.ticket.domain.ticket_entity import Ticket, TicketStatus
 from src.ticket.domain.ticket_repo import TicketRepo
 from src.ticket.infra.ticket_model import TicketModel
-from src.shared.logging.loguru_io import Logger
 
 
 class TicketRepoImpl(TicketRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    @Logger.io
+    async def get_by_id(self, *, ticket_id: int) -> Ticket | None:
+        result = await self.session.execute(select(TicketModel).where(TicketModel.id == ticket_id))
+        db_ticket = result.scalar_one_or_none()
+        return self._to_entity(db_ticket) if db_ticket else None
 
     @staticmethod
     def _to_entity(db_ticket: TicketModel) -> Ticket:
@@ -49,7 +55,7 @@ class TicketRepoImpl(TicketRepo):
             reserved_at=ticket.reserved_at,
         )
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def create_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         db_tickets = [self._to_model(ticket) for ticket in tickets]
 
@@ -186,6 +192,14 @@ class TicketRepoImpl(TicketRepo):
             .where(TicketModel.buyer_id == buyer_id)
             .where(TicketModel.event_id == event_id)
             .where(TicketModel.status == TicketStatus.RESERVED.value)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_tickets_by_order_id(self, *, order_id: int) -> List[Ticket]:
+        result = await self.session.execute(
+            select(TicketModel).where(TicketModel.order_id == order_id)
         )
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]

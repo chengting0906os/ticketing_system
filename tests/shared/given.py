@@ -173,10 +173,23 @@ def create_seller_with_event_shared(
     }
     if 'venue_name' in event_data:
         request_data['venue_name'] = event_data['venue_name']
+    else:
+        request_data['venue_name'] = 'Default Venue'
+
     if 'seating_config' in event_data:
         import json
 
         request_data['seating_config'] = json.loads(event_data['seating_config'])
+    else:
+        # Use the correct seating config format for ticket creation
+        request_data['seating_config'] = {
+            'sections': [
+                {
+                    'section': 'A',
+                    'subsections': [{'subsection': 1, 'rows': 25, 'seats_per_row': 20}],
+                }
+            ]
+        }
 
     response = client.post(EVENT_BASE, json=request_data)
     assert response.status_code == 201, f'Failed to create event: {response.text}'
@@ -189,6 +202,26 @@ def create_seller_with_event_shared(
             {'status': event_data['status'], 'id': event['id']},
         )
         event['status'] = event_data['status']
+
+    # Create tickets for this event (for order tests)
+    if order_state is not None:
+        # Still logged in as seller, create tickets
+        from src.shared.constant.route_constant import TICKET_CREATE
+
+        tickets_response = client.post(
+            TICKET_CREATE.format(event_id=event['id']), json={'price': int(event_data['price'])}
+        )
+        if tickets_response.status_code == 201:
+            # Get the actual ticket data from the response and calculate the starting ID
+            response_data = tickets_response.json()
+            _ = response_data.get('tickets_created', 500)  # Used for validation
+
+            # Tickets are created sequentially in the database
+            # For the first event (ID 1), tickets are IDs 1-500
+            # For the second event (ID 2), tickets are IDs 501-1000, etc.
+            start_ticket_id = (event['id'] - 1) * 500 + 1
+            order_state['ticket_ids'] = [start_ticket_id, start_ticket_id + 1]
+            order_state['event_id'] = event['id']
 
     # Store event in appropriate state
     if order_state is not None:
@@ -216,13 +249,12 @@ def create_event_shared(
         # Create event directly in database
         execute_sql_statement(
             """
-            INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
-            VALUES (:name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
+            INSERT INTO event (name, description, seller_id, is_active, status, venue_name, seating_config)
+            VALUES (:name, :description, :seller_id, :is_active, :status, :venue_name, :seating_config)
             """,
             {
                 'name': event_data['name'],
                 'description': event_data['description'],
-                'price': int(event_data['price']),
                 'seller_id': seller_id,
                 'is_active': event_data.get('is_active', 'true').lower() == 'true',
                 'status': event_data.get('status', 'available'),
@@ -243,11 +275,16 @@ def create_event_shared(
         create_user(client, seller_email, 'P@ssw0rd', f'Test Seller {seller_id}', 'seller')
         login_user(client, seller_email, 'P@ssw0rd')
 
+        from tests.shared.utils import parse_seating_config
+
         request_data = {
             'name': event_data['name'],
             'description': event_data['description'],
-            'price': int(event_data['price']),
             'is_active': event_data.get('is_active', 'true').lower() == 'true',
+            'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
+            'seating_config': parse_seating_config(
+                event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON)
+            ),
         }
 
         response = client.post(EVENT_BASE, json=request_data)
@@ -258,7 +295,6 @@ def create_event_shared(
     event = {
         'id': event_id,
         'name': event_data['name'],
-        'price': int(event_data['price']),
         'status': event_data.get('status', 'available'),
     }
 

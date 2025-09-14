@@ -4,6 +4,7 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     ORDER_BASE,
     ORDER_CANCEL,
+    ORDER_CANCEL_RESERVATION,
     ORDER_GET,
     ORDER_MY_ORDERS,
     ORDER_PAY,
@@ -26,7 +27,8 @@ def buyer_creates_order(client: TestClient, order_state):
     # The buyer should already be logged in via "I am logged in as:" step
     # If not, we don't login here - let the test control authentication
 
-    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
+    # Use ticket_ids from the successful scenario in the test
+    response = client.post(ORDER_BASE, json={'ticket_ids': [1001, 1002]})
     order_state['response'] = response
 
     # Store order if created successfully
@@ -36,13 +38,27 @@ def buyer_creates_order(client: TestClient, order_state):
 
 @when('the buyer tries to create an order for the event')
 def buyer_tries_to_create_order(client: TestClient, order_state):
-    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
+    # Use actual ticket IDs from the order_state if available, otherwise use fallback
+    if 'ticket_ids' in order_state:
+        ticket_ids = order_state['ticket_ids']
+    else:
+        # Fallback for cases where tickets weren't properly stored
+        ticket_ids = [1001, 1002]
+
+    response = client.post(ORDER_BASE, json={'ticket_ids': ticket_ids})
     order_state['response'] = response
 
 
 @when('the seller tries to create an order for their own event')
 def seller_tries_to_create_order(client: TestClient, order_state):
-    response = client.post(ORDER_BASE, json={'event_id': order_state['event']['id']})
+    # Use actual ticket IDs from the order_state if available, otherwise use fallback
+    if 'ticket_ids' in order_state:
+        ticket_ids = order_state['ticket_ids']
+    else:
+        # Fallback for cases where tickets weren't properly stored
+        ticket_ids = [1001, 1002]
+
+    response = client.post(ORDER_BASE, json={'ticket_ids': ticket_ids})
     order_state['response'] = response
 
 
@@ -198,7 +214,7 @@ def buyer_tries_to_create_order_for_zero_price_event(client: TestClient, order_s
 
 
 @when('the event price is updated to 2000')
-def update_event_price_to_2000(client: TestClient, order_state, execute_sql_statement):
+def update_event_price_to_2000(order_state, execute_sql_statement):
     """Update the event price in the database."""
     event_id = order_state['event']['id']
 
@@ -211,7 +227,7 @@ def update_event_price_to_2000(client: TestClient, order_state, execute_sql_stat
 
 
 @when('the event price is updated to 3000')
-def update_event_price_to_3000(client: TestClient, order_state, execute_sql_statement):
+def update_event_price_to_3000(order_state, execute_sql_statement):
     """Update the event price in the database."""
     event_id = order_state['event']['id']
 
@@ -282,6 +298,25 @@ def another_buyer_creates_order_for_same_event(client: TestClient, order_state):
     order_state['another_buyer'] = another_buyer
 
 
+@when('buyer cancels reservation:')
+def buyer_cancels_reservation(step, client, context):
+    """Buyer cancels their reservation."""
+    data = extract_table_data(step)
+    buyer_id = int(data['buyer_id'])
+    order_id = int(data['order_id'])
+
+    # Login as buyer - buyer_id 2 maps to buyer@test.com (from Background)
+    if buyer_id == 2:
+        buyer_email = 'buyer@test.com'
+    else:
+        buyer_email = f'buyer{buyer_id - 1}@test.com'
+    login_user(client, buyer_email, DEFAULT_PASSWORD)
+
+    # Cancel reservation
+    response = client.patch(ORDER_CANCEL_RESERVATION.format(order_id=order_id))
+    context['response'] = response
+
+
 @when('the buyer tries to change cancelled order status to pending_payment')
 def buyer_tries_change_cancelled_to_pending(client: TestClient, order_state):
     """Buyer tries to change cancelled order back to pending_payment."""
@@ -340,3 +375,23 @@ def seller_marks_order_completed(client: TestClient, order_state):
     order_state['response'] = response
     if response.status_code == 200:
         order_state['order']['status'] = 'completed'
+
+
+@when('buyer creates order with tickets:')
+def buyer_creates_order_with_tickets(step, client: TestClient, order_state):
+    """Buyer creates order with specific tickets."""
+    # Use actual ticket IDs from the order_state if available, otherwise parse from table
+    if 'ticket_ids' in order_state:
+        ticket_ids = order_state['ticket_ids']
+    else:
+        ticket_data = extract_table_data(step)
+        ticket_ids_str = ticket_data['ticket_ids']
+        ticket_ids = [int(id.strip()) for id in ticket_ids_str.split(',')]
+
+    # Create order with specific ticket IDs
+    response = client.post(ORDER_BASE, json={'ticket_ids': ticket_ids})
+    order_state['response'] = response
+
+    # Store order if created successfully
+    if response.status_code == 201:
+        order_state['order'] = response.json()

@@ -2,24 +2,18 @@ from fastapi import APIRouter, Depends, status
 
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import (
-    require_buyer,
     require_buyer_or_seller,
     require_seller,
 )
 from src.ticket.port.ticket_schema import (
-    CancelReservationResponse,
     CreateTicketsRequest,
     CreateTicketsResponse,
     ListTicketsBySectionResponse,
     ListTicketsResponse,
-    ReserveTicketsRequest,
-    ReserveTicketsResponse,
     TicketResponse,
 )
-from src.ticket.use_case.cancel_reservation_use_case import CancelReservationUseCase
 from src.ticket.use_case.create_tickets_use_case import CreateTicketsUseCase
 from src.ticket.use_case.list_tickets_use_case import ListTicketsUseCase
-from src.ticket.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.user.domain.user_model import User
 
 
@@ -28,7 +22,7 @@ ticket_router = APIRouter(prefix='/ticket', tags=['ticket-operations'])
 
 
 @router.post('/{event_id}/tickets', status_code=status.HTTP_201_CREATED)
-@Logger.io
+@Logger.io(truncate_content=True)
 async def create_tickets_for_event(
     event_id: int,
     request: CreateTicketsRequest,
@@ -63,7 +57,7 @@ def _ticket_to_response(ticket) -> TicketResponse:
 
 
 @router.get('/{event_id}/tickets', status_code=status.HTTP_200_OK)
-@Logger.io
+@Logger.io(truncate_content=True)
 async def list_tickets_by_event(
     event_id: int,
     current_user: User = Depends(require_buyer_or_seller),
@@ -113,36 +107,6 @@ async def list_tickets_by_section(
         section=section,
         subsection=subsection,
     )
-
-
-@router.post('/{event_id}/reserve', status_code=status.HTTP_200_OK)
-@Logger.io
-async def reserve_tickets_for_event(
-    event_id: int,
-    request: ReserveTicketsRequest,
-    current_user: User = Depends(require_buyer),
-    use_case: ReserveTicketsUseCase = Depends(ReserveTicketsUseCase.depends),
-) -> ReserveTicketsResponse:
-    reservation_data = await use_case.reserve_tickets(
-        event_id=event_id,
-        ticket_count=request.ticket_count,
-        buyer_id=current_user.id,
-    )
-
-    return ReserveTicketsResponse(**reservation_data)
-
-
-@ticket_router.delete('/cancel-reservation', status_code=status.HTTP_200_OK)
-@Logger.io
-async def cancel_reservation(
-    current_user: User = Depends(require_buyer),
-    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
-) -> CancelReservationResponse:
-    result = await use_case.cancel_reservation(
-        buyer_id=current_user.id,
-    )
-
-    return CancelReservationResponse(**result)
 
 
 @ticket_router.post('/cleanup-expired-reservations', status_code=status.HTTP_200_OK)

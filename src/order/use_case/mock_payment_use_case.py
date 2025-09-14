@@ -46,19 +46,15 @@ class MockPaymentUseCase:
                 await self.uow.events.update(event=event)
 
             # Update reserved tickets to sold status when order is paid
-            reserved_tickets = await self.uow.tickets.get_reserved_tickets_by_buyer_and_event(
-                buyer_id=buyer_id, event_id=order.event_id
-            )
+            reserved_tickets = await self.uow.tickets.get_tickets_by_order_id(order_id=order_id)
             if reserved_tickets:
-                from src.ticket.domain.ticket_entity import TicketStatus
-
-                # Update all reserved tickets to sold and link them to the order
+                # Update all reserved tickets to sold using domain method
                 sold_tickets = []
                 for ticket in reserved_tickets:
-                    ticket.status = TicketStatus.SOLD
-                    ticket.order_id = order_id
+                    ticket.sell()  # Use the domain method instead of direct assignment
                     sold_tickets.append(ticket)
                 await self.uow.tickets.update_batch(tickets=sold_tickets)
+
             payment_id = (
                 f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'
             )
@@ -81,18 +77,12 @@ class MockPaymentUseCase:
             await self.uow.events.release_event_atomically(event_id=cancelled_order.event_id)
 
             # Release reserved tickets when order is cancelled
-            reserved_tickets = await self.uow.tickets.get_reserved_tickets_by_buyer_and_event(
-                buyer_id=buyer_id, event_id=cancelled_order.event_id
-            )
+            reserved_tickets = await self.uow.tickets.get_tickets_by_order_id(order_id=order_id)
             if reserved_tickets:
-                from src.ticket.domain.ticket_entity import TicketStatus
-
-                # Release all reserved tickets back to available
+                # Release all reserved tickets back to available using domain method
                 available_tickets = []
                 for ticket in reserved_tickets:
-                    ticket.status = TicketStatus.AVAILABLE
-                    ticket.order_id = None
-                    ticket.buyer_id = None
+                    ticket.release()  # Use the domain method instead of direct assignment
                     available_tickets.append(ticket)
                 await self.uow.tickets.update_batch(tickets=available_tickets)
 

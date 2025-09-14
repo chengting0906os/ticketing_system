@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import Depends
 
-from src.shared.exception.exceptions import ForbiddenError, NotFoundError, DomainError
+from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.ticket.domain.ticket_entity import Ticket, TicketStatus
@@ -16,7 +16,7 @@ class CreateTicketsUseCase:
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
         return cls(uow=uow)
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def create_all_tickets_for_event(
         self, *, event_id: int, price: int, seller_id: int
     ) -> List[Ticket]:
@@ -54,11 +54,13 @@ class CreateTicketsUseCase:
         if 'sections' in seating_config and isinstance(seating_config['sections'], list):
             # Check if it's the new nested format
             if seating_config['sections'] and isinstance(seating_config['sections'][0], dict):
-                # New nested format: {"sections": [{"section": "A", "subsections": [{"subsection": 1, "rows": 5, "seats_per_row": 10}]}]}
+                # New nested format: {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 5, "seats_per_row": 10}]}]}
                 for section_config in seating_config['sections']:
-                    section_name = section_config.get('section')
+                    section_name = section_config.get('name') or section_config.get('section')
                     for subsection_config in section_config.get('subsections', []):
-                        subsection = subsection_config.get('subsection')
+                        subsection = subsection_config.get('number') or subsection_config.get(
+                            'subsection'
+                        )
                         rows = subsection_config.get('rows', 20)
                         seats_per_row = subsection_config.get('seats_per_row', 25)
 

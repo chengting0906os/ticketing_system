@@ -13,30 +13,30 @@ Feature: Event Creation
 
   Scenario: Create a new event successfully
     When I create a event with
-      | name      | description             | price | venue_name   | seating_config                                                                                 |
-      | iPhone 18 | Latest Apple smartphone |  1500 | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
-    Then the event should be created with
-      | id        | seller_id | name      | description             | price | is_active | venue_name   | seating_config                                                                                 |
-      | {any_int} | {any_int} | iPhone 18 | Latest Apple smartphone |  1500 | true      | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name           | description                     | venue_name   | seating_config                                                                                                        |
+      | Rock Concert   | Amazing live rock music show    | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+    Then the event should be created with:
+      | id        | seller_id | name           | description                     | is_active | venue_name   | seating_config                                                                                                        |
+      | {any_int} | {any_int} | Rock Concert   | Amazing live rock music show    | true      | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And the response status code should be:
       | 201 |
 
-  Scenario: Create event with negative price
+  Scenario: Create event with empty name
     When I create a event with
-      | name      | description | price | venue_name   | seating_config                                                                                 |
-      | iPhone 25 | Apple phone |  -500 | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name | description          | venue_name   | seating_config                                                                                                        |
+      |      | Jazz music festival  | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Price must be positive |
+      | Event name is required |
 
   Scenario: Create inactive event
     When I create a event with
-      | name     | description         | price | is_active | venue_name  | seating_config                                                                                 |
-      | iPad Pro | Professional tablet |  2000 | false     | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
-    Then the event should be created with
-      | id        | seller_id | name     | description         | price | is_active | status    | venue_name  | seating_config                                                                                 |
-      | {any_int} | {any_int} | iPad Pro | Professional tablet |  2000 | false     | available | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | name            | description                      | is_active | venue_name  | seating_config                                                                                                        |
+      | Broadway Musical| Classic theater performance      | false     | Taipei Dome | {"sections": [{"name": "B", "price": 1500, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+    Then the event should be created with:
+      | id        | seller_id | name            | description                      | is_active | status    | venue_name  | seating_config                                                                                                        |
+      | {any_int} | {any_int} | Broadway Musical| Classic theater performance      | false     | available | Taipei Dome | {"sections": [{"name": "B", "price": 1500, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And the response status code should be:
       | 201 |
 
@@ -48,8 +48,8 @@ Feature: Event Creation
       | email          | password |
       | buyer@test.com | P@ssw0rd |
     When I create a event with
-      | name    | description  | price | venue_name   | seating_config                                                                                 |
-      | MacBook | Apple laptop |  3000 | Taipei Arena | {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name         | description             | venue_name   | seating_config                                                                                                        |
+      | Comedy Show  | Stand-up comedy night   | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     Then the response status code should be:
       | 403 |
     And the error message should contain:

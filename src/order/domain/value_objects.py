@@ -40,3 +40,28 @@ class SellerInfo:
     @classmethod
     def from_user(cls, user) -> 'SellerInfo':
         return cls(seller_id=user.id, name=user.name, email=user.email)
+
+
+@attrs.define(frozen=True)
+class TicketSnapshot:
+    ticket_id: int
+    event_id: int
+    section: str
+    subsection: int
+    row: int
+    seat: int
+    price: int
+    seat_identifier: str
+
+    @classmethod
+    def from_ticket(cls, ticket) -> 'TicketSnapshot':
+        return cls(
+            ticket_id=ticket.id or 0,
+            event_id=ticket.event_id,
+            section=ticket.section,
+            subsection=ticket.subsection,
+            row=ticket.row,
+            seat=ticket.seat,
+            price=ticket.price,
+            seat_identifier=ticket.seat_identifier,
+        )

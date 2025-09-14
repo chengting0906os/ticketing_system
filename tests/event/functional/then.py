@@ -4,12 +4,16 @@ from src.shared.constant.route_constant import EVENT_GET
 from tests.shared.utils import extract_table_data
 
 
-@then('the event should be created with')
-def verify_event_created(step, event_state):
+@then('the event should be created with:')
+def verify_event_created(step, event_state=None, context=None):
     import json
 
+    # Import the helper function from shared
+    from tests.shared.then import get_state_with_response
+
     expected_data = extract_table_data(step)
-    response = event_state['response']
+    state = get_state_with_response(event_state=event_state, context=context)
+    response = state['response']
     response_json = response.json()
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
@@ -21,7 +25,7 @@ def verify_event_created(step, event_state):
             assert response_json['is_active'] == expected_active
         elif field == 'status':
             assert response_json['status'] == expected_value
-        elif field in ['price', 'seller_id', 'id']:
+        elif field in ['seller_id', 'id']:
             assert response_json[field] == int(expected_value)
         elif field == 'seating_config':
             # Handle JSON comparison for seating_config
@@ -62,7 +66,7 @@ def verify_event_updated(step, event_state):
             assert response_json['is_active'] == expected_active
         elif field == 'status':
             assert response_json['status'] == expected_value
-        elif field in ['price', 'seller_id', 'id']:
+        elif field in ['seller_id', 'id']:
             assert response_json[field] == int(expected_value)
         elif field == 'seating_config':
             # Handle JSON comparison for seating_config
@@ -121,7 +125,7 @@ def verify_events_include_all_statuses(event_state):
     response = event_state['response']
     events = response.json()
     statuses = {event['status'] for event in events}
-    expected_statuses = {'available', 'reserved', 'sold_out'}
+    expected_statuses = {'available', 'sold_out'}
     assert expected_statuses.issubset(statuses), (
         f'Expected statuses {expected_statuses}, got {statuses}'
     )
@@ -146,9 +150,49 @@ def verify_specific_events(step, event_state):
         for event in events:
             if event['name'] == expected['name']:
                 assert event['description'] == expected['description']
-                assert str(event['price']) == expected['price']
+                # Price is no longer part of event - it's on tickets
                 assert str(event['is_active']).lower() == expected['is_active'].lower()
                 assert event['status'] == expected['status']
                 found = True
                 break
         assert found, f'Event {expected["name"]} not found in response'
+
+
+@then('tickets should be auto-created with:')
+def verify_tickets_auto_created(step, client, context):
+    """Verify that tickets were automatically created after event creation."""
+    from src.shared.constant.route_constant import TICKET_LIST
+
+    expected_data = extract_table_data(step)
+
+    # Get the created event
+    event = context.get('event')
+    if not event:
+        raise AssertionError('Event not found in context')
+
+    # Get tickets for the event
+    event_id = event['id']
+    response = client.get(TICKET_LIST.format(event_id=event_id))
+    assert response.status_code == 200, f'Failed to get tickets: {response.text}'
+
+    tickets_data = response.json()
+    tickets = tickets_data.get('tickets', [])
+
+    # Verify ticket count
+    expected_count = int(expected_data['count'])
+    assert len(tickets) == expected_count, f'Expected {expected_count} tickets, got {len(tickets)}'
+
+    # Verify ticket prices (tickets can have different prices based on section)
+    if 'price' in expected_data:
+        expected_price = int(expected_data['price'])
+        for ticket in tickets:
+            assert ticket['price'] == expected_price, (
+                f'Expected ticket price {expected_price}, got {ticket["price"]}'
+            )
+
+    # Verify ticket status
+    expected_status = expected_data['status']
+    for ticket in tickets:
+        assert ticket['status'] == expected_status, (
+            f'Expected ticket status {expected_status}, got {ticket["status"]}'
+        )

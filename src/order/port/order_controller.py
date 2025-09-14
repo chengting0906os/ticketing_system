@@ -6,6 +6,8 @@ from src.order.port.order_schema import (
     PaymentRequest,
     PaymentResponse,
 )
+from src.ticket.port.ticket_schema import CancelReservationResponse
+from src.ticket.use_case.cancel_reservation_use_case import CancelReservationUseCase
 from src.order.use_case.create_order_use_case import CreateOrderUseCase
 from src.order.use_case.get_order_use_case import GetOrderUseCase
 from src.order.use_case.list_orders_use_case import ListOrdersUseCase
@@ -26,8 +28,8 @@ async def create_order(
     current_user: User = Depends(require_buyer),
     use_case: CreateOrderUseCase = Depends(CreateOrderUseCase.depends),
 ) -> OrderResponse:
-    # Use authenticated buyer's ID instead of request.buyer_id
-    order = await use_case.create_order(buyer_id=current_user.id, event_id=request.event_id)
+    # Use authenticated buyer's ID and provided ticket IDs
+    order = await use_case.create_order(buyer_id=current_user.id, ticket_ids=request.ticket_ids)
 
     if order.id is None:
         raise ValueError('Order ID should not be None after creation.')
@@ -36,8 +38,7 @@ async def create_order(
         id=order.id,
         buyer_id=order.buyer_id,
         seller_id=order.seller_id,
-        event_id=order.event_id,
-        price=order.price,
+        total_price=order.total_price,
         status=order.status.value,
         created_at=order.created_at,
         paid_at=order.paid_at,
@@ -72,8 +73,7 @@ async def get_order(
         id=order_id,
         buyer_id=order.buyer_id,
         seller_id=order.seller_id,
-        event_id=order.event_id,
-        price=order.price,
+        total_price=order.total_price,
         status=order.status.value,
         created_at=order.created_at,
         paid_at=order.paid_at,
@@ -105,11 +105,28 @@ async def pay_order(
 async def cancel_order(
     order_id: int,
     current_user: User = Depends(require_buyer),
-    use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
+    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ):
-    await use_case.cancel_order(order_id=order_id, buyer_id=current_user.id)
+    await use_case.cancel_reservation(
+        order_id=order_id,
+        buyer_id=current_user.id,
+    )
+    # Return 204 No Content for successful deletion
 
-    return None
+
+@router.patch('/{order_id}/cancel-reservation', status_code=status.HTTP_200_OK)
+@Logger.io
+async def cancel_reservation(
+    order_id: int,
+    current_user: User = Depends(require_buyer),
+    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
+) -> CancelReservationResponse:
+    result = await use_case.cancel_reservation(
+        order_id=order_id,
+        buyer_id=current_user.id,
+    )
+
+    return CancelReservationResponse(**result)
 
 
 @Logger.io

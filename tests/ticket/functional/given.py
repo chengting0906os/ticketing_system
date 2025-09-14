@@ -24,15 +24,46 @@ def event_exists(step, execute_sql_statement):
     event_info = {
         'name': 'Test Event',
         'description': 'Test Description',
-        'price': 1000,
         'venue_name': 'Large Arena',
         'seating_config': json.dumps(
             {
-                'sections': ['A', 'B', 'C', 'D', 'E'],
-                'subsections': [1, 2],
-                'rows_per_subsection': 10,
-                'seats_per_row': 25,
-                'total_capacity': 5000,
+                'sections': [
+                    {
+                        'name': 'A',
+                        'subsections': [
+                            {'number': 1, 'rows': 10, 'seats_per_row': 25},
+                            {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                        ],
+                    },
+                    {
+                        'name': 'B',
+                        'subsections': [
+                            {'number': 1, 'rows': 10, 'seats_per_row': 25},
+                            {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                        ],
+                    },
+                    {
+                        'name': 'C',
+                        'subsections': [
+                            {'number': 1, 'rows': 10, 'seats_per_row': 25},
+                            {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                        ],
+                    },
+                    {
+                        'name': 'D',
+                        'subsections': [
+                            {'number': 1, 'rows': 10, 'seats_per_row': 25},
+                            {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                        ],
+                    },
+                    {
+                        'name': 'E',
+                        'subsections': [
+                            {'number': 1, 'rows': 10, 'seats_per_row': 25},
+                            {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                        ],
+                    },
+                ]
             }
         ),
     }
@@ -40,15 +71,14 @@ def event_exists(step, execute_sql_statement):
     # Insert event with specific ID
     execute_sql_statement(
         """
-        INSERT INTO event (id, name, description, price, seller_id, is_active, status, venue_name, seating_config)
-        VALUES (:id, :name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
+        INSERT INTO event (id, name, description, seller_id, is_active, status, venue_name, seating_config)
+        VALUES (:id, :name, :description, :seller_id, :is_active, :status, :venue_name, :seating_config)
         ON CONFLICT (id) DO NOTHING
         """,
         {
             'id': event_id,
             'name': event_info['name'],
             'description': event_info['description'],
-            'price': event_info['price'],
             'seller_id': actual_seller_id,
             'is_active': True,
             'status': 'available',
@@ -88,26 +118,57 @@ def other_seller_event_exists(step, execute_sql_statement):
     # Create event owned by seller2
     execute_sql_statement(
         """
-        INSERT INTO event (id, name, description, price, seller_id, is_active, status, venue_name, seating_config)
-        VALUES (:id, :name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
+        INSERT INTO event (id, name, description, seller_id, is_active, status, venue_name, seating_config)
+        VALUES (:id, :name, :description, :seller_id, :is_active, :status, :venue_name, :seating_config)
         ON CONFLICT (id) DO NOTHING
         """,
         {
             'id': event_id,
             'name': 'Test Event 2',
             'description': 'Test Description 2',
-            'price': 2000,
             'seller_id': seller_id,
             'is_active': True,
             'status': 'available',
             'venue_name': 'Another Arena',
             'seating_config': json.dumps(
                 {
-                    'sections': ['A', 'B', 'C', 'D', 'E'],
-                    'subsections': [1, 2, 3, 4, 5],
-                    'rows_per_subsection': 10,
-                    'seats_per_row': 20,
-                    'total_capacity': 5000,
+                    'sections': [
+                        {
+                            'name': 'A',
+                            'subsections': [
+                                {'number': 1, 'rows': 10, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 10, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'B',
+                            'subsections': [
+                                {'number': 1, 'rows': 10, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 10, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'C',
+                            'subsections': [
+                                {'number': 1, 'rows': 10, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 10, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'D',
+                            'subsections': [
+                                {'number': 1, 'rows': 10, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 10, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'E',
+                            'subsections': [
+                                {'number': 1, 'rows': 10, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 10, 'seats_per_row': 20},
+                            ],
+                        },
+                    ]
                 }
             ),
         },
@@ -169,19 +230,7 @@ def mixed_status_tickets_exist(step, client, execute_sql_statement):
     )
 
 
-@given('tickets exist for event:')
-def tickets_exist_for_event(step, client):
-    """Create tickets for an event."""
-    data = extract_table_data(step)
-    event_id = int(data['event_id'])
-    price = int(data['price'])
-
-    # Login as seller1 to create tickets
-    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
-
-    # Create tickets
-    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
-    assert response.status_code == 201
+# Removed duplicate step definition - using the one from order/functional/given.py instead
 
 
 @given('tickets exist with limited availability:')

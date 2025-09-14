@@ -6,6 +6,10 @@ from src.ticket.domain.ticket_entity import Ticket
 
 class TicketRepo(ABC):
     @abstractmethod
+    async def get_by_id(self, *, ticket_id: int) -> Ticket | None:
+        pass
+
+    @abstractmethod
     async def create_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         pass
 
@@ -49,6 +53,10 @@ class TicketRepo(ABC):
     async def get_reserved_tickets_by_buyer_and_event(
         self, *, buyer_id: int, event_id: int
     ) -> List[Ticket]:
+        pass
+
+    @abstractmethod
+    async def get_tickets_by_order_id(self, *, order_id: int) -> List[Ticket]:
         pass
 
     @abstractmethod

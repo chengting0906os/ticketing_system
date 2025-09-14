@@ -9,15 +9,11 @@ from src.shared.logging.loguru_io import Logger
 
 class EventStatus(str, Enum):
     AVAILABLE = 'available'
-    RESERVED = 'reserved'
     SOLD_OUT = 'sold_out'
+    ENDED = 'ended'
 
 
-@Logger.io
-def validate_positive_price(instance, attribute, value):
-    # value = -1
-    if value < 0:
-        raise DomainError('Price must be positive')
+# Price validation removed - price is now on tickets, not events
 
 
 @Logger.io
@@ -50,7 +46,6 @@ class Event:
     description: str = attrs.field(
         validator=[attrs.validators.instance_of(str), validate_description]
     )
-    price: int = attrs.field(validator=[attrs.validators.instance_of(int), validate_positive_price])
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     venue_name: str = attrs.field(
         validator=[attrs.validators.instance_of(str), validate_venue_name]
@@ -68,7 +63,6 @@ class Event:
         cls,
         name: str,
         description: str,
-        price: int,
         seller_id: int,
         venue_name: str,
         seating_config: Dict,
@@ -77,7 +71,6 @@ class Event:
         return cls(
             name=name,
             description=description,
-            price=price,
             seller_id=seller_id,
             venue_name=venue_name,
             seating_config=seating_config,
