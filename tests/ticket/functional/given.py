@@ -255,21 +255,26 @@ def buyer_has_reserved_tickets(step, execute_sql_statement):
     else:
         actual_reserved_at = datetime.now() - timedelta(minutes=5)
 
-    # Create reserved tickets
-    for i in range(ticket_count):
-        execute_sql_statement(
-            """
-            INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status, buyer_id, reserved_at)
-            VALUES (:event_id, 'A', 1, :row_number, :seat_number, 1000, 'reserved', :buyer_id, :reserved_at)
-            """,
-            {
-                'event_id': event_id,
-                'row_number': (i // 10) + 1,
-                'seat_number': (i % 10) + 1,
-                'buyer_id': buyer_id,
-                'reserved_at': actual_reserved_at,
-            },
+    # Update existing available tickets to reserved status
+    execute_sql_statement(
+        """
+        UPDATE ticket
+        SET status = 'reserved', buyer_id = :buyer_id, reserved_at = :reserved_at
+        WHERE event_id = :event_id AND status = 'available'
+        AND id IN (
+            SELECT id FROM ticket
+            WHERE event_id = :event_id AND status = 'available'
+            ORDER BY id
+            LIMIT :ticket_count
         )
+        """,
+        {
+            'event_id': event_id,
+            'buyer_id': buyer_id,
+            'reserved_at': actual_reserved_at,
+            'ticket_count': ticket_count,
+        },
+    )
 
 
 @given('buyer has active reservation:')

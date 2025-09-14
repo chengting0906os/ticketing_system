@@ -80,4 +80,20 @@ class MockPaymentUseCase:
 
             await self.uow.events.release_event_atomically(event_id=cancelled_order.event_id)
 
+            # Release reserved tickets when order is cancelled
+            reserved_tickets = await self.uow.tickets.get_reserved_tickets_by_buyer_and_event(
+                buyer_id=buyer_id, event_id=cancelled_order.event_id
+            )
+            if reserved_tickets:
+                from src.ticket.domain.ticket_entity import TicketStatus
+
+                # Release all reserved tickets back to available
+                available_tickets = []
+                for ticket in reserved_tickets:
+                    ticket.status = TicketStatus.AVAILABLE
+                    ticket.order_id = None
+                    ticket.buyer_id = None
+                    available_tickets.append(ticket)
+                await self.uow.tickets.update_batch(tickets=available_tickets)
+
             await self.uow.commit()

@@ -45,3 +45,66 @@ Feature: Ticket Status Transition
     And reserved tickets should transition to sold:
       | event_id | status | count | buyer_id |
       |        1 | sold   |     2 |        2 |
+
+  Scenario: Reservation timeout - Reserved tickets return to available
+    Given I am logged in as:
+      | email           | password |
+      | buyer1@test.com | P@ssw0rd |
+    And buyer has reserved tickets:
+      | buyer_id | event_id | ticket_count | reserved_at      |
+      |        2 |        2 |            3 | 20_minutes_ago   |
+    When system checks expired reservations
+    Then the response status code should be:
+      | 200 |
+    And tickets should transition from reserved to available:
+      | event_id | status    | count |
+      |        2 | available |     3 |
+
+  Scenario: Multiple buyers - Concurrent reservations with different outcomes
+    Given I am logged in as:
+      | email           | password |
+      | buyer1@test.com | P@ssw0rd |
+    When buyer reserves tickets:
+      | buyer_id | event_id | ticket_count |
+      |        2 |        1 |            3 |
+    Then the response status code should be:
+      | 200 |
+    And tickets should transition to reserved status:
+      | event_id | status   | count | buyer_id |
+      |        1 | reserved |     3 |        2 |
+    Given I am logged in as:
+      | email           | password |
+      | buyer2@test.com | P@ssw0rd |
+    When buyer attempts to reserve tickets:
+      | buyer_id | event_id | ticket_count |
+      |        3 |        1 |            5 |
+    Then the response status code should be:
+      | 400 |
+    And tickets should remain in reserved status:
+      | event_id | status   | count | buyer_id |
+      |        1 | reserved |     3 |        2 |
+
+  Scenario: Order cancellation - Reserved tickets return to available without payment
+    Given I am logged in as:
+      | email           | password |
+      | buyer2@test.com | P@ssw0rd |
+    When buyer reserves tickets:
+      | buyer_id | event_id | ticket_count |
+      |        3 |        2 |            2 |
+    Then the response status code should be:
+      | 200 |
+    And tickets should transition to reserved status:
+      | event_id | status   | count | buyer_id |
+      |        2 | reserved |     2 |        3 |
+    When buyer creates order for reserved tickets:
+      | buyer_id | event_id | ticket_ids |
+      |        3 |        2 |        1,2 |
+    Then order should be created with status:
+      | status          |
+      | pending_payment |
+    When buyer cancels the order
+    Then the response status code should be:
+      | 204 |
+    And reserved tickets should return to available:
+      | event_id | status    | count |
+      |        2 | available |     2 |

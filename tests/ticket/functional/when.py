@@ -305,3 +305,15 @@ def buyer_pays_for_order(step, client, context):
         json={'card_number': '4111111111111111', 'payment_method': 'mock'},
     )
     context['response'] = response
+
+
+@when('buyer cancels the order')
+def buyer_cancels_order(client, context):
+    """Buyer cancels their order."""
+    order_id = context.get('order_id')
+    if not order_id:
+        raise ValueError('No order_id found in context')
+
+    # Cancel the order
+    response = client.delete(f'/api/order/{order_id}')
+    context['response'] = response

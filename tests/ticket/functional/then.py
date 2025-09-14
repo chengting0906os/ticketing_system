@@ -256,6 +256,86 @@ def tickets_should_be_reserved(step, execute_sql_statement):
     )
 
 
+@then('tickets should transition from reserved to available:')
+def tickets_should_transition_to_available(step, execute_sql_statement):
+    """Check that tickets have transitioned from reserved to available."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    expected_status = data['status']
+    expected_count = int(data['count'])
+
+    # For timeout scenario, verify no tickets are reserved anymore
+    reserved_result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status',
+        {'event_id': event_id, 'status': 'reserved'},
+        fetch=True,
+    )
+    reserved_count = reserved_result[0]['count']
+    assert reserved_count == 0, f'Expected 0 reserved tickets after cleanup, got {reserved_count}'
+
+    # Verify we have at least the expected number of available tickets
+    # (there may be other available tickets from test setup)
+    available_result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status',
+        {'event_id': event_id, 'status': expected_status},
+        fetch=True,
+    )
+    available_count = available_result[0]['count']
+    assert available_count >= expected_count, (
+        f'Expected at least {expected_count} {expected_status} tickets, got {available_count}'
+    )
+
+
+@then('tickets should remain in reserved status:')
+def tickets_should_remain_reserved(step, execute_sql_statement):
+    """Check that tickets remain in reserved status."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    expected_status = data['status']
+    expected_count = int(data['count'])
+    buyer_id = int(data['buyer_id'])
+
+    # Check ticket status and buyer
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status AND buyer_id = :buyer_id',
+        {'event_id': event_id, 'status': expected_status, 'buyer_id': buyer_id},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count == expected_count, (
+        f'Expected {expected_count} {expected_status} tickets for buyer {buyer_id}, got {actual_count}'
+    )
+
+
+@then('reserved tickets should return to available:')
+def reserved_tickets_should_return_to_available(step, execute_sql_statement):
+    """Check that reserved tickets have returned to available status."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    expected_status = data['status']
+    expected_count = int(data['count'])
+
+    # Check that there are no more reserved tickets for this event
+    reserved_result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status',
+        {'event_id': event_id, 'status': 'reserved'},
+        fetch=True,
+    )
+    reserved_count = reserved_result[0]['count']
+    assert reserved_count == 0, f'Expected 0 reserved tickets, got {reserved_count}'
+
+    # Check that we have at least the expected number of available tickets
+    available_result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id = :event_id AND status = :status',
+        {'event_id': event_id, 'status': expected_status},
+        fetch=True,
+    )
+    available_count = available_result[0]['count']
+    assert available_count >= expected_count, (
+        f'Expected at least {expected_count} {expected_status} tickets, got {available_count}'
+    )
+
+
 @then('order should be created with status:')
 def order_should_be_created(step, context):
     """Check that order was created with the correct status."""
