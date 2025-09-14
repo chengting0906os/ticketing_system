@@ -34,3 +34,12 @@ ORDER_MY_ORDERS = f'{ORDER_BASE}/my-orders'
 
 # Ticket routes
 TICKET_BASE = f'{API_BASE}/ticket'
+TICKET_CREATE = f'{TICKET_BASE}/events/{{event_id}}/tickets'
+TICKET_LIST = f'{TICKET_BASE}/events/{{event_id}}/tickets'
+TICKET_BY_SECTION = f'{TICKET_BASE}/events/{{event_id}}/tickets/section/{{section}}'
+TICKET_BY_SUBSECTION = (
+    f'{TICKET_BASE}/events/{{event_id}}/tickets/section/{{section}}/subsection/{{subsection}}'
+)
+TICKET_RESERVE = f'{TICKET_BASE}/events/{{event_id}}/reserve'
+TICKET_CLEANUP_EXPIRED = f'{TICKET_BASE}/cleanup-expired-reservations'
+TICKET_RESERVATIONS = f'{TICKET_BASE}/reservations/{{reservation_id}}'

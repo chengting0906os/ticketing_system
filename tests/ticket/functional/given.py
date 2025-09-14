@@ -5,6 +5,8 @@ import bcrypt
 
 from pytest_bdd import given
 
+from src.shared.constant.route_constant import TICKET_CREATE
+
 from tests.shared.utils import extract_table_data, login_user
 from tests.util_constant import DEFAULT_PASSWORD, SELLER1_EMAIL, SELLER2_EMAIL
 
@@ -131,7 +133,7 @@ def tickets_already_exist(step, client):
     login_user(client, seller_email, DEFAULT_PASSWORD)
 
     # Create tickets
-    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
+    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
     assert response.status_code == 201
 
 
@@ -146,7 +148,7 @@ def mixed_status_tickets_exist(step, client, execute_sql_statement):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # Create all tickets first
-    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': 1000})
+    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': 1000})
     assert response.status_code == 201
 
     # Update some tickets to sold status via SQL
@@ -178,7 +180,7 @@ def tickets_exist_for_event(step, client):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # Create tickets
-    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
+    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
     assert response.status_code == 201
 
 

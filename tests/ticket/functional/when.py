@@ -2,7 +2,15 @@
 
 from pytest_bdd import when
 
-from src.shared.constant.route_constant import TICKET_BASE
+from src.shared.constant.route_constant import (
+    TICKET_BY_SECTION,
+    TICKET_BY_SUBSECTION,
+    TICKET_CLEANUP_EXPIRED,
+    TICKET_CREATE,
+    TICKET_LIST,
+    TICKET_RESERVATIONS,
+    TICKET_RESERVE,
+)
 from tests.shared.utils import extract_table_data, login_user
 from tests.util_constant import BUYER1_EMAIL, DEFAULT_PASSWORD, SELLER1_EMAIL
 
@@ -18,7 +26,7 @@ def seller_creates_tickets(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # Create tickets
-    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
+    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
 
     context['response'] = response
 
@@ -34,7 +42,7 @@ def buyer_creates_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # Try to create tickets
-    response = client.post(f'/api/ticket/events/{event_id}/tickets', json={'price': price})
+    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
 
     context['response'] = response
 
@@ -53,7 +61,7 @@ def seller_updates_ticket_prices(step, client, context):
 
     # Update ticket prices (this endpoint doesn't exist yet - will be implemented later)
     response = client.put(
-        f'{TICKET_BASE}/events/{event_id}/tickets/section/{section}/subsection/{subsection}',
+        TICKET_BY_SUBSECTION.format(event_id=event_id, section=section, subsection=subsection),
         json={'price': price},
     )
 
@@ -71,7 +79,7 @@ def seller_views_tickets(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # View tickets (this endpoint doesn't exist yet - will be implemented later)
-    response = client.get(f'{TICKET_BASE}/events/{event_id}/tickets/section/{section}')
+    response = client.get(TICKET_BY_SECTION.format(event_id=event_id, section=section))
 
     context['response'] = response
 
@@ -86,7 +94,7 @@ def seller_lists_all_tickets(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # List all tickets
-    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+    response = client.get(TICKET_LIST.format(event_id=event_id))
 
     context['response'] = response
 
@@ -102,7 +110,7 @@ def seller_lists_tickets_by_section(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # List tickets by section
-    response = client.get(f'/api/ticket/events/{event_id}/tickets/section/{section}')
+    response = client.get(TICKET_BY_SECTION.format(event_id=event_id, section=section))
 
     context['response'] = response
 
@@ -117,7 +125,7 @@ def buyer_attempts_to_list_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # Try to list tickets
-    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+    response = client.get(TICKET_LIST.format(event_id=event_id))
 
     context['response'] = response
 
@@ -132,7 +140,7 @@ def buyer_lists_available_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # List available tickets
-    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+    response = client.get(TICKET_LIST.format(event_id=event_id))
 
     context['response'] = response
 
@@ -148,7 +156,7 @@ def buyer_attempts_to_access_section_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # Try to access section-specific tickets (should fail)
-    response = client.get(f'/api/ticket/events/{event_id}/tickets/section/{section}')
+    response = client.get(TICKET_BY_SECTION.format(event_id=event_id, section=section))
 
     context['response'] = response
 
@@ -160,7 +168,7 @@ def buyer_lists_tickets_with_detail(step, context, client):
     event_id = int(data['event_id'])
 
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(f'/api/ticket/events/{event_id}/tickets')
+    response = client.get(TICKET_LIST.format(event_id=event_id))
     context['response'] = response
 
 
@@ -176,7 +184,7 @@ def buyer_attempts_to_reserve_too_many_tickets(step, client, context, reservatio
 
     # Attempt to reserve tickets
     response = client.post(
-        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+        TICKET_RESERVE.format(event_id=event_id), json={'ticket_count': ticket_count}
     )
 
     context['response'] = response
@@ -196,7 +204,7 @@ def buyer_reserves_tickets(step, client, context, reservation_state):
 
     # Reserve tickets
     response = client.post(
-        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+        TICKET_RESERVE.format(event_id=event_id), json={'ticket_count': ticket_count}
     )
 
     context['response'] = response
@@ -218,7 +226,7 @@ def buyer_attempts_to_reserve_tickets(step, client, context):
 
     # Attempt to reserve tickets
     response = client.post(
-        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+        TICKET_RESERVE.format(event_id=event_id), json={'ticket_count': ticket_count}
     )
 
     context['response'] = response
@@ -238,7 +246,7 @@ def buyer_attempts_to_reserve_same_tickets(step, client, context):
 
     # Attempt to reserve tickets
     response = client.post(
-        f'/api/ticket/events/{event_id}/reserve', json={'ticket_count': ticket_count}
+        TICKET_RESERVE.format(event_id=event_id), json={'ticket_count': ticket_count}
     )
 
     context['response'] = response
@@ -248,7 +256,7 @@ def buyer_attempts_to_reserve_same_tickets(step, client, context):
 def system_checks_expired_reservations(client, context):
     """System checks for expired reservations."""
     # Call the system endpoint to check for expired reservations
-    response = client.post('/api/ticket/cleanup-expired-reservations')
+    response = client.post(TICKET_CLEANUP_EXPIRED)
     context['response'] = response
 
 
@@ -264,7 +272,7 @@ def buyer_cancels_reservation(step, client, context):
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Cancel reservation
-    response = client.delete(f'/api/ticket/reservations/{reservation_id}')
+    response = client.delete(TICKET_RESERVATIONS.format(reservation_id=reservation_id))
     context['response'] = response
 
 
