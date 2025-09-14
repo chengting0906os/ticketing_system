@@ -3,7 +3,6 @@ from pytest_bdd import when
 
 from src.shared.constant.route_constant import (
     EVENT_BASE,
-    EVENT_DELETE,
     EVENT_LIST,
     EVENT_UPDATE,
 )
@@ -40,18 +39,6 @@ def update_event(step, client: TestClient, event_state):
     event_id = event_state['event_id']
     event_state['update_data'] = update_data
     event_state['response'] = client.patch(EVENT_UPDATE.format(event_id=event_id), json=update_data)
-
-
-@when('I delete the event')
-def delete_event(client: TestClient, event_state):
-    event_id = event_state['event_id']
-    event_state['response'] = client.delete(EVENT_DELETE.format(event_id=event_id))
-
-
-@when('I try to delete the event')
-def try_delete_event(client: TestClient, event_state):
-    event_id = event_state['event_id']
-    event_state['response'] = client.delete(EVENT_DELETE.format(event_id=event_id))
 
 
 @when('the seller requests their events')

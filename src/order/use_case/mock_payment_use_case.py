@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 from fastapi import Depends
 
-from src.order.domain.order_entity import OrderStatus
 from src.event.domain.event_entity import EventStatus
+from src.order.domain.order_entity import OrderStatus
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
@@ -42,7 +42,7 @@ class MockPaymentUseCase:
             updated_order = await self.uow.orders.update(order=paid_order)
             event = await self.uow.events.get_by_id(event_id=order.event_id)
             if event:
-                event.status = EventStatus.SOLD
+                event.status = EventStatus.SOLD_OUT
                 await self.uow.events.update(event=event)
 
             # Update reserved tickets to sold status when order is paid

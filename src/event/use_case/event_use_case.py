@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 from fastapi import Depends
 
-from src.event.domain.event_entity import Event, EventStatus
+from src.event.domain.event_entity import Event
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 
@@ -86,32 +86,6 @@ class UpdateEventUseCase:
             await self.uow.commit()
 
         return updated_event
-
-
-class DeleteEventUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
-
-    @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
-
-    @Logger.io
-    async def delete(self, event_id: int) -> bool:
-        async with self.uow:
-            event = await self.uow.events.get_by_id(event_id=event_id)
-            if not event:
-                return False
-
-            if event.status == EventStatus.RESERVED:
-                raise ValueError('Cannot delete reserved event')
-            if event.status == EventStatus.SOLD:
-                raise ValueError('Cannot delete sold event')
-
-            deleted = await self.uow.events.delete(event_id=event_id)
-            await self.uow.commit()
-
-        return deleted
 
 
 class GetEventUseCase:

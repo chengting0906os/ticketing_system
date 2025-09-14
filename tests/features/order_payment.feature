@@ -6,7 +6,7 @@ Feature: Order Payment
   Scenario: Successfully pay for an order
     Given an order exists with status "pending_payment":
       | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |          1 |  1000 |
+      |        2 |         1 |        1 |  1000 |
     When the buyer pays for the order with:
       | card_number      |
       | 4242424242424242 |
@@ -21,12 +21,12 @@ Feature: Order Payment
       | payment_id | status |
       | PAY_MOCK_* | paid   |
     And the event status should be:
-      | sold |
+      | sold_out |
 
   Scenario: Cannot pay for already paid order
     Given an order exists with status "paid":
       | buyer_id | seller_id | event_id | price | paid_at  |
-      |        2 |         1 |          1 |  1000 | not_null |
+      |        2 |         1 |        1 |  1000 | not_null |
     When the buyer tries to pay for the order again
     Then the response status code should be:
       | 400 |
@@ -36,7 +36,7 @@ Feature: Order Payment
   Scenario: Cannot pay for cancelled order
     Given an order exists with status "cancelled":
       | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |          1 |  1000 |
+      |        2 |         1 |        1 |  1000 |
     When the buyer tries to pay for the order
     Then the response status code should be:
       | 400 |
@@ -46,7 +46,7 @@ Feature: Order Payment
   Scenario: Only buyer can pay for their order
     Given an order exists with status "pending_payment":
       | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |          1 |  1000 |
+      |        2 |         1 |        1 |  1000 |
     When another user tries to pay for the order
     Then the response status code should be:
       | 403 |
@@ -56,7 +56,7 @@ Feature: Order Payment
   Scenario: Cancel unpaid order
     Given an order exists with status "pending_payment":
       | buyer_id | seller_id | event_id | price |
-      |        2 |         1 |          1 |  1000 |
+      |        2 |         1 |        1 |  1000 |
     When the buyer cancels the order
     Then the response status code should be:
       | 204 |
@@ -71,7 +71,7 @@ Feature: Order Payment
   Scenario: Cannot cancel paid order
     Given an order exists with status "paid":
       | buyer_id | seller_id | event_id | price | paid_at  |
-      |        2 |         1 |          1 |  1000 | not_null |
+      |        2 |         1 |        1 |  1000 | not_null |
     When the buyer tries to cancel the order
     Then the response status code should be:
       | 400 |

@@ -9,7 +9,6 @@ from src.event.port.event_schema import (
 )
 from src.event.use_case.event_use_case import (
     CreateEventUseCase,
-    DeleteEventUseCase,
     GetEventUseCase,
     ListEventsUseCase,
     UpdateEventUseCase,
@@ -88,17 +87,6 @@ async def update_event(
         is_active=event.is_active,
         status=event.status.value,
     )
-
-
-@router.delete('/{event_id}', status_code=status.HTTP_204_NO_CONTENT)
-@Logger.io
-async def delete_event(
-    event_id: int,
-    current_user: User = Depends(require_seller),
-    use_case: DeleteEventUseCase = Depends(DeleteEventUseCase.depends),
-):
-    await use_case.delete(event_id)
-    return None
 
 
 @router.get('/{event_id}', status_code=status.HTTP_200_OK)

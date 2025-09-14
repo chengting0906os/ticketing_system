@@ -121,7 +121,7 @@ def verify_events_include_all_statuses(event_state):
     response = event_state['response']
     events = response.json()
     statuses = {event['status'] for event in events}
-    expected_statuses = {'available', 'reserved', 'sold'}
+    expected_statuses = {'available', 'reserved', 'sold_out'}
     assert expected_statuses.issubset(statuses), (
         f'Expected statuses {expected_statuses}, got {statuses}'
     )

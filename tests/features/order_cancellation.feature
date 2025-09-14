@@ -31,8 +31,8 @@ Feature: Order Cancellation
 
   Scenario: Cannot cancel paid order
     Given a event exists:
-      | name       | description  | price | is_active | status | seller_id | venue_name  | seating_config                                                                                 |
-      | Test Event | Already paid |  3000 | true      | sold   |         1 | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | name       | description  | price | is_active | status   | seller_id | venue_name  | seating_config                                                                                 |
+      | Test Event | Already paid |  3000 | true      | sold_out |         1 | Taipei Dome | {"sections": [{"name": "B", "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And an order exists with status "paid":
       | buyer_id | seller_id | event_id | price | paid_at  |
       |        2 |         1 |        1 |  3000 | not_null |
@@ -47,7 +47,7 @@ Feature: Order Cancellation
     And the order status should remain:
       | paid |
     And the event status should remain:
-      | sold |
+      | sold_out |
 
   Scenario: Cannot cancel already cancelled order
     Given a event exists:

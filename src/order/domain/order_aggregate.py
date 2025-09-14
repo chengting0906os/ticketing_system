@@ -3,17 +3,17 @@ from typing import TYPE_CHECKING, List, Optional
 
 import attrs
 
+from src.event.domain.event_entity import Event, EventStatus
 from src.order.domain.events import (
     DomainEventProtocol,
+    EventReleasedEvent,
+    EventReservedEvent,
     OrderCancelledEvent,
     OrderCreatedEvent,
     OrderPaidEvent,
-    EventReleasedEvent,
-    EventReservedEvent,
 )
 from src.order.domain.order_entity import Order, OrderStatus
 from src.order.domain.value_objects import BuyerInfo, EventSnapshot, SellerInfo
-from src.event.domain.event_entity import Event, EventStatus
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.user.domain.user_entity import UserRole
@@ -110,7 +110,7 @@ class OrderAggregate:
 
         self.order = self.order.mark_as_paid()
         if self._event:
-            self._event.status = EventStatus.SOLD
+            self._event.status = EventStatus.SOLD_OUT
 
         self._add_event(
             OrderPaidEvent(

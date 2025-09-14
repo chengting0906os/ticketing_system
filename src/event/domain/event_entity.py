@@ -10,7 +10,7 @@ from src.shared.logging.loguru_io import Logger
 class EventStatus(str, Enum):
     AVAILABLE = 'available'
     RESERVED = 'reserved'
-    SOLD = 'sold'
+    SOLD_OUT = 'sold_out'
 
 
 @Logger.io
