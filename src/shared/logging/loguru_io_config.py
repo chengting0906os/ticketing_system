@@ -46,9 +46,16 @@ class InterceptHandler(logging.Handler):
             # Extract status code from message like "GET /api/... HTTP/1.1" 404"
             parts = message.split('"')
             if len(parts) >= 3:
-                status_part = parts[2].strip().split()[0]
+                status_parts = parts[2].strip().split()
+                if status_parts:  # 檢查是否有內容
+                    status_part = status_parts[0]
+                else:
+                    status_part = None
                 try:
-                    status_code = int(status_part)
+                    if status_part:
+                        status_code = int(status_part)
+                    else:
+                        raise ValueError('No status part')
                     # Adjust log level based on status code
                     if status_code >= 500:
                         level = 'CRITICAL'
