@@ -66,3 +66,7 @@ class TicketRepo(ABC):
     @abstractmethod
     async def update_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         pass
+
+    @abstractmethod
+    async def get_all_available(self) -> List[Ticket]:
+        pass

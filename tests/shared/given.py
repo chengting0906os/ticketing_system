@@ -310,12 +310,6 @@ def create_event_shared(
     return event
 
 
-@given('I am not logged in')
-def logout_user(client: TestClient):
-    """Clear authentication cookies to simulate unauthenticated state."""
-    client.cookies.clear()
-
-
 @given('the following users exist:')
 def create_multiple_users(step, client: TestClient, execute_sql_statement):
     """Create multiple users from a table."""

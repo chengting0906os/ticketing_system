@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends
 
@@ -26,8 +26,25 @@ class CreateBookingUseCase:
         return cls(uow, email_service)
 
     @Logger.io
-    async def create_booking(self, buyer_id: int, ticket_ids: List[int]) -> Booking:
+    async def create_booking(
+        self,
+        buyer_id: int,
+        ticket_ids: Optional[List[int]] = None,
+        seat_selection_mode: Optional[str] = None,
+        selected_seats: Optional[List[str]] = None,
+        quantity: Optional[int] = None,
+    ) -> Booking:
         async with self.uow:
+            # Handle different booking modes
+            if seat_selection_mode:
+                ticket_ids = await self._handle_seat_selection(
+                    seat_selection_mode, selected_seats, quantity
+                )
+            elif ticket_ids is None:
+                raise DomainError(
+                    'Either ticket_ids or seat selection parameters must be provided', 400
+                )
+
             # Validate maximum 4 tickets per booking
             if len(ticket_ids) > 4:
                 raise DomainError('Maximum 4 tickets per booking', 400)
@@ -96,3 +113,137 @@ class CreateBookingUseCase:
             await self.uow.commit()
 
         return created_booking
+
+    async def _handle_seat_selection(
+        self, mode: str, selected_seats: Optional[List[str]] = None, quantity: Optional[int] = None
+    ) -> List[int]:
+        """Handle seat selection and return list of ticket IDs."""
+        if mode == 'manual':
+            return await self._handle_manual_seat_selection(selected_seats)
+        elif mode == 'best_available':
+            return await self._handle_best_available_selection(quantity)
+        else:
+            raise DomainError('Invalid seat selection mode', 400)
+
+    async def _handle_manual_seat_selection(self, selected_seats: Optional[List[str]]) -> List[int]:
+        """Handle manual seat selection and return ticket IDs."""
+        if not selected_seats or len(selected_seats) == 0:
+            raise DomainError('Selected seats cannot be empty for manual selection', 400)
+        if len(selected_seats) > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        ticket_ids = []
+        event_ids = set()
+
+        for seat in selected_seats:
+            try:
+                section, subsection_str, row_str, seat_str = seat.split('-')
+                subsection = int(subsection_str)
+                row = int(row_str)
+                seat_num = int(seat_str)
+            except (ValueError, AttributeError):
+                raise DomainError(
+                    'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)',
+                    400,
+                )
+
+            # Find ticket by seat location
+            # Note: In the current system structure, we need to search through all available tickets
+            # This is a simplified approach for the minimal implementation
+            all_tickets = await self.uow.tickets.get_all_available()
+            matching_ticket = None
+
+            for ticket in all_tickets:
+                if (
+                    ticket.section == section
+                    and ticket.subsection == subsection
+                    and ticket.row == row
+                    and ticket.seat == seat_num
+                    and ticket.status.value == 'available'
+                ):
+                    matching_ticket = ticket
+                    event_ids.add(ticket.event_id)
+                    break
+
+            if not matching_ticket:
+                raise DomainError(f'Seat {seat} is not available', 400)
+
+            ticket_ids.append(matching_ticket.id)
+
+        # Validate all seats are from same event
+        if len(event_ids) > 1:
+            raise DomainError('All tickets must be for the same event', 400)
+
+        return ticket_ids
+
+    async def _handle_best_available_selection(self, quantity: Optional[int]) -> List[int]:
+        """Handle best available seat selection and return ticket IDs."""
+        if not quantity or quantity <= 0:
+            raise DomainError('Quantity must be positive for best available selection', 400)
+        if quantity > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        # Get all available tickets
+        all_tickets = await self.uow.tickets.get_all_available()
+
+        if not all_tickets:
+            raise DomainError('No tickets available', 400)
+
+        # Group tickets by event, section, subsection, and row
+        tickets_by_event = {}
+        for ticket in all_tickets:
+            if ticket.status.value == 'available':
+                event_id = ticket.event_id
+                if event_id not in tickets_by_event:
+                    tickets_by_event[event_id] = {}
+
+                section = ticket.section
+                if section not in tickets_by_event[event_id]:
+                    tickets_by_event[event_id][section] = {}
+
+                subsection = ticket.subsection
+                if subsection not in tickets_by_event[event_id][section]:
+                    tickets_by_event[event_id][section][subsection] = {}
+
+                row = ticket.row
+                if row not in tickets_by_event[event_id][section][subsection]:
+                    tickets_by_event[event_id][section][subsection][row] = []
+
+                tickets_by_event[event_id][section][subsection][row].append(ticket)
+
+        # Find continuous seats - prioritize lower row numbers
+        for event_id in tickets_by_event:
+            for section in tickets_by_event[event_id]:
+                for subsection in tickets_by_event[event_id][section]:
+                    # Sort rows by number (ascending)
+                    rows = sorted(tickets_by_event[event_id][section][subsection].keys())
+
+                    for row in rows:
+                        row_tickets = tickets_by_event[event_id][section][subsection][row]
+                        # Sort tickets by seat number
+                        row_tickets.sort(key=lambda t: t.seat)
+
+                        # Find continuous sequence of requested quantity
+                        continuous_tickets = self._find_continuous_seats(row_tickets, quantity)
+                        if continuous_tickets:
+                            return [t.id for t in continuous_tickets]
+
+        raise DomainError('No continuous seats available for requested quantity', 400)
+
+    def _find_continuous_seats(self, tickets: List, quantity: int) -> List:
+        """Find continuous seats in a row."""
+        if len(tickets) < quantity:
+            return []
+
+        for i in range(len(tickets) - quantity + 1):
+            # Check if seats are continuous
+            continuous = True
+            for j in range(1, quantity):
+                if tickets[i + j].seat != tickets[i + j - 1].seat + 1:
+                    continuous = False
+                    break
+
+            if continuous:
+                return tickets[i : i + quantity]
+
+        return []

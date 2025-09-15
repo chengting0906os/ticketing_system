@@ -241,3 +241,11 @@ class TicketRepoImpl(TicketRepo):
             updated_tickets.append(self._to_entity(db_ticket))
 
         return updated_tickets
+
+    @Logger.io
+    async def get_all_available(self) -> List[Ticket]:
+        result = await self.session.execute(
+            select(TicketModel).where(TicketModel.status == TicketStatus.AVAILABLE.value)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]

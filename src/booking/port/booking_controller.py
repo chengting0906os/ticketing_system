@@ -28,8 +28,14 @@ async def create_booking(
     current_user: User = Depends(require_buyer),
     use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
-    # Use authenticated buyer's ID and provided ticket IDs
-    booking = await use_case.create_booking(buyer_id=current_user.id, ticket_ids=request.ticket_ids)
+    # Use authenticated buyer's ID and handle both legacy and new seat selection approaches
+    booking = await use_case.create_booking(
+        buyer_id=current_user.id,
+        ticket_ids=request.ticket_ids,
+        seat_selection_mode=request.seat_selection_mode,
+        selected_seats=request.selected_seats,
+        quantity=request.quantity,
+    )
 
     if booking.id is None:
         raise ValueError('Booking ID should not be None after creation.')

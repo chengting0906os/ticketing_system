@@ -623,3 +623,108 @@ def buyer_has_reserved_tickets(step, execute_sql_statement):
             'ticket_count': ticket_count,
         },
     )
+
+
+@given('an event exists with seating configuration:')
+def create_event_with_seating_config(
+    step, client: TestClient, booking_state, execute_sql_statement
+):
+    """Create an event with specific seating configuration for seat selection tests."""
+    import json
+    from src.shared.constant.route_constant import EVENT_BASE, TICKET_CREATE, TICKET_LIST
+    from tests.shared.utils import login_user
+    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL, TEST_BUYER_EMAIL
+
+    event_data = extract_table_data(step)
+
+    # Ensure seller is logged in to create event
+    login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+    # Create event with seating configuration
+    seating_config = json.loads(event_data['seating_config'])
+    event_response = client.post(
+        EVENT_BASE,
+        json={
+            'name': event_data['name'],
+            'description': f'Event: {event_data["name"]}',
+            'is_active': True,
+            'venue_name': event_data['venue_name'],
+            'seating_config': seating_config,
+        },
+    )
+    assert event_response.status_code == 201, f'Failed to create event: {event_response.text}'
+    event = event_response.json()
+
+    # Check if tickets already exist for this event
+    tickets_list_response = client.get(TICKET_LIST.format(event_id=event['id']))
+    if tickets_list_response.status_code == 200:
+        tickets_data = tickets_list_response.json()
+        existing_tickets = tickets_data.get('tickets', [])
+
+        # Only create tickets if none exist
+        if not existing_tickets:
+            tickets_response = client.post(
+                TICKET_CREATE.format(event_id=event['id']),
+                json={'price': seating_config['sections'][0]['price']},  # Use first section price
+            )
+            assert tickets_response.status_code == 201, (
+                f'Failed to create tickets: {tickets_response.text}'
+            )
+
+    # IMPORTANT: Log back in as buyer since the Background says "I am logged in as buyer@test.com"
+    login_user(client, TEST_BUYER_EMAIL, DEFAULT_PASSWORD)
+
+    # Store event data in booking state
+    booking_state['event'] = event
+    booking_state['event_id'] = event['id']
+    booking_state['seating_config'] = seating_config
+
+
+@given('seats are already booked:')
+def seats_already_booked(step, client: TestClient, booking_state, execute_sql_statement):
+    """Mark specific seats as already booked/reserved."""
+    from src.shared.constant.route_constant import TICKET_LIST
+    from tests.shared.utils import login_user
+    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL, TEST_BUYER_EMAIL
+
+    # Get the seat numbers from the table
+    rows = step.data_table.rows
+    seat_numbers = []
+    for row in rows[1:]:  # Skip header
+        seat_numbers.append(row.cells[0].value)
+
+    # Login as seller to access all tickets
+    login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+    # Get all tickets for the event
+    event_id = booking_state['event_id']
+    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
+    tickets_data = tickets_response.json()
+    tickets = tickets_data.get('tickets', [])
+
+    # Find tickets by seat identifier and mark them as reserved
+    for seat_number in seat_numbers:
+        # Find the ticket with matching seat identifier (full format like "A-1-1-1")
+        matching_ticket = None
+        for ticket in tickets:
+            if ticket.get('seat_identifier') == seat_number:
+                matching_ticket = ticket
+                break
+
+        if matching_ticket:
+            # Mark the ticket as reserved in the database
+            execute_sql_statement(
+                """
+                UPDATE ticket
+                SET status = 'reserved', buyer_id = NULL, reserved_at = NOW()
+                WHERE id = :ticket_id
+                """,
+                {'ticket_id': matching_ticket['id']},
+            )
+
+    # IMPORTANT: Log back in as buyer since the Background says "I am logged in as buyer@test.com"
+    login_user(client, TEST_BUYER_EMAIL, DEFAULT_PASSWORD)
+
+    # Store the booked seat numbers for reference
+    booking_state['booked_seats'] = seat_numbers

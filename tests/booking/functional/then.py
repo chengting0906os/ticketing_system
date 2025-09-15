@@ -159,14 +159,14 @@ def verify_all_bookings_status(step, booking_state):
 
 
 @then('the booking price should be 1000')
-def verify_booking_price_1000(booking_state):
+def verify_booking_price_1000(step, booking_state):
     """Verify the booking price is 1000."""
     booking = booking_state['booking']
     assert booking['price'] == 1000, f'Expected booking price 1000, got {booking["price"]}'
 
 
 @then('the existing booking price should remain 1000')
-def verify_existing_booking_price_remains_1000(client: TestClient, booking_state):
+def verify_existing_booking_price_remains_1000(step, client: TestClient, booking_state):
     """Verify the existing booking price remains 1000 after event price change."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
@@ -176,7 +176,7 @@ def verify_existing_booking_price_remains_1000(client: TestClient, booking_state
 
 
 @then('the new booking should have price 2000')
-def verify_new_booking_has_price_2000(booking_state):
+def verify_new_booking_has_price_2000(step, booking_state):
     """Verify the new booking has the updated price of 2000."""
     new_booking = booking_state['new_booking']
     assert new_booking['price'] == 2000, (
@@ -185,7 +185,7 @@ def verify_new_booking_has_price_2000(booking_state):
 
 
 @then('the paid booking price should remain 1500')
-def verify_paid_booking_price_remains_1500(client: TestClient, booking_state):
+def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_state):
     """Verify the paid booking price remains 1500 after event price change."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
@@ -195,7 +195,7 @@ def verify_paid_booking_price_remains_1500(client: TestClient, booking_state):
 
 
 @then('the booking status should remain "paid"')
-def verify_booking_status_remains_paid(client: TestClient, booking_state):
+def verify_booking_status_remains_paid(step, client: TestClient, booking_state):
     """Verify the booking status remains paid."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
@@ -328,7 +328,7 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
 
 
 @then('the event status should be "reserved"')
-def verify_event_status_is_reserved(client: TestClient, booking_state):
+def verify_event_status_is_reserved(step, client: TestClient, booking_state):
     """Verify the event status is reserved."""
     event_id = booking_state['event']['id']
     response = client.get(EVENT_GET.format(event_id=event_id))
@@ -372,3 +372,217 @@ def verify_tickets_reserved_for_buyer(
         assert ticket['buyer_id'] == expected_buyer_id, (
             f'Expected ticket {ticket_id} buyer_id {expected_buyer_id}, got {ticket["buyer_id"]}'
         )
+
+
+@then('the booking should contain tickets with seats:')
+def verify_booking_contains_tickets_with_seats(
+    step, client: TestClient, booking_state, execute_sql_statement
+):
+    """Verify that the booking contains tickets with specific seat numbers."""
+    from src.shared.constant.route_constant import TICKET_LIST
+    from tests.shared.utils import login_user
+    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
+
+    # Extract expected seat numbers from table
+    rows = step.data_table.rows
+    expected_seat_numbers = []
+    for row in rows[1:]:  # Skip header
+        expected_seat_numbers.append(row.cells[0].value)
+
+    # Login as seller to see all tickets
+    login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+    # Get all tickets for the event
+    event_id = booking_state['event_id']
+    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
+    tickets_data = tickets_response.json()
+    tickets_data.get('tickets', [])
+
+    # Get tickets that belong to this booking (reserved status)
+    booking_id = booking_state['booking']['id']
+
+    # Query database to get tickets associated with this booking
+    result = execute_sql_statement(
+        """
+        SELECT t.id, t.section, t.subsection, t.row_number, t.seat_number
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert result, f'No tickets found for booking {booking_id}'
+
+    # Construct the full seat identifiers (e.g., "A-1-1-1")
+    actual_seat_identifiers = []
+    for ticket in result:
+        seat_id = f'{ticket["section"]}-{ticket["subsection"]}-{ticket["row_number"]}-{ticket["seat_number"]}'
+        actual_seat_identifiers.append(seat_id)
+
+    # Verify all expected seats are in the booking
+    for expected_seat in expected_seat_numbers:
+        assert expected_seat in actual_seat_identifiers, (
+            f'Expected seat {expected_seat} not found in booking. '
+            f'Actual seats: {actual_seat_identifiers}'
+        )
+
+
+@then('the selected tickets should have status:')
+def verify_selected_tickets_status(step, client: TestClient, booking_state, execute_sql_statement):
+    """Verify that the selected tickets have the expected status."""
+    expected_status = extract_single_value(step)
+
+    # Get booking ID
+    booking_id = booking_state['booking']['id']
+
+    # Query database to get tickets associated with this booking
+    result = execute_sql_statement(
+        """
+        SELECT t.id, t.status
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert result, f'No tickets found for booking {booking_id}'
+
+    # Verify all tickets have the expected status
+    for ticket in result:
+        assert ticket['status'] == expected_status, (
+            f'Expected ticket {ticket["id"]} status "{expected_status}", got "{ticket["status"]}"'
+        )
+
+
+@then('the booking should contain consecutive available seats:')
+def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_statement):
+    """Verify that the booking contains consecutive available seats."""
+    count_data = extract_table_data(step)
+    count = int(count_data['count'])
+    booking_id = booking_state['booking']['id']
+
+    # Query database to get tickets associated with this booking with their seat info
+    result = execute_sql_statement(
+        """
+        SELECT t.id, t.seat_number, t.section, t.subsection, t.row_number, t.seat_number as seat
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        ORDER BY t.section, t.subsection, t.row_number, t.seat_number
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert result, f'No tickets found for booking {booking_id}'
+    assert len(result) == count, f'Expected {count} tickets, got {len(result)}'
+
+    # Verify seats are consecutive (same row, consecutive seat numbers)
+    if count > 1:
+        first_ticket = result[0]
+        for i in range(1, len(result)):
+            current_ticket = result[i]
+            # Check if same section, subsection, and row
+            assert current_ticket['section'] == first_ticket['section'], 'Seats not in same section'
+            assert current_ticket['subsection'] == first_ticket['subsection'], (
+                'Seats not in same subsection'
+            )
+            assert current_ticket['row_number'] == first_ticket['row_number'], (
+                'Seats not in same row'
+            )
+            # Check if seat numbers are consecutive
+            expected_seat = first_ticket['seat'] + i
+            assert current_ticket['seat'] == expected_seat, (
+                f'Seats not consecutive: expected {expected_seat}, got {current_ticket["seat"]}'
+            )
+
+
+@then('the selected seats should be from the lowest available row')
+def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement):
+    """Verify that the selected seats are from the lowest available row."""
+    booking_id = booking_state['booking']['id']
+    event_id = booking_state['event_id']
+
+    # Get the row number of seats in this booking
+    booking_result = execute_sql_statement(
+        """
+        SELECT DISTINCT t.row_number
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert booking_result, f'No tickets found for booking {booking_id}'
+    booking_row = booking_result[0]['row_number']
+
+    # Get the lowest available row number in the event (excluding reserved/sold tickets)
+    available_result = execute_sql_statement(
+        """
+        SELECT MIN(row_number) as min_row
+        FROM ticket
+        WHERE event_id = :event_id AND status = 'available'
+        """,
+        {'event_id': event_id},
+        fetch=True,
+    )
+
+    if available_result and available_result[0]['min_row'] is not None:
+        # If there are still available seats, the booking should be from the lowest available row
+        # (or one row higher since we just booked seats)
+        lowest_available_row = available_result[0]['min_row']
+        assert booking_row <= lowest_available_row, (
+            f'Booking seats should be from lowest available row {lowest_available_row} '
+            f'or lower, but got row {booking_row}'
+        )
+
+
+@then('the booking should contain available seat:')
+def verify_booking_contains_single_available_seat(step, booking_state, execute_sql_statement):
+    """Verify that the booking contains exactly one available seat."""
+    count_data = extract_table_data(step)
+    count = int(count_data['count'])
+    booking_id = booking_state['booking']['id']
+
+    # Query database to get tickets associated with this booking
+    result = execute_sql_statement(
+        """
+        SELECT COUNT(*) as ticket_count
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert result, f'No tickets found for booking {booking_id}'
+    actual_count = result[0]['ticket_count']
+
+    assert actual_count == count, f'Expected {count} tickets, got {actual_count}'
+
+
+@then('the booking should contain tickets:')
+def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
+    """Verify that the booking contains the expected number of tickets."""
+    count_data = extract_table_data(step)
+    count = int(count_data['count'])
+    booking_id = booking_state['booking']['id']
+
+    # Query database to get tickets associated with this booking
+    result = execute_sql_statement(
+        """
+        SELECT COUNT(*) as ticket_count
+        FROM ticket t
+        WHERE t.booking_id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert result, f'No tickets found for booking {booking_id}'
+    actual_count = result[0]['ticket_count']
+
+    assert actual_count == count, f'Expected {count} tickets, got {actual_count}'
