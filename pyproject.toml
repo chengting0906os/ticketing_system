@@ -18,6 +18,8 @@ dependencies = [
     "alembic>=1.16.4",
     "passlib[bcrypt]>=1.7.4",
     "loguru>=0.7.3",
+    "quixstreams>=2.0.0",
+    "kafka-python>=2.0.2",
 ]
 
 [dependency-groups]
