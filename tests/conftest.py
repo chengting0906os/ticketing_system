@@ -19,26 +19,20 @@ from tests.booking.functional.fixtures import *  # noqa: F403
 from tests.booking.functional.given import *  # noqa: F403
 from tests.booking.functional.then import *  # noqa: F403
 from tests.booking.functional.when import *  # noqa: F403
-from tests.event.functional.fixtures import *  # noqa: F403
-from tests.event.functional.given import *  # noqa: F403
-from tests.event.functional.then import *  # noqa: F403
-from tests.event.functional.when import *  # noqa: F403
-from tests.event.functional.ticket_fixtures import *  # noqa: F403
-from tests.event.functional.ticket_given import *  # noqa: F403
-from tests.event.functional.ticket_then import *  # noqa: F403
-from tests.event.functional.ticket_when import *  # noqa: F403
+from tests.event_ticketing.functional.fixtures import *  # noqa: F403
+from tests.event_ticketing.functional.given import *  # noqa: F403
+from tests.event_ticketing.functional.then import *  # noqa: F403
+from tests.event_ticketing.functional.ticket_fixtures import *  # noqa: F403
+from tests.event_ticketing.functional.ticket_given import *  # noqa: F403
+from tests.event_ticketing.functional.ticket_then import *  # noqa: F403
+from tests.event_ticketing.functional.ticket_when import *  # noqa: F403
+from tests.event_ticketing.functional.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: F403
 from tests.pytest_bdd_ng_example.when import *  # noqa: F403
 from tests.shared.given import *  # noqa: F403
 from tests.shared.then import *  # noqa: F403
-
-# Ticket tests moved to event module - avoiding duplicate step definitions
-# from tests.ticket.functional.fixtures import *  # noqa: F403
-# from tests.ticket.functional.given import *  # noqa: F403
-# from tests.ticket.functional.then import *  # noqa: F403
-# from tests.ticket.functional.when import *  # noqa: F403
 from tests.user.functional.fixtures import *  # noqa: F403
 from tests.user.functional.then import *  # noqa: F403
 from tests.user.functional.when import *  # noqa: F403
