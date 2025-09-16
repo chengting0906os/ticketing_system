@@ -20,9 +20,9 @@ from src.event.port.ticket_schema import (
     ListTicketsResponse,
     TicketResponse,
 )
-from src.event.use_case.ticket.create_tickets_use_case import CreateTicketsUseCase
-from src.event.use_case.ticket.list_tickets_use_case import ListTicketsUseCase
-from src.event.use_case.ticket.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.event.use_case.create_tickets_use_case import CreateTicketsUseCase
+from src.event.use_case.list_tickets_use_case import ListTicketsUseCase
+from src.event.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import (

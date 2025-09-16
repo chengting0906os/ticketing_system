@@ -18,7 +18,7 @@ from src.shared.service.repo_di import (
     get_ticket_repo,
     get_user_repo,
 )
-from src.event.domain.ticket.ticket_repo import TicketRepo
+from src.event.domain.ticket_repo import TicketRepo
 from src.user.domain.user_repo import UserRepo
 
 
@@ -121,20 +121,30 @@ class CreateBookingUseCase:
         for ticket in tickets:
             ticket.reserve(buyer_id=buyer_id)
 
+        # Create Value Objects for BookingAggregate
+        from src.booking.domain.value_objects import BuyerInfo, SellerInfo, TicketData
+
+        buyer_info = BuyerInfo.from_user(buyer)
+        seller_info = SellerInfo.from_user(seller)
+        ticket_data_list = [TicketData.from_ticket(ticket) for ticket in tickets]
+
         # Create booking using BookingAggregate
-        aggregate = BookingAggregate.create_booking(buyer, tickets, seller)
+        aggregate = BookingAggregate.create_booking(buyer_info, seller_info, ticket_data_list)
         created_booking = await self.booking_repo.create(booking=aggregate.booking)
         aggregate.booking.id = created_booking.id
+
+        # Emit domain events now that we have a booking ID
+        aggregate.emit_booking_created_event()
 
         # Update tickets with booking_id and reserved status
         for ticket in tickets:
             ticket.booking_id = created_booking.id
         await self.ticket_repo.update_batch(tickets=tickets)
 
-        aggregate.emit_creation_events()
-        events = aggregate.collect_events()
+        events = aggregate.events
         for event in events:
             await self.email_use_case.handle_notification(event)
+        aggregate.clear_events()
 
         # Commit the transaction
         await self.session.commit()

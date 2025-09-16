@@ -12,10 +12,9 @@ from src.booking.use_case.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.list_bookings_use_case import ListBookingsUseCase
 from src.booking.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.role_auth_service import get_current_user, require_buyer
-from src.event.use_case.ticket.cancel_reservation_use_case import CancelReservationUseCase
-from src.user.domain.user_entity import UserRole
-from src.user.domain.user_model import User
+from src.shared.auth.current_user_info import CurrentUserInfo
+from src.shared.service.role_auth_service import get_current_user_info, require_buyer_info
+from src.event.use_case.cancel_reservation_use_case import CancelReservationUseCase
 
 
 router = APIRouter()
@@ -25,12 +24,12 @@ router = APIRouter()
 @Logger.io
 async def create_booking(
     request: BookingCreateRequest,
-    current_user: User = Depends(require_buyer),
+    current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
     # Use authenticated buyer's ID and handle both legacy and new seat selection approaches
     booking = await use_case.create_booking(
-        buyer_id=current_user.id,
+        buyer_id=current_user.user_id,
         ticket_ids=request.ticket_ids,
         seat_selection_mode=request.seat_selection_mode,
         selected_seats=request.selected_seats,
@@ -55,13 +54,13 @@ async def create_booking(
 @Logger.io
 async def list_my_bookings(
     booking_status: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUserInfo = Depends(get_current_user_info),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
 ):
-    if current_user.role == UserRole.BUYER:
-        return await use_case.list_buyer_bookings(current_user.id, booking_status)
-    elif current_user.role == UserRole.SELLER:
-        return await use_case.list_seller_bookings(current_user.id, booking_status)
+    if current_user.is_buyer():
+        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
+    elif current_user.is_seller():
+        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
     else:
         return []
 
@@ -70,7 +69,7 @@ async def list_my_bookings(
 @Logger.io
 async def get_booking(
     booking_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUserInfo = Depends(get_current_user_info),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
 ) -> BookingResponse:
     booking = await use_case.get_booking(booking_id)
@@ -91,11 +90,11 @@ async def get_booking(
 async def pay_booking(
     booking_id: int,
     request: PaymentRequest,
-    current_user: User = Depends(require_buyer),
+    current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
 ) -> PaymentResponse:
     result = await use_case.pay_booking(
-        booking_id=booking_id, buyer_id=current_user.id, card_number=request.card_number
+        booking_id=booking_id, buyer_id=current_user.user_id, card_number=request.card_number
     )
 
     return PaymentResponse(
@@ -110,12 +109,12 @@ async def pay_booking(
 @Logger.io
 async def cancel_booking(
     booking_id: int,
-    current_user: User = Depends(require_buyer),
+    current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ):
     await use_case.cancel_reservation(
         booking_id=booking_id,
-        buyer_id=current_user.id,
+        buyer_id=current_user.user_id,
     )
     # Return 204 No Content for successful deletion
 
@@ -124,12 +123,12 @@ async def cancel_booking(
 @Logger.io
 async def cancel_reservation(
     booking_id: int,
-    current_user: User = Depends(require_buyer),
+    current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ) -> CancelReservationResponse:
     result = await use_case.cancel_reservation(
         booking_id=booking_id,
-        buyer_id=current_user.id,
+        buyer_id=current_user.user_id,
     )
 
     return CancelReservationResponse(**result)

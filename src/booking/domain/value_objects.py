@@ -43,7 +43,36 @@ class SellerInfo:
 
 
 @attrs.define(frozen=True)
+class TicketData:
+    """Value Object for ticket data passed to booking aggregate"""
+
+    id: int
+    event_id: int
+    section: str
+    subsection: int
+    row: int
+    seat: int
+    price: int
+    seat_identifier: str
+
+    @classmethod
+    def from_ticket(cls, ticket) -> 'TicketData':
+        return cls(
+            id=ticket.id or 0,
+            event_id=ticket.event_id,
+            section=ticket.section,
+            subsection=ticket.subsection,
+            row=ticket.row,
+            seat=ticket.seat,
+            price=ticket.price,
+            seat_identifier=ticket.seat_identifier,
+        )
+
+
+@attrs.define(frozen=True)
 class TicketSnapshot:
+    """Immutable snapshot for booking history"""
+
     ticket_id: int
     event_id: int
     section: str
@@ -64,4 +93,17 @@ class TicketSnapshot:
             seat=ticket.seat,
             price=ticket.price,
             seat_identifier=ticket.seat_identifier,
+        )
+
+    @classmethod
+    def from_ticket_data(cls, ticket_data: 'TicketData') -> 'TicketSnapshot':
+        return cls(
+            ticket_id=ticket_data.id,
+            event_id=ticket_data.event_id,
+            section=ticket_data.section,
+            subsection=ticket_data.subsection,
+            row=ticket_data.row,
+            seat=ticket_data.seat,
+            price=ticket_data.price,
+            seat_identifier=ticket_data.seat_identifier,
         )

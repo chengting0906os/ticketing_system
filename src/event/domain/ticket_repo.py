@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from src.event.domain.ticket.ticket_entity import Ticket
+from src.event.domain.ticket_entity import Ticket
 
 
 class TicketRepo(ABC):

@@ -1,30 +1,24 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, List
+from typing import List
 
 import attrs
 
-from src.booking.domain.booking_entity import Booking, BookingStatus
+from src.booking.domain.booking_entity import Booking
 from src.booking.domain.events import (
     BookingCancelledEvent,
     BookingCreatedEvent,
     BookingPaidEvent,
     DomainEventProtocol,
 )
-from src.booking.domain.value_objects import BuyerInfo, SellerInfo, TicketSnapshot
+from src.booking.domain.value_objects import BuyerInfo, SellerInfo, TicketData, TicketSnapshot
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.user.domain.user_entity import UserRole
-
-
-if TYPE_CHECKING:
-    from src.event.domain.ticket.ticket_entity import Ticket
-    from src.user.domain.user_model import User
 
 
 @attrs.define
 class BookingAggregate:
     booking: Booking
-    ticket_snapshots: List['TicketSnapshot']
+    ticket_snapshots: List[TicketSnapshot]
     buyer_info: BuyerInfo
     seller_info: SellerInfo
     _events: List[DomainEventProtocol] = attrs.field(factory=list, init=False)
@@ -33,38 +27,38 @@ class BookingAggregate:
     @Logger.io
     def create_booking(
         cls,
-        buyer: 'User',
-        tickets: List['Ticket'],
-        seller: 'User',
+        buyer_info: BuyerInfo,
+        seller_info: SellerInfo,
+        ticket_data_list: List[TicketData],
     ) -> 'BookingAggregate':
-        if buyer.role != UserRole.BUYER.value:
-            raise DomainError('Only buyers can create bookings', 403)
-
-        if not tickets:
+        # Validate booking domain business rules
+        if not ticket_data_list:
             raise DomainError('No tickets provided', 400)
 
-        # Get event info from first ticket (validation already done in use case)
-        event_id = tickets[0].event_id
+        # Validate maximum 4 tickets per booking
+        if len(ticket_data_list) > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
 
-        # Verify buyer doesn't own any of the events
-        if any(ticket.buyer_id != buyer.id for ticket in tickets):
-            raise DomainError('All tickets must be reserved by this buyer', 403)
+        # Validate all tickets belong to the same event
+        event_ids = {ticket.event_id for ticket in ticket_data_list}
+        if len(event_ids) != 1:
+            raise DomainError('All tickets must be for the same event', 400)
 
-        # Calculate total price from all tickets
-        total_price = sum(ticket.price for ticket in tickets)
+        # Use Value Objects data
+        total_price = sum(ticket.price for ticket in ticket_data_list)
+        event_id = ticket_data_list[0].event_id
 
         booking = Booking.create(
-            buyer_id=buyer.id,
-            seller_id=seller.id,
+            buyer_id=buyer_info.buyer_id,
+            seller_id=seller_info.seller_id,
             event_id=event_id,
             total_price=total_price,
         )
 
-        # Create ticket snapshots for booking history
-        ticket_snapshots = [TicketSnapshot.from_ticket(ticket) for ticket in tickets]
-
-        buyer_info = BuyerInfo.from_user(buyer)
-        seller_info = SellerInfo.from_user(seller)
+        # Create immutable snapshots for historical record
+        ticket_snapshots = [
+            TicketSnapshot.from_ticket_data(ticket_data) for ticket_data in ticket_data_list
+        ]
 
         aggregate = cls(
             booking=booking,
@@ -73,51 +67,47 @@ class BookingAggregate:
             seller_info=seller_info,
         )
 
+        # Note: Domain events will be created after booking is persisted and has an ID
+
         return aggregate
 
     @Logger.io
-    def emit_creation_events(self) -> None:
+    def emit_booking_created_event(self) -> None:
+        """Emit the booking created event after the booking has an ID"""
         if not self.booking.id:
-            raise ValueError('Booking must have an ID before emitting events')
+            raise DomainError('Cannot emit booking created event without booking ID', 400)
 
-        # Get event info from first ticket (all tickets are same event)
-        first_ticket = self.ticket_snapshots[0] if self.ticket_snapshots else None
-        event_id = first_ticket.event_id if first_ticket else 0
-
-        self._add_event(
+        self._events.append(
             BookingCreatedEvent(
                 aggregate_id=self.booking.id,
-                buyer_id=self.booking.buyer_id,
-                seller_id=self.booking.seller_id,
-                event_id=event_id,
+                buyer_id=self.buyer_info.buyer_id,
+                seller_id=self.seller_info.seller_id,
+                event_id=self.booking.event_id,
                 price=self.booking.total_price,
                 buyer_email=self.buyer_info.email,
                 buyer_name=self.buyer_info.name,
                 seller_email=self.seller_info.email,
                 seller_name=self.seller_info.name,
-                event_name=f'Booking for {len(self.ticket_snapshots)} tickets',  # We can improve this later
+                event_name=f'Event {self.booking.event_id}',  # We can improve this later
             )
         )
 
     @Logger.io
-    def process_payment(self) -> None:
-        if self.booking.status != BookingStatus.PENDING_PAYMENT:
-            if self.booking.status == BookingStatus.PAID:
-                raise DomainError('Booking already paid', 400)
-            elif self.booking.status == BookingStatus.CANCELLED:
-                raise DomainError('Cannot pay for cancelled booking', 400)
-            else:
-                raise DomainError('Invalid booking status for payment', 400)
+    def pay_booking(self) -> None:
+        """Process payment for booking"""
+        if self.booking.status != self.booking.status.PENDING_PAYMENT:
+            raise DomainError(f'Cannot pay booking with status {self.booking.status}', 400)
 
-        self.booking = self.booking.mark_as_paid()
+        # Update booking status (immutable update)
+        paid_booking = self.booking.mark_as_paid()
+        self.booking = paid_booking
 
-        self._add_event(
+        self._events.append(
             BookingPaidEvent(
                 aggregate_id=self.booking.id or 0,
-                buyer_id=self.booking.buyer_id,
+                buyer_id=self.buyer_info.buyer_id,
                 event_id=self.booking.event_id,
                 paid_at=self.booking.paid_at or datetime.now(),
-                # Rich data to avoid N+1 queries
                 buyer_email=self.buyer_info.email,
                 event_name=f'Event {self.booking.event_id}',
                 paid_amount=self.booking.total_price,
@@ -125,29 +115,85 @@ class BookingAggregate:
         )
 
     @Logger.io
-    def cancel(self) -> None:
-        if self.booking.status == BookingStatus.PAID:
+    def cancel_booking(self) -> None:
+        """Cancel booking"""
+        if self.booking.status == self.booking.status.PAID:
             raise DomainError('Cannot cancel paid booking', 400)
-        if self.booking.status == BookingStatus.CANCELLED:
-            raise DomainError('Booking already cancelled', 400)
-        self.booking = self.booking.cancel()
 
-        self._add_event(
+        if self.booking.status == self.booking.status.CANCELLED:
+            raise DomainError('Booking already cancelled', 400)
+
+        # Update booking status (immutable update)
+        cancelled_booking = self.booking.cancel()
+        self.booking = cancelled_booking
+
+        self._events.append(
             BookingCancelledEvent(
                 aggregate_id=self.booking.id or 0,
-                buyer_id=self.booking.buyer_id,
+                buyer_id=self.buyer_info.buyer_id,
                 event_id=self.booking.event_id,
                 buyer_email=self.buyer_info.email,
                 event_name=f'Event {self.booking.event_id}',
             )
         )
 
-    @Logger.io
-    def _add_event(self, event: DomainEventProtocol) -> None:
-        self._events.append(event)
+    @property
+    def events(self) -> List[DomainEventProtocol]:
+        """Get domain events"""
+        return self._events.copy()
+
+    def clear_events(self) -> None:
+        """Clear domain events after publishing"""
+        self._events.clear()
 
     @Logger.io
-    def collect_events(self) -> List[DomainEventProtocol]:
-        events = self._events.copy()
-        self._events.clear()
-        return events
+    def get_booking_summary(self) -> dict:
+        """Get booking summary including ticket info"""
+        # Get event info from first ticket (all tickets are same event)
+        first_ticket = self.ticket_snapshots[0] if self.ticket_snapshots else None
+        event_id = first_ticket.event_id if first_ticket else 0
+
+        return {
+            'booking_id': self.booking.id,
+            'buyer_id': self.buyer_info.buyer_id,
+            'seller_id': self.seller_info.seller_id,
+            'event_id': event_id,
+            'total_price': self.booking.total_price,
+            'status': self.booking.status.value,
+            'ticket_count': len(self.ticket_snapshots),
+            'created_at': self.booking.created_at,
+            'paid_at': self.booking.paid_at,
+        }
+
+    @Logger.io
+    def get_booking_details(self) -> dict:
+        """Get detailed booking info with tickets"""
+        summary = self.get_booking_summary()
+        summary.update(
+            {
+                'buyer_info': {
+                    'id': self.buyer_info.buyer_id,
+                    'name': self.buyer_info.name,
+                    'email': self.buyer_info.email,
+                },
+                'seller_info': {
+                    'id': self.seller_info.seller_id,
+                    'name': self.seller_info.name,
+                    'email': self.seller_info.email,
+                },
+                'tickets': [
+                    {
+                        'ticket_id': ticket.ticket_id,
+                        'section': ticket.section,
+                        'subsection': ticket.subsection,
+                        'row': ticket.row,
+                        'seat': ticket.seat,
+                        'price': ticket.price,
+                        'seat_identifier': ticket.seat_identifier,
+                    }
+                    for ticket in self.ticket_snapshots
+                ],
+                'event_name': f'Booking for {len(self.ticket_snapshots)} tickets',  # We can improve this later
+            }
+        )
+        return summary
