@@ -4,9 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.logging.loguru_io import Logger
-from src.ticket.domain.ticket_entity import Ticket, TicketStatus
-from src.ticket.domain.ticket_repo import TicketRepo
-from src.ticket.infra.ticket_model import TicketModel
+from src.event.domain.ticket.ticket_entity import Ticket, TicketStatus
+from src.event.domain.ticket.ticket_repo import TicketRepo
+from src.event.infra.ticket.ticket_model import TicketModel
 
 
 class TicketRepoImpl(TicketRepo):

@@ -32,14 +32,24 @@ BOOKING_PAY = f'{BOOKING_BASE}/{{booking_id}}/pay'
 BOOKING_CANCEL = f'{BOOKING_BASE}/{{booking_id}}'
 BOOKING_MY_BOOKINGS = f'{BOOKING_BASE}/my-bookings'
 
-# Ticket routes
-TICKET_BASE = f'{API_BASE}/ticket'
-TICKET_CREATE = f'{TICKET_BASE}/events/{{event_id}}/tickets'
-TICKET_LIST = f'{TICKET_BASE}/events/{{event_id}}/tickets'
-TICKET_BY_SECTION = f'{TICKET_BASE}/events/{{event_id}}/tickets/section/{{section}}'
-TICKET_BY_SUBSECTION = (
-    f'{TICKET_BASE}/events/{{event_id}}/tickets/section/{{section}}/subsection/{{subsection}}'
+# Event ticket routes (moved from ticket module)
+EVENT_TICKETS_CREATE = f'{EVENT_BASE}/{{event_id}}/tickets'
+EVENT_TICKETS_LIST = f'{EVENT_BASE}/{{event_id}}/tickets'
+EVENT_TICKETS_BY_SECTION = f'{EVENT_BASE}/{{event_id}}/tickets/section/{{section}}'
+EVENT_TICKETS_BY_SUBSECTION = (
+    f'{EVENT_BASE}/{{event_id}}/tickets/section/{{section}}/subsection/{{subsection}}'
 )
-TICKET_RESERVE = f'{TICKET_BASE}/events/{{event_id}}/reserve'
-TICKET_CLEANUP_EXPIRED = f'{TICKET_BASE}/cleanup-expired-reservations'
+EVENT_TICKETS_RESERVE = f'{EVENT_BASE}/{{event_id}}/reserve'
+
+# System routes
+SYSTEM_BASE = f'{API_BASE}/system'
+SYSTEM_CLEANUP_EXPIRED = f'{SYSTEM_BASE}/cleanup-expired-reservations'
+
+# Legacy ticket routes (for backward compatibility during migration)
+TICKET_CREATE = EVENT_TICKETS_CREATE
+TICKET_LIST = EVENT_TICKETS_LIST
+TICKET_BY_SECTION = EVENT_TICKETS_BY_SECTION
+TICKET_BY_SUBSECTION = EVENT_TICKETS_BY_SUBSECTION
+TICKET_RESERVE = EVENT_TICKETS_RESERVE
+TICKET_CLEANUP_EXPIRED = SYSTEM_CLEANUP_EXPIRED
 BOOKING_CANCEL_RESERVATION = f'{BOOKING_BASE}/{{booking_id}}/cancel-reservation'

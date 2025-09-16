@@ -5,7 +5,7 @@ from fastapi import Depends
 from src.shared.exception.exceptions import ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.ticket.domain.ticket_entity import Ticket
+from src.event.domain.ticket.ticket_entity import Ticket
 
 
 class ListTicketsUseCase:

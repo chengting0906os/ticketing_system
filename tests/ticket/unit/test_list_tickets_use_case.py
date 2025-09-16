@@ -2,8 +2,8 @@
 
 import pytest
 from unittest.mock import Mock, AsyncMock
-from src.ticket.use_case.list_tickets_use_case import ListTicketsUseCase
-from src.ticket.domain.ticket_entity import Ticket, TicketStatus
+from src.event.use_case.ticket.list_tickets_use_case import ListTicketsUseCase
+from src.event.domain.ticket.ticket_entity import Ticket, TicketStatus
 from src.shared.exception.exceptions import ForbiddenError, NotFoundError
 from datetime import datetime
 

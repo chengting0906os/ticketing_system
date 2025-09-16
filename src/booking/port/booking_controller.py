@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, status
 from src.booking.port.booking_schema import (
     BookingCreateRequest,
     BookingResponse,
+    CancelReservationResponse,
     PaymentRequest,
     PaymentResponse,
 )
@@ -12,8 +13,7 @@ from src.booking.use_case.list_bookings_use_case import ListBookingsUseCase
 from src.booking.use_case.mock_payment_use_case import MockPaymentUseCase
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import get_current_user, require_buyer
-from src.ticket.port.ticket_schema import CancelReservationResponse
-from src.ticket.use_case.cancel_reservation_use_case import CancelReservationUseCase
+from src.event.use_case.ticket.cancel_reservation_use_case import CancelReservationUseCase
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 

@@ -150,3 +150,8 @@ class PaymentResponse(BaseModel):
                 'paid_at': '2025-01-10T10:35:00',
             }
         }
+
+
+class CancelReservationResponse(BaseModel):
+    status: str
+    cancelled_tickets: int

@@ -1,7 +1,7 @@
-Feature: Ticket Listing by Seller
-  As a seller
-  I want to list tickets for my events
-  So that I can manage my inventory
+Feature: Event Ticket Management
+  As a user (seller or buyer)
+  I want to manage and view tickets for events
+  So that I can handle event inventory and purchases
 
   Scenario: Seller lists all tickets for their event
     Given a seller exists:

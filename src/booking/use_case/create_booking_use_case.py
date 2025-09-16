@@ -18,7 +18,7 @@ from src.shared.service.repo_di import (
     get_ticket_repo,
     get_user_repo,
 )
-from src.ticket.domain.ticket_repo import TicketRepo
+from src.event.domain.ticket.ticket_repo import TicketRepo
 from src.user.domain.user_repo import UserRepo
 
 

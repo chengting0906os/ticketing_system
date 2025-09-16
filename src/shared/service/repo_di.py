@@ -6,8 +6,8 @@ from src.booking.infra.booking_repo_impl import BookingRepoImpl
 from src.event.domain.event_repo import EventRepo
 from src.event.infra.event_repo_impl import EventRepoImpl
 from src.shared.config.db_setting import get_async_session
-from src.ticket.domain.ticket_repo import TicketRepo
-from src.ticket.infra.ticket_repo_impl import TicketRepoImpl
+from src.event.domain.ticket.ticket_repo import TicketRepo
+from src.event.infra.ticket.ticket_repo_impl import TicketRepoImpl
 from src.user.domain.user_repo import UserRepo
 from src.user.infra.user_repo_impl import UserRepoImpl
 

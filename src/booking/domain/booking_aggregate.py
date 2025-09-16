@@ -17,7 +17,7 @@ from src.user.domain.user_entity import UserRole
 
 
 if TYPE_CHECKING:
-    from src.ticket.domain.ticket_entity import Ticket
+    from src.event.domain.ticket.ticket_entity import Ticket
     from src.user.domain.user_model import User
 
 
