@@ -1,29 +1,56 @@
 from typing import List, Optional
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_aggregate import BookingAggregate
 from src.booking.domain.booking_entity import Booking
+from src.booking.domain.booking_repo import BookingRepo
 from src.booking.use_case.mock_send_email_use_case import MockSendEmailUseCase
+from src.event.domain.event_repo import EventRepo
+from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.mock_email_service import MockEmailService, get_mock_email_service
-from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.repo_di import (
+    get_booking_repo,
+    get_event_repo,
+    get_ticket_repo,
+    get_user_repo,
+)
+from src.ticket.domain.ticket_repo import TicketRepo
+from src.user.domain.user_repo import UserRepo
 
 
 class CreateBookingUseCase:
-    def __init__(self, uow: AbstractUnitOfWork, email_service: MockEmailService):
-        self.uow = uow
+    def __init__(
+        self,
+        session: AsyncSession,
+        booking_repo: BookingRepo,
+        user_repo: UserRepo,
+        ticket_repo: TicketRepo,
+        event_repo: EventRepo,
+        email_service: MockEmailService,
+    ):
+        self.session = session
+        self.booking_repo = booking_repo
+        self.user_repo = user_repo
+        self.ticket_repo = ticket_repo
+        self.event_repo = event_repo
         self.email_service = email_service
         self.email_use_case = MockSendEmailUseCase(email_service)
 
     @classmethod
     def depends(
         cls,
-        uow: AbstractUnitOfWork = Depends(get_unit_of_work),
+        session: AsyncSession = Depends(get_async_session),
+        booking_repo: BookingRepo = Depends(get_booking_repo),
+        user_repo: UserRepo = Depends(get_user_repo),
+        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        event_repo: EventRepo = Depends(get_event_repo),
         email_service: MockEmailService = Depends(get_mock_email_service),
     ):
-        return cls(uow, email_service)
+        return cls(session, booking_repo, user_repo, ticket_repo, event_repo, email_service)
 
     @Logger.io
     async def create_booking(
@@ -34,83 +61,83 @@ class CreateBookingUseCase:
         selected_seats: Optional[List[str]] = None,
         quantity: Optional[int] = None,
     ) -> Booking:
-        async with self.uow:
-            # Handle different booking modes
-            if seat_selection_mode:
-                ticket_ids = await self._handle_seat_selection(
-                    seat_selection_mode, selected_seats, quantity
-                )
-            elif ticket_ids is None:
-                raise DomainError(
-                    'Either ticket_ids or seat selection parameters must be provided', 400
-                )
+        # Handle different booking modes
+        if seat_selection_mode:
+            ticket_ids = await self._handle_seat_selection(
+                seat_selection_mode, selected_seats, quantity
+            )
+        elif ticket_ids is None:
+            raise DomainError(
+                'Either ticket_ids or seat selection parameters must be provided', 400
+            )
 
-            # Validate maximum 4 tickets per booking
-            if len(ticket_ids) > 4:
-                raise DomainError('Maximum 4 tickets per booking', 400)
-            if len(ticket_ids) == 0:
-                raise DomainError('At least 1 ticket required', 400)
+        # Validate maximum 4 tickets per booking
+        if len(ticket_ids) > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
+        if len(ticket_ids) == 0:
+            raise DomainError('At least 1 ticket required', 400)
 
-            buyer = await self.uow.users.get_by_id(user_id=buyer_id)
-            if not buyer:
-                raise DomainError('Buyer not found', 404)
+        buyer = await self.user_repo.get_by_id(user_id=buyer_id)
+        if not buyer:
+            raise DomainError('Buyer not found', 404)
 
-            # Get tickets by IDs
-            tickets = []
-            for ticket_id in ticket_ids:
-                ticket = await self.uow.tickets.get_by_id(ticket_id=ticket_id)
-                if ticket:
-                    tickets.append(ticket)
+        # Get tickets by IDs
+        tickets = []
+        for ticket_id in ticket_ids:
+            ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
+            if ticket:
+                tickets.append(ticket)
 
-            if len(tickets) != len(ticket_ids):
-                raise DomainError('Some tickets not found', 404)
+        if len(tickets) != len(ticket_ids):
+            raise DomainError('Some tickets not found', 404)
 
-            # Validate all tickets are available and can be reserved
-            for ticket in tickets:
-                if ticket.status.value != 'available':
-                    raise DomainError('All tickets must be available', 400)
-                if ticket.buyer_id is not None:
-                    raise DomainError('Tickets are already reserved', 400)
-                if ticket.booking_id is not None:
-                    raise DomainError('Tickets are already in a booking', 400)
+        # Validate all tickets are available and can be reserved
+        for ticket in tickets:
+            if ticket.status.value != 'available':
+                raise DomainError('All tickets must be available', 400)
+            if ticket.buyer_id is not None:
+                raise DomainError('Tickets are already reserved', 400)
+            if ticket.booking_id is not None:
+                raise DomainError('Tickets are already in a booking', 400)
 
-            # Get event info from first ticket (all should be same event)
-            event_id = tickets[0].event_id
-            if not all(ticket.event_id == event_id for ticket in tickets):
-                raise DomainError('All tickets must be for the same event', 400)
+        # Get event info from first ticket (all should be same event)
+        event_id = tickets[0].event_id
+        if not all(ticket.event_id == event_id for ticket in tickets):
+            raise DomainError('All tickets must be for the same event', 400)
 
-            event, seller = await self.uow.events.get_by_id_with_seller(event_id=event_id)
-            if not event:
-                raise DomainError('Event not found', 404)
-            if not seller:
-                raise DomainError('Seller not found', 404)
+        event, seller = await self.event_repo.get_by_id_with_seller(event_id=event_id)
+        if not event:
+            raise DomainError('Event not found', 404)
+        if not seller:
+            raise DomainError('Seller not found', 404)
 
-            # Validate event is available for bookinging
-            if not event.is_active:
-                raise DomainError('Event not active', 400)
-            # Note: Event status (available/sold_out/ended) doesn't prevent booking
-            # Individual ticket availability is checked separately
+        # Validate event is available for bookinging
+        if not event.is_active:
+            raise DomainError('Event not active', 400)
+        # Note: Event status (available/sold_out/ended) doesn't prevent booking
+        # Individual ticket availability is checked separately
 
-            # Reserve tickets for this buyer
-            for ticket in tickets:
-                ticket.reserve(buyer_id=buyer_id)
+        # Reserve tickets for this buyer
+        for ticket in tickets:
+            ticket.reserve(buyer_id=buyer_id)
 
-            # Create booking using BookingAggregate
-            aggregate = BookingAggregate.create_booking(buyer, tickets, seller)
-            created_booking = await self.uow.bookings.create(booking=aggregate.booking)
-            aggregate.booking.id = created_booking.id
+        # Create booking using BookingAggregate
+        aggregate = BookingAggregate.create_booking(buyer, tickets, seller)
+        created_booking = await self.booking_repo.create(booking=aggregate.booking)
+        aggregate.booking.id = created_booking.id
 
-            # Update tickets with booking_id and reserved status
-            for ticket in tickets:
-                ticket.booking_id = created_booking.id
-            await self.uow.tickets.update_batch(tickets=tickets)
+        # Update tickets with booking_id and reserved status
+        for ticket in tickets:
+            ticket.booking_id = created_booking.id
+        await self.ticket_repo.update_batch(tickets=tickets)
 
-            aggregate.emit_creation_events()
-            events = aggregate.collect_events()
-            for event in events:
-                await self.email_use_case.handle_notification(event)
+        aggregate.emit_creation_events()
+        events = aggregate.collect_events()
+        for event in events:
+            await self.email_use_case.handle_notification(event)
 
-            await self.uow.commit()
+        # Commit the transaction
+        await self.session.commit()
 
         return created_booking
 
@@ -150,7 +177,7 @@ class CreateBookingUseCase:
             # Find ticket by seat location
             # Note: In the current system structure, we need to search through all available tickets
             # This is a simplified approach for the minimal implementation
-            all_tickets = await self.uow.tickets.get_all_available()
+            all_tickets = await self.ticket_repo.get_all_available()
             matching_ticket = None
 
             for ticket in all_tickets:
@@ -184,7 +211,7 @@ class CreateBookingUseCase:
             raise DomainError('Maximum 4 tickets per booking', 400)
 
         # Get all available tickets
-        all_tickets = await self.uow.tickets.get_all_available()
+        all_tickets = await self.ticket_repo.get_all_available()
 
         if not all_tickets:
             raise DomainError('No tickets available', 400)
