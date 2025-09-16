@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_aggregate import BookingAggregate
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_repo import BookingRepo
-from src.event.domain.event_repo import EventRepo
+from src.event_ticketing.domain.event_repo import EventRepo
+from src.event_ticketing.domain.ticket_repo import TicketRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
@@ -16,7 +17,6 @@ from src.shared.service.repo_di import (
     get_ticket_repo,
     get_user_repo,
 )
-from src.event.domain.ticket_repo import TicketRepo
 from src.user.domain.user_repo import UserRepo
 
 

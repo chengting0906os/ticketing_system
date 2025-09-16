@@ -11,8 +11,8 @@ from src.shared.config.db_setting import get_async_session
 
 if TYPE_CHECKING:
     from src.booking.domain.booking_repo import BookingRepo
-    from src.event.domain.event_repo import EventRepo
-    from src.event.domain.ticket_repo import TicketRepo
+    from src.event_ticketing.domain.event_repo import EventRepo
+    from src.event_ticketing.domain.ticket_repo import TicketRepo
     from src.user.domain.user_repo import UserRepo
 
 
@@ -46,8 +46,8 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
 
     async def __aenter__(self):
         from src.booking.infra.booking_repo_impl import BookingRepoImpl
-        from src.event.infra.event_repo_impl import EventRepoImpl
-        from src.event.infra.ticket_repo_impl import TicketRepoImpl
+        from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
+        from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
         from src.user.infra.user_repo_impl import UserRepoImpl
 
         self.events = EventRepoImpl(self.session)

@@ -11,7 +11,7 @@ sys.path.append(str(Path(__file__).parents[3]))
 
 # Import your models and database configuration
 from src.booking.infra.booking_model import BookingModel as BookingModel
-from src.event.infra.event_model import EventModel as EventModel
+from src.event_ticketing.infra.event_model import EventModel as EventModel
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import Base
 from src.user.domain.user_model import User as User

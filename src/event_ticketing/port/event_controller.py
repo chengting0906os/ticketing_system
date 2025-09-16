@@ -2,27 +2,27 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, status
 
-from src.event.port.event_schema import (
+from src.event_ticketing.port.event_schema import (
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
 )
-from src.event.use_case.event_use_case import (
-    CreateEventUseCase,
-    GetEventUseCase,
-    ListEventsUseCase,
-    UpdateEventUseCase,
-)
-from src.event.port.ticket_schema import (
+from src.event_ticketing.port.ticket_schema import (
     CreateTicketsRequest,
     CreateTicketsResponse,
     ListTicketsBySectionResponse,
     ListTicketsResponse,
     TicketResponse,
 )
-from src.event.use_case.create_tickets_use_case import CreateTicketsUseCase
-from src.event.use_case.list_tickets_use_case import ListTicketsUseCase
-from src.event.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.event_ticketing.use_case.create_tickets_use_case import CreateTicketsUseCase
+from src.event_ticketing.use_case.event_use_case import (
+    CreateEventUseCase,
+    GetEventUseCase,
+    ListEventsUseCase,
+    UpdateEventUseCase,
+)
+from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
+from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import (

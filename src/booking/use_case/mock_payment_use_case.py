@@ -5,7 +5,7 @@ from typing import Any, Dict
 from fastapi import Depends
 
 from src.booking.domain.booking_entity import BookingStatus
-from src.event.domain.event_entity import EventStatus
+from src.event_ticketing.domain.event_entity import EventStatus
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work

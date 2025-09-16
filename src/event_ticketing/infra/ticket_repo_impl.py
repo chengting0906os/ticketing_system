@@ -3,10 +3,10 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.infra.ticket_model import TicketModel
 from src.shared.logging.loguru_io import Logger
-from src.event.domain.ticket_entity import Ticket, TicketStatus
-from src.event.domain.ticket_repo import TicketRepo
-from src.event.infra.ticket_model import TicketModel
 
 
 class TicketRepoImpl(TicketRepo):

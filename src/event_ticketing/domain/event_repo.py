@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 if TYPE_CHECKING:
     from src.user.domain.user_model import User
 
-from src.event.domain.event_entity import Event
+from src.event_ticketing.domain.event_entity import Event
 
 
 class EventRepo(ABC):

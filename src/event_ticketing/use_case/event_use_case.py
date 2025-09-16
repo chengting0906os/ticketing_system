@@ -2,10 +2,10 @@ from typing import Dict, List, Optional
 
 from fastapi import Depends
 
-from src.event.domain.event_entity import Event
+from src.event_ticketing.domain.event_entity import Event
+from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.event.domain.ticket_entity import Ticket, TicketStatus
 
 
 class CreateEventUseCase:

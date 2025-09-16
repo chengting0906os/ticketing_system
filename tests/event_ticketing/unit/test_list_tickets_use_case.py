@@ -1,11 +1,13 @@
 """Unit tests for ListTicketsUseCase."""
 
-import pytest
-from unittest.mock import Mock, AsyncMock
-from src.event.use_case.list_tickets_use_case import ListTicketsUseCase
-from src.event.domain.ticket_entity import Ticket, TicketStatus
-from src.shared.exception.exceptions import ForbiddenError, NotFoundError
 from datetime import datetime
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
+from src.shared.exception.exceptions import ForbiddenError, NotFoundError
 
 
 class TestListTicketsUseCase:

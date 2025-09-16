@@ -2,10 +2,10 @@ from typing import List
 
 from fastapi import Depends
 
+from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.event.domain.ticket_entity import Ticket, TicketStatus
 
 
 class CreateTicketsUseCase:
