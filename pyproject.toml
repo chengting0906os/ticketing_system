@@ -100,6 +100,7 @@ bdd_features_base_dir = "tests/features/"
 addopts = "-v --tb=short --strict-markers"
 
 [tool.pyright]
+include = ["src", "tests"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 venvPath = "."
