@@ -6,12 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_aggregate import BookingAggregate
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_repo import BookingRepo
-from src.booking.use_case.mock_send_email_use_case import MockSendEmailUseCase
 from src.event.domain.event_repo import EventRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.mock_email_service import MockEmailService, get_mock_email_service
 from src.shared.service.repo_di import (
     get_booking_repo,
     get_event_repo,
@@ -30,15 +28,12 @@ class CreateBookingUseCase:
         user_repo: UserRepo,
         ticket_repo: TicketRepo,
         event_repo: EventRepo,
-        email_service: MockEmailService,
     ):
         self.session = session
         self.booking_repo = booking_repo
         self.user_repo = user_repo
         self.ticket_repo = ticket_repo
         self.event_repo = event_repo
-        self.email_service = email_service
-        self.email_use_case = MockSendEmailUseCase(email_service)
 
     @classmethod
     def depends(
@@ -48,9 +43,8 @@ class CreateBookingUseCase:
         user_repo: UserRepo = Depends(get_user_repo),
         ticket_repo: TicketRepo = Depends(get_ticket_repo),
         event_repo: EventRepo = Depends(get_event_repo),
-        email_service: MockEmailService = Depends(get_mock_email_service),
     ):
-        return cls(session, booking_repo, user_repo, ticket_repo, event_repo, email_service)
+        return cls(session, booking_repo, user_repo, ticket_repo, event_repo)
 
     @Logger.io
     async def create_booking(
@@ -141,10 +135,7 @@ class CreateBookingUseCase:
             ticket.booking_id = created_booking.id
         await self.ticket_repo.update_batch(tickets=tickets)
 
-        events = aggregate.events
-        for event in events:
-            await self.email_use_case.handle_notification(event)
-        aggregate.clear_events()
+        # Domain events are created but not processed (email notifications removed)
 
         # Commit the transaction
         await self.session.commit()

@@ -26,9 +26,7 @@ class BookingCreatedEvent:
     seller_id: int
     event_id: int
     price: int
-    buyer_email: str
     buyer_name: str
-    seller_email: str
     seller_name: str
     event_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
@@ -40,7 +38,6 @@ class BookingPaidEvent:
     buyer_id: int
     event_id: int
     paid_at: datetime
-    buyer_email: str
     event_name: str
     paid_amount: int
     occurred_at: datetime = attrs.field(factory=datetime.now)
@@ -51,7 +48,6 @@ class BookingCancelledEvent:
     aggregate_id: int
     buyer_id: int
     event_id: int
-    buyer_email: str
     event_name: str
     occurred_at: datetime = attrs.field(factory=datetime.now)
 

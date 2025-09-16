@@ -84,9 +84,7 @@ class BookingAggregate:
                 seller_id=self.seller_info.seller_id,
                 event_id=self.booking.event_id,
                 price=self.booking.total_price,
-                buyer_email=self.buyer_info.email,
                 buyer_name=self.buyer_info.name,
-                seller_email=self.seller_info.email,
                 seller_name=self.seller_info.name,
                 event_name=f'Event {self.booking.event_id}',  # We can improve this later
             )
@@ -108,7 +106,6 @@ class BookingAggregate:
                 buyer_id=self.buyer_info.buyer_id,
                 event_id=self.booking.event_id,
                 paid_at=self.booking.paid_at or datetime.now(),
-                buyer_email=self.buyer_info.email,
                 event_name=f'Event {self.booking.event_id}',
                 paid_amount=self.booking.total_price,
             )
@@ -132,7 +129,6 @@ class BookingAggregate:
                 aggregate_id=self.booking.id or 0,
                 buyer_id=self.buyer_info.buyer_id,
                 event_id=self.booking.event_id,
-                buyer_email=self.buyer_info.email,
                 event_name=f'Event {self.booking.event_id}',
             )
         )
