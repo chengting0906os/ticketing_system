@@ -58,7 +58,7 @@ pyright:
 # Development
 .PHONY: run
 run:
-	@uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	@uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto
 
 .PHONY: clean
 clean:
