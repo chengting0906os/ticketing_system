@@ -7,6 +7,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi",
     "granian[reload]",
+    "uvloop",
     "sqlalchemy",
     "asyncpg",
     "fastapi-users[sqlalchemy]",

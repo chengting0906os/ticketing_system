@@ -58,7 +58,7 @@ pyright:
 # Development
 .PHONY: run
 run:
-	@uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto
+	@uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop
 
 .PHONY: clean
 clean:
