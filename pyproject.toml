@@ -8,6 +8,7 @@ dependencies = [
     "fastapi",
     "granian[reload]",
     "uvloop",
+    "msgpack",
     "sqlalchemy",
     "asyncpg",
     "fastapi-users[sqlalchemy]",
