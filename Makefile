@@ -58,7 +58,20 @@ pyright:
 # Development
 .PHONY: run
 run:
-	@uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop
+	@echo "Starting server... Press Ctrl+C to stop"
+	@trap 'pkill -f granian' INT; \
+	uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop
+
+.PHONY: stop
+stop:
+	@echo "Stopping all granian processes..."
+	@pkill -f granian || echo "No granian processes found"
+
+.PHONY: run-prod
+run-prod:
+	@echo "Starting production server with multiple workers..."
+	@trap 'pkill -f granian' INT; \
+	uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --http auto --loop uvloop --workers 4
 
 .PHONY: clean
 clean:
