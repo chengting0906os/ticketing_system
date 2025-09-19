@@ -21,8 +21,9 @@ class ReserveTicketsUseCase:
     ) -> Dict[str, Any]:
         async with self.uow:
             # Validate ticket count limit
-            if ticket_count > 4:
-                raise DomainError('Maximum 4 tickets per person')
+            MAX_TICKETS_PER_RESERVATION = 4
+            if ticket_count > MAX_TICKETS_PER_RESERVATION:
+                raise DomainError(f'Maximum {MAX_TICKETS_PER_RESERVATION} tickets per person')
 
             # Get event
             event = await self.uow.events.get_by_id(event_id=event_id)
@@ -52,6 +53,20 @@ class ReserveTicketsUseCase:
             # Update tickets in database
             await self.uow.tickets.update_batch(tickets=tickets_to_reserve)
             await self.uow.commit()
+
+            # Broadcast WebSocket event (MVP: simple notification)
+            from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
+
+            for ticket in tickets_to_reserve:
+                ticket_data = {
+                    'id': ticket.id,
+                    'seat_identifier': ticket.seat_identifier,
+                    'price': ticket.price,
+                    'status': 'reserved',
+                }
+                await ticket_websocket_service.broadcast_ticket_event(
+                    event_id=event_id, ticket_data=ticket_data, event_type='reserved'
+                )
 
             # Return reservation details
             return {
