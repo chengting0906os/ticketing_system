@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "handlers": {
+    "intercept": {
+      "class": "src.shared.logging.loguru_io_config.InterceptHandler"
+    }
+  },
+  "root": {
+    "level": "INFO",
+    "handlers": ["intercept"]
+  },
+  "loggers": {
+    "granian": {
+      "level": "INFO",
+      "handlers": ["intercept"],
+      "propagate": false
+    },
+    "granian.server": {
+      "level": "INFO",
+      "handlers": ["intercept"],
+      "propagate": false
+    }
+  }
+}

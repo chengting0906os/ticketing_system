@@ -60,7 +60,7 @@ pyright:
 run:
 	@echo "Starting server... Press Ctrl+C to stop"
 	@trap 'pkill -f granian' INT; \
-	uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop
+	uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop --log-config src/shared/logging/granian_log_config.json
 
 .PHONY: stop
 stop:
