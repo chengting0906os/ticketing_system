@@ -7,7 +7,7 @@ repos:
         args:
           - --fix
       - id: ruff-format
-  
+
   - repo: local
     hooks:
       - id: pyright
@@ -16,3 +16,4 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+        stages: [push]
