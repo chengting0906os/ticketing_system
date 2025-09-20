@@ -8,17 +8,30 @@
   },
   "root": {
     "level": "INFO",
-    "handlers": ["intercept"]
+    "handlers": [
+      "intercept"
+    ]
   },
   "loggers": {
     "granian": {
       "level": "INFO",
-      "handlers": ["intercept"],
+      "handlers": [
+        "intercept"
+      ],
       "propagate": false
     },
     "granian.server": {
       "level": "INFO",
-      "handlers": ["intercept"],
+      "handlers": [
+        "intercept"
+      ],
+      "propagate": false
+    },
+    "granian.access": {
+      "level": "INFO",
+      "handlers": [
+        "intercept"
+      ],
       "propagate": false
     }
   }

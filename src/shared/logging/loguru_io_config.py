@@ -38,46 +38,37 @@ class GeneratorMethod(StrEnum):
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
-        # Skip access logs or adjust level based on status code
         message = record.getMessage()
 
-        # Parse HTTP status code from uvicorn access logs
-        if 'HTTP/1.1' in message:
-            # Extract status code from message like "GET /api/... HTTP/1.1" 404"
-            parts = message.split('"')
-            if len(parts) >= 3:
-                status_parts = parts[2].strip().split()
-                if status_parts:  # 檢查是否有內容
-                    status_part = status_parts[0]
-                else:
-                    status_part = None
-                try:
-                    if status_part:
-                        status_code = int(status_part)
-                    else:
-                        raise ValueError('No status part')
-                    # Adjust log level based on status code
-                    if status_code >= 500:
-                        level = 'CRITICAL'
-                    elif status_code >= 400:
-                        level = 'ERROR'
-                    elif status_code >= 300:
-                        level = 'WARNING'
-                    elif status_code >= 200:
-                        level = 'SUCCESS'
+        # Parse HTTP status code from granian access logs
+        # New format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" 200 123 45 ms'
+        if ' - "' in message and ' HTTP/1.1" ' in message:
+            # Extract status code from the new format
+            try:
+                parts = message.split('"')
+                if len(parts) >= 3:
+                    # parts[2] should be like ' 200 123 45 ms'
+                    status_parts = parts[2].strip().split()
+                    if status_parts:
+                        status_code = int(status_parts[0])
+
+                        # Adjust log level based on status code
+                        if status_code >= 500:
+                            level = 'CRITICAL'
+                        elif status_code >= 400:
+                            level = 'ERROR'
+                        elif status_code >= 300:
+                            level = 'WARNING'
+                        elif status_code >= 200:
+                            level = 'SUCCESS'
+                        else:
+                            level = 'INFO'
                     else:
                         level = 'INFO'
-                except (ValueError, IndexError):
-                    # Fallback to original level
-                    try:
-                        level = loguru_logger.level(record.levelname).name
-                    except ValueError:
-                        level = record.levelno
-            else:
-                try:
-                    level = loguru_logger.level(record.levelname).name
-                except ValueError:
-                    level = record.levelno
+                else:
+                    level = 'INFO'
+            except (ValueError, IndexError):
+                level = 'INFO'
         else:
             # Get corresponding Loguru level if it exists
             try:
