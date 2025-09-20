@@ -60,5 +60,43 @@ class Settings(BaseSettings):
     RESET_PASSWORD_TOKEN_SECRET: SecretStr
     VERIFICATION_TOKEN_SECRET: SecretStr
 
+    # Kafka Configuration
+    KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
+    KAFKA_SECURITY_PROTOCOL: str = 'PLAINTEXT'
+    KAFKA_GROUP_ID: str = 'ticketing-system'
+    KAFKA_AUTO_OFFSET_RESET: str = 'earliest'
+    KAFKA_ENABLE_IDEMPOTENCE: bool = True
+    KAFKA_ACKS: str = 'all'
+    KAFKA_RETRIES: int = 3
+    KAFKA_MAX_IN_FLIGHT_REQUESTS: int = 1
+    KAFKA_COMPRESSION_TYPE: str = 'gzip'
+    KAFKA_BATCH_SIZE: int = 16384
+    KAFKA_LINGER_MS: int = 10
+
+    @property
+    def KAFKA_PRODUCER_CONFIG(self) -> dict:
+        return {
+            'bootstrap_servers': self.KAFKA_BOOTSTRAP_SERVERS.split(','),
+            'security_protocol': self.KAFKA_SECURITY_PROTOCOL,
+            'enable_idempotence': self.KAFKA_ENABLE_IDEMPOTENCE,
+            'acks': self.KAFKA_ACKS,
+            'retries': self.KAFKA_RETRIES,
+            'max_in_flight_requests_per_connection': self.KAFKA_MAX_IN_FLIGHT_REQUESTS,
+            'compression_type': self.KAFKA_COMPRESSION_TYPE,
+            'batch_size': self.KAFKA_BATCH_SIZE,
+            'linger_ms': self.KAFKA_LINGER_MS,
+        }
+
+    @property
+    def KAFKA_CONSUMER_CONFIG(self) -> dict:
+        return {
+            'bootstrap_servers': self.KAFKA_BOOTSTRAP_SERVERS.split(','),
+            'security_protocol': self.KAFKA_SECURITY_PROTOCOL,
+            'group_id': self.KAFKA_GROUP_ID,
+            'auto_offset_reset': self.KAFKA_AUTO_OFFSET_RESET,
+            'enable_auto_commit': False,
+            'max_poll_records': 500,
+        }
+
 
 settings = Settings()  # type: ignore

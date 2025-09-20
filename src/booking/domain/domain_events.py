@@ -1,20 +1,19 @@
 from datetime import datetime
-from typing import Protocol, runtime_checkable
 
 import attrs
 
+# Import the shared domain event protocol
+from src.shared.event_bus.event_publisher import DomainEvent
 
-@runtime_checkable
-class DomainEventProtocol(Protocol):
-    @property
-    def aggregate_id(self) -> int: ...
 
-    @property
-    def occurred_at(self) -> datetime: ...
+# Alias for backward compatibility
+DomainEventProtocol = DomainEvent
 
 
 @attrs.define(frozen=True)
-class DomainEvent:
+class BaseDomainEvent:
+    """Base class for concrete domain events"""
+
     aggregate_id: int
     occurred_at: datetime = attrs.field(factory=datetime.now)
 

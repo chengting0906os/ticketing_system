@@ -91,7 +91,7 @@ class TestWebSocketMessageHandling:
             message_types = []
             for msg_type, data in websocket.messages_sent:
                 if msg_type == 'bytes':
-                    decoded = codec.decode_message(data)
+                    decoded = codec.decode_message(raw_data=data)
                     message_types.append(decoded.get('type'))
 
             assert 'connected' in message_types
@@ -132,7 +132,7 @@ class TestWebSocketMessageHandling:
             error_response_found = False
             for msg_type, data in websocket.messages_sent:
                 if msg_type == 'bytes':
-                    decoded = codec.decode_message(data)
+                    decoded = codec.decode_message(raw_data=data)
                     if decoded.get('type') == 'error':
                         error_response_found = True
                         assert 'Unknown action: unknown_action' in decoded.get('message', '')
@@ -156,7 +156,7 @@ class TestWebSocketMessageHandling:
         ping_found = False
         for msg_type, data in websocket.messages_sent:
             if msg_type == 'bytes':
-                decoded = codec.decode_message(data)
+                decoded = codec.decode_message(raw_data=data)
                 if decoded.get('type') == 'ping':
                     ping_found = True
                     assert 'timestamp' in decoded
@@ -201,7 +201,7 @@ class TestWebSocketMessageHandling:
             message_types = []
             for msg_type, data in websocket.messages_sent:
                 if msg_type == 'bytes':
-                    decoded = codec.decode_message(data)
+                    decoded = codec.decode_message(raw_data=data)
                     message_types.append(decoded.get('type'))
 
             found_types = set(message_types)

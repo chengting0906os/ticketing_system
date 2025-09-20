@@ -136,11 +136,11 @@ class JWTAuthService:
             get_strategy=lambda: self.jwt_strategy,
         )
 
-    async def create_session(self, user: User) -> str:
+    async def create_session(self, *, user: User) -> str:
         token = await self.jwt_strategy.write_token(user)
         return token
 
-    async def create_access_token(self, user: User) -> str:
+    async def create_access_token(self, *, user: User) -> str:
         """Create access token with custom user data in payload"""
         token = await self.jwt_strategy.write_token(user)
         return token

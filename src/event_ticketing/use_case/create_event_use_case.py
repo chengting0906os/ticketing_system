@@ -19,6 +19,7 @@ class CreateEventUseCase:
     @Logger.io
     async def create(
         self,
+        *,
         name: str,
         description: str,
         seller_id: int,
@@ -28,7 +29,7 @@ class CreateEventUseCase:
     ) -> Event:
         async with self.uow:
             # Validate seating config and prices
-            self._validate_seating_config(seating_config)
+            self._validate_seating_config(seating_config=seating_config)
 
             event = Event.create(
                 name=name,
@@ -52,7 +53,7 @@ class CreateEventUseCase:
         # raise Exception('Simulated error for testing rollback')  # --- IGNORE ---
         return created_event
 
-    def _validate_seating_config(self, seating_config: Dict) -> None:
+    def _validate_seating_config(self, *, seating_config: Dict) -> None:
         """Validate seating configuration structure and prices."""
         if not isinstance(seating_config, dict) or 'sections' not in seating_config:
             raise ValueError('Invalid seating configuration: must contain sections')
@@ -107,7 +108,7 @@ class CreateEventUseCase:
                         )
 
     def _generate_tickets_from_seating_config(
-        self, event_id: int, seating_config: Dict
+        self, *, event_id: int, seating_config: Dict
     ) -> List[Ticket]:
         """Generate tickets based on seating configuration."""
         tickets = []

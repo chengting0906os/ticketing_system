@@ -9,6 +9,7 @@ from src.booking.domain.booking_repo import BookingRepo
 from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.domain.ticket_repo import TicketRepo
 from src.shared.config.db_setting import get_async_session
+from src.shared.event_bus.ticket_event_publisher import publish_booking_created_by_subsections
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import (
@@ -49,40 +50,101 @@ class CreateBookingUseCase:
     @Logger.io
     async def create_booking(
         self,
+        *,
         buyer_id: int,
         ticket_ids: Optional[List[int]] = None,
         seat_selection_mode: Optional[str] = None,
         selected_seats: Optional[List[str]] = None,
         quantity: Optional[int] = None,
     ) -> Booking:
-        # Handle different booking modes
-        if seat_selection_mode:
-            ticket_ids = await self._handle_seat_selection(
-                seat_selection_mode, selected_seats, quantity
-            )
-        elif ticket_ids is None:
-            raise DomainError(
-                'Either ticket_ids or seat selection parameters must be provided', 400
-            )
+        # Validate input approaches
+        approaches_used = 0
+        if ticket_ids is not None:
+            approaches_used += 1
+        if seat_selection_mode is not None:
+            approaches_used += 1
 
-        # Validate maximum 4 tickets per booking
-        if len(ticket_ids) > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
-        if len(ticket_ids) == 0:
-            raise DomainError('At least 1 ticket required', 400)
+        if approaches_used == 0:
+            raise DomainError('Must provide either ticket_ids or seat_selection_mode', 400)
+        elif approaches_used > 1:
+            raise DomainError('Cannot mix ticket_ids with seat selection mode', 400)
+
+        # Validate seat selection parameters
+        if seat_selection_mode == 'manual':
+            if not selected_seats or len(selected_seats) == 0:
+                raise DomainError('selected_seats is required for manual selection', 400)
+            if quantity is not None:
+                raise DomainError('Cannot specify both selected_seats and quantity', 400)
+            if len(selected_seats) > 4:
+                raise DomainError('Maximum 4 tickets per booking', 400)
+        elif seat_selection_mode == 'best_available':
+            if quantity is None:
+                raise DomainError('quantity is required for best_available selection', 400)
+            if selected_seats is not None:
+                raise DomainError('Cannot specify selected_seats for best_available selection', 400)
+            if quantity < 1 or quantity > 4:
+                raise DomainError('Quantity must be between 1 and 4', 400)
+
+        # Validate legacy ticket_ids approach
+        if ticket_ids is not None:
+            if len(ticket_ids) > 4:
+                raise DomainError('Maximum 4 tickets per booking', 400)
+            if len(ticket_ids) == 0:
+                raise DomainError('At least 1 ticket required', 400)
 
         buyer = await self.user_repo.get_by_id(user_id=buyer_id)
         if not buyer:
             raise DomainError('Buyer not found', 404)
 
+        # Convert seat selection to ticket_ids if needed
+        if seat_selection_mode == 'manual':
+            # Find tickets by seat identifiers (e.g., "A-1-1-1")
+            ticket_ids = []
+            for seat_identifier in selected_seats:  # type: ignore
+                parts = seat_identifier.split('-')
+                if len(parts) != 4:
+                    raise DomainError(f'Invalid seat format: {seat_identifier}', 400)
+
+                section, subsection, row, seat = parts
+                try:
+                    subsection_int = int(subsection)
+                    row_int = int(row)
+                    seat_int = int(seat)
+                except ValueError:
+                    raise DomainError(f'Invalid seat format: {seat_identifier}', 400)
+
+                # Find ticket by seat location
+                ticket = await self.ticket_repo.get_by_seat_location(
+                    section=section,
+                    subsection=subsection_int,
+                    row_number=row_int,
+                    seat_number=seat_int,
+                )
+                if not ticket:
+                    raise DomainError(f'Seat {seat_identifier} not found', 404)
+                if ticket.status.value != 'available':
+                    raise DomainError(f'Seat {seat_identifier} is not available', 400)
+                ticket_ids.append(ticket.id)  # type: ignore
+
+        elif seat_selection_mode == 'best_available':
+            # Find best available consecutive seats
+            # For now, just get the first available seats (simplified implementation)
+            available_tickets = await self.ticket_repo.get_available_tickets_limit(limit=quantity)  # type: ignore
+            if len(available_tickets) < quantity:  # type: ignore
+                raise DomainError(
+                    f'Not enough available seats. Requested: {quantity}, Available: {len(available_tickets)}',
+                    400,
+                )
+            ticket_ids = [ticket.id for ticket in available_tickets[:quantity]]  # type: ignore
+
         # Get tickets by IDs
         tickets = []
-        for ticket_id in ticket_ids:
+        for ticket_id in ticket_ids:  # type: ignore
             ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
             if ticket:
                 tickets.append(ticket)
 
-        if len(tickets) != len(ticket_ids):
+        if len(tickets) != len(ticket_ids):  # type: ignore
             raise DomainError('Some tickets not found', 404)
 
         # Validate all tickets are available and can be reserved
@@ -105,11 +167,9 @@ class CreateBookingUseCase:
         if not seller:
             raise DomainError('Seller not found', 404)
 
-        # Validate event is available for bookinging
+        # Validate event is available for booking
         if not event.is_active:
             raise DomainError('Event not active', 400)
-        # Note: Event status (available/sold_out/ended) doesn't prevent booking
-        # Individual ticket availability is checked separately
 
         # Reserve tickets for this buyer
         for ticket in tickets:
@@ -123,7 +183,9 @@ class CreateBookingUseCase:
         ticket_data_list = [TicketData.from_ticket(ticket) for ticket in tickets]
 
         # Create booking using BookingAggregate
-        aggregate = BookingAggregate.create_booking(buyer_info, seller_info, ticket_data_list)
+        aggregate = BookingAggregate.create_booking(
+            buyer_info=buyer_info, seller_info=seller_info, ticket_data_list=ticket_data_list
+        )
         created_booking = await self.booking_repo.create(booking=aggregate.booking)
         aggregate.booking.id = created_booking.id
 
@@ -135,143 +197,17 @@ class CreateBookingUseCase:
             ticket.booking_id = created_booking.id
         await self.ticket_repo.update_batch(tickets=tickets)
 
-        # Domain events are created but not processed (email notifications removed)
-
-        # Commit the transaction
+        # Commit the database transaction
         await self.session.commit()
 
+        # Publish domain events after successful commit using section-based partitioning
+        try:
+            await publish_booking_created_by_subsections(booking_aggregate=aggregate)
+        except Exception as e:
+            # Log error but don't fail the booking - events can be retried
+            Logger.base.error(f'Failed to publish booking events: {e}')
+
+        # Clear events after publishing
+        aggregate.clear_events()
+
         return created_booking
-
-    async def _handle_seat_selection(
-        self, mode: str, selected_seats: Optional[List[str]] = None, quantity: Optional[int] = None
-    ) -> List[int]:
-        """Handle seat selection and return list of ticket IDs."""
-        if mode == 'manual':
-            return await self._handle_manual_seat_selection(selected_seats)
-        elif mode == 'best_available':
-            return await self._handle_best_available_selection(quantity)
-        else:
-            raise DomainError('Invalid seat selection mode', 400)
-
-    async def _handle_manual_seat_selection(self, selected_seats: Optional[List[str]]) -> List[int]:
-        """Handle manual seat selection and return ticket IDs."""
-        if not selected_seats or len(selected_seats) == 0:
-            raise DomainError('Selected seats cannot be empty for manual selection', 400)
-        if len(selected_seats) > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
-
-        ticket_ids = []
-        event_ids = set()
-
-        for seat in selected_seats:
-            try:
-                section, subsection_str, row_str, seat_str = seat.split('-')
-                subsection = int(subsection_str)
-                row = int(row_str)
-                seat_num = int(seat_str)
-            except (ValueError, AttributeError):
-                raise DomainError(
-                    'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)',
-                    400,
-                )
-
-            # Find ticket by seat location
-            # Note: In the current system structure, we need to search through all available tickets
-            # This is a simplified approach for the minimal implementation
-            all_tickets = await self.ticket_repo.get_all_available()
-            matching_ticket = None
-
-            for ticket in all_tickets:
-                if (
-                    ticket.section == section
-                    and ticket.subsection == subsection
-                    and ticket.row == row
-                    and ticket.seat == seat_num
-                    and ticket.status.value == 'available'
-                ):
-                    matching_ticket = ticket
-                    event_ids.add(ticket.event_id)
-                    break
-
-            if not matching_ticket:
-                raise DomainError(f'Seat {seat} is not available', 400)
-
-            ticket_ids.append(matching_ticket.id)
-
-        # Validate all seats are from same event
-        if len(event_ids) > 1:
-            raise DomainError('All tickets must be for the same event', 400)
-
-        return ticket_ids
-
-    async def _handle_best_available_selection(self, quantity: Optional[int]) -> List[int]:
-        """Handle best available seat selection and return ticket IDs."""
-        if not quantity or quantity <= 0:
-            raise DomainError('Quantity must be positive for best available selection', 400)
-        if quantity > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
-
-        # Get all available tickets
-        all_tickets = await self.ticket_repo.get_all_available()
-
-        if not all_tickets:
-            raise DomainError('No tickets available', 400)
-
-        # Group tickets by event, section, subsection, and row
-        tickets_by_event = {}
-        for ticket in all_tickets:
-            if ticket.status.value == 'available':
-                event_id = ticket.event_id
-                if event_id not in tickets_by_event:
-                    tickets_by_event[event_id] = {}
-
-                section = ticket.section
-                if section not in tickets_by_event[event_id]:
-                    tickets_by_event[event_id][section] = {}
-
-                subsection = ticket.subsection
-                if subsection not in tickets_by_event[event_id][section]:
-                    tickets_by_event[event_id][section][subsection] = {}
-
-                row = ticket.row
-                if row not in tickets_by_event[event_id][section][subsection]:
-                    tickets_by_event[event_id][section][subsection][row] = []
-
-                tickets_by_event[event_id][section][subsection][row].append(ticket)
-
-        # Find continuous seats - prioritize lower row numbers
-        for event_id in tickets_by_event:
-            for section in tickets_by_event[event_id]:
-                for subsection in tickets_by_event[event_id][section]:
-                    # Sort rows by number (ascending)
-                    rows = sorted(tickets_by_event[event_id][section][subsection].keys())
-
-                    for row in rows:
-                        row_tickets = tickets_by_event[event_id][section][subsection][row]
-                        # Sort tickets by seat number
-                        row_tickets.sort(key=lambda t: t.seat)
-
-                        # Find continuous sequence of requested quantity
-                        continuous_tickets = self._find_continuous_seats(row_tickets, quantity)
-                        if continuous_tickets:
-                            return [t.id for t in continuous_tickets]
-
-        raise DomainError('No continuous seats available for requested quantity', 400)
-
-    def _find_continuous_seats(self, tickets: List, quantity: int) -> List:
-        """Find continuous seats in a row."""
-        if len(tickets) < quantity:
-            return []
-
-        for i in range(len(tickets) - quantity + 1):
-            # Check if seats are continuous
-            continuous = True
-            for j in range(1, quantity):
-                if tickets[i + j].seat != tickets[i + j - 1].seat + 1:
-                    continuous = False
-                    break
-
-            if continuous:
-                return tickets[i : i + quantity]
-
-        return []

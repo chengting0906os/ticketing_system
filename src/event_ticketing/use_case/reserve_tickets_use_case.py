@@ -1,85 +1,328 @@
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.shared.exception.exceptions import ConflictError, DomainError, NotFoundError
+from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.shared.config.db_setting import get_async_session
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.repo_di import get_ticket_repo
 
 
 class ReserveTicketsUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(
+        self,
+        session: AsyncSession,
+        ticket_repo: TicketRepo,
+    ):
+        self.session = session
+        self.ticket_repo = ticket_repo
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+    def depends(
+        cls,
+        session: AsyncSession = Depends(get_async_session),
+        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+    ):
+        return cls(session, ticket_repo)
 
     @Logger.io
     async def reserve_tickets(
         self, *, event_id: int, ticket_count: int, buyer_id: int
     ) -> Dict[str, Any]:
-        async with self.uow:
-            # Validate ticket count limit
-            MAX_TICKETS_PER_RESERVATION = 4
-            if ticket_count > MAX_TICKETS_PER_RESERVATION:
-                raise DomainError(f'Maximum {MAX_TICKETS_PER_RESERVATION} tickets per person')
+        """Reserve tickets for the given event and buyer."""
+        if ticket_count <= 0:
+            raise DomainError('Ticket count must be positive', 400)
+        if ticket_count > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
 
-            # Get event
-            event = await self.uow.events.get_by_id(event_id=event_id)
-            if not event:
-                raise NotFoundError('Event not found')
+        # Get available tickets for the event
+        available_tickets = await self.ticket_repo.get_available_tickets_for_event(
+            event_id=event_id, limit=ticket_count
+        )
 
-            # Get available tickets
-            available_tickets = await self.uow.tickets.get_available_tickets_for_event(
-                event_id=event_id, limit=ticket_count
-            )
+        if len(available_tickets) < ticket_count:
+            raise DomainError('Not enough available tickets', 400)
 
-            # Check for existing reservations that would conflict
-            reserved_tickets = await self.uow.tickets.get_reserved_tickets_for_event(
-                event_id=event_id
-            )
-            if len(reserved_tickets) > 0:
-                raise ConflictError('Some tickets are already reserved')
+        # Reserve the best available tickets (first n available)
+        tickets_to_reserve = available_tickets[:ticket_count]
 
-            if len(available_tickets) < ticket_count:
-                raise DomainError('Not enough available tickets')
+        # Reserve each ticket
+        for ticket in tickets_to_reserve:
+            ticket.reserve(buyer_id=buyer_id)
 
-            # Reserve the tickets
-            tickets_to_reserve = available_tickets[:ticket_count]
-            for ticket in tickets_to_reserve:
-                ticket.reserve(buyer_id=buyer_id)
+        # Update tickets in database
+        await self.ticket_repo.update_batch(tickets=tickets_to_reserve)
+        await self.session.commit()
 
-            # Update tickets in database
-            await self.uow.tickets.update_batch(tickets=tickets_to_reserve)
-            await self.uow.commit()
+        # Broadcast WebSocket events for each reserved ticket (by subsection)
+        await self._broadcast_reservation_events(
+            event_id=event_id, tickets=tickets_to_reserve, buyer_id=buyer_id
+        )
 
-            # Broadcast WebSocket event (MVP: simple notification)
-            from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
-
-            for ticket in tickets_to_reserve:
-                ticket_data = {
+        # Return reservation details
+        return {
+            'reservation_id': tickets_to_reserve[0].id,  # Use first ticket ID as reservation ID
+            'buyer_id': buyer_id,
+            'event_id': event_id,
+            'ticket_count': ticket_count,
+            'status': 'reserved',
+            'tickets': [
+                {
                     'id': ticket.id,
                     'seat_identifier': ticket.seat_identifier,
                     'price': ticket.price,
-                    'status': 'reserved',
+                    'section': ticket.section,
+                    'subsection': ticket.subsection,
                 }
-                await ticket_websocket_service.broadcast_ticket_event(
-                    event_id=event_id, ticket_data=ticket_data, event_type='reserved'
+                for ticket in tickets_to_reserve
+            ],
+        }
+
+    @Logger.io
+    async def handle_seat_selection(
+        self,
+        *,
+        mode: str,
+        selected_seats: Optional[List[str]] = None,
+        quantity: Optional[int] = None,
+    ) -> List[int]:
+        """Handle seat selection and return list of ticket IDs."""
+        if mode == 'manual':
+            return await self._handle_manual_seat_selection(selected_seats=selected_seats)
+        elif mode == 'best_available':
+            return await self._handle_best_available_selection(quantity=quantity)
+        else:
+            raise DomainError('Invalid seat selection mode', 400)
+
+    async def _handle_manual_seat_selection(
+        self, *, selected_seats: Optional[List[str]]
+    ) -> List[int]:
+        """Handle manual seat selection and return ticket IDs."""
+        if not selected_seats or len(selected_seats) == 0:
+            raise DomainError('Selected seats cannot be empty for manual selection', 400)
+        if len(selected_seats) > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        ticket_ids = []
+        event_ids = set()
+
+        for seat in selected_seats:
+            try:
+                section, subsection_str, row_str, seat_str = seat.split('-')
+                subsection = int(subsection_str)
+                row = int(row_str)
+                seat_num = int(seat_str)
+            except (ValueError, AttributeError):
+                raise DomainError(
+                    'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)',
+                    400,
                 )
 
-            # Return reservation details
-            return {
-                'reservation_id': tickets_to_reserve[0].id,  # Use first ticket ID as reservation ID
-                'buyer_id': buyer_id,
-                'ticket_count': ticket_count,
-                'status': 'reserved',
-                'tickets': [
+            # Find ticket by seat location
+            # Note: In the current system structure, we need to search through all available tickets
+            # This is a simplified approach for the minimal implementation
+            all_tickets = await self.ticket_repo.get_all_available()
+            matching_ticket = None
+
+            for ticket in all_tickets:
+                if (
+                    ticket.section == section
+                    and ticket.subsection == subsection
+                    and ticket.row == row
+                    and ticket.seat == seat_num
+                    and ticket.status.value == 'available'
+                ):
+                    matching_ticket = ticket
+                    event_ids.add(ticket.event_id)
+                    break
+
+            if not matching_ticket:
+                raise DomainError(f'Seat {seat} is not available', 400)
+
+            ticket_ids.append(matching_ticket.id)
+
+        # Validate all seats are from same event
+        if len(event_ids) > 1:
+            raise DomainError('All tickets must be for the same event', 400)
+
+        return ticket_ids
+
+    async def _handle_best_available_selection(self, *, quantity: Optional[int]) -> List[int]:
+        """Handle best available seat selection and return ticket IDs."""
+        if not quantity or quantity <= 0:
+            raise DomainError('Quantity must be positive for best available selection', 400)
+        if quantity > 4:
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        # Get all available tickets
+        all_tickets = await self.ticket_repo.get_all_available()
+
+        if not all_tickets:
+            raise DomainError('No tickets available', 400)
+
+        # Group tickets by event, section, subsection, and row
+        tickets_by_event = {}
+        for ticket in all_tickets:
+            if ticket.status.value == 'available':
+                event_id = ticket.event_id
+                if event_id not in tickets_by_event:
+                    tickets_by_event[event_id] = {}
+
+                section = ticket.section
+                if section not in tickets_by_event[event_id]:
+                    tickets_by_event[event_id][section] = {}
+
+                subsection = ticket.subsection
+                if subsection not in tickets_by_event[event_id][section]:
+                    tickets_by_event[event_id][section][subsection] = {}
+
+                row = ticket.row
+                if row not in tickets_by_event[event_id][section][subsection]:
+                    tickets_by_event[event_id][section][subsection][row] = []
+
+                tickets_by_event[event_id][section][subsection][row].append(ticket)
+
+        # Find continuous seats - prioritize lower row numbers
+        for event_id in tickets_by_event:
+            for section in tickets_by_event[event_id]:
+                for subsection in tickets_by_event[event_id][section]:
+                    # Sort rows by number (ascending)
+                    rows = sorted(tickets_by_event[event_id][section][subsection].keys())
+
+                    for row in rows:
+                        row_tickets = tickets_by_event[event_id][section][subsection][row]
+                        # Sort tickets by seat number
+                        row_tickets.sort(key=lambda t: t.seat)
+
+                        # Find continuous sequence of requested quantity
+                        continuous_tickets = self._find_continuous_seats(
+                            tickets=row_tickets, quantity=quantity
+                        )
+                        if continuous_tickets:
+                            return [t.id for t in continuous_tickets]
+
+        raise DomainError('No continuous seats available for requested quantity', 400)
+
+    def _find_continuous_seats(self, *, tickets: List, quantity: int) -> List:
+        """Find continuous seats in a row."""
+        if len(tickets) < quantity:
+            return []
+
+        for i in range(len(tickets) - quantity + 1):
+            # Check if seats are continuous
+            continuous = True
+            for j in range(1, quantity):
+                if tickets[i + j].seat != tickets[i + j - 1].seat + 1:
+                    continuous = False
+                    break
+
+            if continuous:
+                return tickets[i : i + quantity]
+
+        return []
+
+    @Logger.io
+    async def _broadcast_reservation_events(
+        self, *, event_id: int, tickets: List, buyer_id: int
+    ) -> None:
+        """Broadcast WebSocket events for ticket reservations by subsection."""
+        try:
+            from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
+
+            # Group tickets by subsection for efficient broadcasting
+            subsection_groups = {}
+            for ticket in tickets:
+                subsection_key = f'{ticket.section}-{ticket.subsection}'
+                if subsection_key not in subsection_groups:
+                    subsection_groups[subsection_key] = []
+                subsection_groups[subsection_key].append(ticket)
+
+            # Get updated ticket counts for this event after reservation
+            remaining_counts = await self._get_remaining_ticket_counts(event_id=event_id)
+
+            # Broadcast reservation events for each affected subsection
+            for subsection_key, subsection_tickets in subsection_groups.items():
+                section, subsection = subsection_key.split('-')
+
+                # Prepare detailed tickets data for users in the subsection page
+                tickets_data = [
                     {
                         'id': ticket.id,
                         'seat_identifier': ticket.seat_identifier,
                         'price': ticket.price,
+                        'section': ticket.section,
+                        'subsection': ticket.subsection,
+                        'row': ticket.row,
+                        'seat': ticket.seat,
+                        'status': 'reserved',
+                        'buyer_id': buyer_id,
                     }
-                    for ticket in tickets_to_reserve
-                ],
-            }
+                    for ticket in subsection_tickets
+                ]
+
+                # Broadcast detailed subsection event (for users in the subsection page)
+                await ticket_websocket_service.broadcast_subsection_event(
+                    event_id=event_id,
+                    section=section,
+                    subsection=int(subsection),
+                    event_type='tickets_reserved',
+                    data={
+                        'event_id': event_id,
+                        'section': section,
+                        'subsection': int(subsection),
+                        'tickets': tickets_data,
+                        'buyer_id': buyer_id,
+                        'reservation_count': len(subsection_tickets),
+                        'remaining_count': remaining_counts.get(subsection_key, 0),
+                    },
+                )
+
+                Logger.base.info(
+                    f'Broadcasted detailed reservation for {len(subsection_tickets)} tickets '
+                    f'in subsection {section}-{subsection} for event {event_id}'
+                )
+
+            # Broadcast general event with remaining counts (for users not in specific subsection pages)
+            await ticket_websocket_service.broadcast_ticket_event(
+                event_id=event_id,
+                ticket_data={
+                    'event_id': event_id,
+                    'total_reserved': len(tickets),
+                    'affected_subsections': list(subsection_groups.keys()),
+                    'remaining_counts_by_subsection': remaining_counts,
+                },
+                event_type='reservation_summary',
+            )
+
+            Logger.base.info(
+                f'Broadcasted general reservation summary for event {event_id} '
+                f'affecting {len(subsection_groups)} subsections'
+            )
+
+        except Exception as e:
+            # Log error but don't fail the reservation - WebSocket is secondary
+            Logger.base.error(f'Failed to broadcast reservation events: {e}')
+            # Continue execution - reservation is already committed to database
+
+    async def _get_remaining_ticket_counts(self, *, event_id: int) -> Dict[str, int]:
+        """Get remaining ticket counts by subsection for the event."""
+        try:
+            # Get all available tickets for this event
+            available_tickets = await self.ticket_repo.get_available_tickets_for_event(
+                event_id=event_id,
+                limit=None,  # Get all available tickets
+            )
+
+            # Count by subsection
+            subsection_counts = {}
+            for ticket in available_tickets:
+                subsection_key = f'{ticket.section}-{ticket.subsection}'
+                subsection_counts[subsection_key] = subsection_counts.get(subsection_key, 0) + 1
+
+            return subsection_counts
+
+        except Exception as e:
+            Logger.base.error(f'Failed to get remaining ticket counts: {e}')
+            return {}

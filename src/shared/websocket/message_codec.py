@@ -8,14 +8,14 @@ class WebSocketMessageCodec:
     """Handles encoding/decoding of WebSocket messages with binary optimization"""
 
     @staticmethod
-    def encode_message(data: Dict[str, Any], use_binary: bool = True) -> Union[str, bytes]:
+    def encode_message(*, data: Dict[str, Any], use_binary: bool = True) -> Union[str, bytes]:
         if use_binary:
             return msgpack.packb(data)  # type: ignore
         else:
             return json.dumps(data)
 
     @staticmethod
-    def decode_message(raw_data: Union[str, bytes]) -> Dict[str, Any]:
+    def decode_message(*, raw_data: Union[str, bytes]) -> Dict[str, Any]:
         try:
             if isinstance(raw_data, bytes):
                 # Try MessagePack first
@@ -27,7 +27,7 @@ class WebSocketMessageCodec:
             raise ValueError(f'Failed to decode message: {e}')
 
     @staticmethod
-    def get_message_size(data: Dict[str, Any]) -> Dict[str, Union[int, float]]:
+    def get_message_size(*, data: Dict[str, Any]) -> Dict[str, Union[int, float]]:
         json_size = len(json.dumps(data).encode('utf-8'))
         msgpack_size = len(msgpack.packb(data))  # type: ignore
 

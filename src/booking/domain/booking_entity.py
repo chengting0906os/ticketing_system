@@ -4,7 +4,7 @@ from typing import Optional
 
 import attrs
 
-from src.shared.exception.exceptions import DomainError
+from src.shared.domain.validators import NumericValidators
 from src.shared.logging.loguru_io import Logger
 
 
@@ -15,10 +15,7 @@ class BookingStatus(str, Enum):
     COMPLETED = 'completed'
 
 
-@Logger.io
-def validate_positive_price(instance, attribute, value):
-    if value <= 0:
-        raise DomainError('Price must be positive', 400)
+# Validation logic moved to shared validators module
 
 
 @attrs.define
@@ -27,7 +24,7 @@ class Booking:
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     event_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     total_price: int = attrs.field(
-        validator=[attrs.validators.instance_of(int), validate_positive_price]
+        validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
     )
     status: BookingStatus = attrs.field(
         default=BookingStatus.PENDING_PAYMENT, validator=attrs.validators.instance_of(BookingStatus)
@@ -39,7 +36,7 @@ class Booking:
 
     @classmethod
     @Logger.io
-    def create(cls, buyer_id: int, seller_id: int, event_id: int, total_price: int) -> 'Booking':
+    def create(cls, *, buyer_id: int, seller_id: int, event_id: int, total_price: int) -> 'Booking':
         now = datetime.now()
         return cls(
             buyer_id=buyer_id,

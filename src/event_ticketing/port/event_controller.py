@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, WebSocket, status
 from src.event_ticketing.port.event_schema import (
     EventCreateRequest,
     EventResponse,
-    EventUpdateRequest,
 )
 from src.event_ticketing.port.ticket_schema import (
     CreateTicketsRequest,
@@ -14,13 +13,12 @@ from src.event_ticketing.port.ticket_schema import (
     ListTicketsResponse,
     TicketResponse,
 )
-from src.event_ticketing.use_case.create_tickets_use_case import CreateTicketsUseCase
-from src.event_ticketing.use_case.event_use_case import (
+from src.event_ticketing.use_case.create_event_use_case import (
     CreateEventUseCase,
     GetEventUseCase,
     ListEventsUseCase,
-    UpdateEventUseCase,
 )
+from src.event_ticketing.use_case.create_tickets_use_case import CreateTicketsUseCase
 from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
 from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.exception.exceptions import NotFoundError
@@ -31,8 +29,8 @@ from src.shared.service.role_auth_service import (
     require_seller,
 )
 from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
-from src.user.domain.user_model import User
 from src.user.domain.user_entity import UserRole
+from src.user.domain.user_model import User
 
 
 router = APIRouter()
@@ -66,38 +64,6 @@ async def create_event(
         seating_config=event.seating_config,
         is_active=event.is_active,
         status=event.status.value,  # Convert enum to string
-    )
-
-
-@router.patch('/{event_id}', status_code=status.HTTP_200_OK)
-@Logger.io
-async def update_event(
-    event_id: int,
-    request: EventUpdateRequest,
-    current_user: User = Depends(require_seller),
-    use_case: UpdateEventUseCase = Depends(UpdateEventUseCase.depends),
-) -> EventResponse:
-    event = await use_case.update(
-        event_id=event_id,
-        name=request.name,
-        description=request.description,
-        venue_name=request.venue_name,
-        seating_config=request.seating_config,
-        is_active=request.is_active,
-    )
-
-    if not event:
-        raise NotFoundError(f'Event with id {event_id} not found')
-
-    return EventResponse(
-        id=event_id,
-        name=event.name,
-        description=event.description,
-        seller_id=event.seller_id,
-        venue_name=event.venue_name,
-        seating_config=event.seating_config,
-        is_active=event.is_active,
-        status=event.status.value,
     )
 
 

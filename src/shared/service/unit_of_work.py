@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, List
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.config.db_setting import get_async_session
+from src.shared.logging.loguru_io import Logger
 
 
 if TYPE_CHECKING:
@@ -22,6 +23,16 @@ class AbstractUnitOfWork(abc.ABC):
     users: UserRepo
     tickets: TicketRepo
 
+    def __init__(self):
+        self.domain_events: List[Any] = []
+
+    def collect_events(self, *aggregates):
+        """Collect domain events from aggregates"""
+        for aggregate in aggregates:
+            if hasattr(aggregate, 'domain_events'):
+                self.domain_events.extend(aggregate.domain_events)
+                aggregate.clear_events()
+
     async def __aenter__(self) -> AbstractUnitOfWork:
         return self
 
@@ -30,6 +41,28 @@ class AbstractUnitOfWork(abc.ABC):
 
     async def commit(self):
         await self._commit()
+        await self._publish_events()
+
+    async def _publish_events(self):
+        """Publish collected domain events after successful commit"""
+        if self.domain_events:
+            from src.shared.event_bus.event_publisher import get_event_publisher
+
+            publisher = get_event_publisher()
+
+            for event in self.domain_events:
+                try:
+                    # Determine topic based on event type
+                    event_type = event.__class__.__name__.replace('Event', '').lower()
+                    topic = f'ticketing-{event_type}'
+
+                    await publisher.publish(event, topic)  # type: ignore
+                except Exception as e:
+                    # Log error but don't fail the transaction
+                    Logger.base.error(f'Failed to publish event {event.__class__.__name__}: {e}')  # type: ignore
+
+            # Clear events after publishing
+            self.domain_events.clear()
 
     @abc.abstractmethod
     async def _commit(self):
@@ -42,6 +75,7 @@ class AbstractUnitOfWork(abc.ABC):
 
 class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
     def __init__(self, session: AsyncSession):
+        super().__init__()
         self.session = session
 
     async def __aenter__(self):

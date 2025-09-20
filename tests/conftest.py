@@ -92,27 +92,81 @@ async def setup_test_database():
     alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
     command.upgrade(alembic_cfg, 'head')
 
+    await verify_migration_completed()
+
 
 _cached_tables = None
+
+
+async def verify_migration_completed():
+    """TDD FIX: Verify that migration created all required tables before continuing."""
+    required_tables = ['user', 'event', 'booking', 'ticket']
+    max_retries = 10
+    retry_delay = 0.1  # 100ms delay between retries
+
+    for attempt in range(max_retries):
+        try:
+            engine = create_async_engine(TEST_DATABASE_URL)
+            async with engine.begin() as conn:
+                result = await conn.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'alembic_version'"
+                    )
+                )
+                existing_tables = [row[0] for row in result]
+            await engine.dispose()
+
+            # Check if all required tables exist
+            missing_tables = [table for table in required_tables if table not in existing_tables]
+            if not missing_tables:
+                global _cached_tables
+                _cached_tables = existing_tables
+                return
+
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            else:
+                raise RuntimeError(
+                    f'Migration verification failed: missing tables {missing_tables}. '
+                    f'Found tables: {existing_tables}'
+                )
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            else:
+                raise RuntimeError(f'Migration verification failed: {e}')
 
 
 async def clean_all_tables():
     global _cached_tables
     engine = create_async_engine(TEST_DATABASE_URL)
-    async with engine.begin() as conn:
-        if _cached_tables is None:
-            result = await conn.execute(
-                text(
-                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'alembic_version'"
-                )
-            )
-            _cached_tables = [row[0] for row in result]
-        if _cached_tables:
-            quoted_tables = [f'"{table}"' for table in _cached_tables]
-            await conn.execute(
-                text(f'TRUNCATE {", ".join(quoted_tables)} RESTART IDENTITY CASCADE')
-            )
-    await engine.dispose()
+    try:
+        async with engine.begin() as conn:
+            # TDD FIX: Always refresh table list if not cached, handle missing tables gracefully
+            if _cached_tables is None:
+                try:
+                    result = await conn.execute(
+                        text(
+                            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'alembic_version'"
+                        )
+                    )
+                    _cached_tables = [row[0] for row in result]
+                except Exception:
+                    _cached_tables = []
+
+            if _cached_tables:
+                quoted_tables = [f'"{table}"' for table in _cached_tables]
+                try:
+                    await conn.execute(
+                        text(f'TRUNCATE {", ".join(quoted_tables)} RESTART IDENTITY CASCADE')
+                    )
+                except Exception as e:
+                    if 'does not exist' in str(e):
+                        _cached_tables = None
+                    else:
+                        raise
+    finally:
+        await engine.dispose()
 
 
 def pytest_sessionstart(session):

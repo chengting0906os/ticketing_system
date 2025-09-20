@@ -70,3 +70,13 @@ class TicketRepo(ABC):
     @abstractmethod
     async def get_all_available(self) -> List[Ticket]:
         pass
+
+    @abstractmethod
+    async def get_by_seat_location(
+        self, *, section: str, subsection: int, row_number: int, seat_number: int
+    ) -> Ticket | None:
+        pass
+
+    @abstractmethod
+    async def get_available_tickets_limit(self, *, limit: int) -> List[Ticket]:
+        pass

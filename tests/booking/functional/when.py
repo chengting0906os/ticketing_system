@@ -405,7 +405,6 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
 
     # Create booking with manual seat selection
     booking_request = {
-        'event_id': booking_state['event_id'],  # Include event_id
         'seat_selection_mode': 'manual',
         'selected_seats': selected_seats,
     }
@@ -429,7 +428,6 @@ def buyer_creates_booking_with_best_available_seat_selection(
 
     # Create booking with best available seat selection
     booking_request = {
-        'event_id': booking_state['event_id'],  # Include event_id
         'seat_selection_mode': 'best_available',
         'quantity': quantity,
     }

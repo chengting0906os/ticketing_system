@@ -3,7 +3,7 @@ from typing import Dict, Optional
 
 import attrs
 
-from src.shared.exception.exceptions import DomainError
+from src.shared.domain.validators import StringValidators, StructuredDataValidators
 from src.shared.logging.loguru_io import Logger
 
 
@@ -13,44 +13,22 @@ class EventStatus(str, Enum):
     ENDED = 'ended'
 
 
-# Price validation removed - price is now on tickets, not events
-
-
-@Logger.io
-def validate_name(instance, attribute, value):
-    if not value or not value.strip():
-        raise DomainError('Event name is required')
-
-
-@Logger.io
-def validate_description(instance, attribute, value):
-    if not value or not value.strip():
-        raise DomainError('Event description is required')
-
-
-@Logger.io
-def validate_venue_name(instance, attribute, value):
-    if not value or not value.strip():
-        raise DomainError('Venue name is required')
-
-
-@Logger.io
-def validate_seating_config(instance, attribute, value):
-    if not value:
-        raise DomainError('Seating config is required')
+# Validation logic moved to shared validators module
 
 
 @attrs.define
 class Event:
-    name: str = attrs.field(validator=[attrs.validators.instance_of(str), validate_name])
+    name: str = attrs.field(
+        validator=[attrs.validators.instance_of(str), StringValidators.validate_name]
+    )
     description: str = attrs.field(
-        validator=[attrs.validators.instance_of(str), validate_description]
+        validator=[attrs.validators.instance_of(str), StringValidators.validate_description]
     )
     seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     venue_name: str = attrs.field(
-        validator=[attrs.validators.instance_of(str), validate_venue_name]
+        validator=[attrs.validators.instance_of(str), StringValidators.validate_venue_name]
     )
-    seating_config: Dict = attrs.field(validator=[validate_seating_config])
+    seating_config: Dict = attrs.field(validator=[StructuredDataValidators.validate_seating_config])
     is_active: bool = attrs.field(default=True, validator=attrs.validators.instance_of(bool))
     status: EventStatus = attrs.field(
         default=EventStatus.AVAILABLE, validator=attrs.validators.instance_of(EventStatus)
@@ -61,6 +39,7 @@ class Event:
     @Logger.io
     def create(
         cls,
+        *,
         name: str,
         description: str,
         seller_id: int,

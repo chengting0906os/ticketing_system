@@ -249,3 +249,33 @@ class TicketRepoImpl(TicketRepo):
         )
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_by_seat_location(
+        self, *, section: str, subsection: int, row_number: int, seat_number: int
+    ) -> Ticket | None:
+        result = await self.session.execute(
+            select(TicketModel)
+            .where(TicketModel.section == section)
+            .where(TicketModel.subsection == subsection)
+            .where(TicketModel.row_number == row_number)
+            .where(TicketModel.seat_number == seat_number)
+        )
+        db_ticket = result.scalar_one_or_none()
+        return self._to_entity(db_ticket) if db_ticket else None
+
+    @Logger.io
+    async def get_available_tickets_limit(self, *, limit: int) -> List[Ticket]:
+        result = await self.session.execute(
+            select(TicketModel)
+            .where(TicketModel.status == TicketStatus.AVAILABLE.value)
+            .order_by(
+                TicketModel.section,
+                TicketModel.subsection,
+                TicketModel.row_number,
+                TicketModel.seat_number,
+            )
+            .limit(limit)
+        )
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]

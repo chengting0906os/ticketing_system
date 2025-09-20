@@ -4,7 +4,7 @@ from typing import List
 import attrs
 
 from src.booking.domain.booking_entity import Booking
-from src.booking.domain.events import (
+from src.booking.domain.domain_events import (
     BookingCancelledEvent,
     BookingCreatedEvent,
     BookingPaidEvent,
@@ -27,6 +27,7 @@ class BookingAggregate:
     @Logger.io
     def create_booking(
         cls,
+        *,
         buyer_info: BuyerInfo,
         seller_info: SellerInfo,
         ticket_data_list: List[TicketData],
@@ -134,12 +135,15 @@ class BookingAggregate:
         )
 
     @property
-    def events(self) -> List[DomainEventProtocol]:
+    def domain_events(self) -> List[DomainEventProtocol]:
         """Get domain events"""
         return self._events.copy()
 
+    @property
+    def events(self) -> List[DomainEventProtocol]:
+        return self.domain_events
+
     def clear_events(self) -> None:
-        """Clear domain events after publishing"""
         self._events.clear()
 
     @Logger.io

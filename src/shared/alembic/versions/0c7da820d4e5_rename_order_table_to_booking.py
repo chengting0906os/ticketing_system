@@ -1,7 +1,7 @@
-"""rename_order_table_to_booking
+"""initial_database_schema
 
 Revision ID: 0c7da820d4e5
-Revises: 47b017b88247
+Revises:
 Create Date: 2025-09-15 00:07:11.644134
 
 """
