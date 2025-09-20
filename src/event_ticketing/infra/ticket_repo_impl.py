@@ -1,6 +1,6 @@
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
@@ -158,6 +158,36 @@ class TicketRepoImpl(TicketRepo):
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
     @Logger.io
+    async def get_available_tickets_for_section(
+        self, *, event_id: int, section: str, subsection: int, limit: int | None = None
+    ) -> List[Ticket]:
+        query = (
+            select(TicketModel)
+            .where(TicketModel.event_id == event_id)
+            .where(TicketModel.status == TicketStatus.AVAILABLE.value)
+        )
+
+        if section:
+            query = query.where(TicketModel.section == section)
+
+        if subsection:
+            query = query.where(TicketModel.subsection == subsection)
+
+        query = query.order_by(
+            TicketModel.section,
+            TicketModel.subsection,
+            TicketModel.row_number,
+            TicketModel.seat_number,
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await self.session.execute(query)
+        db_tickets = result.scalars().all()
+        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
     async def get_reserved_tickets_for_event(self, *, event_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)
@@ -279,3 +309,105 @@ class TicketRepoImpl(TicketRepo):
         )
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+
+    @Logger.io
+    async def get_ticket_stats_by_event(self, *, event_id: int) -> dict:
+        """Returns ticket statistics for an event."""
+        result = await self.session.execute(
+            select(
+                func.count(TicketModel.id).label('total'),
+                func.sum(
+                    case((TicketModel.status == TicketStatus.AVAILABLE.value, 1), else_=0)
+                ).label('available'),
+                func.sum(
+                    case((TicketModel.status == TicketStatus.RESERVED.value, 1), else_=0)
+                ).label('reserved'),
+                func.sum(case((TicketModel.status == TicketStatus.SOLD.value, 1), else_=0)).label(
+                    'sold'
+                ),
+            ).where(TicketModel.event_id == event_id)
+        )
+        stats = result.first()
+
+        return {
+            'total': stats.total or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'available': stats.available or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'reserved': stats.reserved or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'sold': stats.sold or 0,  # pyright: ignore[reportOptionalMemberAccess]
+        }
+
+    @Logger.io
+    async def get_ticket_stats_by_section(
+        self, *, event_id: int, section: str, subsection: int | None = None
+    ) -> dict:
+        """Returns ticket statistics for a section/subsection."""
+        query = select(
+            func.count(TicketModel.id).label('total'),
+            func.sum(case((TicketModel.status == TicketStatus.AVAILABLE.value, 1), else_=0)).label(
+                'available'
+            ),
+            func.sum(case((TicketModel.status == TicketStatus.RESERVED.value, 1), else_=0)).label(
+                'reserved'
+            ),
+            func.sum(case((TicketModel.status == TicketStatus.SOLD.value, 1), else_=0)).label(
+                'sold'
+            ),
+        ).where(TicketModel.event_id == event_id, TicketModel.section == section)
+
+        if subsection is not None:
+            query = query.where(TicketModel.subsection == subsection)
+
+        result = await self.session.execute(query)
+        stats = result.first()
+
+        return {
+            'total': stats.total or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'available': stats.available or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'reserved': stats.reserved or 0,  # pyright: ignore[reportOptionalMemberAccess]
+            'sold': stats.sold or 0,  # pyright: ignore[reportOptionalMemberAccess]
+        }
+
+    @Logger.io
+    async def get_sections_with_stats(self, *, event_id: int) -> List[dict]:
+        """Returns all sections with their subsection statistics."""
+        # Get distinct sections and subsections for the event
+        result = await self.session.execute(
+            select(
+                TicketModel.section,
+                TicketModel.subsection,
+                func.count(TicketModel.id).label('total'),
+                func.sum(
+                    case((TicketModel.status == TicketStatus.AVAILABLE.value, 1), else_=0)
+                ).label('available'),
+                func.sum(
+                    case((TicketModel.status == TicketStatus.RESERVED.value, 1), else_=0)
+                ).label('reserved'),
+                func.sum(case((TicketModel.status == TicketStatus.SOLD.value, 1), else_=0)).label(
+                    'sold'
+                ),
+            )
+            .where(TicketModel.event_id == event_id)
+            .group_by(TicketModel.section, TicketModel.subsection)
+            .order_by(TicketModel.section, TicketModel.subsection)
+        )
+
+        rows = result.all()
+
+        # Group by section
+        sections_dict = {}
+        for row in rows:
+            section = row.section
+            if section not in sections_dict:
+                sections_dict[section] = {'section': section, 'subsections': []}
+
+            sections_dict[section]['subsections'].append(
+                {
+                    'subsection': row.subsection,
+                    'total': row.total or 0,
+                    'available': row.available or 0,
+                    'reserved': row.reserved or 0,
+                    'sold': row.sold or 0,
+                }
+            )
+
+        return list(sections_dict.values())

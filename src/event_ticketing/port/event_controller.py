@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from src.event_ticketing.port.event_schema import (
     EventCreateRequest,
     EventResponse,
+    EventStatusResponse,
 )
 from src.event_ticketing.port.ticket_schema import (
     CreateTicketsRequest,
@@ -20,6 +21,7 @@ from src.event_ticketing.use_case.create_event_use_case import (
     ListEventsUseCase,
 )
 from src.event_ticketing.use_case.create_tickets_use_case import CreateTicketsUseCase
+from src.event_ticketing.use_case.get_availability_use_case import GetAvailabilityUseCase
 from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
 from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.exception.exceptions import NotFoundError
@@ -119,6 +121,29 @@ async def list_events(
     return result
 
 
+# @router.get('/{event_id}/availability/section/{section}', status_code=status.HTTP_200_OK)
+# @Logger.io
+# async def get_section_availability(
+#     event_id: int,
+#     section: str,
+#     subsection: Optional[int] = None,
+#     use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends),
+# ) -> SectionAvailabilityResponse:
+#     """Get ticket availability for a specific section or subsection (public endpoint)."""
+#     return await use_case.get_section_availability(
+#         event_id=event_id, section=section, subsection=subsection
+#     )
+
+
+@router.get('/{event_id}/status', status_code=status.HTTP_200_OK)
+@Logger.io
+async def get_event_status(
+    event_id: int, use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends)
+) -> EventStatusResponse:
+    """Get event status grouped by price (public endpoint)."""
+    return await use_case.get_event_status_with_all_subsections_tickets_count(event_id=event_id)
+
+
 # Ticket management endpoints for events
 
 
@@ -186,11 +211,6 @@ async def list_tickets_by_event(
 @router.get('/sse/{event_id}')
 @Logger.io(truncate_content=True)
 async def ticket_updates_sse(request: Request, event_id: int) -> StreamingResponse:
-    """
-    Server-Sent Events endpoint for real-time ticket updates
-    Usage: GET /api/event/sse/1
-    Authentication: JWT token in 'fastapiusersauth' cookie
-    """
     return await sse_ticket_updates(request, event_id)
 
 
@@ -228,7 +248,7 @@ async def list_tickets_by_section(
 @Logger.io
 async def reserve_tickets_for_event(
     event_id: int,
-    request: dict,  # Expecting {'ticket_count': int}
+    request: dict,  # Expecting {'ticket_count': int, 'section': str (optional), 'subsection': int (optional)}
     current_user: User = Depends(require_buyer),
     use_case: ReserveTicketsUseCase = Depends(ReserveTicketsUseCase.depends),
 ):
@@ -237,5 +257,7 @@ async def reserve_tickets_for_event(
         event_id=event_id,
         ticket_count=request['ticket_count'],
         buyer_id=current_user.id,
+        section=request.get('section'),  # pyright: ignore[reportArgumentType]
+        subsection=request.get('subsection'),  # pyright: ignore[reportArgumentType]
     )
     return result

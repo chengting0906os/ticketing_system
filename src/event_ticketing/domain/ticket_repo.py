@@ -42,6 +42,12 @@ class TicketRepo(ABC):
         pass
 
     @abstractmethod
+    async def get_available_tickets_for_section(
+        self, *, event_id: int, section: str, subsection: int, limit: int | None = None
+    ) -> List[Ticket]:
+        pass
+
+    @abstractmethod
     async def get_reserved_tickets_for_event(self, *, event_id: int) -> List[Ticket]:
         pass
 
@@ -79,4 +85,53 @@ class TicketRepo(ABC):
 
     @abstractmethod
     async def get_available_tickets_limit(self, *, limit: int) -> List[Ticket]:
+        pass
+
+    @abstractmethod
+    async def get_ticket_stats_by_event(self, *, event_id: int) -> dict:
+        """
+        Returns ticket statistics for an event.
+        Format: {
+            'total': int,
+            'available': int,
+            'reserved': int,
+            'sold': int
+        }
+        """
+        pass
+
+    @abstractmethod
+    async def get_ticket_stats_by_section(
+        self, *, event_id: int, section: str, subsection: int | None = None
+    ) -> dict:
+        """
+        Returns ticket statistics for a section/subsection.
+        Format: {
+            'total': int,
+            'available': int,
+            'reserved': int,
+            'sold': int
+        }
+        """
+        pass
+
+    @abstractmethod
+    async def get_sections_with_stats(self, *, event_id: int) -> List[dict]:
+        """
+        Returns all sections with their subsection statistics.
+        Format: [
+            {
+                'section': str,
+                'subsections': [
+                    {
+                        'subsection': int,
+                        'total': int,
+                        'available': int,
+                        'reserved': int,
+                        'sold': int
+                    }
+                ]
+            }
+        ]
+        """
         pass

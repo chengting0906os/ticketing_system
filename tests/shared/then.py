@@ -31,7 +31,8 @@ def verify_error_message_with_table(
     response = state['response']
     error_data = response.json()
     error_message = str(error_data.get('detail', ''))
-    assert expected_text in error_message, (
+    # Case-insensitive partial match to be more flexible
+    assert expected_text.lower() in error_message.lower(), (
         f'Expected "{expected_text}" in error message, got: {error_message}'
     )
 

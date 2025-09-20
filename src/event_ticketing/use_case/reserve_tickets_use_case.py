@@ -29,18 +29,22 @@ class ReserveTicketsUseCase:
 
     @Logger.io
     async def reserve_tickets(
-        self, *, event_id: int, ticket_count: int, buyer_id: int
+        self, *, event_id: int, ticket_count: int, buyer_id: int, section: str, subsection: int
     ) -> Dict[str, Any]:
-        """Reserve tickets for the given event and buyer."""
         if ticket_count <= 0:
             raise DomainError('Ticket count must be positive', 400)
         if ticket_count > 4:
             raise DomainError('Maximum 4 tickets per booking', 400)
 
-        # Get available tickets for the event
-        available_tickets = await self.ticket_repo.get_available_tickets_for_event(
-            event_id=event_id, limit=ticket_count
-        )
+        # Get available tickets for the event (optionally filtered by section/subsection)
+        if section or subsection:
+            available_tickets = await self.ticket_repo.get_available_tickets_for_section(
+                event_id=event_id, section=section, subsection=subsection, limit=ticket_count
+            )
+        else:
+            available_tickets = await self.ticket_repo.get_available_tickets_for_event(
+                event_id=event_id, limit=ticket_count
+            )
 
         if len(available_tickets) < ticket_count:
             raise DomainError('Not enough available tickets', 400)

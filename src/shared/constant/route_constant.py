@@ -41,6 +41,10 @@ EVENT_TICKETS_BY_SUBSECTION = (
 )
 EVENT_TICKETS_RESERVE = f'{EVENT_BASE}/{{event_id}}/reserve'
 
+# Event availability routes
+EVENT_AVAILABILITY = f'{EVENT_BASE}/{{event_id}}/availability'
+EVENT_SECTION_AVAILABILITY = f'{EVENT_BASE}/{{event_id}}/availability/section/{{section}}'
+
 # System routes
 SYSTEM_BASE = f'{API_BASE}/system'
 SYSTEM_CLEANUP_EXPIRED = f'{SYSTEM_BASE}/cleanup-expired-reservations'

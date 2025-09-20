@@ -250,3 +250,14 @@ def buyer_cancels_booking(client, context):
     # Cancel the booking
     response = client.delete(f'/api/booking/{booking_id}')
     context['response'] = response
+
+
+@when('user requests event status:')
+def user_requests_event_status(step, client, context):
+    """User requests event status (price groups)."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Make request without authentication (public endpoint)
+    response = client.get(f'/api/event/{event_id}/status')
+    context['response'] = response

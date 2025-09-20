@@ -257,3 +257,451 @@ def tickets_return_to_available(step, execute_sql_statement):
     )
     actual_count = result[0]['count']
     assert actual_count >= expected_count  # At least this many should be available
+
+
+# Availability step definitions
+
+
+@then('the availability response should contain:')
+def verify_availability_response(step, context):
+    """Verify availability response contains expected statistics."""
+    expected_data = extract_table_data(step)
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+
+    # Verify main statistics
+    assert data['total_tickets'] == int(expected_data['total_tickets'])
+    assert data['available_tickets'] == int(expected_data['available_tickets'])
+    assert data['reserved_tickets'] == int(expected_data['reserved_tickets'])
+    assert data['sold_tickets'] == int(expected_data['sold_tickets'])
+
+
+@then('sections availability should include:')
+def verify_sections_availability(step, context):
+    """Verify sections availability data in response."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', [])
+
+    # Parse expected data from step table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        expected = dict(zip(headers, values, strict=True))
+
+        # Find matching section
+        section_found = False
+        for section in sections:
+            if section['section'] == expected['section']:
+                section_found = True
+
+                # Verify section totals
+                assert section['total_tickets'] == int(expected['subsections']) * int(
+                    expected['total_per_subsection']
+                )
+                assert section['available_tickets'] == int(expected['subsections']) * int(
+                    expected['available_per_subsection']
+                )
+
+                # Verify subsections count
+                assert len(section['subsections']) == int(expected['subsections'])
+
+                # Verify each subsection
+                for subsection in section['subsections']:
+                    assert subsection['total_tickets'] == int(expected['total_per_subsection'])
+                    assert subsection['available_tickets'] == int(
+                        expected['available_per_subsection']
+                    )
+                    assert subsection['reserved_tickets'] == 0
+                    assert subsection['sold_tickets'] == 0
+
+                break
+
+        assert section_found, f'Section {expected["section"]} not found in response'
+
+
+@then('the section availability should contain:')
+def verify_section_availability_response(step, context):
+    """Verify section-specific availability response."""
+    expected_data = extract_table_data(step)
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+
+    # Verify section data
+    assert data['section'] == expected_data['section']
+    assert data['total_tickets'] == int(expected_data['total_tickets'])
+    assert data['available_tickets'] == int(expected_data['available_tickets'])
+    assert data['reserved_tickets'] == int(expected_data['reserved_tickets'])
+    assert data['sold_tickets'] == int(expected_data['sold_tickets'])
+
+
+@then('subsections availability should include:')
+def verify_subsections_availability(step, context):
+    """Verify subsections availability data in response."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    subsections = data.get('subsections', [])
+
+    # Parse expected data from step table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        expected = dict(zip(headers, values, strict=True))
+
+        # Find matching subsection
+        subsection_found = False
+        for subsection in subsections:
+            if subsection['subsection'] == int(expected['subsection']):
+                subsection_found = True
+
+                assert subsection['total_tickets'] == int(expected['total_tickets'])
+                assert subsection['available_tickets'] == int(expected['available_tickets'])
+                assert subsection['reserved_tickets'] == int(expected['reserved_tickets'])
+                assert subsection['sold_tickets'] == int(expected['sold_tickets'])
+
+                break
+
+        assert subsection_found, f'Subsection {expected["subsection"]} not found in response'
+
+
+@then('sections availability should be empty')
+def verify_sections_availability_empty(context):
+    """Verify sections availability is empty."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', [])
+    assert len(sections) == 0, f'Expected empty sections, got {len(sections)} sections'
+
+
+@then('subsection availability should include:')
+def verify_subsection_availability(step, context):
+    """Verify detailed subsection availability data."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', [])
+
+    # Create a lookup table for expected subsections
+    expected_subsections = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        section = row.cells[0].value
+        subsection = int(row.cells[1].value)
+        key = f'{section}_{subsection}'
+        expected_subsections[key] = {
+            'total_tickets': int(row.cells[2].value),
+            'available_tickets': int(row.cells[3].value),
+            'reserved_tickets': int(row.cells[4].value),
+            'sold_tickets': int(row.cells[5].value),
+        }
+
+    # Verify each expected subsection
+    found_subsections = {}
+    for section_data in sections:
+        section_name = section_data['section']
+        for subsection_data in section_data.get('subsections', []):
+            subsection_num = subsection_data['subsection']
+            key = f'{section_name}_{subsection_num}'
+            found_subsections[key] = subsection_data
+
+    for key, expected in expected_subsections.items():
+        assert key in found_subsections, f'Subsection {key} not found in response'
+        actual = found_subsections[key]
+
+        assert actual['total_tickets'] == expected['total_tickets'], (
+            f'Subsection {key} total_tickets: expected {expected["total_tickets"]}, got {actual["total_tickets"]}'
+        )
+        assert actual['available_tickets'] == expected['available_tickets'], (
+            f'Subsection {key} available_tickets: expected {expected["available_tickets"]}, got {actual["available_tickets"]}'
+        )
+        assert actual['reserved_tickets'] == expected['reserved_tickets'], (
+            f'Subsection {key} reserved_tickets: expected {expected["reserved_tickets"]}, got {actual["reserved_tickets"]}'
+        )
+        assert actual['sold_tickets'] == expected['sold_tickets'], (
+            f'Subsection {key} sold_tickets: expected {expected["sold_tickets"]}, got {actual["sold_tickets"]}'
+        )
+
+
+@then('some subsections should have reservations:')
+def verify_subsections_have_reservations(step, context):
+    """Verify that subsections have the expected total reservations."""
+    expected_data = extract_table_data(step)
+    expected_total_reserved = int(expected_data['total_reserved'])
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', [])
+
+    actual_total_reserved = 0
+    for section_data in sections:
+        for subsection_data in section_data.get('subsections', []):
+            actual_total_reserved += subsection_data.get('reserved_tickets', 0)
+
+    assert actual_total_reserved == expected_total_reserved, (
+        f'Total reserved tickets: expected {expected_total_reserved}, got {actual_total_reserved}'
+    )
+
+
+@then('subsection statuses should be mixed:')
+def verify_mixed_subsection_statuses(step, context):
+    """Verify that subsections have mixed statuses (reserved and sold)."""
+    expected_data = extract_table_data(step)
+    expected_total_reserved = int(expected_data['total_reserved'])
+    expected_total_sold = int(expected_data['total_sold'])
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', [])
+
+    actual_total_reserved = 0
+    actual_total_sold = 0
+    for section_data in sections:
+        for subsection_data in section_data.get('subsections', []):
+            actual_total_reserved += subsection_data.get('reserved_tickets', 0)
+            actual_total_sold += subsection_data.get('sold_tickets', 0)
+
+    assert actual_total_reserved == expected_total_reserved, (
+        f'Total reserved tickets: expected {expected_total_reserved}, got {actual_total_reserved}'
+    )
+    assert actual_total_sold == expected_total_sold, (
+        f'Total sold tickets: expected {expected_total_sold}, got {actual_total_sold}'
+    )
+
+
+@then('the event status should contain price groups:')
+def verify_event_status_price_groups(step, context):
+    """Verify the event status contains expected price groups."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    price_groups = data.get('price_groups', [])
+
+    # Create lookup table for expected price groups
+    expected_groups = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        price = int(row.cells[0].value)
+        subsections_count = int(row.cells[1].value)
+        expected_groups[price] = subsections_count
+
+    # Verify price groups
+    assert len(price_groups) == len(expected_groups), (
+        f'Expected {len(expected_groups)} price groups, got {len(price_groups)}'
+    )
+
+    for group in price_groups:
+        price = group['price']
+        assert price in expected_groups, f'Unexpected price group: {price}'
+
+        actual_subsections = len(group.get('subsections', []))
+        expected_subsections = expected_groups[price]
+        assert actual_subsections == expected_subsections, (
+            f'Price {price}: expected {expected_subsections} subsections, got {actual_subsections}'
+        )
+
+
+@then('subsections should all be available:')
+def verify_all_subsections_available(step, context):
+    """Verify all subsections have expected availability."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    price_groups = data.get('price_groups', [])
+
+    # Create lookup table for expected subsections
+    expected_subsections = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        price = int(row.cells[0].value)
+        subsection = int(row.cells[1].value)
+        key = f'{price}_{subsection}'
+        expected_subsections[key] = {
+            'total_seats': int(row.cells[2].value),
+            'available_seats': int(row.cells[3].value),
+            'status': row.cells[4].value,
+        }
+
+    # Find all subsections in response
+    found_subsections = {}
+    for group in price_groups:
+        price = group['price']
+        for subsection_data in group.get('subsections', []):
+            subsection = subsection_data['subsection']
+            key = f'{price}_{subsection}'
+            found_subsections[key] = subsection_data
+
+    # Verify each expected subsection
+    for key, expected in expected_subsections.items():
+        assert key in found_subsections, f'Subsection {key} not found in response'
+        actual = found_subsections[key]
+
+        assert actual['total_seats'] == expected['total_seats'], (
+            f'Subsection {key} total_seats: expected {expected["total_seats"]}, got {actual["total_seats"]}'
+        )
+        assert actual['available_seats'] == expected['available_seats'], (
+            f'Subsection {key} available_seats: expected {expected["available_seats"]}, got {actual["available_seats"]}'
+        )
+        assert actual['status'] == expected['status'], (
+            f'Subsection {key} status: expected {expected["status"]}, got {actual["status"]}'
+        )
+
+
+@then('subsections should have mixed status:')
+def verify_subsections_mixed_status(step, context):
+    """Verify specific subsections have expected mixed status."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    price_groups = data.get('price_groups', [])
+
+    # Create lookup table for expected subsections
+    expected_subsections = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        price = int(row.cells[0].value)
+        subsection = int(row.cells[1].value)
+        key = f'{price}_{subsection}'
+        expected_subsections[key] = {
+            'total_seats': int(row.cells[2].value),
+            'available_seats': int(row.cells[3].value),
+            'status': row.cells[4].value,
+        }
+
+    # Find matching subsections in response
+    found_subsections = {}
+    for group in price_groups:
+        price = group['price']
+        for subsection_data in group.get('subsections', []):
+            subsection = subsection_data['subsection']
+            key = f'{price}_{subsection}'
+            if key in expected_subsections:
+                found_subsections[key] = subsection_data
+
+    # Verify each expected subsection
+    for key, expected in expected_subsections.items():
+        assert key in found_subsections, f'Subsection {key} not found in response'
+        actual = found_subsections[key]
+
+        assert actual['total_seats'] == expected['total_seats'], (
+            f'Subsection {key} total_seats: expected {expected["total_seats"]}, got {actual["total_seats"]}'
+        )
+        assert actual['available_seats'] == expected['available_seats'], (
+            f'Subsection {key} available_seats: expected {expected["available_seats"]}, got {actual["available_seats"]}'
+        )
+        assert actual['status'] == expected['status'], (
+            f'Subsection {key} status: expected {expected["status"]}, got {actual["status"]}'
+        )
+
+
+@then('price groups should have varied statuses:')
+def verify_price_groups_varied_statuses(step, context):
+    """Verify price groups have varied availability statuses."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    price_groups = data.get('price_groups', [])
+
+    # Create lookup table for expected price group status
+    expected_groups = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        price = int(row.cells[0].value)
+        has_available = row.cells[1].value.lower() == 'true'
+        has_partial = row.cells[2].value.lower() == 'true'
+        expected_groups[price] = {
+            'has_available': has_available,
+            'has_partial': has_partial,
+        }
+
+    # Verify each price group
+    for group in price_groups:
+        price = group['price']
+        if price in expected_groups:
+            expected = expected_groups[price]
+
+            # Check for available and partial subsections
+            has_available = False
+            has_partial = False
+
+            for subsection in group.get('subsections', []):
+                if subsection['status'] == 'Available':
+                    has_available = True
+                elif 'remaining' in subsection['status']:
+                    has_partial = True
+
+            if expected['has_available']:
+                assert has_available, f'Price group {price} should have available subsections'
+
+            if expected['has_partial']:
+                assert has_partial, f'Price group {price} should have partial subsections'
+
+
+@then('specific subsections should show:')
+def verify_specific_subsections_show(step, context):
+    """Verify specific subsections show expected values."""
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    price_groups = data.get('price_groups', [])
+
+    # Create lookup table for expected subsections
+    expected_subsections = {}
+    rows = step.data_table.rows[1:]  # Skip header
+    for row in rows:
+        price = int(row.cells[0].value)
+        subsection = int(row.cells[1].value)
+        key = f'{price}_{subsection}'
+        expected_subsections[key] = {
+            'available_seats': int(row.cells[2].value),
+            'status': row.cells[3].value,
+        }
+
+    # Find matching subsections in response
+    found_subsections = {}
+    for group in price_groups:
+        price = group['price']
+        for subsection_data in group.get('subsections', []):
+            subsection = subsection_data['subsection']
+            key = f'{price}_{subsection}'
+            if key in expected_subsections:
+                found_subsections[key] = subsection_data
+
+    # Verify each expected subsection
+    for key, expected in expected_subsections.items():
+        assert key in found_subsections, f'Subsection {key} not found in response'
+        actual = found_subsections[key]
+
+        assert actual['available_seats'] == expected['available_seats'], (
+            f'Subsection {key} available_seats: expected {expected["available_seats"]}, got {actual["available_seats"]}'
+        )
+        assert actual['status'] == expected['status'], (
+            f'Subsection {key} status: expected {expected["status"]}, got {actual["status"]}'
+        )

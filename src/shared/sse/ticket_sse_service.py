@@ -6,6 +6,7 @@ Replaces the WebSocket functionality with SSE.
 """
 
 import asyncio
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from fastapi import Request
@@ -27,6 +28,10 @@ class TicketSSEService:
     ):
         self.heartbeat_interval = heartbeat_interval
         self.codec = SSEMessageCodec()
+        # Event queues for each connection (connection_id -> queue)
+        self.connection_queues: Dict[str, asyncio.Queue] = {}
+        # Connection ID mapping (event_id -> list of connection_ids)
+        self.connection_mapping: Dict[int, List[str]] = defaultdict(list)
 
     async def create_sse_stream(
         self, request: Request, event_id: int, user: User
@@ -52,6 +57,10 @@ class TicketSSEService:
             connection = await sse_connection_manager.add_connection(
                 request, event_id, user_metadata
             )
+            # Create connection ID and setup queue
+            connection_id = f'{event_id}:{user.id}:{id(connection)}'
+            self.connection_queues[connection_id] = asyncio.Queue()
+            self.connection_mapping[event_id].append(connection_id)
         except ValueError as e:
             # Connection limit exceeded
             error_stream = self._create_error_stream(str(e))
