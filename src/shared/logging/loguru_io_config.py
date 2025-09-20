@@ -41,16 +41,19 @@ class InterceptHandler(logging.Handler):
         message = record.getMessage()
 
         # Parse HTTP status code from granian access logs
-        # New format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" 200 123 45 ms'
-        if ' - "' in message and ' HTTP/1.1" ' in message:
-            # Extract status code from the new format
+        # Format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" - 200 - 8ms'
+        # Also supports HTTP/2.0, HTTP/3.0, etc.
+        if (
+            ' - "' in message and ' HTTP/' in message
+        ):  # Format: '127.0.0.1 - "GET /api/user/me HTTP/2.0" - 200 - 8ms'
+            # Extract status code from the format
             try:
                 parts = message.split('"')
                 if len(parts) >= 3:
-                    # parts[2] should be like ' 200 123 45 ms'
+                    # parts[2] should be like ' - 200 - 8ms'
                     status_parts = parts[2].strip().split()
-                    if status_parts:
-                        status_code = int(status_parts[0])
+                    if len(status_parts) >= 2 and status_parts[0] == '-':
+                        status_code = int(status_parts[1])
 
                         # Adjust log level based on status code
                         if status_code >= 500:

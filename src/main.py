@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.booking.port.booking_controller import router as booking_router
 from src.event_ticketing.port.event_controller import router as event_router
@@ -35,6 +36,9 @@ app.add_middleware(
 # Register exception handlers
 register_exception_handlers(app)
 
+# Static files
+app.mount('/static', StaticFiles(directory='static'), name='static')
+
 # endpoints
 app.include_router(auth_router, prefix='/api/auth', tags=['auth'])
 app.include_router(users_router, prefix='/api/user', tags=['user'])
@@ -45,4 +49,6 @@ app.include_router(system_router, prefix='/api', tags=['system-maintenance'])
 
 @app.get('/')
 async def root():
-    return {'message': 'Ticketing System API'}
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url='/static/index.html')

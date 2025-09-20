@@ -41,3 +41,5 @@ logs
 .serena/
 
 my_spec.md
+static/
+static/*
