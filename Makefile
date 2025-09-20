@@ -96,6 +96,40 @@ docker-logs:
 db-shell psql:
 	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
 
+.PHONY: db-restart
+db-restart:
+	@echo "Restarting PostgreSQL container..."
+	@docker restart ticketing_system_db
+
+# Kafka
+.PHONY: kafka-clean-all kca
+kafka-clean-all kca:
+	@echo "Deleting ALL Kafka topics..."
+	@docker exec kafka1 sh -c 'for topic in $$(kafka-topics --bootstrap-server kafka1:29092 --list); do \
+		echo "Deleting topic: $$topic"; \
+		kafka-topics --bootstrap-server kafka1:29092 --delete --topic "$$topic" 2>/dev/null || true; \
+	done'
+	@echo "All topics deleted!"
+
+.PHONY: kafka-topics kt
+kafka-topics kt: kafka-clean-all
+	@echo "Creating Kafka topics..."
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-events --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-bookings --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-tickets --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-requests --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-responses --partitions 6 --replication-factor 3
+	@echo "Topics created successfully!"
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --list
+
+.PHONY: kafka-status ks
+kafka-status ks:
+	@echo "Kafka cluster status:"
+	@docker-compose ps kafka1 kafka2 kafka3 kafka-ui
+	@echo ""
+	@echo "Kafka UI available at: http://localhost:8080"
+	@echo "Kafka brokers at: localhost:9092,localhost:9093,localhost:9094"
+
 # Help
 .PHONY: help
 help:
