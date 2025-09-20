@@ -31,13 +31,6 @@ class Ticket:
     updated_at: Optional[datetime] = None
     reserved_at: Optional[datetime] = None
 
-    @Logger.io
-    def __attrs_post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc)
-        if self.updated_at is None:
-            self.updated_at = datetime.now(timezone.utc)
-
     @property
     @Logger.io
     def seat_identifier(self) -> str:
@@ -48,11 +41,9 @@ class Ticket:
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
 
-        now = datetime.now(timezone.utc)
         self.status = TicketStatus.RESERVED
         self.buyer_id = buyer_id
-        self.reserved_at = now
-        self.updated_at = now
+        self.reserved_at = datetime.now(timezone.utc)
 
     @Logger.io
     def sell(self) -> None:
@@ -60,7 +51,6 @@ class Ticket:
             raise ValueError(f'Cannot sell ticket with status {self.status}')
 
         self.status = TicketStatus.SOLD
-        self.updated_at = datetime.now(timezone.utc)
 
     @Logger.io
     def release(self) -> None:
@@ -71,7 +61,6 @@ class Ticket:
         self.booking_id = None
         self.buyer_id = None
         self.reserved_at = None
-        self.updated_at = datetime.now(timezone.utc)
 
     @Logger.io
     def cancel_reservation(self, *, buyer_id: int) -> None:
