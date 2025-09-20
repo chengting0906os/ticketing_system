@@ -183,13 +183,3 @@ async def clean_database():
 def client():
     with TestClient(app) as test_client:
         yield test_client
-
-
-@pytest.fixture
-def reservation_state():
-    """Fixture to hold reservation test state."""
-
-    class ReservationState:
-        pass
-
-    return ReservationState()
