@@ -4,8 +4,13 @@ from typing import Any, Dict, Union
 import msgpack
 
 
-class WebSocketMessageCodec:
-    """Handles encoding/decoding of WebSocket messages with binary optimization"""
+class MessageCodec:
+    """Handles encoding/decoding of messages with binary optimization support
+
+    Protocol-agnostic message codec that supports both MessagePack (binary)
+    and JSON (text) encoding. Can be used with WebSocket, SSE, Kafka, or any
+    other messaging protocol.
+    """
 
     @staticmethod
     def encode_message(*, data: Dict[str, Any], use_binary: bool = True) -> Union[str, bytes]:

@@ -1,6 +1,7 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 
 from src.event_ticketing.port.event_schema import (
     EventCreateRequest,
@@ -28,7 +29,7 @@ from src.shared.service.role_auth_service import (
     require_buyer_or_seller,
     require_seller,
 )
-from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
+from src.shared.sse.sse_endpoint import sse_ticket_updates
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 
@@ -182,80 +183,15 @@ async def list_tickets_by_event(
     )
 
 
-@router.websocket('/ws/{event_id}')
+@router.get('/sse/{event_id}')
 @Logger.io(truncate_content=True)
-async def websocket_ticket_updates(
-    websocket: WebSocket,
-    event_id: int,
-):
+async def ticket_updates_sse(request: Request, event_id: int) -> StreamingResponse:
     """
-    WebSocket endpoint with JWT authentication (NO DB lookup needed!)
-    Usage: ws://localhost:8000/api/event/ws/1
+    Server-Sent Events endpoint for real-time ticket updates
+    Usage: GET /api/event/sse/1
+    Authentication: JWT token in 'fastapiusersauth' cookie
     """
-    # Get JWT token from cookie
-    token = websocket.cookies.get('fastapiusersauth')
-
-    if not token:
-        await websocket.close(code=4001, reason='Missing auth cookie')
-        return
-
-    try:
-        from src.shared.service.jwt_auth_service import get_jwt_strategy
-
-        jwt_strategy = get_jwt_strategy()
-
-        # Decode full token payload (contains all user information)
-        # Cast to our custom strategy to access decode_full_token method
-        from src.shared.service.jwt_auth_service import CustomJWTStrategy
-
-        if isinstance(jwt_strategy, CustomJWTStrategy):
-            payload = jwt_strategy.decode_full_token(token)
-        else:
-            payload = None
-        if not payload:
-            await websocket.close(code=4001, reason='Invalid token')
-            return
-
-        # Check user role directly from payload
-        try:
-            user_role = UserRole(payload.get('role')) if payload.get('role') else None
-            if user_role not in [UserRole.BUYER, UserRole.SELLER]:
-                await websocket.close(code=4003, reason='Forbidden')
-                return
-        except ValueError:
-            await websocket.close(code=4003, reason='Invalid role')
-            return
-
-        # Create User object from payload data (no database lookup needed)
-        current_user = User(
-            id=payload['user_id'],
-            email=payload['email'],
-            name=payload.get('name', 'WebSocket User'),
-            role=user_role,  # user_role is already a UserRole enum from payload
-            hashed_password='',  # Not needed for WebSocket
-            is_active=payload.get('is_active', True),
-            is_superuser=False,
-            is_verified=payload.get('is_verified', True),
-        )
-
-    except (ValueError, KeyError, TypeError):
-        await websocket.close(code=4001, reason='Invalid token')
-        return
-
-    # Authentication successful, handle WebSocket connection
-    await ticket_websocket_service.handle_connection(websocket, event_id, current_user)
-
-
-# Function to push ticket events to WebSocket connections
-async def push_ticket_event_to_websocket(
-    event_id: int, ticket_data: dict, event_type: str, affected_sections: Optional[List[str]] = None
-):
-    await ticket_websocket_service.broadcast_ticket_event(
-        event_id=event_id,
-        ticket_data=ticket_data,
-        event_type=event_type,
-        affected_sections=affected_sections,
-    )
+    return await sse_ticket_updates(request, event_id)
 
 
 @router.get('/{event_id}/tickets/section/{section}', status_code=status.HTTP_200_OK)

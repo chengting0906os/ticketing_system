@@ -56,8 +56,8 @@ class ReserveTicketsUseCase:
         await self.ticket_repo.update_batch(tickets=tickets_to_reserve)
         await self.session.commit()
 
-        # Broadcast WebSocket events for each reserved ticket (by subsection)
-        await self._broadcast_reservation_events(
+        # Broadcast SSE events for real-time updates
+        await self._broadcast_reservation_events_sse(
             event_id=event_id, tickets=tickets_to_reserve, buyer_id=buyer_id
         )
 
@@ -224,12 +224,12 @@ class ReserveTicketsUseCase:
         return []
 
     @Logger.io
-    async def _broadcast_reservation_events(
+    async def _broadcast_reservation_events_sse(
         self, *, event_id: int, tickets: List, buyer_id: int
     ) -> None:
-        """Broadcast WebSocket events for ticket reservations by subsection."""
+        """Broadcast SSE events for ticket reservations by subsection."""
         try:
-            from src.shared.websocket.ticket_websocket_service import ticket_websocket_service
+            from src.shared.sse.ticket_sse_service import ticket_sse_service
 
             # Group tickets by subsection for efficient broadcasting
             subsection_groups = {}
@@ -238,9 +238,6 @@ class ReserveTicketsUseCase:
                 if subsection_key not in subsection_groups:
                     subsection_groups[subsection_key] = []
                 subsection_groups[subsection_key].append(ticket)
-
-            # Get updated ticket counts for this event after reservation
-            remaining_counts = await self._get_remaining_ticket_counts(event_id=event_id)
 
             # Broadcast reservation events for each affected subsection
             for subsection_key, subsection_tickets in subsection_groups.items():
@@ -263,7 +260,7 @@ class ReserveTicketsUseCase:
                 ]
 
                 # Broadcast detailed subsection event (for users in the subsection page)
-                await ticket_websocket_service.broadcast_subsection_event(
+                await ticket_sse_service.broadcast_subsection_event(
                     event_id=event_id,
                     section=section,
                     subsection=int(subsection),
@@ -275,54 +272,31 @@ class ReserveTicketsUseCase:
                         'tickets': tickets_data,
                         'buyer_id': buyer_id,
                         'reservation_count': len(subsection_tickets),
-                        'remaining_count': remaining_counts.get(subsection_key, 0),
                     },
                 )
 
                 Logger.base.info(
-                    f'Broadcasted detailed reservation for {len(subsection_tickets)} tickets '
+                    f'Broadcasted SSE reservation for {len(subsection_tickets)} tickets '
                     f'in subsection {section}-{subsection} for event {event_id}'
                 )
 
-            # Broadcast general event with remaining counts (for users not in specific subsection pages)
-            await ticket_websocket_service.broadcast_ticket_event(
+            # Broadcast general event (for users not in specific subsection pages)
+            await ticket_sse_service.broadcast_ticket_event(
                 event_id=event_id,
                 ticket_data={
                     'event_id': event_id,
                     'total_reserved': len(tickets),
                     'affected_subsections': list(subsection_groups.keys()),
-                    'remaining_counts_by_subsection': remaining_counts,
                 },
                 event_type='reservation_summary',
             )
 
             Logger.base.info(
-                f'Broadcasted general reservation summary for event {event_id} '
+                f'Broadcasted SSE reservation summary for event {event_id} '
                 f'affecting {len(subsection_groups)} subsections'
             )
 
         except Exception as e:
-            # Log error but don't fail the reservation - WebSocket is secondary
-            Logger.base.error(f'Failed to broadcast reservation events: {e}')
+            # Log error but don't fail the reservation - SSE is secondary
+            Logger.base.error(f'Failed to broadcast SSE reservation events: {e}')
             # Continue execution - reservation is already committed to database
-
-    async def _get_remaining_ticket_counts(self, *, event_id: int) -> Dict[str, int]:
-        """Get remaining ticket counts by subsection for the event."""
-        try:
-            # Get all available tickets for this event
-            available_tickets = await self.ticket_repo.get_available_tickets_for_event(
-                event_id=event_id,
-                limit=None,  # Get all available tickets
-            )
-
-            # Count by subsection
-            subsection_counts = {}
-            for ticket in available_tickets:
-                subsection_key = f'{ticket.section}-{ticket.subsection}'
-                subsection_counts[subsection_key] = subsection_counts.get(subsection_key, 0) + 1
-
-            return subsection_counts
-
-        except Exception as e:
-            Logger.base.error(f'Failed to get remaining ticket counts: {e}')
-            return {}
