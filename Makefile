@@ -32,15 +32,19 @@ migrate-current mc:
 # Testing
 .PHONY: test t
 test t:
-	@uv run pytest tests/ -v
+	@uv run pytest tests/ -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-api
 test-api:
-	@uv run pytest tests/test_user_api_async.py -v
+	@uv run pytest tests/test_user_api_async.py -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-bdd tbdd
 test-bdd tbdd:
-	@uv run pytest tests/features/ -v
+	@uv run pytest tests/features/ -v $(filter-out $@,$(MAKECMDGOALS))
+
+# Allow arbitrary args to be passed without throwing errors
+%:
+	@:
 
 # Linting and formatting
 .PHONY: lint
@@ -142,9 +146,9 @@ help:
 	@echo "    make migrate-current (mc) - Show current migration"
 	@echo ""
 	@echo "  Testing:"
-	@echo "    make test (t)            - Run all tests"
-	@echo "    make test-api            - Run API tests"
-	@echo "    make test-bdd (tbdd)     - Run BDD tests"
+	@echo "    make test (t) [args]     - Run all tests (accepts pytest args)"
+	@echo "    make test-api [args]     - Run API tests (accepts pytest args)"
+	@echo "    make test-bdd (tbdd) [args] - Run BDD tests (accepts pytest args)"
 	@echo ""
 	@echo "  Development:"
 	@echo "    make run                 - Run development server"
