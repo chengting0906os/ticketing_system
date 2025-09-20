@@ -4,9 +4,12 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     EVENT_BASE,
     EVENT_LIST,
+    EVENT_TICKETS_BY_SECTION,
+    EVENT_TICKETS_LIST,
     EVENT_UPDATE,
 )
-from tests.shared.utils import extract_table_data
+from tests.shared.utils import extract_table_data, login_user
+from tests.util_constant import BUYER1_EMAIL, DEFAULT_PASSWORD, SELLER1_EMAIL
 
 
 @when('I create a event with')
@@ -158,4 +161,92 @@ def seller_creates_event_with_zero_ticket_price(step, client: TestClient, contex
     }
 
     response = client.post(EVENT_BASE, json=request_data)
+    context['response'] = response
+
+
+"""When steps for event ticket BDD tests."""
+
+
+@when('seller lists all tickets with:')
+def seller_lists_all_tickets(step, client, context):
+    """Seller lists all tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Login as seller
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List all tickets
+    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+
+    context['response'] = response
+
+
+@when('seller lists tickets by section with:')
+def seller_lists_tickets_by_section(step, client, context):
+    """Seller lists tickets for specific section."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    section = data['section']
+
+    # Login as seller
+    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List tickets by section
+    response = client.get(EVENT_TICKETS_BY_SECTION.format(event_id=event_id, section=section))
+
+    context['response'] = response
+
+
+@when('buyer lists available tickets with:')
+def buyer_lists_available_tickets(step, client, context):
+    """Buyer lists available tickets for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # List available tickets
+    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+
+    context['response'] = response
+
+
+@when('buyer attempts to access section tickets with:')
+def buyer_attempts_to_access_section_tickets(step, client, context):
+    """Buyer attempts to access section-specific tickets (seller-only functionality)."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+    section = data['section']
+
+    # Login as buyer
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+
+    # Try to access section-specific tickets (should fail)
+    response = client.get(EVENT_TICKETS_BY_SECTION.format(event_id=event_id, section=section))
+
+    context['response'] = response
+
+
+@when('buyer lists available tickets with detailed view:')
+def buyer_lists_tickets_with_detail(step, context, client):
+    """Buyer lists tickets with detailed view for an event."""
+    data = extract_table_data(step)
+    event_id = int(data['event_id'])
+
+    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+    context['response'] = response
+
+
+@when('buyer cancels the booking')
+def buyer_cancels_booking(client, context):
+    """Buyer cancels their booking."""
+    booking_id = context.get('booking_id')
+    if not booking_id:
+        raise ValueError('No booking_id found in context')
+
+    # Cancel the booking
+    response = client.delete(f'/api/booking/{booking_id}')
     context['response'] = response

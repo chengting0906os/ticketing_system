@@ -22,10 +22,6 @@ from tests.booking.functional.when import *  # noqa: F403
 from tests.event_ticketing.functional.fixtures import *  # noqa: F403
 from tests.event_ticketing.functional.given import *  # noqa: F403
 from tests.event_ticketing.functional.then import *  # noqa: F403
-from tests.event_ticketing.functional.ticket_fixtures import *  # noqa: F403
-from tests.event_ticketing.functional.ticket_given import *  # noqa: F403
-from tests.event_ticketing.functional.ticket_then import *  # noqa: F403
-from tests.event_ticketing.functional.ticket_when import *  # noqa: F403
 from tests.event_ticketing.functional.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403

@@ -1,7 +1,6 @@
 from pytest_bdd import then
 
-from src.shared.constant.route_constant import EVENT_GET
-from tests.shared.utils import extract_table_data
+from tests.shared.utils import extract_single_value, extract_table_data
 
 
 @then('the event should be created with:')
@@ -35,54 +34,6 @@ def verify_event_created(step, event_state=None, context=None):
             )
         else:
             assert response_json[field] == expected_value
-
-
-@then('the stock should be initialized with')
-def verify_stock_initialized(step, event_state):
-    expected_data = extract_table_data(step)
-    response = event_state['response']
-    assert response.status_code == 201
-    response_json = response.json()
-    if 'stock' in response_json:
-        assert response_json['stock']['quantity'] == int(expected_data['quantity'])
-    elif 'quantity' in response_json:
-        assert response_json['quantity'] == int(expected_data['quantity'])
-
-
-@then('the event should be updated with')
-def verify_event_updated(step, event_state):
-    import json
-
-    expected_data = extract_table_data(step)
-    response = event_state['response']
-    response_json = response.json()
-    for field, expected_value in expected_data.items():
-        if expected_value == '{any_int}':
-            assert field in response_json, f"Response should contain field '{field}'"
-            assert isinstance(response_json[field], int), f'{field} should be an integer'
-            assert response_json[field] > 0, f'{field} should be positive'
-        elif field == 'is_active':
-            expected_active = expected_value.lower() == 'true'
-            assert response_json['is_active'] == expected_active
-        elif field == 'status':
-            assert response_json['status'] == expected_value
-        elif field in ['seller_id', 'id']:
-            assert response_json[field] == int(expected_value)
-        elif field == 'seating_config':
-            # Handle JSON comparison for seating_config
-            expected_json = json.loads(expected_value)
-            assert response_json[field] == expected_json, (
-                f'seating_config mismatch: expected {expected_json}, got {response_json[field]}'
-            )
-        else:
-            assert response_json[field] == expected_value
-
-
-@then('the event should not exist')
-def verify_event_not_exist(client, event_state):
-    event_id = event_state['event_id']
-    response = client.get(EVENT_GET.format(event_id=event_id))
-    assert response.status_code == 404
 
 
 def _verify_error_contains(event_state, expected_text):
@@ -196,3 +147,113 @@ def verify_tickets_auto_created(step, client, context):
         assert ticket['status'] == expected_status, (
             f'Expected ticket status {expected_status}, got {ticket["status"]}'
         )
+
+
+@then('tickets should be returned with count:')
+def tickets_returned_with_count(step, context):
+    """Verify tickets are returned with correct count."""
+    expected_count = int(extract_single_value(step))
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data['total_count'] == expected_count
+    assert len(data['tickets']) == expected_count
+
+
+@then('section tickets should be returned with count:')
+def section_tickets_returned_with_count(step, context):
+    """Verify section tickets are returned with correct count."""
+    expected_count = int(extract_single_value(step))
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data['total_count'] == expected_count
+    assert len(data['tickets']) == expected_count
+
+
+@then('available tickets should be returned with count:')
+def available_tickets_returned_with_count(step, context):
+    """Verify available tickets are returned with correct count."""
+    expected_count = int(extract_single_value(step))
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data['total_count'] == expected_count
+    assert len(data['tickets']) == expected_count
+
+    # Verify all returned tickets are available
+    for ticket in data['tickets']:
+        assert ticket['status'] == 'available'
+
+
+@then('tickets should include detailed information:')
+def verify_ticket_details(step, context):
+    """Verify that returned tickets include detailed information."""
+    data = extract_table_data(step)
+
+    response = context['response']
+    assert response.status_code == 200
+
+    response_data = response.json()
+    tickets = response_data['tickets']
+
+    # Check that we have tickets
+    assert len(tickets) > 0, 'No tickets returned'
+
+    # Map table columns to expected ticket fields
+    field_mapping = {'seat_numbers': 'seat_identifier', 'prices': 'price', 'sections': 'section'}
+
+    # Verify each ticket has the expected fields
+    for ticket in tickets:
+        for column, field in field_mapping.items():
+            if data.get(column) == 'true':
+                assert field in ticket, f"Expected field '{field}' not found in ticket response"
+                assert ticket[field] is not None, f"Field '{field}' should not be None"
+
+
+@then('reservation status should be:')
+def reservation_status_should_be(step, context, execute_sql_statement):
+    """Verify reservation status in response or database."""
+    data_dict = extract_table_data(step)
+    expected_status = data_dict['status']
+
+    # If this is checking API response status
+    if expected_status == 'ok':
+        response = context['response']
+        data = response.json()
+        assert data['status'] == expected_status
+        return
+
+    # For expiration scenario, check if tickets changed status
+    if expected_status == 'expired':
+        # After expiration, tickets should be available again
+        result = execute_sql_statement(
+            "SELECT COUNT(*) as count FROM ticket WHERE status = 'available' AND reserved_at IS NULL",
+            {},
+            fetch=True,
+        )
+        # At least some tickets should be available now
+        assert result[0]['count'] > 0
+
+
+@then('tickets should return to available:')
+def tickets_return_to_available(step, execute_sql_statement):
+    """Verify tickets returned to available status."""
+    data_dict = extract_table_data(step)
+    expected_status = data_dict['status']
+    expected_count = int(data_dict['count'])
+
+    # Check that tickets are now available
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE status = :status AND reserved_at IS NULL',
+        {'status': expected_status},
+        fetch=True,
+    )
+    actual_count = result[0]['count']
+    assert actual_count >= expected_count  # At least this many should be available
