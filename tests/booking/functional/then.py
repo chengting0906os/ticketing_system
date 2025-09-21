@@ -338,7 +338,9 @@ def verify_booking_contains_tickets_with_seats(
 
     # Get all tickets for the event
     event_id = booking_state['event_id']
-    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
+    tickets_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
     assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
     tickets_data = tickets_response.json()
     tickets_data.get('tickets', [])

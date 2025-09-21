@@ -277,7 +277,9 @@ def buyer_creates_booking_with_legacy_ticket_selection(step, client: TestClient,
 
     # Get actual ticket IDs from the event
     event_id = booking_state['event_id']
-    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
+    tickets_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
 
     if tickets_response.status_code == 200:
         tickets_data = tickets_response.json()
