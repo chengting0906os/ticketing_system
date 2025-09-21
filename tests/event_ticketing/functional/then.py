@@ -121,39 +121,60 @@ def verify_tickets_auto_created(step, client, context):
     if not event:
         raise AssertionError('Event not found in context')
 
-    # Get tickets for the event
     event_id = event['id']
-    # Assuming a default section 'A' for auto-created tickets if not specified
-    # The actual section should ideally come from the event's seating_config or step data
-    # For now, we'll use a placeholder 'A' for the sections if not passed in the data table.
-    section_name = expected_data.get('section', 'A')
-    subsection_number = expected_data.get('subsection', 1)
 
-    response = client.get(
-        EVENT_TICKETS_BY_SUBSECTION.format(
-            event_id=event_id, section=section_name, subsection=subsection_number
+    # Get all tickets across all sections and subsections
+    all_tickets = []
+
+    # If the event was created with seating config, iterate through all sections
+    if 'seating_config' in event:
+        seating_config = event['seating_config']
+        for section in seating_config['sections']:
+            section_name = section['name']
+            for subsection in section['subsections']:
+                subsection_number = subsection['number']
+
+                response = client.get(
+                    EVENT_TICKETS_BY_SUBSECTION.format(
+                        event_id=event_id, section=section_name, subsection=subsection_number
+                    )
+                )
+                if response.status_code == 200:
+                    tickets_data = response.json()
+                    section_tickets = tickets_data.get('tickets', [])
+                    all_tickets.extend(section_tickets)
+    else:
+        # Fallback: try default section 'A' if seating config not available
+        section_name = expected_data.get('section', 'A')
+        subsection_number = expected_data.get('subsection', 1)
+
+        response = client.get(
+            EVENT_TICKETS_BY_SUBSECTION.format(
+                event_id=event_id, section=section_name, subsection=subsection_number
+            )
         )
-    )
-    assert response.status_code == 200, f'Failed to get tickets: {response.text}'
+        assert response.status_code == 200, f'Failed to get tickets: {response.text}'
 
-    tickets_data = response.json()
-    tickets = tickets_data.get('tickets', [])
+        tickets_data = response.json()
+        all_tickets = tickets_data.get('tickets', [])
 
     # Verify ticket count
     expected_count = int(expected_data['count'])
-    assert len(tickets) == expected_count, f'Expected {expected_count} tickets, got {len(tickets)}'
+    assert len(all_tickets) == expected_count, (
+        f'Expected {expected_count} tickets, got {len(all_tickets)}'
+    )
 
     # Verify ticket prices (tickets can have different prices based on section)
     if 'price' in expected_data:
         expected_price = int(expected_data['price'])
-        for ticket in tickets:
+        for ticket in all_tickets:
             assert ticket['price'] == expected_price, (
                 f'Expected ticket price {expected_price}, got {ticket["price"]}'
             )
 
     # Verify ticket status
     expected_status = expected_data['status']
-    for ticket in tickets:
+    for ticket in all_tickets:
         assert ticket['status'] == expected_status, (
             f'Expected ticket status {expected_status}, got {ticket["status"]}'
         )

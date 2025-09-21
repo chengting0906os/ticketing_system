@@ -117,47 +117,6 @@ def verify_event_status(step, client: TestClient, booking_state):
     assert status == expected_status
 
 
-@then('the response should contain bookings:')
-def verify_bookings_count_with_table(step, booking_state):
-    expected_count = int(extract_single_value(step))
-    assert_booking_count(booking_state, expected_count)
-
-
-@then('the bookings should include:')
-def verify_bookings_details(step, booking_state):
-    rows = step.data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    bookings = booking_state['bookings_response']
-    for row in rows[1:]:
-        values = [cell.value for cell in row.cells]
-        expected_data = dict(zip(headers, values, strict=True))
-        booking_id = int(expected_data['id'])
-        booking = next((o for o in bookings if o['id'] == booking_id), None)
-        assert booking is not None, f'Booking with id {booking_id} not found in response'
-        field_mappings = {
-            'event_name': ('event_name', str),
-            'price': ('price', int),
-            'status': ('status', str),
-            'seller_name': ('seller_name', str),
-            'buyer_name': ('buyer_name', str),
-        }
-        for expected_field, (actual_field, converter) in field_mappings.items():
-            if expected_field in expected_data:
-                expected_value = expected_data[expected_field]
-                if converter is int:
-                    expected_value = converter(expected_value)
-                assert booking.get(actual_field) == expected_value
-        for field in ['created_at', 'paid_at']:
-            if field in expected_data:
-                assert_nullable_field(booking, field, expected_data[field])
-
-
-@then('all bookings should have status:')
-def verify_all_bookings_status(step, booking_state):
-    expected_status = extract_single_value(step)
-    assert_all_bookings_have_status(booking_state['bookings_response'], expected_status)
-
-
 @then('the booking price should be 1000')
 def verify_booking_price_1000(step, booking_state):
     """Verify the booking price is 1000."""
@@ -286,14 +245,12 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
                     f'but found statuses: {[(t["id"], t["status"]) for t in booking_tickets]}'
                 )
             else:
-                # Check if any tickets are sold (business logic worked)
                 sold_tickets = [t for t in tickets if t['status'] == 'sold']
                 assert len(sold_tickets) > 0, (
                     f"Expected some tickets to be marked as 'sold' after payment, but found none. "
                     f'Found {len(tickets)} tickets with statuses: {set(t["status"] for t in tickets)}'
                 )
         else:
-            # Fallback: check if any tickets are sold
             sold_tickets = [t for t in tickets if t['status'] == 'sold']
             assert len(sold_tickets) > 0, (
                 f"Expected some tickets to be marked as 'sold' after payment, but found none. "
@@ -586,3 +543,81 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
     actual_count = result[0]['ticket_count']
 
     assert actual_count == count, f'Expected {count} tickets, got {actual_count}'
+
+
+@then('the response should contain bookings:')
+def verify_bookings_count(step, booking_state):
+    """Verify the response contains expected number of bookings."""
+    expected_count = int(extract_single_value(step))
+    response = booking_state['response']
+    bookings = response.json()
+
+    actual_count = len(bookings) if isinstance(bookings, list) else 0
+    assert actual_count == expected_count, f'Expected {expected_count} bookings, got {actual_count}'
+
+
+@then('the bookings should include:')
+def verify_bookings_include(step, booking_state):
+    """Verify the bookings include expected details."""
+    expected_bookings = []
+    rows = step.data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        expected_bookings.append(dict(zip(headers, values, strict=True)))
+
+    response = booking_state['response']
+    actual_bookings = response.json()
+
+    assert len(actual_bookings) >= len(expected_bookings), (
+        f'Expected at least {len(expected_bookings)} bookings, got {len(actual_bookings)}'
+    )
+
+    for expected in expected_bookings:
+        found = False
+        for actual in actual_bookings:
+            # Match by booking ID
+            if str(actual.get('id')) == expected['id']:
+                # Verify all expected fields
+                if 'event_name' in expected:
+                    assert actual.get('event_name') == expected['event_name'], (
+                        f'Event name mismatch for booking {expected["id"]}'
+                    )
+                if 'total_price' in expected:
+                    assert actual.get('price') == int(expected['total_price']), (
+                        f'Total price mismatch for booking {expected["id"]}'
+                    )
+                if 'status' in expected:
+                    assert actual.get('status') == expected['status'], (
+                        f'Status mismatch for booking {expected["id"]}'
+                    )
+                if 'seller_name' in expected:
+                    assert actual.get('seller_name') == expected['seller_name'], (
+                        f'Seller name mismatch for booking {expected["id"]}'
+                    )
+                if 'buyer_name' in expected:
+                    assert actual.get('buyer_name') == expected['buyer_name'], (
+                        f'Buyer name mismatch for booking {expected["id"]}'
+                    )
+                # Check nullable fields
+                for field in ['created_at', 'paid_at']:
+                    if field in expected:
+                        assert_nullable_field(actual, field, expected[field])
+                found = True
+                break
+
+        assert found, f'Expected booking with id {expected["id"]} not found in response'
+
+
+@then('all bookings should have status:')
+def verify_all_bookings_have_status_single(step, booking_state):
+    """Verify all bookings have the expected status."""
+    expected_status = extract_single_value(step)
+    response = booking_state['response']
+    bookings = response.json()
+
+    for booking in bookings:
+        assert booking.get('status') == expected_status, (
+            f'Expected status {expected_status}, got {booking.get("status")} for booking {booking.get("id")}'
+        )

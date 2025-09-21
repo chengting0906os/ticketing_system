@@ -167,6 +167,14 @@ def create_event_shared(
     event_result = response.json()
     event_id = event_result['id']
 
+    # If test specifies sold_out status, directly update the event status in database
+    desired_status = event_data.get('status', 'available')
+    if desired_status == 'sold_out' and execute_sql_statement:
+        execute_sql_statement(
+            'UPDATE event SET status = :status WHERE id = :id',
+            {'status': 'sold_out', 'id': event_id},
+        )
+
     event = {
         'id': event_id,
         'name': event_data['name'],

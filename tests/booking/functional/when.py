@@ -146,13 +146,59 @@ def buyer_tries_cancel_nonexistent(step, client: TestClient, booking_state):
     booking_state['response'] = response
 
 
-@when('buyer with id 3 requests their bookings')
-def buyer_3_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
+def get_user_email_by_id(user_id: int) -> str:
+    """Map user ID to email based on booking list test setup."""
+    user_mapping = {
+        4: 'seller1@test.com',  # Test Seller1
+        5: 'seller2@test.com',  # Test Seller2
+        6: 'buyer1@test.com',  # Test Buyer1
+        7: 'buyer2@test.com',  # Test Buyer2
+        8: 'buyer3@test.com',  # Test Buyer3
+    }
+    return user_mapping.get(user_id, f'user{user_id}@test.com')
+
+
+@when('buyer with id 6 requests their bookings:')
+def buyer_6_requests_bookings(step, client: TestClient, booking_state):
+    user_data = extract_table_data(step)
+    login_user(client, user_data['email'], user_data['password'])
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
+@when('buyer with id 8 requests their bookings')
+def buyer_8_requests_bookings(step, client: TestClient, booking_state):
+    user_email = get_user_email_by_id(8)
+    login_user(client, user_email, 'P@ssw0rd')
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
+    booking_state['response'] = response
+
+
+@when('seller with id 4 requests their bookings')
+def seller_4_requests_bookings(step, client: TestClient, booking_state):
+    user_email = get_user_email_by_id(4)
+    login_user(client, user_email, 'P@ssw0rd')
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
+    booking_state['response'] = response
+
+
+@when('buyer with id 6 requests their bookings with status "paid"')
+def buyer_6_requests_bookings_paid(step, client: TestClient, booking_state):
+    user_email = get_user_email_by_id(6)
+    login_user(client, user_email, 'P@ssw0rd')
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=paid')
+    booking_state['response'] = response
+
+
+@when('buyer with id 6 requests their bookings with status "pending_payment"')
+def buyer_6_requests_bookings_pending(step, client: TestClient, booking_state):
+    user_email = get_user_email_by_id(6)
+    login_user(client, user_email, 'P@ssw0rd')
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=pending_payment')
+    booking_state['response'] = response
+
+
+# Keep old step definitions for backward compatibility
 @when('buyer with id 4 requests their bookings')
 def buyer_4_requests_bookings(step, client: TestClient, booking_state):
     login_user(client, BUYER2_EMAIL, DEFAULT_PASSWORD)
