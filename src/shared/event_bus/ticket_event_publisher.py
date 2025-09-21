@@ -14,13 +14,14 @@ def _build_partition_key(*, event_id: int, section: str, subsection: int) -> str
     return f'{event_id}-{section}-{subsection}'
 
 
+@Logger.io
 async def publish_ticket_event_with_subsection_key(
     *,
     event: DomainEventProtocol,
     event_id: int,
     subsections: List[Tuple[str, int]],
     topic: Optional[str] = None,
-) -> None:
+) -> bool:
     """
     Publish ticket events using event_id + section + subsection as partition key
 
@@ -42,24 +43,13 @@ async def publish_ticket_event_with_subsection_key(
         )
 
         await publish_domain_event(event=event, topic=topic, partition_key=partition_key)
+    return True
 
 
+@Logger.io
 async def publish_booking_events_by_subsections(
     *, events: List[DomainEventProtocol], event_id: int, ticket_subsections: List[Tuple[str, int]]
-) -> None:
-    """
-    Publish booking events with partitioning based on involved ticket subsections
-
-    Args:
-        events: List of domain events to publish
-        event_id: Event ID
-        ticket_subsections: Ticket subsections involved in booking [(section, subsection), ...]
-
-    Strategy:
-        - If booking involves multiple subsections, publish event once for each subsection
-        - This ensures that each subsection's processor receives relevant booking events
-        - Uses event_id-section-subsection as partition key to ensure ordering
-    """
+) -> bool:
     # Deduplicate subsection list to avoid duplicate publications
     unique_subsections = list(set(ticket_subsections))
 
@@ -72,8 +62,10 @@ async def publish_booking_events_by_subsections(
         await publish_ticket_event_with_subsection_key(
             event=event, event_id=event_id, subsections=unique_subsections
         )
+    return True
 
 
+@Logger.io
 def get_subsections_from_booking_aggregate(booking_aggregate) -> List[Tuple[str, int]]:
     """
     Extract involved subsections list from BookingAggregate
@@ -93,17 +85,10 @@ def get_subsections_from_booking_aggregate(booking_aggregate) -> List[Tuple[str,
     return list(subsections)
 
 
+@Logger.io
 async def publish_booking_created_by_subsections(
     *, booking_aggregate, topic: Optional[str] = None
-) -> None:
-    """
-    Convenience function to publish booking creation events based on subsections
-
-    Args:
-        booking_aggregate: BookingAggregate instance
-        topic: Optional topic name
-    """
-    # Get involved subsections
+) -> bool:
     subsections = get_subsections_from_booking_aggregate(booking_aggregate)
 
     # Get event ID
@@ -113,6 +98,7 @@ async def publish_booking_created_by_subsections(
     await publish_booking_events_by_subsections(
         events=booking_aggregate.domain_events, event_id=event_id, ticket_subsections=subsections
     )
+    return True
 
 
 # Recommended Kafka Topic Configuration for ticket events

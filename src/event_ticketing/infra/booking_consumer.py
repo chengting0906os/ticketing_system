@@ -24,6 +24,7 @@ class TicketingKafkaConsumer:
         self.reserve_tickets_use_case = None
         self.running = False
 
+    @Logger.io
     async def start(self):
         """Start the Kafka consumer"""
         try:
@@ -50,6 +51,7 @@ class TicketingKafkaConsumer:
             Logger.base.error(f'Failed to start Kafka consumer: {e}')
             raise
 
+    @Logger.io
     async def stop(self):
         """Stop the Kafka consumer"""
         self.running = False
@@ -57,6 +59,7 @@ class TicketingKafkaConsumer:
             self.consumer.close()
         Logger.base.info('Event-Ticketing Kafka consumer stopped')
 
+    @Logger.io
     async def _consume_messages(self):
         while self.running:
             try:
@@ -77,6 +80,7 @@ class TicketingKafkaConsumer:
                 Logger.base.error(f'Error consuming messages: {e}')
                 await asyncio.sleep(1)  # Wait before retrying
 
+    @Logger.io
     async def _process_message(self, message):
         """Process a single Kafka message"""
         try:
@@ -107,6 +111,7 @@ class TicketingKafkaConsumer:
             except Exception as e:
                 raise ValueError(f'Failed to deserialize message: {e}')
 
+    @Logger.io
     async def _handle_booking_request(self, event_data: Dict[str, Any]):
         """Handle booking request event"""
         try:
@@ -138,6 +143,7 @@ class TicketingKafkaConsumer:
         except Exception as e:
             Logger.base.error(f'Error handling booking request: {e}')
 
+    @Logger.io
     async def _send_booking_success_event(self, request_id: str, reservation_data: Dict[str, Any]):
         """Send booking success event back to booking service"""
         event = {
@@ -173,6 +179,7 @@ class TicketingKafkaConsumer:
 
         Logger.base.info(f'Sent booking success event for request {request_id}')
 
+    @Logger.io
     async def _send_booking_failed_event(self, request_id: str, error_message: str):
         """Send booking failure event back to booking service"""
         event = {
@@ -194,6 +201,7 @@ class TicketingKafkaConsumer:
 _ticketing_consumer = None
 
 
+@Logger.io
 async def start_ticketing_consumer():
     """Start the global ticketing consumer"""
     global _ticketing_consumer
@@ -202,6 +210,7 @@ async def start_ticketing_consumer():
     await _ticketing_consumer.start()
 
 
+@Logger.io
 async def stop_ticketing_consumer():
     """Stop the global ticketing consumer"""
     global _ticketing_consumer
@@ -210,6 +219,7 @@ async def stop_ticketing_consumer():
         _ticketing_consumer = None
 
 
+@Logger.io
 def get_ticketing_consumer() -> TicketingKafkaConsumer:
     """Get the global consumer instance"""
     global _ticketing_consumer
