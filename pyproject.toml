@@ -67,6 +67,7 @@ ignore = [
     "C901", # too complex
     "B904", # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
     "B008", # Do not perform function call in argument defaults (needed for FastAPI Depends)
+    "E722",
 ]
 unfixable = ["F401", "F841"] # unused-import, unused-variable 
 
