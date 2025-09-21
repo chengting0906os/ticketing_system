@@ -1,7 +1,10 @@
 from datetime import datetime
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import select, update as sql_update
+
+if TYPE_CHECKING:
+    from src.event_ticketing.domain.ticket_entity import Ticket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,11 +25,12 @@ class BookingRepoImpl(BookingRepo):
             buyer_id=db_booking.buyer_id,
             seller_id=db_booking.seller_id,
             event_id=db_booking.event_id,
-            total_price=db_booking.price,
+            total_price=db_booking.total_price,
             status=BookingStatus(db_booking.status),
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
             paid_at=db_booking.paid_at,
+            ticket_ids=db_booking.ticket_ids or [],
             id=db_booking.id,
         )
 
@@ -37,13 +41,13 @@ class BookingRepoImpl(BookingRepo):
             'buyer_id': db_booking.buyer_id,
             'seller_id': db_booking.seller_id,
             'event_id': db_booking.event_id,
-            'price': db_booking.price,
+            'total_price': db_booking.total_price,
             'status': db_booking.status,
             'created_at': db_booking.created_at,
             'paid_at': db_booking.paid_at,
-            'event_name': db_booking.event.name if db_booking.event else 'Unknown Event',
-            'buyer_name': db_booking.buyer.name if db_booking.buyer else 'Unknown Buyer',
-            'seller_name': db_booking.seller.name if db_booking.seller else 'Unknown Seller',
+            'event_name': db_booking.event.name if db_booking.event else 'Unknown Event',  # pyright: ignore[reportAttributeAccessIssue]
+            'buyer_name': db_booking.buyer.name if db_booking.buyer else 'Unknown Buyer',  # pyright: ignore[reportAttributeAccessIssue]
+            'seller_name': db_booking.seller.name if db_booking.seller else 'Unknown Seller',  # pyright: ignore[reportAttributeAccessIssue]
         }
 
     @Logger.io
@@ -52,11 +56,12 @@ class BookingRepoImpl(BookingRepo):
             buyer_id=booking.buyer_id,
             seller_id=booking.seller_id,
             event_id=booking.event_id,
-            price=booking.total_price,
+            total_price=booking.total_price,
             status=booking.status.value,
             created_at=booking.created_at,
             updated_at=booking.updated_at,
             paid_at=booking.paid_at,
+            ticket_ids=booking.ticket_ids,
         )
         self.session.add(db_booking)
         await self.session.flush()
@@ -172,9 +177,9 @@ class BookingRepoImpl(BookingRepo):
         query = (
             select(BookingModel)
             .options(
-                selectinload(BookingModel.event),
-                selectinload(BookingModel.buyer),
-                selectinload(BookingModel.seller),
+                selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                selectinload(BookingModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
             )
             .where(BookingModel.buyer_id == buyer_id)
         )
@@ -192,9 +197,9 @@ class BookingRepoImpl(BookingRepo):
         query = (
             select(BookingModel)
             .options(
-                selectinload(BookingModel.event),
-                selectinload(BookingModel.buyer),
-                selectinload(BookingModel.seller),
+                selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                selectinload(BookingModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
             )
             .where(BookingModel.seller_id == seller_id)
         )
@@ -206,3 +211,41 @@ class BookingRepoImpl(BookingRepo):
         db_bookings = result.scalars().all()
 
         return [BookingRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
+
+    @Logger.io
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['Ticket']:
+        """Get all tickets for a booking using the ticket_ids stored in the booking"""
+        from src.event_ticketing.infra.ticket_model import TicketModel
+        from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+
+        # First get the booking to get the ticket_ids
+        booking = await self.get_by_id(booking_id=booking_id)
+        if not booking or not booking.ticket_ids:
+            return []
+
+        # Then get the tickets by their IDs
+        result = await self.session.execute(
+            select(TicketModel).where(TicketModel.id.in_(booking.ticket_ids))
+        )
+        db_tickets = result.scalars().all()
+
+        # Convert to Ticket entities
+        tickets = []
+        for db_ticket in db_tickets:
+            ticket = Ticket(
+                event_id=db_ticket.event_id,
+                section=db_ticket.section,
+                subsection=db_ticket.subsection,
+                row=db_ticket.row_number,
+                seat=db_ticket.seat_number,
+                price=db_ticket.price,
+                status=TicketStatus(db_ticket.status),
+                buyer_id=db_ticket.buyer_id,
+                id=db_ticket.id,
+                created_at=db_ticket.created_at,
+                updated_at=db_ticket.updated_at,
+                reserved_at=db_ticket.reserved_at,
+            )
+            tickets.append(ticket)
+
+        return tickets

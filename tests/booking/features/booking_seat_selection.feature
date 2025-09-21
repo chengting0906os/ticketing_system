@@ -23,6 +23,8 @@ Feature: Booking with Seat Selection
       | manual              | A-1-1-1,A-1-1-2 |
     Then the response status code should be:
       | 201 |
+    And the booking status should be:
+      | processing |
     And the booking should contain tickets with seats:
       | seat_number |
       | A-1-1-1     |
@@ -36,16 +38,20 @@ Feature: Booking with Seat Selection
       | manual              | A-1-2-3        |
     Then the response status code should be:
       | 201 |
+    And the booking status should be:
+      | processing |
     And the booking should contain tickets with seats:
       | seat_number |
       | A-1-2-3     |
 
   Scenario: Best available seat selection - happy path
     When buyer creates booking with best available seat selection:
-      | seat_selection_mode | quantity |
-      | best_available      |        3 |
+      | seat_selection_mode | numbers_of_seats |
+      | best_available      |                3 |
     Then the response status code should be:
       | 201 |
+    And the booking status should be:
+      | processing |
     And the booking should contain consecutive available seats:
       | count |
       | 3     |
@@ -53,23 +59,16 @@ Feature: Booking with Seat Selection
 
   Scenario: Best available seat selection - single seat
     When buyer creates booking with best available seat selection:
-      | seat_selection_mode | quantity |
-      | best_available      |        1 |
+      | seat_selection_mode | numbers_of_seats |
+      | best_available      |                1 |
     Then the response status code should be:
       | 201 |
+    And the booking status should be:
+      | processing |
     And the booking should contain available seat:
       | count |
       | 1     |
 
-  Scenario: Legacy booking approach still works
-    When buyer creates booking with legacy ticket selection:
-      | ticket_ids |
-      |        1,2 |
-    Then the response status code should be:
-      | 201 |
-    And the booking should contain tickets:
-      | count |
-      | 2     |
 
   Scenario: Cannot select more than 4 tickets
     When buyer creates booking with manual seat selection:

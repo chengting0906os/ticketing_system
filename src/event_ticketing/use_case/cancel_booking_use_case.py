@@ -16,7 +16,7 @@ class CancelReservationUseCase:
         return cls(uow=uow)
 
     @Logger.io
-    async def cancel_reservation(self, *, booking_id: int, buyer_id: int) -> Dict[str, Any]:
+    async def cancel_booking(self, *, booking_id: int, buyer_id: int) -> Dict[str, Any]:
         async with self.uow:
             # Get the booking first to verify ownership and status
             booking = await self.uow.bookings.get_by_id(booking_id=booking_id)
@@ -41,8 +41,8 @@ class CancelReservationUseCase:
 
                 raise DomainError('Booking already cancelled', 400)
 
-            # Find tickets by booking_id
-            tickets = await self.uow.tickets.get_tickets_by_booking_id(booking_id=booking_id)
+            # Find tickets by booking_id (now stored in booking.ticket_ids)
+            tickets = await self.uow.bookings.get_tickets_by_booking_id(booking_id=booking_id)
 
             if not tickets:
                 raise NotFoundError('Booking not found')

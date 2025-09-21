@@ -61,9 +61,8 @@ class TicketRepo(ABC):
     ) -> List[Ticket]:
         pass
 
-    @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[Ticket]:
-        pass
+    # get_tickets_by_booking_id method moved to BookingRepo
+    # since booking now stores ticket_ids instead of tickets storing booking_id
 
     @abstractmethod
     async def get_all_reserved_tickets(self) -> List[Ticket]:

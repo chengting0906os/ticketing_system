@@ -46,7 +46,7 @@ class MockPaymentUseCase:
                 await self.uow.events.update(event=event)
 
             # Update reserved tickets to sold status when booking is paid
-            reserved_tickets = await self.uow.tickets.get_tickets_by_booking_id(
+            reserved_tickets = await self.uow.bookings.get_tickets_by_booking_id(
                 booking_id=booking_id
             )
             if reserved_tickets:
@@ -79,7 +79,7 @@ class MockPaymentUseCase:
             await self.uow.events.release_event_atomically(event_id=cancelled_booking.event_id)
 
             # Release reserved tickets when booking is cancelled
-            reserved_tickets = await self.uow.tickets.get_tickets_by_booking_id(
+            reserved_tickets = await self.uow.bookings.get_tickets_by_booking_id(
                 booking_id=booking_id
             )
             if reserved_tickets:

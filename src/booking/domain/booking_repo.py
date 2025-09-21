@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from src.booking.domain.booking_entity import Booking
+
+if TYPE_CHECKING:
+    from src.event_ticketing.domain.ticket_entity import Ticket
 
 
 class BookingRepo(ABC):
@@ -39,4 +42,9 @@ class BookingRepo(ABC):
 
     @abstractmethod
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
+        pass
+
+    @abstractmethod
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['Ticket']:
+        """Get all tickets for a booking using the ticket_ids stored in the booking"""
         pass

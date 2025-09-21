@@ -11,7 +11,7 @@ from src.booking.use_case.create_booking_use_case import CreateBookingUseCase
 from src.booking.use_case.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.list_bookings_use_case import ListBookingsUseCase
 from src.booking.use_case.mock_payment_use_case import MockPaymentUseCase
-from src.event_ticketing.use_case.cancel_reservation_use_case import CancelReservationUseCase
+from src.event_ticketing.use_case.cancel_booking_use_case import CancelReservationUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import get_current_user_info, require_buyer_info
@@ -42,13 +42,13 @@ async def create_booking(
     current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
-    # Use authenticated buyer's ID and handle both legacy and new seat selection approaches
+    # Use authenticated buyer's ID and handle seat selection approaches
     booking = await use_case.create_booking(
         buyer_id=current_user.user_id,
-        ticket_ids=request.ticket_ids,
+        event_id=request.event_id,
         seat_selection_mode=request.seat_selection_mode,
         selected_seats=request.selected_seats,
-        quantity=request.quantity,
+        numbers_of_seats=request.numbers_of_seats,
     )
 
     if booking.id is None:
@@ -92,7 +92,7 @@ async def cancel_booking(
     current_user: CurrentUserInfo = Depends(require_buyer_info),
     use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
 ):
-    result = await use_case.cancel_reservation(
+    result = await use_case.cancel_booking(
         booking_id=booking_id,
         buyer_id=current_user.user_id,
     )

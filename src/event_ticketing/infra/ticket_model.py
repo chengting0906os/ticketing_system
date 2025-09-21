@@ -19,9 +19,6 @@ class TicketModel(Base):
     seat_number: Mapped[int] = mapped_column(Integer, nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)
-    booking_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey('booking.id'), nullable=True
-    )
     buyer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)
     reserved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

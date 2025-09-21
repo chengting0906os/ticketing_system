@@ -22,7 +22,7 @@ class Ticket:
     seat: int
     price: int
     status: TicketStatus
-    booking_id: Optional[int] = None
+    # booking_id removed - now stored in Booking.ticket_ids
     buyer_id: Optional[int] = None
     id: Optional[int] = (
         None  # Only None when creating new ticket, always has value after persistence
@@ -57,7 +57,6 @@ class Ticket:
             raise ValueError(f'Cannot release ticket with status {self.status}')
 
         self.status = TicketStatus.AVAILABLE
-        self.booking_id = None
         self.buyer_id = None
         self.reserved_at = None
 

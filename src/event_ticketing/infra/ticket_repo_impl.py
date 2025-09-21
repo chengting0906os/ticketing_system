@@ -30,7 +30,6 @@ class TicketRepoImpl(TicketRepo):
             seat=db_ticket.seat_number,
             price=db_ticket.price,
             status=TicketStatus(db_ticket.status),
-            booking_id=db_ticket.booking_id,
             buyer_id=db_ticket.buyer_id,
             created_at=db_ticket.created_at,
             updated_at=db_ticket.updated_at,
@@ -48,7 +47,6 @@ class TicketRepoImpl(TicketRepo):
             seat_number=ticket.seat,
             price=ticket.price,
             status=ticket.status.value,
-            booking_id=ticket.booking_id,
             buyer_id=ticket.buyer_id,
             created_at=ticket.created_at,
             updated_at=ticket.updated_at,
@@ -226,13 +224,8 @@ class TicketRepoImpl(TicketRepo):
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
-    @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[Ticket]:
-        result = await self.session.execute(
-            select(TicketModel).where(TicketModel.booking_id == booking_id)
-        )
-        db_tickets = result.scalars().all()
-        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+    # get_tickets_by_booking_id method moved to booking_repo_impl
+    # since booking now stores ticket_ids instead of tickets storing booking_id
 
     @Logger.io
     async def get_all_reserved_tickets(self) -> List[Ticket]:
@@ -254,7 +247,7 @@ class TicketRepoImpl(TicketRepo):
             # Update the fields
             db_ticket.status = ticket.status.value
             db_ticket.buyer_id = ticket.buyer_id
-            db_ticket.booking_id = ticket.booking_id
+            # booking_id no longer exists - booking stores ticket_ids instead
             db_ticket.reserved_at = ticket.reserved_at
             if ticket.updated_at is not None:
                 db_ticket.updated_at = ticket.updated_at

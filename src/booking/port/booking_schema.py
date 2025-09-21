@@ -1,30 +1,31 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
 
 class BookingCreateRequest(BaseModel):
-    # Legacy approach - providing ticket IDs directly
-    ticket_ids: Optional[List[int]] = None
-
-    # New seat selection approach
-    seat_selection_mode: Optional[str] = None
-    selected_seats: Optional[List[str]] = None  # For manual selection like ["A-1-1", "A-1-2"]
-    quantity: Optional[int] = None  # For best available selection
+    event_id: int
+    seat_selection_mode: Literal[
+        'manual', 'best_available'
+    ]  # Must be either 'best_available' or 'manual'
+    selected_seats: List[
+        dict
+    ] = []  # For manual selection like [{1101: 'A-1-1-1'}, {1102: 'A-1-1-2'}]
+    numbers_of_seats: Optional[int] = None  # For best available selection
 
     @field_validator('seat_selection_mode')
     @classmethod
     def validate_seat_selection_mode(cls, v):
-        if v is not None and v not in ['manual', 'best_available']:
+        if v not in ['manual', 'best_available']:
             raise ValueError('seat_selection_mode must be either "manual" or "best_available"')
         return v
 
-    @field_validator('quantity')
+    @field_validator('numbers_of_seats')
     @classmethod
-    def validate_quantity(cls, v):
+    def validate_numbers_of_seats(cls, v):
         if v is not None and (v < 1 or v > 4):
-            raise ValueError('Quantity must be between 1 and 4')
+            raise ValueError('numbers_of_seats must be between 1 and 4')
         return v
 
     @field_validator('selected_seats')
@@ -33,8 +34,33 @@ class BookingCreateRequest(BaseModel):
         if v is not None:
             if len(v) > 4:
                 raise ValueError('Maximum 4 tickets per booking')
-            for seat in v:
-                parts = seat.split('-')
+            normalized_seats = []
+            for seat_dict in v:
+                if not isinstance(seat_dict, dict):
+                    raise ValueError(
+                        'Each selected seat must be a dict with format {ticket_id: seat_location}'
+                    )
+                if len(seat_dict) != 1:
+                    raise ValueError(
+                        'Each seat dict must contain exactly one ticket_id: seat_location pair'
+                    )
+
+                # Get ticket_id and seat_location
+                ticket_id, seat_location = next(iter(seat_dict.items()))
+
+                # Validate ticket_id (convert from string if needed, as JSON keys are always strings)
+                try:
+                    ticket_id_int = int(ticket_id) if isinstance(ticket_id, str) else ticket_id
+                    if not isinstance(ticket_id_int, int):
+                        raise ValueError('ticket_id must be an integer')
+                except ValueError:
+                    raise ValueError('ticket_id must be an integer')
+
+                # Validate seat_location format
+                if not isinstance(seat_location, str):
+                    raise ValueError('seat_location must be a string')
+
+                parts = seat_location.split('-')
                 if len(parts) != 4:
                     raise ValueError(
                         'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)'
@@ -50,50 +76,45 @@ class BookingCreateRequest(BaseModel):
                     raise ValueError(
                         'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)'
                     )
+
+                # Add the normalized dict with integer ticket_id
+                normalized_seats.append({ticket_id_int: seat_location})
+
+            # Return the normalized list with integer ticket_ids
+            return normalized_seats
         return v
 
     @model_validator(mode='before')
     @classmethod
     def validate_booking_request(cls, values):
         """Validate the entire booking request for logical consistency"""
-        ticket_ids = values.get('ticket_ids')
         seat_selection_mode = values.get('seat_selection_mode')
-        selected_seats = values.get('selected_seats')
-        quantity = values.get('quantity')
+        selected_seats = values.get('selected_seats', [])
+        numbers_of_seats = values.get('numbers_of_seats')
 
-        # Count how many booking approaches are being used
-        approaches_used = 0
-        if ticket_ids is not None:
-            approaches_used += 1
-        if seat_selection_mode is not None:
-            approaches_used += 1
-
-        # Only one approach should be used
-        if approaches_used == 0:
-            raise ValueError('Must provide either ticket_ids or seat_selection_mode')
-        elif approaches_used > 1:
-            raise ValueError('Cannot mix ticket_ids with seat selection mode')
-
-        # If using seat selection mode, validate the parameters
+        # Validate based on seat_selection_mode
         if seat_selection_mode == 'manual':
-            if selected_seats is None or len(selected_seats) == 0:
+            if not selected_seats or len(selected_seats) == 0:
                 raise ValueError('selected_seats is required for manual selection')
-            if quantity is not None:
-                raise ValueError('Cannot specify both selected_seats and quantity')
+            if numbers_of_seats is not None:
+                raise ValueError('Cannot specify numbers_of_seats for manual selection')
         elif seat_selection_mode == 'best_available':
-            if quantity is None:
-                raise ValueError('quantity is required for best_available selection')
-            if selected_seats is not None:
-                raise ValueError('Cannot specify selected_seats for best_available selection')
+            if selected_seats and len(selected_seats) > 0:
+                raise ValueError('selected_seats must be empty for best_available selection')
+            if numbers_of_seats is None:
+                raise ValueError('numbers_of_seats is required for best_available selection')
 
         return values
 
     class Config:
         json_schema_extra = {
             'examples': [
-                {'ticket_ids': [1001, 1002]},
-                {'seat_selection_mode': 'manual', 'selected_seats': ['A-1-1-1', 'A-1-1-2']},
-                {'seat_selection_mode': 'best_available', 'quantity': 3},
+                {
+                    'event_id': 1,
+                    'seat_selection_mode': 'manual',
+                    'selected_seats': [{1101: 'A-1-1-1'}, {1102: 'A-1-1-2'}],
+                },
+                {'event_id': 1, 'seat_selection_mode': 'best_available', 'numbers_of_seats': 3},
             ]
         }
 

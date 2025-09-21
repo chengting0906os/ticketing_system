@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 import attrs
 
@@ -9,6 +9,7 @@ from src.shared.logging.loguru_io import Logger
 
 
 class BookingStatus(str, Enum):
+    PROCESSING = 'processing'
     PENDING_PAYMENT = 'pending_payment'
     PAID = 'paid'
     CANCELLED = 'cancelled'
@@ -27,26 +28,36 @@ class Booking:
         validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
     )
     status: BookingStatus = attrs.field(
-        default=BookingStatus.PENDING_PAYMENT, validator=attrs.validators.instance_of(BookingStatus)
+        default=BookingStatus.PROCESSING, validator=attrs.validators.instance_of(BookingStatus)
     )
     created_at: datetime = attrs.field(factory=datetime.now)
     updated_at: datetime = attrs.field(factory=datetime.now)
     paid_at: Optional[datetime] = None
+    ticket_ids: List[int] = attrs.field(factory=list)  # Store ticket IDs in booking
     id: Optional[int] = None
 
     @classmethod
     @Logger.io
-    def create(cls, *, buyer_id: int, seller_id: int, event_id: int, total_price: int) -> 'Booking':
+    def create(
+        cls,
+        *,
+        buyer_id: int,
+        seller_id: int,
+        event_id: int,
+        total_price: int,
+        ticket_ids: Optional[List[int]] = None,
+    ) -> 'Booking':
         now = datetime.now()
         return cls(
             buyer_id=buyer_id,
             seller_id=seller_id,
             event_id=event_id,
             total_price=total_price,
-            status=BookingStatus.PENDING_PAYMENT,
+            status=BookingStatus.PROCESSING,
             created_at=now,
             updated_at=now,
             paid_at=None,
+            ticket_ids=ticket_ids or [],
             id=None,
         )
 
