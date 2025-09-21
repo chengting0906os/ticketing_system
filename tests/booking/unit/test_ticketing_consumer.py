@@ -33,26 +33,9 @@ class TestBookingKafkaConsumer:
             'event_type': 'TicketsReserved',
             'aggregate_id': 789,
             'data': {
-                'request_id': 'test-request-123',
-                'reservation_id': 789,
+                'booking_id': 789,  # The booking ID that already exists
                 'buyer_id': 1,
-                'ticket_count': 2,
-                'tickets': [
-                    {
-                        'id': 1001,
-                        'seat_identifier': 'A-1-1-1',
-                        'price': 100,
-                        'section': 'A',
-                        'subsection': 1,
-                    },
-                    {
-                        'id': 1002,
-                        'seat_identifier': 'A-1-1-2',
-                        'price': 100,
-                        'section': 'A',
-                        'subsection': 1,
-                    },
-                ],
+                'ticket_ids': [1001, 1002],  # List of reserved ticket IDs
                 'status': 'reserved',
             },
         }
@@ -130,16 +113,18 @@ class TestBookingKafkaConsumer:
         """測試成功處理票務預留事件"""
         # Arrange
         consumer.create_booking_use_case = AsyncMock()
-        consumer.create_booking_use_case.create_booking.return_value = successful_booking
+        consumer.create_booking_use_case.booking_repo.get_by_id.return_value = successful_booking
+        consumer.create_booking_use_case.update_booking_status.return_value = successful_booking
 
         # Act
         await consumer._handle_tickets_reserved(valid_tickets_reserved_event)
 
         # Assert
-        # Verify create_booking was called with correct parameters
-        consumer.create_booking_use_case.create_booking.assert_called_once_with(
-            buyer_id=1, ticket_ids=[1001, 1002]
+        # Verify booking was retrieved and status updated
+        consumer.create_booking_use_case.booking_repo.get_by_id.assert_called_once_with(
+            booking_id=789
         )
+        consumer.create_booking_use_case.update_booking_status.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_tickets_reserved_missing_fields(self, consumer):
@@ -190,7 +175,8 @@ class TestBookingKafkaConsumer:
         """測試處理 TicketsReserved 訊息"""
         # Arrange
         consumer.create_booking_use_case = AsyncMock()
-        consumer.create_booking_use_case.create_booking.return_value = successful_booking
+        consumer.create_booking_use_case.booking_repo.get_by_id.return_value = successful_booking
+        consumer.create_booking_use_case.update_booking_status.return_value = successful_booking
 
         mock_message = MagicMock()
         mock_message.value = msgpack.packb(valid_tickets_reserved_event)
@@ -199,7 +185,10 @@ class TestBookingKafkaConsumer:
         await consumer._process_message(mock_message)
 
         # Assert
-        consumer.create_booking_use_case.create_booking.assert_called_once()
+        consumer.create_booking_use_case.booking_repo.get_by_id.assert_called_once_with(
+            booking_id=789
+        )
+        consumer.create_booking_use_case.update_booking_status.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_process_message_reservation_failed(self, consumer, reservation_failed_event):
@@ -243,20 +232,30 @@ class TestBookingKafkaConsumer:
 
     @pytest.mark.asyncio
     async def test_extract_ticket_ids_from_tickets_data(
-        self, consumer, valid_tickets_reserved_event
+        self, consumer, valid_tickets_reserved_event, successful_booking
     ):
         """測試從票務數據中提取 ticket IDs"""
         # Arrange
         consumer.create_booking_use_case = AsyncMock()
+        consumer.create_booking_use_case.booking_repo.get_by_id.return_value = successful_booking
+        consumer.create_booking_use_case.update_booking_status.return_value = successful_booking
 
         # Act
         await consumer._handle_tickets_reserved(valid_tickets_reserved_event)
 
         # Assert
-        # 驗證正確提取了 ticket IDs
-        call_args = consumer.create_booking_use_case.create_booking.call_args
-        ticket_ids = call_args.kwargs['ticket_ids']
-        assert ticket_ids == [1001, 1002]
+        # 驗證正確提取了 booking_id 和 ticket_ids 從事件數據
+        event_data = valid_tickets_reserved_event['data']
+        expected_booking_id = event_data['booking_id']
+        expected_ticket_ids = event_data['ticket_ids']
+
+        assert expected_booking_id == 789
+        assert expected_ticket_ids == [1001, 1002]
+
+        # 驗證調用了正確的 booking lookup
+        consumer.create_booking_use_case.booking_repo.get_by_id.assert_called_once_with(
+            booking_id=789
+        )
 
     @pytest.mark.asyncio
     async def test_handle_tickets_reserved_empty_tickets_list(self, consumer):

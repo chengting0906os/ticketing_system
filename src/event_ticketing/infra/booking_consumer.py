@@ -4,7 +4,7 @@ Event Ticketing Kafka Consumer - 處理來自 Booking Service 的訂票請求
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from kafka import KafkaConsumer
 import msgpack
@@ -91,8 +91,8 @@ class TicketingKafkaConsumer:
             Logger.base.info(f'Processing event: {event_type}')
 
             # Route to appropriate handler
-            if event_type == 'BookingRequested':
-                await self._handle_booking_request(event_data)
+            if event_type == 'BookingCreated':
+                await self._handle_booking_created(event_data)
             else:
                 Logger.base.warning(f'Unknown event type: {event_type}')
 
@@ -112,64 +112,81 @@ class TicketingKafkaConsumer:
                 raise ValueError(f'Failed to deserialize message: {e}')
 
     @Logger.io
-    async def _handle_booking_request(self, event_data: Dict[str, Any]):
-        """Handle booking request event"""
+    async def _handle_booking_created(self, event_data: Dict[str, Any]):
+        """Handle BookingCreated event"""
         try:
-            # Extract booking request data
-            data = event_data.get('data', {})
-            buyer_id = data.get('buyer_id')
-            event_id = data.get('event_id')
-            ticket_count = data.get('ticket_count')
-            request_id = data.get('request_id')  # For correlation
+            # Extract booking data from BookingCreated event
+            aggregate_id = event_data.get('aggregate_id')  # This is the booking_id
+            buyer_id = event_data.get('buyer_id')
+            event_id = event_data.get('event_id')
 
-            if not all([buyer_id, event_id, ticket_count, request_id]):
-                Logger.base.error('Missing required fields in booking request')
-                await self._send_booking_failed_event(request_id, 'Missing required fields')
+            if not aggregate_id or not buyer_id or not event_id:
+                Logger.base.error('Missing required fields in BookingCreated event')
+                await self._send_booking_failed_event(
+                    str(aggregate_id or 0), 'Missing required fields'
+                )
                 return
 
-            # Reserve tickets
+            # Get the booking to extract ticket_ids
+            from src.shared.service.repo_di import get_booking_repo
+            from src.shared.config.db_setting import get_async_session
+            from src.event_ticketing.use_case.validate_tickets_use_case import (
+                ValidateTicketsUseCase,
+            )
+            from src.shared.service.repo_di import get_ticket_repo
+
+            booking_repo = get_booking_repo()
+            ticket_repo = get_ticket_repo()
+            session_gen = get_async_session()
+            session = await session_gen.__anext__()
+
             try:
-                reservation_result = await self.reserve_tickets_use_case.reserve_tickets(  # type: ignore
-                    event_id=event_id, ticket_count=ticket_count, buyer_id=buyer_id
+                booking = await booking_repo.get_by_id(booking_id=aggregate_id)
+                if not booking or not booking.ticket_ids:
+                    Logger.base.error(f'Booking {aggregate_id} not found or has no ticket_ids')
+                    await self._send_booking_failed_event(
+                        str(aggregate_id), 'Booking not found or invalid'
+                    )
+                    return
+
+                # Use ValidateTicketsUseCase to reserve the specific tickets
+                validate_use_case = ValidateTicketsUseCase(session=session, ticket_repo=ticket_repo)
+                await validate_use_case.reserve_tickets(
+                    ticket_ids=booking.ticket_ids, buyer_id=buyer_id
                 )
 
                 # Send success event back to booking service
-                await self._send_booking_success_event(request_id, reservation_result)
+                await self._send_booking_success_event(
+                    booking_id=aggregate_id, buyer_id=buyer_id, ticket_ids=booking.ticket_ids
+                )
 
             except Exception as e:
-                Logger.base.error(f'Failed to reserve tickets: {e}')
-                await self._send_booking_failed_event(request_id, str(e))
+                Logger.base.error(f'Failed to reserve tickets for booking {aggregate_id}: {e}')
+                await self._send_booking_failed_event(str(aggregate_id), str(e))
+            finally:
+                await session.close()
 
         except Exception as e:
-            Logger.base.error(f'Error handling booking request: {e}')
+            Logger.base.error(f'Error handling BookingCreated event: {e}')
 
     @Logger.io
-    async def _send_booking_success_event(self, request_id: str, reservation_data: Dict[str, Any]):
+    async def _send_booking_success_event(
+        self, booking_id: int, buyer_id: int, ticket_ids: List[int]
+    ):
         """Send booking success event back to booking service"""
         event = {
             'event_type': 'TicketsReserved',
-            'aggregate_id': reservation_data.get('reservation_id'),
+            'aggregate_id': booking_id,
             'data': {
-                'request_id': request_id,
-                'reservation_id': reservation_data.get('reservation_id'),
-                'buyer_id': reservation_data.get('buyer_id'),
-                'ticket_count': reservation_data.get('ticket_count'),
-                'tickets': reservation_data.get('tickets', []),
+                'booking_id': booking_id,  # Include booking_id for the consumer
+                'buyer_id': buyer_id,
+                'ticket_ids': ticket_ids,
                 'status': 'reserved',
             },
         }
 
-        # Use subsection-based partition key for proper ordering
-        tickets = reservation_data.get('tickets', [])
-        if tickets:
-            # Assume all tickets are from same event/section (business rule)
-            # Use event_id-section-subsection as partition key
-            event_id = reservation_data.get('event_id') or 'unknown'
-            section = tickets[0].get('section', 'unknown')
-            subsection = tickets[0].get('subsection', '1')
-            partition_key = f'{event_id}-{section}-{subsection}'
-        else:
-            partition_key = request_id
+        # Use booking_id as partition key for proper ordering
+        partition_key = str(booking_id)
 
         await publish_domain_event(
             event=event,  # type: ignore
@@ -177,24 +194,24 @@ class TicketingKafkaConsumer:
             partition_key=partition_key,  # type: ignore
         )
 
-        Logger.base.info(f'Sent booking success event for request {request_id}')
+        Logger.base.info(f'Sent TicketsReserved event for booking {booking_id}')
 
     @Logger.io
-    async def _send_booking_failed_event(self, request_id: str, error_message: str):
+    async def _send_booking_failed_event(self, booking_id: str, error_message: str):
         """Send booking failure event back to booking service"""
         event = {
             'event_type': 'TicketReservationFailed',
-            'aggregate_id': 0,  # No reservation created
-            'data': {'request_id': request_id, 'error_message': error_message, 'status': 'failed'},
+            'aggregate_id': booking_id,
+            'data': {'booking_id': booking_id, 'error_message': error_message, 'status': 'failed'},
         }
 
         await publish_domain_event(
             event=event,  # type: ignore
             topic=Topic.TICKETING_BOOKING_RESPONSE,
-            partition_key=request_id,  # type: ignore
+            partition_key=booking_id,  # type: ignore
         )
 
-        Logger.base.info(f'Sent booking failure event for request {request_id}')
+        Logger.base.info(f'Sent TicketReservationFailed event for booking {booking_id}')
 
 
 # Global consumer instance

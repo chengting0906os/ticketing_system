@@ -140,6 +140,7 @@ class TicketRepoImpl(TicketRepo):
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
             .where(TicketModel.status == TicketStatus.AVAILABLE.value)
+            .where(TicketModel.buyer_id.is_(None))  # 確保票沒有被預訂
             .order_by(
                 TicketModel.section,
                 TicketModel.subsection,

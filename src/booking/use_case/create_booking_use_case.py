@@ -4,7 +4,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_aggregate import BookingAggregate
-from src.booking.domain.booking_entity import Booking
+from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.domain.booking_repo import BookingRepo
 from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.domain.ticket_repo import TicketRepo
@@ -81,7 +81,7 @@ class CreateBookingUseCase:
         if not buyer:
             raise DomainError('Buyer not found', 404)
 
-        # Convert seat selection to ticket_ids if needed
+        # Extract ticket IDs based on seat selection mode
         if seat_selection_mode == 'manual':
             # Extract ticket IDs from the selected_seats dict format
             ticket_ids = []
@@ -90,22 +90,7 @@ class CreateBookingUseCase:
                 if not isinstance(seat_dict, dict) or len(seat_dict) != 1:
                     raise DomainError('Invalid selected_seats format', 400)
 
-                ticket_id, seat_location = next(iter(seat_dict.items()))
-
-                # Validate the ticket exists and is available
-                ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
-                if not ticket:
-                    raise DomainError(f'Ticket {ticket_id} not found', 404)
-                if ticket.status.value != 'available':
-                    raise DomainError(f'Seat {seat_location} is not available', 400)
-
-                # Validate seat location matches ticket
-                expected_seat_location = (
-                    f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}'
-                )
-                if expected_seat_location != seat_location:
-                    raise DomainError(f'Seat location mismatch for ticket {ticket_id}', 400)
-
+                ticket_id, _ = next(iter(seat_dict.items()))  # seat_location not used here
                 ticket_ids.append(ticket_id)
 
         elif seat_selection_mode == 'best_available':
@@ -120,28 +105,6 @@ class CreateBookingUseCase:
                 )
             ticket_ids = [ticket.id for ticket in available_tickets[:numbers_of_seats]]  # type: ignore
 
-        # Get tickets by IDs
-        tickets = []
-        for ticket_id in ticket_ids:  # type: ignore
-            if ticket_id is not None:  # Type guard
-                ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
-                if ticket:
-                    tickets.append(ticket)
-
-        if len(tickets) != len(ticket_ids):  # type: ignore
-            raise DomainError('Some tickets not found', 404)
-
-        # Validate all tickets are available and can be reserved
-        for ticket in tickets:
-            if ticket.status.value != 'available':
-                raise DomainError('All tickets must be available', 400)
-            if ticket.buyer_id is not None:
-                raise DomainError('Tickets are already reserved', 400)
-
-        # Validate all tickets are for the specified event
-        if not all(ticket.event_id == event_id for ticket in tickets):
-            raise DomainError('All tickets must be for the same event', 400)
-
         event, seller = await self.event_repo.get_by_id_with_seller(event_id=event_id)
         if not event:
             raise DomainError('Event not found', 404)
@@ -152,38 +115,48 @@ class CreateBookingUseCase:
         if not event.is_active:
             raise DomainError('Event not active', 400)
 
-        # Reserve tickets for this buyer
-        for ticket in tickets:
-            ticket.reserve(buyer_id=buyer_id)
+        # Calculate total price based on event price (simplified - all tickets same price)
+        # In a real system, this would come from the event or a pricing service
+        total_price = len(ticket_ids) * 1000  # type: ignore
 
-        # Create Value Objects for BookingAggregate
-        from src.booking.domain.value_objects import BuyerInfo, SellerInfo, TicketData
+        # Create the booking entity directly with PROCESSING status
+        from datetime import datetime
+
+        booking = Booking(
+            buyer_id=buyer_id,
+            seller_id=seller.id,  # type: ignore
+            event_id=event_id,
+            total_price=total_price,
+            status=BookingStatus.PROCESSING,  # Start with PROCESSING, will be updated by Kafka
+            ticket_ids=ticket_ids,  # type: ignore
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+        created_booking = await self.booking_repo.create(booking=booking)
+
+        # Create aggregate for event publishing
+        from src.booking.domain.value_objects import BuyerInfo, SellerInfo
 
         buyer_info = BuyerInfo.from_user(buyer)
         seller_info = SellerInfo.from_user(seller)
-        ticket_data_list = [TicketData.from_ticket(ticket) for ticket in tickets]
 
-        # Create booking using BookingAggregate
-        aggregate = BookingAggregate.create_booking(
-            buyer_info=buyer_info, seller_info=seller_info, ticket_data_list=ticket_data_list
+        # Create minimal aggregate just for event publishing
+        aggregate = BookingAggregate(
+            booking=created_booking,
+            ticket_snapshots=[],  # We don't have ticket details anymore
+            buyer_info=buyer_info,
+            seller_info=seller_info,
         )
-
-        # Store ticket IDs in the booking
-        aggregate.booking.ticket_ids = [ticket.id for ticket in tickets]
-
-        created_booking = await self.booking_repo.create(booking=aggregate.booking)
-        aggregate.booking.id = created_booking.id
 
         # Emit domain events now that we have a booking ID
         aggregate.emit_booking_created_event()
-
-        # Update tickets status to reserved (but no booking_id since we store ticket_ids in booking)
-        await self.ticket_repo.update_batch(tickets=tickets)
 
         # Commit the database transaction
         await self.session.commit()
 
         # Publish domain events after successful commit using section-based partitioning
+        # This will trigger event_ticketing service to reserve tickets
         try:
             await publish_booking_created_by_subsections(booking_aggregate=aggregate)
         except Exception as e:
@@ -194,3 +167,10 @@ class CreateBookingUseCase:
         aggregate.clear_events()
 
         return created_booking
+
+    @Logger.io
+    async def update_booking_status(self, booking: Booking) -> Booking:
+        """Update an existing booking's status in the repository"""
+        updated_booking = await self.booking_repo.update(booking=booking)
+        await self.session.commit()
+        return updated_booking

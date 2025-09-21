@@ -4,7 +4,7 @@ Booking Kafka Consumer - 處理來自 Event-Ticketing Service 的票務預留結
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from kafka import KafkaConsumer
 import msgpack
@@ -17,8 +17,8 @@ from src.shared.logging.loguru_io import Logger
 
 class BookingKafkaConsumer:
     def __init__(self):
-        self.consumer = None
-        self.create_booking_use_case = None
+        self.consumer: Optional[KafkaConsumer] = None
+        self.create_booking_use_case: Optional[CreateBookingUseCase] = None
         self.running = False
 
     async def start(self):
@@ -64,12 +64,14 @@ class BookingKafkaConsumer:
             Logger.base.error(f'Failed to start Kafka consumer: {e}')
             raise
 
+    @Logger.io
     async def stop(self):
         self.running = False
         if self.consumer:
             self.consumer.close()
         Logger.base.info('Booking Kafka consumer stopped')
 
+    @Logger.io
     async def _consume_messages(self):
         while self.running:
             try:
@@ -119,30 +121,46 @@ class BookingKafkaConsumer:
             except Exception as e:
                 raise ValueError(f'Failed to deserialize message: {e}')
 
+    @Logger.io
     async def _handle_tickets_reserved(self, event_data: Dict[str, Any]):
         try:
             data = event_data.get('data', {})
-            request_id = data.get('request_id')
             buyer_id = data.get('buyer_id')
-            tickets = data.get('tickets', [])
+            booking_id = data.get('booking_id')
+            ticket_ids = data.get('ticket_ids', [])
 
-            if not all([request_id, buyer_id, tickets]):
+            if not all([buyer_id, booking_id, ticket_ids]):
                 Logger.base.error('Missing required fields in tickets reserved event')
                 return
 
-            # Extract ticket IDs
-            ticket_ids = [ticket['id'] for ticket in tickets]
+            # Ensure use case is initialized
+            if not self.create_booking_use_case:
+                Logger.base.error('CreateBookingUseCase not initialized')
+                return
 
-            # Create booking with reserved tickets
-            booking = await self.create_booking_use_case.create_booking(  # pyright: ignore[reportOptionalMemberAccess]
-                buyer_id=buyer_id, ticket_ids=ticket_ids
+            # Get the existing booking
+            booking = await self.create_booking_use_case.booking_repo.get_by_id(
+                booking_id=booking_id
             )
+            if not booking:
+                Logger.base.error(f'Booking {booking_id} not found')
+                return
 
-            Logger.base.info(f'Created booking {booking.id} for request {request_id}')
+            # Verify booking belongs to the buyer
+            if booking.buyer_id != buyer_id:
+                Logger.base.error(f'Booking {booking_id} does not belong to buyer {buyer_id}')
+                return
+
+            # Update booking status from PROCESSING to PENDING_PAYMENT
+            updated_booking = booking.mark_as_pending_payment()
+            await self.create_booking_use_case.update_booking_status(updated_booking)
+
+            Logger.base.info(f'Updated booking {booking_id} status to pending_payment')
 
         except Exception as e:
             Logger.base.error(f'Error handling tickets reserved: {e}')
 
+    @Logger.io
     async def _handle_reservation_failed(self, event_data: Dict[str, Any]):
         """Handle failed ticket reservation"""
         try:
@@ -165,6 +183,7 @@ class BookingKafkaConsumer:
 _booking_consumer = None
 
 
+@Logger.io
 async def start_booking_consumer():
     global _booking_consumer
     if _booking_consumer is None:
@@ -172,6 +191,7 @@ async def start_booking_consumer():
     await _booking_consumer.start()
 
 
+@Logger.io
 async def stop_booking_consumer():
     global _booking_consumer
     if _booking_consumer:
@@ -179,6 +199,7 @@ async def stop_booking_consumer():
         _booking_consumer = None
 
 
+@Logger.io
 def get_booking_consumer() -> BookingKafkaConsumer:
     global _booking_consumer
     if _booking_consumer is None:

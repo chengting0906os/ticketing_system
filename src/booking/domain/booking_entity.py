@@ -62,6 +62,11 @@ class Booking:
         )
 
     @Logger.io
+    def mark_as_pending_payment(self) -> 'Booking':
+        now = datetime.now()
+        return attrs.evolve(self, status=BookingStatus.PENDING_PAYMENT, updated_at=now)
+
+    @Logger.io
     def mark_as_paid(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.PAID, paid_at=now, updated_at=now)

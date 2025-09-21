@@ -111,8 +111,9 @@ class BookingCreateRequest(BaseModel):
             'examples': [
                 {
                     'event_id': 1,
-                    'seat_selection_mode': 'manual',
-                    'selected_seats': [{1101: 'A-1-1-1'}, {1102: 'A-1-1-2'}],
+                    'seat_selection_mode': 'best_available',
+                    'selected_seats': [],
+                    'numbers_of_seats': 2,
                 },
                 {'event_id': 1, 'seat_selection_mode': 'best_available', 'numbers_of_seats': 3},
             ]

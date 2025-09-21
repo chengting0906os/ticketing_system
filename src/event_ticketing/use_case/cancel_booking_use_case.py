@@ -2,6 +2,7 @@ from typing import Any, Dict
 
 from fastapi import Depends
 
+from src.booking.domain.booking_entity import BookingStatus
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
@@ -30,7 +31,6 @@ class CancelReservationUseCase:
                 raise ForbiddenError('Only the buyer can cancel this booking')
 
             # Check if booking can be cancelled
-            from src.booking.domain.booking_entity import BookingStatus
 
             if booking.status == BookingStatus.PAID:
                 from src.shared.exception.exceptions import DomainError
@@ -47,9 +47,13 @@ class CancelReservationUseCase:
             if not tickets:
                 raise NotFoundError('Booking not found')
 
+            # Collect event IDs for notification
+            event_ids = set()
+
             # Cancel all tickets associated with this booking (release them back to available)
             for ticket in tickets:
                 ticket.cancel_reservation(buyer_id=buyer_id)
+                event_ids.add(ticket.event_id)
 
             # Update booking status to cancelled
             cancelled_booking = booking.cancel()
@@ -57,6 +61,13 @@ class CancelReservationUseCase:
 
             # Update tickets in database
             await self.uow.tickets.update_batch(tickets=tickets)
+
+            # Notify SSE listeners about ticket status changes for each affected event
+            for event_id in event_ids:
+                await self.uow.session.execute(  # # pyright: ignore[reportAttributeAccessIssue]
+                    f"NOTIFY ticket_status_change_{event_id}, 'tickets_cancelled'"
+                )
+
             await self.uow.commit()
 
             return {

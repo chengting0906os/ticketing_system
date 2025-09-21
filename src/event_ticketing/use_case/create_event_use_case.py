@@ -211,7 +211,7 @@ class ListEventsUseCase:
             events = await self.uow.events.get_by_seller(seller_id=seller_id)
         return events
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def list_available(self) -> List[Event]:
         async with self.uow:
             events = await self.uow.events.list_available()

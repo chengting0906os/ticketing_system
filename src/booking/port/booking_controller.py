@@ -10,8 +10,8 @@ from src.booking.port.booking_schema import (
 from src.booking.use_case.create_booking_use_case import CreateBookingUseCase
 from src.booking.use_case.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.list_bookings_use_case import ListBookingsUseCase
+from src.booking.use_case.cancel_booking_use_case import CancelBookingUseCase
 from src.booking.use_case.mock_payment_use_case import MockPaymentUseCase
-from src.event_ticketing.use_case.cancel_booking_use_case import CancelReservationUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import get_current_user_info, require_buyer_info
@@ -40,10 +40,10 @@ async def list_my_bookings(
 async def create_booking(
     request: BookingCreateRequest,
     current_user: CurrentUserInfo = Depends(require_buyer_info),
-    use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
+    booking_use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
-    # Use authenticated buyer's ID and handle seat selection approaches
-    booking = await use_case.create_booking(
+    # Create booking - ticket validation and reservation are now handled atomically inside use case
+    booking = await booking_use_case.create_booking(
         buyer_id=current_user.user_id,
         event_id=request.event_id,
         seat_selection_mode=request.seat_selection_mode,
@@ -59,7 +59,7 @@ async def create_booking(
         buyer_id=booking.buyer_id,
         seller_id=booking.seller_id,
         total_price=booking.total_price,
-        status=booking.status.value,
+        status=booking.status.value,  # Should be 'pending_payment' now
         created_at=booking.created_at,
         paid_at=booking.paid_at,
     )
@@ -90,7 +90,7 @@ async def get_booking(
 async def cancel_booking(
     booking_id: int,
     current_user: CurrentUserInfo = Depends(require_buyer_info),
-    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
+    use_case: CancelBookingUseCase = Depends(CancelBookingUseCase.depends),
 ):
     result = await use_case.cancel_booking(
         booking_id=booking_id,

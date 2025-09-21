@@ -116,6 +116,7 @@ class EventRepoImpl(EventRepo):
 
         return [EventRepoImpl._to_entity(db_event) for db_event in db_events]
 
+    @Logger.io(truncate_content=True)
     async def list_available(self) -> List[Event]:
         result = await self.session.execute(
             select(EventModel)
