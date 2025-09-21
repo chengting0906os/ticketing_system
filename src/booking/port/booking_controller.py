@@ -20,6 +20,21 @@ from src.shared.service.role_auth_service import get_current_user_info, require_
 router = APIRouter()
 
 
+@router.get('/my-bookings')
+@Logger.io
+async def list_my_bookings(
+    booking_status: str,
+    current_user: CurrentUserInfo = Depends(get_current_user_info),
+    use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
+):
+    if current_user.is_buyer():
+        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
+    elif current_user.is_seller():
+        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
+    else:
+        return []
+
+
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
 async def create_booking(
@@ -102,18 +117,3 @@ async def pay_booking(
         status=result['status'],
         paid_at=result['paid_at'],
     )
-
-
-@router.get('/my-bookings')
-@Logger.io
-async def list_my_bookings(
-    booking_status: str,
-    current_user: CurrentUserInfo = Depends(get_current_user_info),
-    use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
-):
-    if current_user.is_buyer():
-        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
-    elif current_user.is_seller():
-        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
-    else:
-        return []
