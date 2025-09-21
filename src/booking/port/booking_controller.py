@@ -70,7 +70,7 @@ async def get_booking(
     )
 
 
-@router.patch('/{booking_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.patch('/{booking_id}', status_code=status.HTTP_200_OK)
 @Logger.io
 async def cancel_booking(
     booking_id: int,
