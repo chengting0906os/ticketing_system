@@ -3,7 +3,12 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from src.shared.constant.route_constant import AUTH_LOGIN
+from src.shared.constant.route_constant import AUTH_LOGIN, EVENT_BASE, USER_CREATE
+from tests.event_test_constants import (
+    DEFAULT_SEATING_CONFIG,
+    DEFAULT_SEATING_CONFIG_JSON,
+    DEFAULT_VENUE_NAME,
+)
 
 
 def extract_table_data(step) -> Dict[str, Any]:
@@ -32,7 +37,6 @@ def login_user(client: TestClient, email: str, password: str) -> Any:
 
 
 def assert_response_status(response, expected_status: int, message: str | None = None):
-    """Helper function to assert response status code."""
     assert response.status_code == expected_status, (
         message or f'Expected {expected_status}, got {response.status_code}: {response.text}'
     )
@@ -41,9 +45,6 @@ def assert_response_status(response, expected_status: int, message: str | None =
 def create_user(
     client: TestClient, email: str, password: str, name: str, role: str
 ) -> Dict[str, Any] | None:
-    """Helper function to create a user. Returns None if user already exists."""
-    from src.shared.constant.route_constant import USER_CREATE
-
     user_data = {
         'email': email,
         'password': password,
@@ -63,9 +64,6 @@ def create_user(
 def create_event(
     client: TestClient, name: str, description: str, price: int, is_active: bool = True
 ) -> Dict[str, Any]:
-    """Helper function to create a event."""
-    from src.shared.constant.route_constant import EVENT_BASE
-
     event_data = {
         'name': name,
         'description': description,
@@ -77,13 +75,7 @@ def create_event(
     return response.json()
 
 
-# Event creation utilities with venue and seating config support
-
-
 def parse_seating_config(seating_config_str: str | None) -> dict:
-    """Parse seating config string to dict, handling empty/None values."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG
-
     if not seating_config_str:
         return DEFAULT_SEATING_CONFIG
     try:
@@ -93,9 +85,6 @@ def parse_seating_config(seating_config_str: str | None) -> dict:
 
 
 def build_event_request_data(event_data: dict, include_venue_seating: bool = True) -> dict:
-    """Build standardized event request data with venue and seating config."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
     request_data = {
         'name': event_data['name'],
         'description': event_data['description'],
@@ -119,9 +108,6 @@ def create_event_with_venue_seating(
     seller_email: str | None = None,
     seller_password: str = 'P@ssw0rd',
 ) -> tuple[Any, dict]:
-    """Standardized event creation with venue and seating config."""
-    from src.shared.constant.route_constant import EVENT_BASE
-
     if seller_login_required and seller_email:
         login_user(client, seller_email, seller_password)
 
@@ -131,9 +117,6 @@ def create_event_with_venue_seating(
 
 
 def create_event_in_database(execute_sql_statement, event_data: dict, seller_id: int = 1) -> int:
-    """Create event directly in database with standardized venue/seating handling."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
     execute_sql_statement(
         """
         INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
@@ -160,9 +143,6 @@ def create_event_in_database(execute_sql_statement, event_data: dict, seller_id:
 
 
 def add_venue_seating_to_event_data(event_data: dict) -> dict:
-    """Add venue_name and seating_config to event data with fallback values."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
     updated_data = event_data.copy()
     if 'venue_name' not in updated_data:
         updated_data['venue_name'] = DEFAULT_VENUE_NAME

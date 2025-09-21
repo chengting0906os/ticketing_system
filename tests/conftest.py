@@ -10,6 +10,17 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.shared.utils import create_user
+from tests.util_constant import (
+    ANOTHER_BUYER_EMAIL,
+    ANOTHER_BUYER_NAME,
+    DEFAULT_PASSWORD,
+    TEST_BUYER_EMAIL,
+    TEST_BUYER_NAME,
+    TEST_SELLER_EMAIL,
+    TEST_SELLER_NAME,
+)
+
 
 # Override POSTGRES_DB environment variable to use a dedicated test database
 os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
@@ -179,3 +190,122 @@ async def clean_database():
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(scope='session')
+def seller_user(client):
+    created = create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
+    if created:
+        return created
+    else:
+        # User already exists, return user data without login
+        return {'id': 1, 'email': TEST_SELLER_EMAIL, 'name': TEST_SELLER_NAME, 'role': 'seller'}
+
+
+@pytest.fixture(scope='session')
+def buyer_user(client):
+    # Try to create user first
+    created = create_user(client, TEST_BUYER_EMAIL, DEFAULT_PASSWORD, TEST_BUYER_NAME, 'buyer')
+
+    if created:
+        return created
+    else:
+        # User already exists, return user data without login
+        return {'id': 2, 'email': TEST_BUYER_EMAIL, 'name': TEST_BUYER_NAME, 'role': 'buyer'}
+
+
+@pytest.fixture(scope='session')
+def another_buyer_user(client):
+    created = create_user(
+        client, ANOTHER_BUYER_EMAIL, DEFAULT_PASSWORD, ANOTHER_BUYER_NAME, 'buyer'
+    )
+    if created:
+        return created
+    else:
+        # User already exists, return user data without login
+        return {'id': 3, 'email': ANOTHER_BUYER_EMAIL, 'name': ANOTHER_BUYER_NAME, 'role': 'buyer'}
+
+
+# Common test fixtures for unit tests
+@pytest.fixture
+def mock_uow():
+    """Mock unit of work for testing."""
+    from unittest.mock import AsyncMock, Mock
+
+    uow = Mock()
+    uow.__aenter__ = AsyncMock(return_value=uow)
+    uow.__aexit__ = AsyncMock(return_value=None)
+    uow.events = Mock()
+    uow.events.get_by_id = AsyncMock()
+    uow.tickets = Mock()
+    uow.tickets.get_by_event_id = AsyncMock()
+    uow.tickets.get_available_tickets_by_event = AsyncMock()
+    uow.tickets.get_by_event_and_section = AsyncMock()
+    uow.tickets.list_by_event_section_and_subsection = AsyncMock()
+    return uow
+
+
+@pytest.fixture
+def sample_event():
+    """Sample event for testing."""
+    from unittest.mock import Mock
+
+    return Mock(id=1, seller_id=1, name='Test Event')
+
+
+@pytest.fixture
+def sample_tickets():
+    """Sample tickets for testing."""
+    from datetime import datetime
+    from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+
+    now = datetime.now()
+    return [
+        Ticket(
+            id=1,
+            event_id=1,
+            section='A',
+            subsection=1,
+            row=1,
+            seat=1,
+            price=1000,
+            status=TicketStatus.AVAILABLE,
+            created_at=now,
+            updated_at=now,
+        ),
+        Ticket(
+            id=2,
+            event_id=1,
+            section='A',
+            subsection=1,
+            row=1,
+            seat=2,
+            price=1000,
+            status=TicketStatus.SOLD,
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+
+
+@pytest.fixture
+def available_tickets():
+    """Sample available tickets for testing."""
+    from datetime import datetime
+    from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+
+    now = datetime.now()
+    return [
+        Ticket(
+            id=1,
+            event_id=1,
+            section='A',
+            subsection=1,
+            row=1,
+            seat=1,
+            price=1000,
+            status=TicketStatus.AVAILABLE,
+            created_at=now,
+            updated_at=now,
+        )
+    ]

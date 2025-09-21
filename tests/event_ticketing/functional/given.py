@@ -143,10 +143,12 @@ def event_exists(step, execute_sql_statement):
     actual_seller_id = expected_seller_id
 
     # Default config for all events (A-E sections with 2 subsections each, 250 per subsection)
+    # Now includes price information for automatic ticket creation
     seating_config = {
         'sections': [
             {
                 'name': 'A',
+                'price': 1000,  # Default price for compatibility with tests
                 'subsections': [
                     {'number': 1, 'rows': 10, 'seats_per_row': 25},
                     {'number': 2, 'rows': 10, 'seats_per_row': 25},
@@ -154,6 +156,7 @@ def event_exists(step, execute_sql_statement):
             },
             {
                 'name': 'B',
+                'price': 1000,
                 'subsections': [
                     {'number': 1, 'rows': 10, 'seats_per_row': 25},
                     {'number': 2, 'rows': 10, 'seats_per_row': 25},
@@ -161,6 +164,7 @@ def event_exists(step, execute_sql_statement):
             },
             {
                 'name': 'C',
+                'price': 1000,
                 'subsections': [
                     {'number': 1, 'rows': 10, 'seats_per_row': 25},
                     {'number': 2, 'rows': 10, 'seats_per_row': 25},
@@ -168,6 +172,7 @@ def event_exists(step, execute_sql_statement):
             },
             {
                 'name': 'D',
+                'price': 1000,
                 'subsections': [
                     {'number': 1, 'rows': 10, 'seats_per_row': 25},
                     {'number': 2, 'rows': 10, 'seats_per_row': 25},
@@ -175,6 +180,7 @@ def event_exists(step, execute_sql_statement):
             },
             {
                 'name': 'E',
+                'price': 1000,
                 'subsections': [
                     {'number': 1, 'rows': 10, 'seats_per_row': 25},
                     {'number': 2, 'rows': 10, 'seats_per_row': 25},
@@ -208,6 +214,38 @@ def event_exists(step, execute_sql_statement):
             'seating_config': event_info['seating_config'],
         },
     )
+
+    # Create tickets manually since we're bypassing the CreateEventUseCase
+    # Generate all tickets based on seating configuration
+    for section in seating_config['sections']:
+        section_name = section['name']
+        section_price = section['price']
+        subsections = section['subsections']
+
+        for subsection in subsections:
+            subsection_number = subsection['number']
+            rows = subsection['rows']
+            seats_per_row = subsection['seats_per_row']
+
+            # Generate tickets for each seat
+            for row in range(1, rows + 1):
+                for seat in range(1, seats_per_row + 1):
+                    execute_sql_statement(
+                        """
+                        INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
+                        VALUES (:event_id, :section, :subsection, :row_number, :seat_number, :price, :status)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        {
+                            'event_id': event_id,
+                            'section': section_name,
+                            'subsection': subsection_number,
+                            'row_number': row,
+                            'seat_number': seat,
+                            'price': section_price,
+                            'status': 'available',
+                        },
+                    )
 
 
 @given('another seller and event exist with:')
@@ -299,29 +337,47 @@ def other_seller_event_exists(step, execute_sql_statement):
 
 @given('all tickets exist with:')
 def tickets_already_exist(step, client, execute_sql_statement):
-    """Create all tickets for an event (setup for duplicate creation test)."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
     price = int(data['price'])
+    seller_email = SELLER1_EMAIL
 
-    # Look up who owns this event to get their email
-    result = execute_sql_statement(
-        'SELECT u.email FROM event e JOIN "user" u ON e.seller_id = u.id WHERE e.id = :event_id',
-        {'event_id': event_id},
-        fetch=True,
-    )
+    # First check if the event exists
+    event_check = client.get(f'/api/event/{event_id}')
+    print(f'DEBUG: Event {event_id} check status: {event_check.status_code}')
+    if event_check.status_code != 200:
+        print(f'DEBUG: Event check response: {event_check.text}')
+        raise AssertionError(f'Event {event_id} does not exist')
 
-    if result:
-        seller_email = result[0]['email']
-    else:
-        seller_email = SELLER1_EMAIL  # fallback
+    # Use the subsection endpoint to verify tickets exist
+    login_user(client=client, email=seller_email, password=DEFAULT_PASSWORD)
 
-    # Login as the appropriate seller
-    login_user(client, seller_email, DEFAULT_PASSWORD)
+    # Test with section A, subsection 1 to verify tickets exist
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
 
-    # Create tickets
-    response = client.post(EVENT_TICKETS_CREATE.format(event_id=event_id), json={'price': price})
-    assert response.status_code == 201
+    test_url = EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    response = client.get(test_url)
+
+    if response.status_code != 200:
+        print(f'DEBUG: Failed to get tickets from {test_url} with status {response.status_code}')
+        print(f'DEBUG: Response: {response.text}')
+        raise AssertionError(f'Failed to verify tickets exist for event {event_id}')
+
+    # Verify tickets exist and have the expected price
+    tickets_data = response.json()
+    if tickets_data['total_count'] == 0:
+        raise AssertionError(
+            f'No tickets found for event {event_id} section A subsection 1. Tickets should be created automatically with events.'
+        )
+
+    # Verify at least some tickets have the expected price
+    tickets_with_price = [t for t in tickets_data['tickets'] if t['price'] == price]
+    if not tickets_with_price:
+        print(f'DEBUG: No tickets found with price {price}')
+        print(
+            f'DEBUG: Available ticket prices: {list(set(t["price"] for t in tickets_data["tickets"]))}'
+        )
+        raise AssertionError(f'No tickets found with expected price {price}')
 
 
 @given('tickets exist for events:')
