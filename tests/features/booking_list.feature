@@ -1,4 +1,4 @@
-Feature: Order List
+Feature: Booking List
   As a buyer
   I want to list my bookings with details
   So that I can track my purchases

@@ -131,7 +131,9 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION, EVENT_TICKETS_CREATE
 
     # First check if tickets already exist
-    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
+    tickets_list_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'], section='A', subsection=1)
+    )
     if tickets_list_response.status_code == 200:
         tickets_data = tickets_list_response.json()
         existing_tickets = tickets_data.get('tickets', [])
@@ -150,7 +152,9 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
             print(f'TDD DEBUG: Created tickets for event {event["id"]}')
 
     # TDD FIX: Always refetch tickets after potential creation to ensure data consistency
-    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
+    tickets_list_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'], section='A', subsection=1)
+    )
     assert tickets_list_response.status_code == 200, (
         f'Failed to get tickets: {tickets_list_response.text}'
     )
@@ -200,12 +204,12 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     booking = booking_response.json()
 
     # TDD FIX: Validate the booking was created with the correct ticket IDs
-    print(f'TDD DEBUG: Order created successfully with ID: {booking["id"]}')
-    print(f'TDD DEBUG: Order response: {booking}')
+    print(f'TDD DEBUG: Booking created successfully with ID: {booking["id"]}')
+    print(f'TDD DEBUG: Booking response: {booking}')
 
     # TDD FIX: Verify the tickets were properly associated with the booking by querying them back
     post_booking_tickets_response = client.get(
-        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'])
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'], section='A', subsection=1)
     )
     if post_booking_tickets_response.status_code == 200:
         post_booking_tickets = post_booking_tickets_response.json()['tickets']
@@ -494,8 +498,8 @@ def event_price_updated_to_2000_given(booking_state, execute_sql_statement):
 def buyer_cancels_booking_given(client: TestClient, booking_state):
     """Given that the buyer has cancelled the booking."""
     booking_id = booking_state['booking']['id']
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_id))
-    assert response.status_code == 204, f'Failed to cancel booking: {response.text}'
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
+    assert response.status_code == 200, f'Failed to cancel booking: {response.text}'
     booking_state['booking']['status'] = 'cancelled'
 
 
@@ -503,8 +507,8 @@ def buyer_cancels_booking_given(client: TestClient, booking_state):
 def buyer_cancels_booking_simple(client: TestClient, booking_state):
     """Given that the buyer has cancelled the booking."""
     booking_id = booking_state['booking']['id']
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_id))
-    assert response.status_code == 204, f'Failed to cancel booking: {response.text}'
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
+    assert response.status_code == 200, f'Failed to cancel booking: {response.text}'
     booking_state['booking']['status'] = 'cancelled'
     booking_state['updated_booking'] = {'status': 'cancelled'}  # For Then step compatibility
 
@@ -663,7 +667,9 @@ def create_event_with_seating_config(
     event = event_response.json()
 
     # Check if tickets already exist for this event
-    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
+    tickets_list_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'], section='A', subsection=1)
+    )
     if tickets_list_response.status_code == 200:
         tickets_data = tickets_list_response.json()
         existing_tickets = tickets_data.get('tickets', [])

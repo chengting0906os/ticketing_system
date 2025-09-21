@@ -21,7 +21,7 @@ class CancelReservationUseCase:
             # Get the booking first to verify ownership and status
             booking = await self.uow.bookings.get_by_id(booking_id=booking_id)
             if not booking:
-                raise NotFoundError('Order not found')
+                raise NotFoundError('Booking not found')
 
             # Verify booking belongs to requesting buyer
             if booking.buyer_id != buyer_id:
@@ -39,13 +39,13 @@ class CancelReservationUseCase:
             elif booking.status == BookingStatus.CANCELLED:
                 from src.shared.exception.exceptions import DomainError
 
-                raise DomainError('Order already cancelled', 400)
+                raise DomainError('Booking already cancelled', 400)
 
             # Find tickets by booking_id
             tickets = await self.uow.tickets.get_tickets_by_booking_id(booking_id=booking_id)
 
             if not tickets:
-                raise NotFoundError('Order not found')
+                raise NotFoundError('Booking not found')
 
             # Cancel all tickets associated with this booking (release them back to available)
             for ticket in tickets:

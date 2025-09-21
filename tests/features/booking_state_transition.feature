@@ -1,4 +1,4 @@
-Feature: Order State Transition
+Feature: Booking State Transition
   As a marketplace system
   I want to enforce proper booking state transitions
   So that bookings follow valid business workflows
@@ -51,7 +51,7 @@ Feature: Order State Transition
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Order already cancelled |
+      | Booking already cancelled |
 
   Scenario: Valid state transition from PENDING_PAYMENT to PAID
     Given an booking exists with status "pending_payment":

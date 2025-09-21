@@ -110,9 +110,9 @@ def another_user_tries_to_pay(step, client: TestClient, booking_state):
 @when('the buyer cancels the booking')
 def buyer_cancels_booking(step, client: TestClient, booking_state):
     booking_id = booking_state['booking']['id']
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_id))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
     booking_state['response'] = response
-    if response.status_code == 204:
+    if response.status_code == 200:
         # Fetch the updated booking details after cancellation
         booking_response = client.get(BOOKING_GET.format(booking_id=booking_id))
         assert booking_response.status_code == 200
@@ -123,26 +123,26 @@ def buyer_cancels_booking(step, client: TestClient, booking_state):
 
 @when('the buyer tries to cancel the booking')
 def buyer_tries_to_cancel(step, client: TestClient, booking_state):
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when("the user tries to cancel someone else's booking")
 def user_tries_cancel_others_booking(step, client: TestClient, booking_state):
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when("the seller tries to cancel the buyer's booking")
 def seller_tries_cancel_buyer_booking(step, client: TestClient, booking_state):
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when('the buyer tries to cancel a non-existent booking')
 def buyer_tries_cancel_nonexistent(step, client: TestClient, booking_state):
     # Try to cancel an booking that doesn't exist (using ID 999999)
-    response = client.delete(BOOKING_CANCEL.format(booking_id=999999))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=999999))
     booking_state['response'] = response
 
 
@@ -270,8 +270,8 @@ def buyer_cancels_booking_to_release_event(step, client: TestClient, booking_sta
 
     # Cancel the booking
     booking_id = booking_state['booking']['id']
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_id))
-    assert response.status_code == 204, f'Failed to cancel booking: {response.text}'
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
+    assert response.status_code == 200, f'Failed to cancel booking: {response.text}'
     booking_state['booking']['status'] = 'cancelled'
 
 
@@ -344,7 +344,7 @@ def buyer_tries_change_paid_to_pending(step, client: TestClient, booking_state):
 def buyer_tries_cancel_completed_booking(step, client: TestClient, booking_state):
     """Buyer tries to cancel a completed booking."""
     booking_id = booking_state['booking']['id']
-    response = client.delete(BOOKING_CANCEL.format(booking_id=booking_id))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
     booking_state['response'] = response
 
 

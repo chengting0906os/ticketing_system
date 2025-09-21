@@ -1,4 +1,4 @@
-Feature: Order Price Validation
+Feature: Booking Price Validation
   As a marketplace system
   I want to validate ticket prices and booking totals properly
   So that bookings maintain data integrity and business rules
@@ -11,7 +11,7 @@ Feature: Order Price Validation
       | email          | password | name       | role  |
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
 
-  Scenario: Order total price calculated from selected tickets
+  Scenario: Booking total price calculated from selected tickets
     Given tickets exist for event:
       | event_id | status    | price |
       |        1 | available |  1000 |
@@ -30,7 +30,7 @@ Feature: Order Price Validation
       | total_price | status          | created_at | paid_at |
       |        2000 | pending_payment | not_null   | null    |
 
-  Scenario: Order with single ticket calculates correct price
+  Scenario: Booking with single ticket calculates correct price
     Given tickets exist for event:
       | event_id | status    | price |
       |        1 | available |  1500 |
@@ -49,7 +49,7 @@ Feature: Order Price Validation
       | total_price | status          | created_at | paid_at |
       |        1500 | pending_payment | not_null   | null    |
 
-  Scenario: Order with different priced tickets calculates correct total
+  Scenario: Booking with different priced tickets calculates correct total
     Given tickets exist for event:
       | event_id | status    | price |
       |        1 | available |  1000 |

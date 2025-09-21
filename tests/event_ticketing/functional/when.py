@@ -4,8 +4,7 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     EVENT_BASE,
     EVENT_LIST,
-    EVENT_TICKETS_BY_SECTION,
-    EVENT_TICKETS_LIST,
+    EVENT_TICKETS_BY_SUBSECTION,
     EVENT_UPDATE,
 )
 from tests.shared.utils import extract_table_data, login_user
@@ -177,7 +176,9 @@ def seller_lists_all_tickets(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # List all tickets
-    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
 
     context['response'] = response
 
@@ -193,7 +194,9 @@ def seller_lists_tickets_by_section(step, client, context):
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
     # List tickets by section
-    response = client.get(EVENT_TICKETS_BY_SECTION.format(event_id=event_id, section=section))
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section=section, subsection=1)
+    )
 
     context['response'] = response
 
@@ -208,7 +211,9 @@ def buyer_lists_available_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # List available tickets
-    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
 
     context['response'] = response
 
@@ -224,7 +229,9 @@ def buyer_attempts_to_access_section_tickets(step, client, context):
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
 
     # Try to access section-specific tickets (should fail)
-    response = client.get(EVENT_TICKETS_BY_SECTION.format(event_id=event_id, section=section))
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section=section, subsection=1)
+    )
 
     context['response'] = response
 
@@ -236,7 +243,9 @@ def buyer_lists_tickets_with_detail(step, context, client):
     event_id = int(data['event_id'])
 
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(EVENT_TICKETS_LIST.format(event_id=event_id))
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
     context['response'] = response
 
 

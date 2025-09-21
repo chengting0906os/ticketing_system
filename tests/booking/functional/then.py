@@ -52,7 +52,7 @@ def verify_booking_fields(booking_data: Dict[str, Any], expected_data: Dict[str,
 def assert_all_bookings_have_status(bookings: List[Dict[str, Any]], expected_status: str):
     for booking in bookings:
         assert booking.get('status') == expected_status, (
-            f'Order {booking["id"]} has status {booking.get("status")}, expected {expected_status}'
+            f'Booking {booking["id"]} has status {booking.get("status")}, expected {expected_status}'
         )
 
 
@@ -71,7 +71,7 @@ def verify_booking_status_remains(step, client: TestClient, booking_state):
     expected_status = extract_single_value(step)
     booking_data = get_booking_details(client, booking_state['booking']['id'])
     assert booking_data['status'] == expected_status, (
-        f'Order status should remain {expected_status}, but got {booking_data["status"]}'
+        f'Booking status should remain {expected_status}, but got {booking_data["status"]}'
     )
 
 
@@ -133,7 +133,7 @@ def verify_bookings_details(step, booking_state):
         expected_data = dict(zip(headers, values, strict=True))
         booking_id = int(expected_data['id'])
         booking = next((o for o in bookings if o['id'] == booking_id), None)
-        assert booking is not None, f'Order with id {booking_id} not found in response'
+        assert booking is not None, f'Booking with id {booking_id} not found in response'
         field_mappings = {
             'event_name': ('event_name', str),
             'price': ('price', int),

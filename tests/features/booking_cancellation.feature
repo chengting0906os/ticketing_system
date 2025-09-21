@@ -1,4 +1,4 @@
-Feature: Order Cancellation
+Feature: Booking Cancellation
   As a buyer
   I want to cancel my unpaid bookings
   So that I can release events I no longer want to purchase
@@ -23,7 +23,7 @@ Feature: Order Cancellation
       | buyer@test.com | P@ssw0rd |
     When the buyer cancels the booking
     Then the response status code should be:
-      | 204 |
+      | 200 |
     And the booking status should be:
       | cancelled |
     And the event status should be:
@@ -51,19 +51,19 @@ Feature: Order Cancellation
 
   Scenario: Cannot cancel already cancelled booking
     Given a event exists:
-      | name        | description       | is_active | status    | seller_id | venue_name   | seating_config                                                                                               |
-      | Opera Night | Already cancelled | true      | available |         1 | Taipei Arena | {"sections": [{"name": "C", "price": 800, "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
-    And an booking exists with status "cancelled":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |        1500 |
+      | name        | description       | is_active | status    | seller_id | venue_name   | seating_config                                                                                             |
+      | Opera Night | Already cancelled | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 800, "subsections": [{"number": 1, "rows": 1, "seats_per_row": 1}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
+    And an booking exists with status "cancelled":
+      | buyer_id | seller_id | event_id | total_price |
+      |        2 |         1 |        1 |         800 |
     When the buyer tries to cancel the booking
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Order already cancelled |
+      | Booking already cancelled |
 
   Scenario: Only buyer can cancel their own booking
     Given a event exists:
@@ -119,7 +119,7 @@ Feature: Order Cancellation
     Then the response status code should be:
       | 404 |
     And the error message should contain:
-      | Order not found |
+      | Booking not found |
     And the event status should remain:
       | available |
 

@@ -1,4 +1,4 @@
-Feature: Order Payment
+Feature: Booking Payment
   As a buyer
   I want to pay for my bookings
   So that I can complete the purchase

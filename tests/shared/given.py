@@ -1,8 +1,13 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import EVENT_BASE, USER_CREATE
-from tests.shared.utils import create_user, extract_table_data, login_user
+from src.shared.constant.route_constant import EVENT_CREATE, USER_CREATE
+from tests.event_test_constants import (
+    DEFAULT_SEATING_CONFIG_JSON,
+    DEFAULT_VENUE_NAME,
+)
+from tests.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
+from tests.util_constant import TEST_SELLER_EMAIL
 
 
 @given('I am logged in as:')
@@ -145,58 +150,22 @@ def create_seller_user_simple(
 def create_event_shared(
     step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
 ):
-    """Shared step for creating a event (inserts directly into database)."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
     event_data = extract_table_data(step)
-    seller_id = int(event_data.get('seller_id', 1))
+    login_user(client, TEST_SELLER_EMAIL, 'P@ssw0rd')
+    request_data = {
+        'name': event_data['name'],
+        'description': event_data['description'],
+        'is_active': event_data.get('is_active', 'true').lower() == 'true',
+        'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
+        'seating_config': parse_seating_config(
+            event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON)
+        ),
+    }
 
-    if execute_sql_statement:
-        # Create event directly in database
-        execute_sql_statement(
-            """
-            INSERT INTO event (name, description, seller_id, is_active, status, venue_name, seating_config)
-            VALUES (:name, :description, :seller_id, :is_active, :status, :venue_name, :seating_config)
-            """,
-            {
-                'name': event_data['name'],
-                'description': event_data['description'],
-                'seller_id': seller_id,
-                'is_active': event_data.get('is_active', 'true').lower() == 'true',
-                'status': event_data.get('status', 'available'),
-                'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
-                'seating_config': event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON),
-            },
-        )
-
-        # Get the created event ID
-        result = execute_sql_statement(
-            'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
-            {'name': event_data['name']},
-        )
-        event_id = result[0]['id'] if result else 1
-    else:
-        # Fallback: create via API
-        seller_email = f'seller{seller_id}@test.com'
-        create_user(client, seller_email, 'P@ssw0rd', f'Test Seller {seller_id}', 'seller')
-        login_user(client, seller_email, 'P@ssw0rd')
-
-        from tests.shared.utils import parse_seating_config
-
-        request_data = {
-            'name': event_data['name'],
-            'description': event_data['description'],
-            'is_active': event_data.get('is_active', 'true').lower() == 'true',
-            'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
-            'seating_config': parse_seating_config(
-                event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON)
-            ),
-        }
-
-        response = client.post(EVENT_BASE, json=request_data)
-        assert response.status_code == 201, f'Failed to create event: {response.text}'
-        event_result = response.json()
-        event_id = event_result['id']
+    response = client.post(EVENT_CREATE, json=request_data)
+    assert response.status_code == 201, f'Failed to create event: {response.text}'
+    event_result = response.json()
+    event_id = event_result['id']
 
     event = {
         'id': event_id,
