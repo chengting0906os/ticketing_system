@@ -75,6 +75,6 @@ Feature: Booking State Transition
       | buyer@test.com | P@ssw0rd |
     When the buyer cancels the booking
     Then the response status code should be:
-      | 204 |
+      | 200 |
     And the booking status should be:
       | cancelled |
