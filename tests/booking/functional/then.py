@@ -207,7 +207,7 @@ def verify_booking_status_remains_paid(step, client: TestClient, booking_state):
 @then('the tickets should have status:')
 def verify_tickets_status(step, client: TestClient, booking_state=None, context=None):
     """Verify that tickets have the expected status."""
-    from src.shared.constant.route_constant import TICKET_LIST
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
     from tests.shared.then import get_state_with_response
     from tests.shared.utils import extract_table_data
 
@@ -265,7 +265,7 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
                 client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
 
     # Get tickets for the event (now with appropriate permissions)
-    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
     assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
 
     tickets_data = tickets_response.json()
@@ -379,7 +379,7 @@ def verify_booking_contains_tickets_with_seats(
     step, client: TestClient, booking_state, execute_sql_statement
 ):
     """Verify that the booking contains tickets with specific seat numbers."""
-    from src.shared.constant.route_constant import TICKET_LIST
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
     from tests.shared.utils import login_user
     from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
 
@@ -394,7 +394,7 @@ def verify_booking_contains_tickets_with_seats(
 
     # Get all tickets for the event
     event_id = booking_state['event_id']
-    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
     assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
     tickets_data = tickets_response.json()
     tickets_data.get('tickets', [])

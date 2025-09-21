@@ -4,7 +4,6 @@ from pytest_bdd import when
 from src.shared.constant.route_constant import (
     BOOKING_BASE,
     BOOKING_CANCEL,
-    BOOKING_CANCEL_RESERVATION,
     BOOKING_GET,
     BOOKING_MY_BOOKINGS,
     BOOKING_PAY,
@@ -313,7 +312,7 @@ def buyer_cancels_reservation(step, client, context):
     login_user(client, buyer_email, DEFAULT_PASSWORD)
 
     # Cancel reservation
-    response = client.patch(BOOKING_CANCEL_RESERVATION.format(booking_id=booking_id))
+    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
     context['response'] = response
 
 
@@ -444,14 +443,14 @@ def buyer_creates_booking_with_best_available_seat_selection(
 @when('buyer creates booking with legacy ticket selection:')
 def buyer_creates_booking_with_legacy_ticket_selection(step, client: TestClient, booking_state):
     """Buyer creates booking with legacy ticket selection approach."""
-    from src.shared.constant.route_constant import TICKET_LIST
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
 
     ticket_data = extract_table_data(step)
     ticket_ids_str = ticket_data['ticket_ids']
 
     # Get actual ticket IDs from the event
     event_id = booking_state['event_id']
-    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
 
     if tickets_response.status_code == 200:
         tickets_data = tickets_response.json()

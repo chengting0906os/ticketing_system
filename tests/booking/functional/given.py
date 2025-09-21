@@ -10,7 +10,7 @@ from src.shared.constant.route_constant import (
     BOOKING_GET,
     BOOKING_PAY,
     EVENT_BASE,
-    TICKET_CREATE,
+    EVENT_TICKETS_CREATE,
 )
 from tests.shared.utils import extract_table_data
 from tests.util_constant import (
@@ -128,10 +128,10 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
 
-    from src.shared.constant.route_constant import TICKET_CREATE, TICKET_LIST
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION, EVENT_TICKETS_CREATE
 
     # First check if tickets already exist
-    tickets_list_response = client.get(TICKET_LIST.format(event_id=event['id']))
+    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
     if tickets_list_response.status_code == 200:
         tickets_data = tickets_list_response.json()
         existing_tickets = tickets_data.get('tickets', [])
@@ -142,7 +142,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
                 int(booking_data['total_price']) // 2
             )  # Create 2 tickets with half price each
             tickets_response = client.post(
-                TICKET_CREATE.format(event_id=event['id']), json={'price': ticket_price}
+                EVENT_TICKETS_CREATE.format(event_id=event['id']), json={'price': ticket_price}
             )
             assert tickets_response.status_code == 201, (
                 f'Failed to create tickets: {tickets_response.text}'
@@ -150,7 +150,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
             print(f'TDD DEBUG: Created tickets for event {event["id"]}')
 
     # TDD FIX: Always refetch tickets after potential creation to ensure data consistency
-    tickets_list_response = client.get(TICKET_LIST.format(event_id=event['id']))
+    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
     assert tickets_list_response.status_code == 200, (
         f'Failed to get tickets: {tickets_list_response.text}'
     )
@@ -204,7 +204,9 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     print(f'TDD DEBUG: Order response: {booking}')
 
     # TDD FIX: Verify the tickets were properly associated with the booking by querying them back
-    post_booking_tickets_response = client.get(TICKET_LIST.format(event_id=event['id']))
+    post_booking_tickets_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'])
+    )
     if post_booking_tickets_response.status_code == 200:
         post_booking_tickets = post_booking_tickets_response.json()['tickets']
         booking_associated_tickets = [t for t in post_booking_tickets if t['id'] in ticket_ids]
@@ -567,7 +569,7 @@ def tickets_exist_for_event(step, client, booking_state=None):
         event_id = event['id']
 
     # Create tickets (if they don't already exist)
-    response = client.post(TICKET_CREATE.format(event_id=event_id), json={'price': price})
+    response = client.post(EVENT_TICKETS_CREATE.format(event_id=event_id), json={'price': price})
     if response.status_code != 201:
         # Tickets might already exist, which is okay
         if response.status_code == 400 and 'already exist' in response.text:
@@ -631,9 +633,14 @@ def create_event_with_seating_config(
 ):
     """Create an event with specific seating configuration for seat selection tests."""
     import json
-    from src.shared.constant.route_constant import EVENT_BASE, TICKET_CREATE, TICKET_LIST
+
+    from src.shared.constant.route_constant import (
+        EVENT_BASE,
+        EVENT_TICKETS_BY_SUBSECTION,
+        EVENT_TICKETS_CREATE,
+    )
     from tests.shared.utils import login_user
-    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL, TEST_BUYER_EMAIL
+    from tests.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
 
     event_data = extract_table_data(step)
 
@@ -656,7 +663,7 @@ def create_event_with_seating_config(
     event = event_response.json()
 
     # Check if tickets already exist for this event
-    tickets_list_response = client.get(TICKET_LIST.format(event_id=event['id']))
+    tickets_list_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id']))
     if tickets_list_response.status_code == 200:
         tickets_data = tickets_list_response.json()
         existing_tickets = tickets_data.get('tickets', [])
@@ -664,7 +671,7 @@ def create_event_with_seating_config(
         # Only create tickets if none exist
         if not existing_tickets:
             tickets_response = client.post(
-                TICKET_CREATE.format(event_id=event['id']),
+                EVENT_TICKETS_CREATE.format(event_id=event['id']),
                 json={'price': seating_config['sections'][0]['price']},  # Use first section price
             )
             assert tickets_response.status_code == 201, (
@@ -683,9 +690,9 @@ def create_event_with_seating_config(
 @given('seats are already booked:')
 def seats_already_booked(step, client: TestClient, booking_state, execute_sql_statement):
     """Mark specific seats as already booked/reserved."""
-    from src.shared.constant.route_constant import TICKET_LIST
+    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
     from tests.shared.utils import login_user
-    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL, TEST_BUYER_EMAIL
+    from tests.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
 
     # Get the seat numbers from the table
     rows = step.data_table.rows
@@ -698,7 +705,7 @@ def seats_already_booked(step, client: TestClient, booking_state, execute_sql_st
 
     # Get all tickets for the event
     event_id = booking_state['event_id']
-    tickets_response = client.get(TICKET_LIST.format(event_id=event_id))
+    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
     assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
     tickets_data = tickets_response.json()
     tickets = tickets_data.get('tickets', [])
