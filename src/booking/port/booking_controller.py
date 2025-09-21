@@ -119,7 +119,7 @@ async def cancel_booking(
     # Return 204 No Content for successful deletion
 
 
-@router.patch('/{booking_id}/cancel-reservation', status_code=status.HTTP_200_OK)
+@router.patch('/{booking_id}/cancel-booking-reservation', status_code=status.HTTP_200_OK)
 @Logger.io
 async def cancel_reservation(
     booking_id: int,
