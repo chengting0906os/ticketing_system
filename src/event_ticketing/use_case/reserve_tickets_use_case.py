@@ -231,11 +231,9 @@ class ReserveTicketsUseCase:
     async def _broadcast_reservation_events_sse(
         self, *, event_id: int, tickets: List, buyer_id: int
     ) -> None:
-        """Broadcast SSE events for ticket reservations by subsection."""
+        """Log ticket reservations (SSE broadcasting removed in favor of simplified implementation)."""
         try:
-            from src.shared.sse.ticket_sse_service import ticket_sse_service
-
-            # Group tickets by subsection for efficient broadcasting
+            # Group tickets by subsection for logging
             subsection_groups = {}
             for ticket in tickets:
                 subsection_key = f'{ticket.section}-{ticket.subsection}'
@@ -243,64 +241,21 @@ class ReserveTicketsUseCase:
                     subsection_groups[subsection_key] = []
                 subsection_groups[subsection_key].append(ticket)
 
-            # Broadcast reservation events for each affected subsection
+            # Log reservation activity
             for subsection_key, subsection_tickets in subsection_groups.items():
                 section, subsection = subsection_key.split('-')
 
-                # Prepare detailed tickets data for users in the subsection page
-                tickets_data = [
-                    {
-                        'id': ticket.id,
-                        'seat_identifier': ticket.seat_identifier,
-                        'price': ticket.price,
-                        'section': ticket.section,
-                        'subsection': ticket.subsection,
-                        'row': ticket.row,
-                        'seat': ticket.seat,
-                        'status': 'reserved',
-                        'buyer_id': buyer_id,
-                    }
-                    for ticket in subsection_tickets
-                ]
-
-                # Broadcast detailed subsection event (for users in the subsection page)
-                await ticket_sse_service.broadcast_subsection_event(
-                    event_id=event_id,
-                    section=section,
-                    subsection=int(subsection),
-                    event_type='tickets_reserved',
-                    data={
-                        'event_id': event_id,
-                        'section': section,
-                        'subsection': int(subsection),
-                        'tickets': tickets_data,
-                        'buyer_id': buyer_id,
-                        'reservation_count': len(subsection_tickets),
-                    },
-                )
-
                 Logger.base.info(
-                    f'Broadcasted SSE reservation for {len(subsection_tickets)} tickets '
-                    f'in subsection {section}-{subsection} for event {event_id}'
+                    f'Reserved {len(subsection_tickets)} tickets '
+                    f'in subsection {section}-{subsection} for event {event_id} by buyer {buyer_id}'
                 )
-
-            # Broadcast general event (for users not in specific subsection pages)
-            await ticket_sse_service.broadcast_ticket_event(
-                event_id=event_id,
-                ticket_data={
-                    'event_id': event_id,
-                    'total_reserved': len(tickets),
-                    'affected_subsections': list(subsection_groups.keys()),
-                },
-                event_type='reservation_summary',
-            )
 
             Logger.base.info(
-                f'Broadcasted SSE reservation summary for event {event_id} '
+                f'Total reservation: {len(tickets)} tickets for event {event_id} '
                 f'affecting {len(subsection_groups)} subsections'
             )
 
         except Exception as e:
-            # Log error but don't fail the reservation - SSE is secondary
-            Logger.base.error(f'Failed to broadcast SSE reservation events: {e}')
+            # Log error but don't fail the reservation
+            Logger.base.error(f'Failed to log reservation events: {e}')
             # Continue execution - reservation is already committed to database

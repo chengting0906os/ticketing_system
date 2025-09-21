@@ -15,8 +15,19 @@ from src.user.port.user_controller import auth_router, users_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup
     await create_db_and_tables()
+
     yield
+
+    try:
+        pass
+
+    except Exception as e:
+        # Log but don't fail the shutdown
+        import logging
+
+        logging.getLogger(__name__).warning(f'Error during cleanup: {e}')
 
 
 app = FastAPI(

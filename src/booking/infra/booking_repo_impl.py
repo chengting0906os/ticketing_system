@@ -76,7 +76,7 @@ class BookingRepoImpl(BookingRepo):
 
         return BookingRepoImpl._to_entity(db_booking)
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def get_by_event_id(self, *, event_id: int) -> Booking | None:
         result = await self.session.execute(
             select(BookingModel)

@@ -68,7 +68,7 @@ class TicketRepoImpl(TicketRepo):
 
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def get_by_event_id(self, *, event_id: int) -> List[Ticket]:
         result = await self.session.execute(
             select(TicketModel)

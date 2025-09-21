@@ -1,12 +1,11 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
 from src.event_ticketing.port.event_schema import (
     EventCreateRequest,
     EventResponse,
-    EventStatusResponse,
 )
 from src.event_ticketing.port.ticket_schema import (
     CreateTicketsRequest,
@@ -31,7 +30,6 @@ from src.shared.service.role_auth_service import (
     require_buyer_or_seller,
     require_seller,
 )
-from src.shared.sse.sse_endpoint import sse_ticket_updates
 from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 
@@ -135,15 +133,6 @@ async def list_events(
 #     )
 
 
-@router.get('/{event_id}/status', status_code=status.HTTP_200_OK)
-@Logger.io
-async def get_event_status(
-    event_id: int, use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends)
-) -> EventStatusResponse:
-    """Get event status grouped by price (public endpoint)."""
-    return await use_case.get_event_status_with_all_subsections_tickets_count(event_id=event_id)
-
-
 # Ticket management endpoints for events
 
 
@@ -208,10 +197,64 @@ async def list_tickets_by_event(
     )
 
 
-@router.get('/sse/{event_id}')
+@router.get('/sse/{event_id}/status')
 @Logger.io(truncate_content=True)
-async def ticket_updates_sse(request: Request, event_id: int) -> StreamingResponse:
-    return await sse_ticket_updates(request, event_id)
+async def sse_event_with_all_subsections_tickets_status(
+    request: Request,
+    event_id: int,
+    current_user: User = Depends(require_buyer_or_seller),  # 使用 DI 驗證
+    availability_use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends),
+):
+    async def event_generator():
+        yield {
+            'event': 'connected',
+            'data': {
+                'message': 'SSE connection established',
+                'event_id': event_id,
+                'user_id': current_user.id,
+            },
+        }
+
+        try:
+            initial_status = (
+                await availability_use_case.get_event_status_with_all_subsections_tickets_count(
+                    event_id=event_id
+                )
+            )
+
+            yield {
+                'event': 'initial_status',
+                'data': {
+                    'event_id': event_id,
+                    'price_groups': [
+                        {
+                            'price': pg.price,
+                            'subsections': [
+                                {
+                                    'subsection': sub.subsection,
+                                    'total_seats': sub.total_seats,
+                                    'available_seats': sub.available_seats,
+                                    'status': sub.status,
+                                }
+                                for sub in pg.subsections
+                            ],
+                        }
+                        for pg in initial_status.price_groups
+                    ],
+                },
+            }
+        except Exception as e:
+            yield {'event': 'error', 'data': {'message': f'Failed to get initial status: {str(e)}'}}
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            'X-Accel-Buffering': 'no',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Cache-Control',
+        },
+        ping=30,
+    )
 
 
 @router.get('/{event_id}/tickets/section/{section}', status_code=status.HTTP_200_OK)
@@ -252,7 +295,6 @@ async def reserve_tickets_for_event(
     current_user: User = Depends(require_buyer),
     use_case: ReserveTicketsUseCase = Depends(ReserveTicketsUseCase.depends),
 ):
-    """Reserve tickets for an event (moved from ticket module)"""
     result = await use_case.reserve_tickets(
         event_id=event_id,
         ticket_count=request['ticket_count'],

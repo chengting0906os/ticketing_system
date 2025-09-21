@@ -12,7 +12,7 @@ class ListTicketsUseCase:
     def __init__(self, uow: AbstractUnitOfWork):
         self.uow = uow
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def list_tickets_by_event(
         self, *, event_id: int, seller_id: int | None = None
     ) -> List[Ticket]:

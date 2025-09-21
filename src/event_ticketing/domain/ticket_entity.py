@@ -32,7 +32,6 @@ class Ticket:
     reserved_at: Optional[datetime] = None
 
     @property
-    @Logger.io
     def seat_identifier(self) -> str:
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
