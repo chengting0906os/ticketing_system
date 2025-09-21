@@ -96,7 +96,7 @@ class TestListTicketsUseCase:
         mock_uow.tickets.list_by_event_section_and_subsection.return_value = sample_tickets
 
         # When
-        result = await use_case.list_tickets_by_section(
+        result = await use_case.list_tickets_by_event_section_section(
             event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
         )
 
@@ -121,6 +121,6 @@ class TestListTicketsUseCase:
 
         # When / Then
         with pytest.raises(ForbiddenError, match='Not authorized to view tickets for this event'):
-            await use_case.list_tickets_by_section(
+            await use_case.list_tickets_by_event_section_section(
                 event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
             )

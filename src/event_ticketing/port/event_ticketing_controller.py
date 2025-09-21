@@ -198,7 +198,7 @@ async def sse_list_tickets_by_event_section_subsection(
     current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
-    tickets = await use_case.list_tickets_by_section(
+    tickets = await use_case.list_tickets_by_event_section_section(
         event_id=event_id,
         section=section,
         subsection=subsection,
@@ -228,7 +228,7 @@ async def list_tickets_by_event_section_subsection(
     current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
-    tickets = await use_case.list_tickets_by_section(
+    tickets = await use_case.list_tickets_by_event_section_section(
         event_id=event_id,
         section=section,
         subsection=subsection,
