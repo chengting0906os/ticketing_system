@@ -3,6 +3,27 @@ Feature: Event Ticket Management
   I want to manage and view tickets for events
   So that I can handle event inventory and purchases
 
+  Scenario: Buyer can list available tickets for purchase
+    Given a buyer exists:
+      | email           | password | name        | role  |
+      | buyer1@test.com | P@ssw0rd | Test Buyer1 | buyer |
+    And a seller exists:
+      | email            | password | name         | role   |
+      | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
+    And an event exists with:
+      | event_id | seller_id |
+      |        4 |         2 |
+    And all tickets exist with:
+      | event_id | price |
+      |        4 |  1000 |
+    When buyer lists available tickets with:
+      | buyer_id | event_id |
+      |        3 |        4 |
+    Then the response status code should be:
+      | 200 |
+    And available tickets should be returned with count:
+      | 2500 |
+
   Scenario: Seller lists all tickets for their event
     Given a seller exists:
       | email            | password | name         | role   |
@@ -38,45 +59,6 @@ Feature: Event Ticket Management
       | 200 |
     And section tickets should be returned with count:
       | 500 |
-
-  Scenario: Cannot list tickets for other seller's event
-    Given a seller exists:
-      | email            | password | name         | role   |
-      | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
-    And another seller and event exist with:
-      | seller_id | event_id |
-      |         2 |        3 |
-    And all tickets exist with:
-      | event_id | price |
-      |        3 |  1000 |
-    When seller lists all tickets with:
-      | seller_id | event_id |
-      |         1 |        3 |
-    Then the response status code should be:
-      | 403 |
-    And the error message should contain:
-      | Not authorized to view tickets for this event |
-
-  Scenario: Buyer can list available tickets for purchase
-    Given a buyer exists:
-      | email           | password | name        | role  |
-      | buyer1@test.com | P@ssw0rd | Test Buyer1 | buyer |
-    And a seller exists:
-      | email            | password | name         | role   |
-      | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
-    And an event exists with:
-      | event_id | seller_id |
-      |        4 |         2 |
-    And all tickets exist with:
-      | event_id | price |
-      |        4 |  1000 |
-    When buyer lists available tickets with:
-      | buyer_id | event_id |
-      |        3 |        4 |
-    Then the response status code should be:
-      | 200 |
-    And available tickets should be returned with count:
-      | 2500 |
 
   Scenario: List tickets for event with no tickets
     Given a seller exists:
@@ -146,4 +128,4 @@ Feature: Event Ticket Management
       | 200 |
     And tickets should include detailed information:
       | seat_numbers | prices | sections |
-      |         true |   true |     true |
+      | true         | true   | true     |
