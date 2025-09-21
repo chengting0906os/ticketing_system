@@ -21,9 +21,10 @@ from tests.event_test_constants import (
     DEFAULT_VENUE_NAME,
     TAIPEI_ARENA,
 )
-from tests.shared.utils import extract_table_data, login_user
+from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
     DEFAULT_PASSWORD,
+    SELLER1_EMAIL,
     TEST_BUYER_EMAIL,
     TEST_BUYER_NAME,
     TEST_CARD_NUMBER,
@@ -390,10 +391,6 @@ def buyer_cancels_booking_simple(client: TestClient, booking_state):
 
 @given('tickets exist for event:')
 def tickets_exist_for_event(step, client, booking_state=None):
-    """Create tickets for an event."""
-    from tests.shared.utils import create_user, login_user
-    from tests.util_constant import SELLER1_EMAIL
-
     data = extract_table_data(step)
     event_id = int(data['event_id'])
     price = int(data['price'])
@@ -435,17 +432,6 @@ def tickets_exist_for_event(step, client, booking_state=None):
         event = event_response.json()
         event_id = event['id']
 
-    # Create tickets (if they don't already exist)
-    response = client.post(EVENT_TICKETS_CREATE.format(event_id=event_id), json={'price': price})
-    if response.status_code != 201:
-        # Tickets might already exist, which is okay
-        if response.status_code == 400 and 'already exist' in response.text:
-            pass  # This is expected when tickets already exist
-        else:
-            raise AssertionError(f'Failed to create tickets: {response.text}')
-
-    # The response shows tickets_created=500, so tickets will have sequential IDs starting from 1
-    # Use the first two ticket IDs (they'll be sequential from the batch creation)
     # In this test environment, we know tickets are created with IDs 1, 2, 3, etc.
     ticket_ids = [1, 2]
 
@@ -526,7 +512,6 @@ def seats_already_booked(step, client: TestClient, booking_state, execute_sql_st
 
     # Find tickets by seat identifier and mark them as reserved
     for seat_number in seat_numbers:
-        # Find the ticket with matching seat identifier (full format like "A-1-1-1")
         matching_ticket = None
         for ticket in tickets:
             if ticket.get('seat_identifier') == seat_number:
