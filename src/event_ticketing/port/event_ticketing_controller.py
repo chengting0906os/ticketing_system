@@ -190,7 +190,7 @@ async def sse_event_with_all_subsections_tickets_status(
     '/{event_id}/sse/tickets/section/{section}/subsection/{subsection}',
     status_code=status.HTTP_200_OK,
 )
-@Logger.io
+@Logger.io(truncate_content=True)
 async def sse_list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
@@ -220,7 +220,7 @@ async def sse_list_tickets_by_event_section_subsection(
     '/{event_id}/tickets/section/{section}/subsection/{subsection}',
     status_code=status.HTTP_200_OK,
 )
-@Logger.io
+@Logger.io(truncate_content=True)
 async def list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
