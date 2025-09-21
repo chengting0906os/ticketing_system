@@ -18,7 +18,7 @@ class TicketRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_by_event_and_section(
+    async def list_by_event_section_and_subsection(
         self, *, event_id: int, section: str, subsection: int | None = None
     ) -> List[Ticket]:
         pass

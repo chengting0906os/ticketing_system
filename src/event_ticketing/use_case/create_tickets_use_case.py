@@ -1,48 +1,58 @@
 from typing import List
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.repo_di import get_event_repo, get_ticket_repo
 
 
 class CreateTicketsUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(self, session: AsyncSession, event_repo: EventRepo, ticket_repo: TicketRepo):
+        self.session = session
+        self.event_repo = event_repo
+        self.ticket_repo = ticket_repo
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+    def depends(
+        cls,
+        session: AsyncSession = Depends(get_async_session),
+        event_repo: EventRepo = Depends(get_event_repo),
+        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+    ):
+        return cls(session=session, event_repo=event_repo, ticket_repo=ticket_repo)
 
     @Logger.io(truncate_content=True)
     async def create_all_tickets_for_event(
         self, *, event_id: int, price: int, seller_id: int
     ) -> List[Ticket]:
-        async with self.uow:
-            # Get event and verify ownership
-            event = await self.uow.events.get_by_id(event_id=event_id)
-            if not event:
-                raise NotFoundError('Event not found')
+        # Get event and verify ownership
+        event = await self.event_repo.get_by_id(event_id=event_id)
+        if not event:
+            raise NotFoundError('Event not found')
 
-            if event.seller_id != seller_id:
-                raise ForbiddenError('Not authorized to create tickets for this event')
+        if event.seller_id != seller_id:
+            raise ForbiddenError('Not authorized to create tickets for this event')
 
-            # Check if tickets already exist
-            tickets_exist = await self.uow.tickets.check_tickets_exist_for_event(event_id=event_id)
-            if tickets_exist:
-                raise DomainError('Tickets already exist for this event')
+        # Check if tickets already exist
+        tickets_exist = await self.ticket_repo.check_tickets_exist_for_event(event_id=event_id)
+        if tickets_exist:
+            raise DomainError('Tickets already exist for this event')
 
-            # Parse seating configuration
-            seating_config = event.seating_config
-            tickets_to_create = self._generate_tickets_from_config(event_id, price, seating_config)
+        # Parse seating configuration
+        seating_config = event.seating_config
+        tickets_to_create = self._generate_tickets_from_config(event_id, price, seating_config)
 
-            # Create tickets in batch
-            created_tickets = await self.uow.tickets.create_batch(tickets=tickets_to_create)
-            await self.uow.commit()
+        # Create tickets in batch
+        created_tickets = await self.ticket_repo.create_batch(tickets=tickets_to_create)
+        await self.session.commit()
 
-            return created_tickets
+        return created_tickets
 
     @Logger.io
     def _generate_tickets_from_config(

@@ -46,7 +46,7 @@ class ListTicketsUseCase:
             if event.seller_id != seller_id:
                 raise ForbiddenError('Not authorized to view tickets for this event')
 
-            tickets = await self.uow.tickets.get_by_event_and_section(
+            tickets = await self.uow.tickets.list_by_event_section_and_subsection(
                 event_id=event_id, section=section, subsection=subsection
             )
             return tickets

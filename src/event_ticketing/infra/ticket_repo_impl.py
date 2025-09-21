@@ -83,8 +83,8 @@ class TicketRepoImpl(TicketRepo):
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
-    @Logger.io
-    async def get_by_event_and_section(
+    @Logger.io(truncate_content=True)
+    async def list_by_event_section_and_subsection(
         self, *, event_id: int, section: str, subsection: int | None = None
     ) -> List[Ticket]:
         query = (
