@@ -22,6 +22,7 @@ dependencies = [
     "loguru>=0.7.3",
     "quixstreams>=2.0.0",
     "kafka-python>=2.0.2",
+    "sse-starlette>=3.0.2",
 ]
 
 [dependency-groups]
@@ -34,6 +35,7 @@ dev = [
     "pytest-bdd-ng>=2.3.1",
     "pytest-postgresql>=7.0.2",
     "psycopg-binary>=3.2.9",
+    "pre-commit>=4.3.0",
 ]
 
 [tool.ruff]
