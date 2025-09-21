@@ -5,17 +5,14 @@ from pytest_bdd import given
 
 from src.shared.constant.route_constant import (
     EVENT_BASE,
-    EVENT_TICKETS_RESERVE,
 )
 from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
-    BUYER1_EMAIL,
     DEFAULT_PASSWORD,
     EMPTY_LIST_SELLER_EMAIL,
     EMPTY_LIST_SELLER_NAME,
     LIST_SELLER_EMAIL,
     LIST_TEST_SELLER_NAME,
-    SELLER1_EMAIL,
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
@@ -225,94 +222,3 @@ def event_exists(step, execute_sql_statement):
                             'status': 'available',
                         },
                     )
-
-
-@given('all tickets exist with:')
-def tickets_already_exist(step, client, execute_sql_statement):
-    data = extract_table_data(step)
-    event_id = int(data['event_id'])
-    price = int(data['price'])
-    seller_email = SELLER1_EMAIL
-
-    # First check if the event exists
-    event_check = client.get(f'/api/event/{event_id}')
-    print(f'DEBUG: Event {event_id} check status: {event_check.status_code}')
-    if event_check.status_code != 200:
-        print(f'DEBUG: Event check response: {event_check.text}')
-        raise AssertionError(f'Event {event_id} does not exist')
-
-    # Use the subsection endpoint to verify tickets exist
-    login_user(client=client, email=seller_email, password=DEFAULT_PASSWORD)
-
-    # Test with section A, subsection 1 to verify tickets exist
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-
-    test_url = EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
-    response = client.get(test_url)
-
-    if response.status_code != 200:
-        print(f'DEBUG: Failed to get tickets from {test_url} with status {response.status_code}')
-        print(f'DEBUG: Response: {response.text}')
-        raise AssertionError(f'Failed to verify tickets exist for event {event_id}')
-
-    # Verify tickets exist and have the expected price
-    tickets_data = response.json()
-    if tickets_data['total_count'] == 0:
-        raise AssertionError(
-            f'No tickets found for event {event_id} section A subsection 1. Tickets should be created automatically with events.'
-        )
-
-    # Verify at least some tickets have the expected price
-    tickets_with_price = [t for t in tickets_data['tickets'] if t['price'] == price]
-    if not tickets_with_price:
-        print(f'DEBUG: No tickets found with price {price}')
-        print(
-            f'DEBUG: Available ticket prices: {list(set(t["price"] for t in tickets_data["tickets"]))}'
-        )
-        raise AssertionError(f'No tickets found with expected price {price}')
-
-
-@given('tickets exist for events:')
-def tickets_exist_for_events(step, execute_sql_statement):
-    """Create tickets for events."""
-    rows = step.data_table.rows
-    # Skip the header row
-    for row in rows[1:]:
-        event_id = int(row.cells[0].value)
-        ticket_count = int(row.cells[1].value)
-        price = int(row.cells[2].value)
-        status = row.cells[3].value
-
-        # Create tickets using the seating configuration
-        for i in range(ticket_count):
-            execute_sql_statement(
-                """
-                INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
-                VALUES (:event_id, 'A', 1, :row_number, :seat_number, :price, :status)
-                """,
-                {
-                    'event_id': event_id,
-                    'row_number': (i // 10) + 1,
-                    'seat_number': (i % 10) + 1,
-                    'price': price,
-                    'status': status,
-                },
-            )
-
-
-@given('tickets are reserved:')
-def tickets_are_reserved(step, client, execute_sql_statement):
-    """Reserve tickets for testing availability."""
-    data = extract_table_data(step)
-    event_id = int(data['event_id'])
-    _ = int(data['buyer_id'])
-    ticket_count = int(data['ticket_count'])
-
-    # Login as buyer to reserve tickets
-    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-
-    # Reserve the specified number of tickets
-    response = client.post(
-        EVENT_TICKETS_RESERVE.format(event_id=event_id), json={'ticket_count': ticket_count}
-    )
-    assert response.status_code == 200, f'Failed to reserve tickets: {response.text}'

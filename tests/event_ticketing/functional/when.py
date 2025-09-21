@@ -203,7 +203,6 @@ def seller_lists_tickets_by_section(step, client, context):
 
 @when('buyer lists available tickets with:')
 def buyer_lists_available_tickets(step, client, context):
-    """Buyer lists available tickets for an event."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
 
