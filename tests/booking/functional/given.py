@@ -1,5 +1,7 @@
 from datetime import datetime
+import json
 
+import bcrypt
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
@@ -10,9 +12,16 @@ from src.shared.constant.route_constant import (
     BOOKING_GET,
     BOOKING_PAY,
     EVENT_BASE,
+    EVENT_TICKETS_BY_SUBSECTION,
     EVENT_TICKETS_CREATE,
 )
-from tests.shared.utils import extract_table_data
+from tests.event_test_constants import (
+    DEFAULT_SEATING_CONFIG,
+    DEFAULT_SEATING_CONFIG_JSON,
+    DEFAULT_VENUE_NAME,
+    TAIPEI_ARENA,
+)
+from tests.shared.utils import extract_table_data, login_user
 from tests.util_constant import (
     DEFAULT_PASSWORD,
     TEST_BUYER_EMAIL,
@@ -32,8 +41,6 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     expected_buyer_id = int(booking_data['buyer_id'])
 
     # Create users directly in database with expected IDs to ensure consistency
-    import bcrypt
-
     hashed_password = bcrypt.hashpw(DEFAULT_PASSWORD.encode('utf-8'), bcrypt.gensalt()).decode(
         'utf-8'
     )
@@ -94,7 +101,6 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG, TAIPEI_ARENA
 
     event_response = client.post(
         EVENT_BASE,
@@ -128,8 +134,6 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
 
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION, EVENT_TICKETS_CREATE
-
     # First check if tickets already exist
     tickets_list_response = client.get(
         EVENT_TICKETS_BY_SUBSECTION.format(event_id=event['id'], section='A', subsection=1)
@@ -160,19 +164,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     )
     tickets_data = tickets_list_response.json()
 
-    # TDD FIX: Enhanced debugging to understand the ticket ID mismatch issue
     available_tickets = [t for t in tickets_data['tickets'] if t['status'] == 'available']
-    print(
-        f'TDD DEBUG: Event {event["id"]} - Total tickets in response: {len(tickets_data["tickets"])}'
-    )
-    print(f'TDD DEBUG: Event {event["id"]} - Available tickets: {len(available_tickets)}')
-    print(
-        f'TDD DEBUG: Event {event["id"]} - First 5 available ticket IDs: {[t["id"] for t in available_tickets[:5]]}'
-    )
-    print(
-        f'TDD DEBUG: Event {event["id"]} - Sample ticket data: {available_tickets[0] if available_tickets else "None"}'
-    )
-
     # Validate that we have enough available tickets
     if len(available_tickets) < 2:
         raise AssertionError(
@@ -255,8 +247,6 @@ def create_cancelled_booking(step, client: TestClient, booking_state, execute_sq
 
 @given('users exist:')
 def create_users(step, client: TestClient, booking_state, execute_sql_statement):
-    import bcrypt
-
     data_table = step.data_table
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
@@ -300,7 +290,6 @@ def create_events(step, client: TestClient, booking_state, execute_sql_statement
         event_data = dict(zip(headers, values, strict=True))
         event_id = int(event_data['id'])
         seller_id = int(event_data['seller_id'])
-        from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 
         execute_sql_statement(
             '\n                INSERT INTO event (id, seller_id, name, description, is_active, status, venue_name, seating_config)\n                VALUES (:id, :seller_id, :name, :description, :is_active, :status, :venue_name, :seating_config)\n            ',
@@ -372,100 +361,6 @@ def create_bookings(step, client: TestClient, booking_state, execute_sql_stateme
     )
 
 
-@given('a event exists with negative price:')
-def create_event_with_negative_price(
-    step, client: TestClient, booking_state, execute_sql_statement
-):
-    """Create a event with negative price for testing validation."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
-    event_data = extract_table_data(step)
-    seller_id = int(event_data.get('seller_id', 1))
-
-    # Store event data but don't create it yet (will fail on booking creation)
-    booking_state['invalid_event'] = {
-        'name': event_data['name'],
-        'description': event_data['description'],
-        'price': int(event_data['price']),  # Negative price
-        'seller_id': seller_id,
-        'is_active': event_data.get('is_active', 'true').lower() == 'true',
-        'status': event_data.get('status', 'available'),
-    }
-
-    # Create event directly in database to bypass API validation
-    execute_sql_statement(
-        """
-        INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
-        VALUES (:name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
-        """,
-        {
-            **booking_state['invalid_event'],
-            'venue_name': DEFAULT_VENUE_NAME,
-            'seating_config': DEFAULT_SEATING_CONFIG_JSON,
-        },
-    )
-
-    # Get the created event ID
-    result = execute_sql_statement(
-        'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
-        {'name': event_data['name']},
-    )
-    event_id = result[0]['id'] if result else 1
-    booking_state['invalid_event']['id'] = event_id
-    booking_state['event_id'] = event_id
-
-
-@given('a event exists with zero price:')
-def create_event_with_zero_price(step, client: TestClient, booking_state, execute_sql_statement):
-    """Create a event with zero price for testing validation."""
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-
-    event_data = extract_table_data(step)
-    seller_id = int(event_data.get('seller_id', 1))
-
-    # Store event data
-    booking_state['invalid_event'] = {
-        'name': event_data['name'],
-        'description': event_data['description'],
-        'price': 0,  # Zero price
-        'seller_id': seller_id,
-        'is_active': event_data.get('is_active', 'true').lower() == 'true',
-        'status': event_data.get('status', 'available'),
-    }
-
-    # Create event directly in database to bypass API validation
-    execute_sql_statement(
-        """
-        INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)
-        VALUES (:name, :description, :price, :seller_id, :is_active, :status, :venue_name, :seating_config)
-        """,
-        {
-            **booking_state['invalid_event'],
-            'venue_name': DEFAULT_VENUE_NAME,
-            'seating_config': DEFAULT_SEATING_CONFIG_JSON,
-        },
-    )
-
-    # Get the created event ID
-    result = execute_sql_statement(
-        'SELECT id FROM event WHERE name = :name ORDER BY id DESC LIMIT 1',
-        {'name': event_data['name']},
-    )
-    event_id = result[0]['id'] if result else 1
-    booking_state['invalid_event']['id'] = event_id
-    booking_state['event_id'] = event_id
-
-
-@given('the buyer creates an booking for the event')
-def buyer_creates_booking_given(client: TestClient, booking_state):
-    """Given that a buyer has already created an booking."""
-    # The buyer should already be logged in
-    response = client.post(BOOKING_BASE, json={'event_id': booking_state['event']['id']})
-    assert response.status_code == 201, f'Failed to create booking: {response.text}'
-    booking_state['booking'] = response.json()
-    booking_state['response'] = response
-
-
 @given('the buyer pays for the booking')
 def buyer_pays_for_booking_given(client: TestClient, booking_state):
     """Given that the buyer has paid for the booking."""
@@ -483,26 +378,6 @@ def buyer_pays_for_booking_given(client: TestClient, booking_state):
     booking_state['booking']['status'] = 'paid'
 
 
-@given('the event price is updated to 2000')
-def event_price_updated_to_2000_given(booking_state, execute_sql_statement):
-    """Given that the event price has been updated."""
-    event_id = booking_state['event']['id']
-    execute_sql_statement(
-        'UPDATE event SET price = :price WHERE id = :id',
-        {'price': 2000, 'id': event_id},
-    )
-    booking_state['event']['price'] = 2000
-
-
-@given('the buyer cancels the booking to release the event')
-def buyer_cancels_booking_given(client: TestClient, booking_state):
-    """Given that the buyer has cancelled the booking."""
-    booking_id = booking_state['booking']['id']
-    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
-    assert response.status_code == 200, f'Failed to cancel booking: {response.text}'
-    booking_state['booking']['status'] = 'cancelled'
-
-
 @given('the buyer cancels the booking')
 def buyer_cancels_booking_simple(client: TestClient, booking_state):
     """Given that the buyer has cancelled the booking."""
@@ -513,21 +388,9 @@ def buyer_cancels_booking_simple(client: TestClient, booking_state):
     booking_state['updated_booking'] = {'status': 'cancelled'}  # For Then step compatibility
 
 
-@given('the booking is marked as completed')
-def booking_marked_as_completed(booking_state, execute_sql_statement):
-    """Given that the booking has been marked as completed."""
-    booking_id = booking_state['booking']['id']
-    execute_sql_statement(
-        'UPDATE "booking" SET status = \'completed\' WHERE id = :id',
-        {'id': booking_id},
-    )
-    booking_state['booking']['status'] = 'completed'
-
-
 @given('tickets exist for event:')
 def tickets_exist_for_event(step, client, booking_state=None):
     """Create tickets for an event."""
-    from tests.event_test_constants import DEFAULT_VENUE_NAME
     from tests.shared.utils import create_user, login_user
     from tests.util_constant import SELLER1_EMAIL
 
@@ -592,60 +455,10 @@ def tickets_exist_for_event(step, client, booking_state=None):
         booking_state['event_id'] = event_id
 
 
-@given('buyer has reserved tickets:')
-def buyer_has_reserved_tickets(step, execute_sql_statement):
-    """Create tickets reserved by buyer in the past."""
-    from datetime import datetime, timedelta
-
-    data = extract_table_data(step)
-    buyer_id = int(data['buyer_id'])
-    event_id = int(data['event_id'])
-    ticket_count = int(data['ticket_count'])
-    reserved_at = data['reserved_at']
-
-    # Parse reserved_at to determine actual datetime
-    if reserved_at == '20_minutes_ago':
-        actual_reserved_at = datetime.now() - timedelta(minutes=20)
-    else:
-        actual_reserved_at = datetime.now() - timedelta(minutes=5)
-
-    # Update existing available tickets to reserved status
-    execute_sql_statement(
-        """
-        UPDATE ticket
-        SET status = 'reserved', buyer_id = :buyer_id, reserved_at = :reserved_at
-        WHERE event_id = :event_id AND status = 'available'
-        AND id IN (
-            SELECT id FROM ticket
-            WHERE event_id = :event_id AND status = 'available'
-            ORDER BY id
-            LIMIT :ticket_count
-        )
-        """,
-        {
-            'event_id': event_id,
-            'buyer_id': buyer_id,
-            'reserved_at': actual_reserved_at,
-            'ticket_count': ticket_count,
-        },
-    )
-
-
 @given('an event exists with seating configuration:')
 def create_event_with_seating_config(
     step, client: TestClient, booking_state, execute_sql_statement
 ):
-    """Create an event with specific seating configuration for seat selection tests."""
-    import json
-
-    from src.shared.constant.route_constant import (
-        EVENT_BASE,
-        EVENT_TICKETS_BY_SUBSECTION,
-        EVENT_TICKETS_CREATE,
-    )
-    from tests.shared.utils import login_user
-    from tests.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
-
     event_data = extract_table_data(step)
 
     # Ensure seller is logged in to create event
@@ -695,11 +508,6 @@ def create_event_with_seating_config(
 
 @given('seats are already booked:')
 def seats_already_booked(step, client: TestClient, booking_state, execute_sql_statement):
-    """Mark specific seats as already booked/reserved."""
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-    from tests.shared.utils import login_user
-    from tests.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
-
     # Get the seat numbers from the table
     rows = step.data_table.rows
     seat_numbers = []

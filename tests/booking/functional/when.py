@@ -7,58 +7,16 @@ from src.shared.constant.route_constant import (
     BOOKING_GET,
     BOOKING_MY_BOOKINGS,
     BOOKING_PAY,
+    EVENT_TICKETS_BY_SUBSECTION,
 )
 from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
-    BUYER1_EMAIL,
     BUYER2_EMAIL,
-    BUYER3_EMAIL,
     DEFAULT_PASSWORD,
-    SELLER1_EMAIL,
     TEST_CARD_NUMBER,
 )
-
-
-@when('the buyer creates an booking for the event')
-def buyer_creates_booking(step, client: TestClient, booking_state):
-    # The buyer should already be logged in via "I am logged in as:" step
-    # If not, we don't login here - let the test control authentication
-
-    # Use ticket_ids from the successful scenario in the test
-    response = client.post(BOOKING_BASE, json={'ticket_ids': [1001, 1002]})
-    booking_state['response'] = response
-
-    # Store booking if created successfully
-    if response.status_code == 201:
-        booking_state['booking'] = response.json()
-
-
-@when('the buyer tries to create an booking for the event')
-def buyer_tries_to_create_booking(step, client: TestClient, booking_state):
-    # Use actual ticket IDs from the booking_state if available, otherwise use fallback
-    if 'ticket_ids' in booking_state:
-        ticket_ids = booking_state['ticket_ids']
-    else:
-        # Fallback for cases where tickets weren't properly stored
-        ticket_ids = [1001, 1002]
-
-    response = client.post(BOOKING_BASE, json={'ticket_ids': ticket_ids})
-    booking_state['response'] = response
-
-
-@when('the seller tries to create an booking for their own event')
-def seller_tries_to_create_booking(step, client: TestClient, booking_state):
-    # Use actual ticket IDs from the booking_state if available, otherwise use fallback
-    if 'ticket_ids' in booking_state:
-        ticket_ids = booking_state['ticket_ids']
-    else:
-        # Fallback for cases where tickets weren't properly stored
-        ticket_ids = [1001, 1002]
-
-    response = client.post(BOOKING_BASE, json={'ticket_ids': ticket_ids})
-    booking_state['response'] = response
 
 
 @when('the buyer pays for the booking with:')
@@ -206,84 +164,6 @@ def buyer_4_requests_bookings(step, client: TestClient, booking_state):
     booking_state['response'] = response
 
 
-@when('buyer with id 5 requests their bookings')
-def buyer_5_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, BUYER3_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
-    booking_state['response'] = response
-
-
-@when('seller with id 1 requests their bookings')
-def seller_1_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
-    booking_state['response'] = response
-
-
-@when('buyer with id 3 requests their bookings with status "paid"')
-def buyer_3_requests_bookings_paid(step, client: TestClient, booking_state):
-    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=paid')
-    booking_state['response'] = response
-
-
-@when('buyer with id 3 requests their bookings with status "pending_payment"')
-def buyer_3_requests_bookings_pending(step, client: TestClient, booking_state):
-    login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=pending_payment')
-    booking_state['response'] = response
-
-
-@when('the buyer tries to create an booking for the negative price event')
-def buyer_tries_to_create_booking_for_negative_price_event(step, client: TestClient, booking_state):
-    """Try to create an booking for a event with negative price."""
-    # Login as buyer
-    buyer = booking_state['buyer']
-    login_user(client, buyer['email'], 'P@ssw0rd')
-
-    # Try to create booking
-    response = client.post(BOOKING_BASE, json={'event_id': booking_state['event_id']})
-    booking_state['response'] = response
-
-
-@when('the buyer tries to create an booking for the zero price event')
-def buyer_tries_to_create_booking_for_zero_price_event(step, client: TestClient, booking_state):
-    """Try to create an booking for a event with zero price."""
-    # Login as buyer
-    buyer = booking_state['buyer']
-    login_user(client, buyer['email'], 'P@ssw0rd')
-
-    # Try to create booking
-    response = client.post(BOOKING_BASE, json={'event_id': booking_state['event_id']})
-    booking_state['response'] = response
-
-
-@when('the event price is updated to 2000')
-def update_event_price_to_2000(booking_state, execute_sql_statement):
-    """Update the event price in the database."""
-    event_id = booking_state['event']['id']
-
-    # Update event price directly in database
-    execute_sql_statement(
-        'UPDATE event SET price = :price WHERE id = :id',
-        {'price': 2000, 'id': event_id},
-    )
-    booking_state['event']['price'] = 2000
-
-
-@when('the event price is updated to 3000')
-def update_event_price_to_3000(booking_state, execute_sql_statement):
-    """Update the event price in the database."""
-    event_id = booking_state['event']['id']
-
-    # Update event price directly in database
-    execute_sql_statement(
-        'UPDATE event SET price = :price WHERE id = :id',
-        {'price': 3000, 'id': event_id},
-    )
-    booking_state['event']['price'] = 3000
-
-
 @when('the buyer pays for the booking')
 def buyer_pays_for_booking_simple(step, client: TestClient, booking_state):
     """Buyer pays for their booking."""
@@ -307,42 +187,6 @@ def buyer_pays_for_booking_simple(step, client: TestClient, booking_state):
     booking_state['updated_booking'] = booking_response.json()  # Store full booking details
 
 
-@when('the buyer cancels the booking to release the event')
-def buyer_cancels_booking_to_release_event(step, client: TestClient, booking_state):
-    """Buyer cancels their booking to release the event."""
-    # Login as buyer
-    buyer = booking_state['buyer']
-    login_user(client, buyer['email'], 'P@ssw0rd')
-
-    # Cancel the booking
-    booking_id = booking_state['booking']['id']
-    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
-    assert response.status_code == 200, f'Failed to cancel booking: {response.text}'
-    booking_state['booking']['status'] = 'cancelled'
-
-
-@when('another buyer creates an booking for the same event')
-def another_buyer_creates_booking_for_same_event(step, client: TestClient, booking_state):
-    """Another buyer creates an booking for the same event."""
-    # Create another buyer
-    another_buyer_email = 'another_buyer@test.com'
-    another_buyer = create_user(client, another_buyer_email, 'P@ssw0rd', 'Another Buyer', 'buyer')
-
-    if not another_buyer:
-        # User already exists, just use it
-        another_buyer = {'email': another_buyer_email}
-
-    # Login as the other buyer
-    login_user(client, another_buyer_email, 'P@ssw0rd')
-
-    # Create booking for the same event
-    response = client.post(BOOKING_BASE, json={'event_id': booking_state['event']['id']})
-    assert response.status_code == 201, f'Failed to create new booking: {response.text}'
-
-    booking_state['new_booking'] = response.json()
-    booking_state['another_buyer'] = another_buyer
-
-
 @when('buyer cancels reservation:')
 def buyer_cancels_reservation(step, client, context):
     """Buyer cancels their reservation."""
@@ -360,66 +204,6 @@ def buyer_cancels_reservation(step, client, context):
     # Cancel reservation
     response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
     context['response'] = response
-
-
-@when('the buyer tries to change cancelled booking status to pending_payment')
-def buyer_tries_change_cancelled_to_pending(step, client: TestClient, booking_state):
-    """Buyer tries to change cancelled booking back to pending_payment."""
-    booking_id = booking_state['booking']['id']
-    # Try to update booking status (this endpoint may not exist, but we'll simulate the attempt)
-    response = client.patch(
-        f'{BOOKING_BASE}/{booking_id}/status',
-        json={'status': 'pending_payment'},
-    )
-    booking_state['response'] = response
-
-
-@when('the buyer tries to change paid booking status to pending_payment')
-def buyer_tries_change_paid_to_pending(step, client: TestClient, booking_state):
-    """Buyer tries to change paid booking back to pending_payment."""
-    booking_id = booking_state['booking']['id']
-    # Try to update booking status
-    response = client.patch(
-        f'{BOOKING_BASE}/{booking_id}/status',
-        json={'status': 'pending_payment'},
-    )
-    booking_state['response'] = response
-
-
-@when('the buyer tries to cancel the completed booking')
-def buyer_tries_cancel_completed_booking(step, client: TestClient, booking_state):
-    """Buyer tries to cancel a completed booking."""
-    booking_id = booking_state['booking']['id']
-    response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
-    booking_state['response'] = response
-
-
-@when('the buyer tries to mark unpaid booking as completed')
-def buyer_tries_mark_unpaid_as_completed(step, client: TestClient, booking_state):
-    """Buyer tries to mark an unpaid booking as completed."""
-    booking_id = booking_state['booking']['id']
-    # Try to complete booking without payment
-    response = client.patch(
-        f'{BOOKING_BASE}/{booking_id}/complete',
-        json={},
-    )
-    booking_state['response'] = response
-
-
-@when('the seller marks the booking as completed')
-def seller_marks_booking_completed(step, client: TestClient, booking_state):
-    """Seller marks the booking as completed."""
-    # First, login as seller
-    login_user(client, 'seller@test.com', 'P@ssw0rd')
-
-    booking_id = booking_state['booking']['id']
-    response = client.patch(
-        f'{BOOKING_BASE}/{booking_id}/complete',
-        json={},
-    )
-    booking_state['response'] = response
-    if response.status_code == 200:
-        booking_state['booking']['status'] = 'completed'
 
 
 @when('buyer creates booking with tickets:')
@@ -488,9 +272,6 @@ def buyer_creates_booking_with_best_available_seat_selection(
 
 @when('buyer creates booking with legacy ticket selection:')
 def buyer_creates_booking_with_legacy_ticket_selection(step, client: TestClient, booking_state):
-    """Buyer creates booking with legacy ticket selection approach."""
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-
     ticket_data = extract_table_data(step)
     ticket_ids_str = ticket_data['ticket_ids']
 
