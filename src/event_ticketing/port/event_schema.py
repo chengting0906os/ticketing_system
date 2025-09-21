@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 
-class EventCreateRequest(BaseModel):
+class EventCreateWithTicketConfigRequest(BaseModel):
     name: str
     description: str
     venue_name: str
@@ -20,9 +20,28 @@ class EventCreateRequest(BaseModel):
                     'sections': [
                         {
                             'name': 'A',
+                            'price': 2000,
+                            'subsections': [
+                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'B',
+                            'price': 1500,
+                            'subsections': [
+                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                            ],
+                        },
+                        {
+                            'name': 'C',
                             'price': 1000,
-                            'subsections': [{'number': 1, 'rows': 25, 'seats_per_row': 20}],
-                        }
+                            'subsections': [
+                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                            ],
+                        },
                     ]
                 },
                 'is_active': True,

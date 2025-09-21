@@ -4,14 +4,11 @@ from fastapi import APIRouter, Depends, Request, status
 from sse_starlette.sse import EventSourceResponse
 
 from src.event_ticketing.port.event_schema import (
-    EventCreateRequest,
+    EventCreateWithTicketConfigRequest,
     EventResponse,
 )
 from src.event_ticketing.port.ticket_schema import (
-    CreateTicketsRequest,
-    CreateTicketsResponse,
     ListTicketsBySectionResponse,
-    ListTicketsResponse,
     TicketResponse,
 )
 from src.event_ticketing.use_case.create_event_use_case import (
@@ -19,18 +16,14 @@ from src.event_ticketing.use_case.create_event_use_case import (
     GetEventUseCase,
     ListEventsUseCase,
 )
-from src.event_ticketing.use_case.create_tickets_use_case import CreateTicketsUseCase
 from src.event_ticketing.use_case.get_availability_use_case import GetAvailabilityUseCase
 from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
-from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import (
-    require_buyer,
     require_buyer_or_seller,
     require_seller,
 )
-from src.user.domain.user_entity import UserRole
 from src.user.domain.user_model import User
 
 
@@ -40,7 +33,7 @@ router = APIRouter()
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
 async def create_event(
-    request: EventCreateRequest,
+    request: EventCreateWithTicketConfigRequest,
     current_user: User = Depends(require_seller),
     use_case: CreateEventUseCase = Depends(CreateEventUseCase.depends),
 ) -> EventResponse:
@@ -119,23 +112,6 @@ async def list_events(
     return result
 
 
-# @router.get('/{event_id}/availability/section/{section}', status_code=status.HTTP_200_OK)
-# @Logger.io
-# async def get_section_availability(
-#     event_id: int,
-#     section: str,
-#     subsection: Optional[int] = None,
-#     use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends),
-# ) -> SectionAvailabilityResponse:
-#     """Get ticket availability for a specific section or subsection (public endpoint)."""
-#     return await use_case.get_section_availability(
-#         event_id=event_id, section=section, subsection=subsection
-#     )
-
-
-# Ticket management endpoints for events
-
-
 def _ticket_to_response(ticket) -> TicketResponse:
     return TicketResponse(
         id=ticket.id,
@@ -150,59 +126,12 @@ def _ticket_to_response(ticket) -> TicketResponse:
     )
 
 
-@router.post('/{event_id}/tickets', status_code=status.HTTP_201_CREATED)
-@Logger.io(truncate_content=True)
-async def create_tickets_for_event(
-    event_id: int,
-    request: CreateTicketsRequest,
-    current_user: User = Depends(require_seller),
-    use_case: CreateTicketsUseCase = Depends(CreateTicketsUseCase.depends),
-) -> CreateTicketsResponse:
-    tickets = await use_case.create_all_tickets_for_event(
-        event_id=event_id,
-        price=request.price,
-        seller_id=current_user.id,
-    )
-
-    return CreateTicketsResponse(
-        tickets_created=len(tickets),
-        event_id=event_id,
-        message=f'Successfully created {len(tickets)} tickets',
-    )
-
-
-@router.get('/{event_id}/tickets', status_code=status.HTTP_200_OK)
-@Logger.io(truncate_content=True)
-async def list_tickets_by_event(
-    event_id: int,
-    current_user: User = Depends(require_buyer_or_seller),
-    use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
-) -> ListTicketsResponse:
-    # Determine if user is a seller for this event
-    seller_id = None
-    if current_user.role == UserRole.SELLER:
-        seller_id = current_user.id
-
-    tickets = await use_case.list_tickets_by_event(
-        event_id=event_id,
-        seller_id=seller_id,
-    )
-
-    ticket_responses = [_ticket_to_response(ticket) for ticket in tickets]
-
-    return ListTicketsResponse(
-        tickets=ticket_responses,
-        total_count=len(ticket_responses),
-        event_id=event_id,
-    )
-
-
 @router.get('/sse/{event_id}/status')
 @Logger.io(truncate_content=True)
 async def sse_event_with_all_subsections_tickets_status(
     request: Request,
     event_id: int,
-    current_user: User = Depends(require_buyer_or_seller),  # 使用 DI 驗證
+    current_user: User = Depends(require_buyer_or_seller),
     availability_use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends),
 ):
     async def event_generator():
@@ -257,13 +186,16 @@ async def sse_event_with_all_subsections_tickets_status(
     )
 
 
-@router.get('/{event_id}/tickets/section/{section}', status_code=status.HTTP_200_OK)
+@router.get(
+    '/sse/{event_id}/tickets/section/{section}/subsection/{subsection}',
+    status_code=status.HTTP_200_OK,
+)
 @Logger.io
-async def list_tickets_by_section(
+async def sse_list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
     subsection: int | None = None,
-    current_user: User = Depends(require_seller),
+    current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
     tickets = await use_case.list_tickets_by_section(
@@ -282,24 +214,3 @@ async def list_tickets_by_section(
         section=section,
         subsection=subsection,
     )
-
-
-# Ticket reservation endpoints (moved from ticket module)
-
-
-@router.post('/{event_id}/reserve', status_code=status.HTTP_200_OK)
-@Logger.io
-async def reserve_tickets_for_event(
-    event_id: int,
-    request: dict,  # Expecting {'ticket_count': int, 'section': str (optional), 'subsection': int (optional)}
-    current_user: User = Depends(require_buyer),
-    use_case: ReserveTicketsUseCase = Depends(ReserveTicketsUseCase.depends),
-):
-    result = await use_case.reserve_tickets(
-        event_id=event_id,
-        ticket_count=request['ticket_count'],
-        buyer_id=current_user.id,
-        section=request.get('section'),  # pyright: ignore[reportArgumentType]
-        subsection=request.get('subsection'),  # pyright: ignore[reportArgumentType]
-    )
-    return result

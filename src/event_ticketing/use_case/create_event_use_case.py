@@ -54,7 +54,6 @@ class CreateEventUseCase:
         return created_event
 
     def _validate_seating_config(self, *, seating_config: Dict) -> None:
-        """Validate seating configuration structure and prices."""
         if not isinstance(seating_config, dict) or 'sections' not in seating_config:
             raise ValueError('Invalid seating configuration: must contain sections')
 
