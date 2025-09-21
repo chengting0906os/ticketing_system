@@ -34,6 +34,14 @@ migrate-current mc:
 test t:
 	@uv run pytest tests/ -v $(filter-out $@,$(MAKECMDGOALS))
 
+.PHONY: ts
+ts:
+	@uv run pytest tests/ -vs $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: txs
+txs:
+	@uv run pytest tests/ -vxs $(filter-out $@,$(MAKECMDGOALS))
+
 .PHONY: test-api
 test-api:
 	@uv run pytest tests/test_user_api_async.py -v $(filter-out $@,$(MAKECMDGOALS))
