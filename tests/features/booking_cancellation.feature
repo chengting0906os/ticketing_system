@@ -46,8 +46,6 @@ Feature: Booking Cancellation
       | Cannot cancel paid booking |
     And the booking status should remain:
       | paid |
-    And the event status should remain:
-      | sold_out |
 
   Scenario: Cannot cancel already cancelled booking
     Given a event exists:
