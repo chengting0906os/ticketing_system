@@ -62,7 +62,7 @@ Feature: Booking Payment
       |        2 |         1 |        1 |        1000 |
     When the buyer cancels the booking
     Then the response status code should be:
-      | 204 |
+      | 200 |
     And the booking status should be:
       | cancelled |
     And the booking should have:

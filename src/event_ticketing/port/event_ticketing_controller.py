@@ -195,14 +195,12 @@ async def sse_list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
     subsection: int,
-    current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
     tickets = await use_case.list_tickets_by_event_section_section(
         event_id=event_id,
         section=section,
         subsection=subsection,
-        seller_id=current_user.id,
     )
 
     ticket_responses = [_ticket_to_response(ticket) for ticket in tickets]
@@ -225,14 +223,12 @@ async def list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
     subsection: int,
-    current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
     tickets = await use_case.list_tickets_by_event_section_section(
         event_id=event_id,
         section=section,
         subsection=subsection,
-        seller_id=current_user.id,
     )
 
     ticket_responses = [_ticket_to_response(ticket) for ticket in tickets]

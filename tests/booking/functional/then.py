@@ -3,8 +3,20 @@ from typing import Any, Dict, List
 from fastapi.testclient import TestClient
 from pytest_bdd import then
 
-from src.shared.constant.route_constant import BOOKING_GET, EVENT_GET
-from tests.shared.utils import assert_response_status, extract_single_value, extract_table_data
+from src.shared.constant.route_constant import (
+    AUTH_LOGIN,
+    BOOKING_GET,
+    EVENT_GET,
+    EVENT_TICKETS_BY_SUBSECTION,
+)
+from tests.shared.then import get_state_with_response
+from tests.shared.utils import (
+    assert_response_status,
+    extract_single_value,
+    extract_table_data,
+    login_user,
+)
+from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
 
 
 def assert_nullable_field(
@@ -119,14 +131,12 @@ def verify_event_status(step, client: TestClient, booking_state):
 
 @then('the booking price should be 1000')
 def verify_booking_price_1000(step, booking_state):
-    """Verify the booking price is 1000."""
     booking = booking_state['booking']
     assert booking['price'] == 1000, f'Expected booking price 1000, got {booking["price"]}'
 
 
 @then('the existing booking price should remain 1000')
 def verify_existing_booking_price_remains_1000(step, client: TestClient, booking_state):
-    """Verify the existing booking price remains 1000 after event price change."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['price'] == 1000, (
@@ -136,7 +146,6 @@ def verify_existing_booking_price_remains_1000(step, client: TestClient, booking
 
 @then('the new booking should have price 2000')
 def verify_new_booking_has_price_2000(step, booking_state):
-    """Verify the new booking has the updated price of 2000."""
     new_booking = booking_state['new_booking']
     assert new_booking['price'] == 2000, (
         f'Expected new booking price 2000, got {new_booking["price"]}'
@@ -145,7 +154,6 @@ def verify_new_booking_has_price_2000(step, booking_state):
 
 @then('the paid booking price should remain 1500')
 def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_state):
-    """Verify the paid booking price remains 1500 after event price change."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['price'] == 1500, (
@@ -155,7 +163,6 @@ def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_sta
 
 @then('the booking status should remain "paid"')
 def verify_booking_status_remains_paid(step, client: TestClient, booking_state):
-    """Verify the booking status remains paid."""
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['status'] == 'paid', (
@@ -164,12 +171,7 @@ def verify_booking_status_remains_paid(step, client: TestClient, booking_state):
 
 
 @then('the tickets should have status:')
-def verify_tickets_status(step, client: TestClient, booking_state=None, context=None):
-    """Verify that tickets have the expected status."""
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-    from tests.shared.then import get_state_with_response
-    from tests.shared.utils import extract_table_data
-
+def _(step, client: TestClient, booking_state=None, context=None):
     expected_data = extract_table_data(step)
     expected_status = expected_data['status']
 
@@ -201,17 +203,7 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
 
     assert event_id, 'Could not determine event_id for ticket status verification'
 
-    # BUSINESS LOGIC UNDERSTANDING:
-    # - Buyers only see available tickets in listings (correct behavior)
-    # - Sellers see all tickets including reserved/sold ones
-    # - After payment, tickets become "sold" and disappear from buyer listings
-
     if expected_status == 'sold':
-        # For payment validation, we need to check as a seller to see sold tickets
-        # Switch to seller authentication to see all tickets including sold ones
-        from src.shared.constant.route_constant import AUTH_LOGIN
-        from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
-
         # Login as seller to see all tickets
         login_response = client.post(
             AUTH_LOGIN,
@@ -224,7 +216,9 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
                 client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
 
     # Get tickets for the event (now with appropriate permissions)
-    tickets_response = client.get(EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id))
+    tickets_response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
     assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
 
     tickets_data = tickets_response.json()
@@ -286,7 +280,6 @@ def verify_tickets_status(step, client: TestClient, booking_state=None, context=
 
 @then('the event status should be "reserved"')
 def verify_event_status_is_reserved(step, client: TestClient, booking_state):
-    """Verify the event status is reserved."""
     event_id = booking_state['event']['id']
     response = client.get(EVENT_GET.format(event_id=event_id))
     assert response.status_code == 200, f'Failed to get event: {response.text}'
@@ -300,7 +293,6 @@ def verify_event_status_is_reserved(step, client: TestClient, booking_state):
 def verify_tickets_reserved_for_buyer(
     step, client: TestClient, booking_state, execute_sql_statement
 ):
-    """Verify that specific tickets are reserved for the buyer."""
     ticket_data = extract_table_data(step)
     expected_status = ticket_data['status']
     expected_buyer_id = int(ticket_data['buyer_id'])
@@ -335,11 +327,6 @@ def verify_tickets_reserved_for_buyer(
 def verify_booking_contains_tickets_with_seats(
     step, client: TestClient, booking_state, execute_sql_statement
 ):
-    """Verify that the booking contains tickets with specific seat numbers."""
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-    from tests.shared.utils import login_user
-    from tests.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
-
     # Extract expected seat numbers from table
     rows = step.data_table.rows
     expected_seat_numbers = []
@@ -388,7 +375,6 @@ def verify_booking_contains_tickets_with_seats(
 
 @then('the selected tickets should have status:')
 def verify_selected_tickets_status(step, client: TestClient, booking_state, execute_sql_statement):
-    """Verify that the selected tickets have the expected status."""
     expected_status = extract_single_value(step)
 
     # Get booking ID
@@ -416,7 +402,6 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
 
 @then('the booking should contain consecutive available seats:')
 def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_statement):
-    """Verify that the booking contains consecutive available seats."""
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -458,7 +443,6 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
 
 @then('the selected seats should be from the lowest available row')
 def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement):
-    """Verify that the selected seats are from the lowest available row."""
     booking_id = booking_state['booking']['id']
     event_id = booking_state['event_id']
 
@@ -499,7 +483,6 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
 
 @then('the booking should contain available seat:')
 def verify_booking_contains_single_available_seat(step, booking_state, execute_sql_statement):
-    """Verify that the booking contains exactly one available seat."""
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -523,7 +506,6 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
 
 @then('the booking should contain tickets:')
 def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
-    """Verify that the booking contains the expected number of tickets."""
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -547,7 +529,6 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
 
 @then('the response should contain bookings:')
 def verify_bookings_count(step, booking_state):
-    """Verify the response contains expected number of bookings."""
     expected_count = int(extract_single_value(step))
     response = booking_state['response']
     bookings = response.json()
@@ -558,7 +539,6 @@ def verify_bookings_count(step, booking_state):
 
 @then('the bookings should include:')
 def verify_bookings_include(step, booking_state):
-    """Verify the bookings include expected details."""
     expected_bookings = []
     rows = step.data_table.rows
     headers = [cell.value for cell in rows[0].cells]
@@ -612,7 +592,6 @@ def verify_bookings_include(step, booking_state):
 
 @then('all bookings should have status:')
 def verify_all_bookings_have_status_single(step, booking_state):
-    """Verify all bookings have the expected status."""
     expected_status = extract_single_value(step)
     response = booking_state['response']
     bookings = response.json()

@@ -91,13 +91,12 @@ class TestListTicketsUseCase:
         event_id = 1
         section = 'A'
         subsection = 1
-        seller_id = 1
         use_case = self._setup_use_case_with_event(mock_uow, sample_event)
         mock_uow.tickets.list_by_event_section_and_subsection.return_value = sample_tickets
 
         # When
         result = await use_case.list_tickets_by_event_section_section(
-            event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
+            event_id=event_id, section=section, subsection=subsection
         )
 
         # Then
@@ -115,12 +114,11 @@ class TestListTicketsUseCase:
         event_id = 1
         section = 'A'
         subsection = 1
-        seller_id = 2
         other_seller_event = Mock(id=1, seller_id=1, name='Other Seller Event')
         use_case = self._setup_use_case_with_event(mock_uow, other_seller_event)
 
         # When / Then
         with pytest.raises(ForbiddenError, match='Not authorized to view tickets for this event'):
             await use_case.list_tickets_by_event_section_section(
-                event_id=event_id, section=section, subsection=subsection, seller_id=seller_id
+                event_id=event_id, section=section, subsection=subsection
             )

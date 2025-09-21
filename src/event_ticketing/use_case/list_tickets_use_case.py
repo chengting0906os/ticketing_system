@@ -35,16 +35,13 @@ class ListTicketsUseCase:
 
     @Logger.io(truncate_content=True)
     async def list_tickets_by_event_section_section(
-        self, *, event_id: int, section: str, subsection: int | None, seller_id: int
+        self, *, event_id: int, section: str, subsection: int
     ) -> List[Ticket]:
         async with self.uow:
             # Verify seller owns the event
             event = await self.uow.events.get_by_id(event_id=event_id)
             if not event:
                 raise NotFoundError('Event not found')
-
-            if event.seller_id != seller_id:
-                raise ForbiddenError('Not authorized to view tickets for this event')
 
             tickets = await self.uow.tickets.list_by_event_section_and_subsection(
                 event_id=event_id, section=section, subsection=subsection
