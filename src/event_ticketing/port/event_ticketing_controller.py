@@ -194,7 +194,7 @@ async def sse_event_with_all_subsections_tickets_status(
 async def sse_list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
-    subsection: int | None = None,
+    subsection: int,
     current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
