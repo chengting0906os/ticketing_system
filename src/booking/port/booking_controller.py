@@ -50,21 +50,6 @@ async def create_booking(
     )
 
 
-@router.get('/my-bookings')
-@Logger.io
-async def list_my_bookings(
-    booking_status: str,
-    current_user: CurrentUserInfo = Depends(get_current_user_info),
-    use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
-):
-    if current_user.is_buyer():
-        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
-    elif current_user.is_seller():
-        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
-    else:
-        return []
-
-
 @router.get('/{booking_id}')
 @Logger.io
 async def get_booking(
@@ -83,6 +68,20 @@ async def get_booking(
         created_at=booking.created_at,
         paid_at=booking.paid_at,
     )
+
+
+@router.patch('/{booking_id}', status_code=status.HTTP_204_NO_CONTENT)
+@Logger.io
+async def cancel_booking(
+    booking_id: int,
+    current_user: CurrentUserInfo = Depends(require_buyer_info),
+    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
+):
+    result = await use_case.cancel_reservation(
+        booking_id=booking_id,
+        buyer_id=current_user.user_id,
+    )
+    return CancelReservationResponse(**result)
 
 
 @router.post('/{booking_id}/pay')
@@ -105,39 +104,16 @@ async def pay_booking(
     )
 
 
-@router.delete('/{booking_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.get('/my-bookings')
 @Logger.io
-async def cancel_booking(
-    booking_id: int,
-    current_user: CurrentUserInfo = Depends(require_buyer_info),
-    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
-):
-    await use_case.cancel_reservation(
-        booking_id=booking_id,
-        buyer_id=current_user.user_id,
-    )
-    # Return 204 No Content for successful deletion
-
-
-@router.patch('/{booking_id}/cancel-booking-reservation', status_code=status.HTTP_200_OK)
-@Logger.io
-async def cancel_reservation(
-    booking_id: int,
-    current_user: CurrentUserInfo = Depends(require_buyer_info),
-    use_case: CancelReservationUseCase = Depends(CancelReservationUseCase.depends),
-) -> CancelReservationResponse:
-    result = await use_case.cancel_reservation(
-        booking_id=booking_id,
-        buyer_id=current_user.user_id,
-    )
-
-    return CancelReservationResponse(**result)
-
-
-@Logger.io
-async def list_seller_bookings(
-    seller_id: int,
+async def list_my_bookings(
     booking_status: str,
+    current_user: CurrentUserInfo = Depends(get_current_user_info),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
 ):
-    return await use_case.list_seller_bookings(seller_id, booking_status)
+    if current_user.is_buyer():
+        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
+    elif current_user.is_seller():
+        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
+    else:
+        return []
