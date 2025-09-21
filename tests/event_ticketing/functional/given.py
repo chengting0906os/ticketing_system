@@ -148,42 +148,24 @@ def event_exists(step, execute_sql_statement):
         'sections': [
             {
                 'name': 'A',
-                'price': 1000,  # Default price for compatibility with tests
+                'price': 3000,  # Default price for compatibility with tests
                 'subsections': [
-                    {'number': 1, 'rows': 10, 'seats_per_row': 25},
-                    {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
+                    {'number': 2, 'rows': 5, 'seats_per_row': 10},
                 ],
             },
             {
                 'name': 'B',
-                'price': 1000,
+                'price': 2000,
                 'subsections': [
-                    {'number': 1, 'rows': 10, 'seats_per_row': 25},
-                    {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
                 ],
             },
             {
                 'name': 'C',
-                'price': 1000,
+                'price': 1500,
                 'subsections': [
-                    {'number': 1, 'rows': 10, 'seats_per_row': 25},
-                    {'number': 2, 'rows': 10, 'seats_per_row': 25},
-                ],
-            },
-            {
-                'name': 'D',
-                'price': 1000,
-                'subsections': [
-                    {'number': 1, 'rows': 10, 'seats_per_row': 25},
-                    {'number': 2, 'rows': 10, 'seats_per_row': 25},
-                ],
-            },
-            {
-                'name': 'E',
-                'price': 1000,
-                'subsections': [
-                    {'number': 1, 'rows': 10, 'seats_per_row': 25},
-                    {'number': 2, 'rows': 10, 'seats_per_row': 25},
+                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
                 ],
             },
         ]
