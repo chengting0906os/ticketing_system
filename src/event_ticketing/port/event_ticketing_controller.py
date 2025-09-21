@@ -126,7 +126,7 @@ def _ticket_to_response(ticket) -> TicketResponse:
     )
 
 
-@router.get('/sse/{event_id}/status')
+@router.get('/{event_id}/sse/status')
 @Logger.io(truncate_content=True)
 async def sse_event_with_all_subsections_tickets_status(
     request: Request,
@@ -187,7 +187,7 @@ async def sse_event_with_all_subsections_tickets_status(
 
 
 @router.get(
-    '/sse/{event_id}/tickets/section/{section}/subsection/{subsection}',
+    '/{event_id}/sse/tickets/section/{section}/subsection/{subsection}',
     status_code=status.HTTP_200_OK,
 )
 @Logger.io
@@ -195,6 +195,36 @@ async def sse_list_tickets_by_event_section_subsection(
     event_id: int,
     section: str,
     subsection: int | None = None,
+    current_user: User = Depends(require_buyer_or_seller),
+    use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
+) -> ListTicketsBySectionResponse:
+    tickets = await use_case.list_tickets_by_section(
+        event_id=event_id,
+        section=section,
+        subsection=subsection,
+        seller_id=current_user.id,
+    )
+
+    ticket_responses = [_ticket_to_response(ticket) for ticket in tickets]
+
+    return ListTicketsBySectionResponse(
+        tickets=ticket_responses,
+        total_count=len(ticket_responses),
+        event_id=event_id,
+        section=section,
+        subsection=subsection,
+    )
+
+
+@router.get(
+    '/{event_id}/tickets/section/{section}/subsection/{subsection}',
+    status_code=status.HTTP_200_OK,
+)
+@Logger.io
+async def list_tickets_by_event_section_subsection(
+    event_id: int,
+    section: str,
+    subsection: int,
     current_user: User = Depends(require_buyer_or_seller),
     use_case: ListTicketsUseCase = Depends(ListTicketsUseCase.depends),
 ) -> ListTicketsBySectionResponse:
