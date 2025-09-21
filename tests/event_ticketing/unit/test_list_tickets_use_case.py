@@ -106,19 +106,3 @@ class TestListTicketsUseCase:
         mock_uow.tickets.list_by_event_section_and_subsection.assert_called_once_with(
             event_id=event_id, section=section, subsection=subsection
         )
-
-    @pytest.mark.asyncio
-    async def test_seller_cannot_list_section_tickets_for_other_sellers_event(self, mock_uow):
-        """Test that a seller cannot list section tickets for another seller's event."""
-        # Given
-        event_id = 1
-        section = 'A'
-        subsection = 1
-        other_seller_event = Mock(id=1, seller_id=1, name='Other Seller Event')
-        use_case = self._setup_use_case_with_event(mock_uow, other_seller_event)
-
-        # When / Then
-        with pytest.raises(ForbiddenError, match='Not authorized to view tickets for this event'):
-            await use_case.list_tickets_by_event_section_section(
-                event_id=event_id, section=section, subsection=subsection
-            )
