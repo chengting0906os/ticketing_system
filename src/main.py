@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.booking.port.booking_controller import router as booking_router
-from src.event_ticketing.port.event_controller import router as event_router
+from src.event_ticketing.port.event_ticketing_controller import router as event_router
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import create_db_and_tables
 from src.shared.exception.exception_handlers import register_exception_handlers
