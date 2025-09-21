@@ -33,7 +33,7 @@ class ListTicketsUseCase:
 
             return tickets
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def list_tickets_by_event_section_section(
         self, *, event_id: int, section: str, subsection: int | None, seller_id: int
     ) -> List[Ticket]:
