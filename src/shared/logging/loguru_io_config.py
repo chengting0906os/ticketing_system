@@ -40,6 +40,17 @@ class InterceptHandler(logging.Handler):
     def emit(self, record):
         message = record.getMessage()
 
+        # Filter out formatting debug logs
+        if record.levelno <= logging.DEBUG:
+            # Block format template debug messages
+            if "format '" in message and "' -> '" in message:
+                return  # Ignore formatting debug messages
+
+        # Also block logs from Kafka loggers regardless of level
+        if record.name.startswith(('kafka', 'aiokafka')):
+            if record.levelno <= logging.DEBUG:  # Block DEBUG, INFO for Kafka loggers
+                return
+
         # Parse HTTP status code from granian access logs
         # Format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" - 200 - 8ms'
         # Also supports HTTP/2.0, HTTP/3.0, etc.
@@ -153,5 +164,29 @@ for logger_name in [
     logging_logger = logging.getLogger(logger_name)
     logging_logger.handlers = [InterceptHandler()]
     logging_logger.propagate = False
+
+# Aggressively suppress Kafka loggers to prevent debug spam
+kafka_loggers = [
+    'kafka',
+    'kafka.client',
+    'kafka.consumer',
+    'kafka.producer',
+    'kafka.coordinator',
+    'kafka.coordinator.assignor',
+    'kafka.coordinator.consumer',
+    'kafka.consumer.fetcher',
+    'kafka.consumer.coordinator',
+    'kafka.conn',
+    'aiokafka',
+    'aiokafka.client',
+    'aiokafka.consumer',
+    'aiokafka.producer',
+]
+
+for logger_name in kafka_loggers:
+    kafka_logger = logging.getLogger(logger_name)
+    kafka_logger.setLevel(logging.INFO)
+    kafka_logger.disabled = False
+    kafka_logger.propagate = False
 
 custom_logger = custom_logger
