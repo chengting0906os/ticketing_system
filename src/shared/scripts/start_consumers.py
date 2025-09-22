@@ -3,7 +3,7 @@ import signal
 import sys
 
 from src.booking.infra.booking_consumer import start_booking_consumer, stop_booking_consumer
-from src.event_ticketing.infra.ticketing_consumer import (
+from src.event_ticketing.infra.event_ticketing_consumer import (
     start_ticketing_consumer,
     stop_ticketing_consumer,
 )

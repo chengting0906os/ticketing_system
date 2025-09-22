@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import msgpack
 import pytest
 
-from src.event_ticketing.infra.ticketing_consumer import TicketingKafkaConsumer
+from src.event_ticketing.infra.event_ticketing_consumer import TicketingKafkaConsumer
 from src.shared.constant.topic import Topic
 from src.shared.exception.exceptions import DomainError
 
