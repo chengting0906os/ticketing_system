@@ -573,7 +573,7 @@ def verify_bookings_include(step, booking_state):
                         f'Event name mismatch for booking {expected["id"]}'
                     )
                 if 'total_price' in expected:
-                    assert actual.get('price') == int(expected['total_price']), (
+                    assert actual.get('total_price') == int(expected['total_price']), (
                         f'Total price mismatch for booking {expected["id"]}'
                     )
                 if 'status' in expected:

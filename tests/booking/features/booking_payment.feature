@@ -4,7 +4,7 @@ Feature: Booking Payment
   So that I can complete the purchase
 
   Scenario: Successfully pay for an booking
-    Given an booking exists with status "pending_payment":
+    Given a booking exists with status "pending_payment":
       | buyer_id | seller_id | event_id | total_price |
       |        2 |         1 |        1 |        1000 |
     When the buyer pays for the booking with:
@@ -27,7 +27,7 @@ Feature: Booking Payment
       | sold   |
 
   Scenario: Cannot pay for already paid booking
-    Given an booking exists with status "paid":
+    Given a booking exists with status "paid":
       | buyer_id | seller_id | event_id | total_price | paid_at  |
       |        2 |         1 |        1 |        1000 | not_null |
     When the buyer tries to pay for the booking again
@@ -37,7 +37,7 @@ Feature: Booking Payment
       | Booking already paid |
 
   Scenario: Cannot pay for cancelled booking
-    Given an booking exists with status "cancelled":
+    Given a booking exists with status "cancelled":
       | buyer_id | seller_id | event_id | total_price |
       |        2 |         1 |        1 |        1000 |
     When the buyer tries to pay for the booking
@@ -47,7 +47,7 @@ Feature: Booking Payment
       | Cannot pay for cancelled booking |
 
   Scenario: Only buyer can pay for their booking
-    Given an booking exists with status "pending_payment":
+    Given a booking exists with status "pending_payment":
       | buyer_id | seller_id | event_id | total_price |
       |        2 |         1 |        1 |        1000 |
     When another user tries to pay for the booking
@@ -57,7 +57,7 @@ Feature: Booking Payment
       | Only the buyer can pay for this booking |
 
   Scenario: Cancel unpaid booking
-    Given an booking exists with status "pending_payment":
+    Given a booking exists with status "pending_payment":
       | buyer_id | seller_id | event_id | total_price |
       |        2 |         1 |        1 |        1000 |
     When the buyer cancels the booking
@@ -75,7 +75,7 @@ Feature: Booking Payment
       | available |
 
   Scenario: Cannot cancel paid booking
-    Given an booking exists with status "paid":
+    Given a booking exists with status "paid":
       | buyer_id | seller_id | event_id | total_price | paid_at  |
       |        2 |         1 |        1 |        1000 | not_null |
     When the buyer tries to cancel the booking

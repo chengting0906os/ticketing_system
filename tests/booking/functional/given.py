@@ -353,28 +353,36 @@ def create_bookings(step, client: TestClient, booking_state, execute_sql_stateme
         else:
             event_id = event_key
         booking_id = int(booking_data['id'])
+        # Generate unique ticket IDs for each booking to avoid constraint violations
+        unique_ticket_ids = [
+            booking_id * 1000,
+            booking_id * 1000 + 1,
+        ]  # Simple unique ID generation
+
         if booking_data.get('paid_at') == 'not_null' and booking_data['status'] == 'paid':
             execute_sql_statement(
-                '\n                    INSERT INTO "booking" (id, buyer_id, seller_id, event_id, price, status, created_at, updated_at, paid_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :price, :status, NOW(), NOW(), NOW())\n                ',
+                '\n                    INSERT INTO "booking" (id, buyer_id, seller_id, event_id, total_price, status, ticket_ids, created_at, updated_at, paid_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :total_price, :status, :ticket_ids, NOW(), NOW(), NOW())\n                ',
                 {
                     'id': booking_id,
                     'buyer_id': int(booking_data['buyer_id']),
                     'seller_id': int(booking_data['seller_id']),
                     'event_id': event_id,
-                    'price': int(booking_data['total_price']),
+                    'total_price': int(booking_data['total_price']),
                     'status': booking_data['status'],
+                    'ticket_ids': unique_ticket_ids,
                 },
             )
         else:
             execute_sql_statement(
-                '\n                    INSERT INTO "booking" (id, buyer_id, seller_id, event_id, price, status, created_at, updated_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :price, :status, NOW(), NOW())\n                ',
+                '\n                    INSERT INTO "booking" (id, buyer_id, seller_id, event_id, total_price, status, ticket_ids, created_at, updated_at)\n                    VALUES (:id, :buyer_id, :seller_id, :event_id, :total_price, :status, :ticket_ids, NOW(), NOW())\n                ',
                 {
                     'id': booking_id,
                     'buyer_id': int(booking_data['buyer_id']),
                     'seller_id': int(booking_data['seller_id']),
                     'event_id': event_id,
-                    'price': int(booking_data['total_price']),
+                    'total_price': int(booking_data['total_price']),
                     'status': booking_data['status'],
+                    'ticket_ids': unique_ticket_ids,
                 },
             )
         booking_state['bookings'][int(booking_data['id'])] = {'id': booking_id}
