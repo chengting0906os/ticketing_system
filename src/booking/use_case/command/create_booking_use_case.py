@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List, Optional
 
 from fastapi import Depends
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking, BookingStatus
+from src.booking.domain.booking_events import BookingCreated
 from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
 from src.shared.event_bus.event_publisher import publish_domain_event
@@ -108,21 +109,18 @@ class CreateBookingUseCase:
         await self.session.commit()
 
         # Publish BookingCreated event to notify other services
-        booking_created_event = {
-            'event_type': 'BookingCreated',
-            'aggregate_id': created_booking.id,
-            'data': {
-                'buyer_id': created_booking.buyer_id,
-                'event_id': created_booking.event_id,
-                'seat_selection_mode': created_booking.seat_selection_mode,
-                'ticket_ids': created_booking.ticket_ids,
-                'status': created_booking.status.value,
-                'created_at': created_booking.created_at.isoformat(),
-            },
-        }
+        booking_created_event = BookingCreated(
+            booking_id=created_booking.id,  # type: ignore
+            buyer_id=created_booking.buyer_id,
+            event_id=created_booking.event_id,
+            seat_selection_mode=created_booking.seat_selection_mode,
+            ticket_ids=created_booking.ticket_ids,
+            status=created_booking.status,
+            occurred_at=datetime.now(timezone.utc),
+        )
 
         await publish_domain_event(
-            event=booking_created_event,  # type: ignore
+            event=booking_created_event,
             topic=Topic.TICKETING_BOOKING_REQUEST,
             partition_key=str(created_booking.id),
         )
