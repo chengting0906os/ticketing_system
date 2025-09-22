@@ -35,7 +35,7 @@ from tests.util_constant import (
 )
 
 
-@given('an booking exists with status "pending_payment":')
+@given('a booking exists with status "pending_payment":')
 def create_pending_booking(step, client: TestClient, booking_state, execute_sql_statement):
     booking_data = extract_table_data(step)
     expected_seller_id = int(booking_data['seller_id'])
@@ -192,7 +192,29 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
 
-    booking_response = client.post(BOOKING_BASE, json={'ticket_ids': ticket_ids})
+    # Build the correct JSON payload based on available tickets
+    # For manual mode, format as {ticket_id: 'section-subsection-row-seat'}
+    selected_seats = [
+        {
+            available_tickets[0][
+                'id'
+            ]: f'{available_tickets[0]["section"]}-{available_tickets[0]["subsection"]}-{available_tickets[0]["row"]}-{available_tickets[0]["seat"]}'
+        },
+        {
+            available_tickets[1][
+                'id'
+            ]: f'{available_tickets[1]["section"]}-{available_tickets[1]["subsection"]}-{available_tickets[1]["row"]}-{available_tickets[1]["seat"]}'
+        },
+    ]
+
+    booking_response = client.post(
+        BOOKING_BASE,
+        json={
+            'event_id': event['id'],
+            'seat_selection_mode': 'manual',
+            'selected_seats': selected_seats,
+        },
+    )
     assert booking_response.status_code == 201, f'Failed to create booking: {booking_response.text}'
     booking = booking_response.json()
 
@@ -220,7 +242,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     booking_state['ticket_ids'] = ticket_ids
 
 
-@given('an booking exists with status "paid":')
+@given('a booking exists with status "paid":')
 def create_paid_booking(step, client: TestClient, booking_state, execute_sql_statement):
     booking_data = extract_table_data(step)
     create_pending_booking(step, client, booking_state, execute_sql_statement)
@@ -233,7 +255,7 @@ def create_paid_booking(step, client: TestClient, booking_state, execute_sql_sta
         booking_state['booking']['paid_at'] = datetime.now().isoformat()
 
 
-@given('an booking exists with status "cancelled":')
+@given('a booking exists with status "cancelled":')
 def create_cancelled_booking(step, client: TestClient, booking_state, execute_sql_statement):
     create_pending_booking(step, client, booking_state, execute_sql_statement)
     execute_sql_statement(

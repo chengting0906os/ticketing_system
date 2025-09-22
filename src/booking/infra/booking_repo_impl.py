@@ -124,7 +124,7 @@ class BookingRepoImpl(BookingRepo):
                 buyer_id=booking.buyer_id,
                 seller_id=booking.seller_id,
                 event_id=booking.event_id,
-                price=booking.total_price,
+                total_price=booking.total_price,
                 status=booking.status.value,
                 updated_at=booking.updated_at,
                 paid_at=booking.paid_at,

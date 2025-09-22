@@ -146,7 +146,7 @@ def create_seller_user_simple(
     return created
 
 
-@given('a event exists:')
+@given('an event exists:')
 def create_event_shared(
     step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
 ):

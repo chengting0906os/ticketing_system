@@ -608,3 +608,26 @@ def verify_all_bookings_have_status_single(step, booking_state):
         assert booking.get('status') == expected_status, (
             f'Expected status {expected_status}, got {booking.get("status")} for booking {booking.get("id")}'
         )
+
+
+@then('the tickets should be returned to the available pool')
+def verify_tickets_returned_to_pool(client: TestClient, booking_state):
+    """Verify that tickets previously associated with a booking are now available."""
+    event_id = booking_state['event_id']
+    ticket_ids = booking_state.get('ticket_ids', [])
+
+    # Get tickets from the event
+    response = client.get(
+        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
+    )
+    assert_response_status(response, 200)
+
+    tickets = response.json()['tickets']
+
+    # Check that the tickets that were in the booking are now available
+    for ticket_id in ticket_ids:
+        ticket = next((t for t in tickets if t['id'] == ticket_id), None)
+        assert ticket is not None, f'Ticket {ticket_id} not found'
+        assert ticket['status'] == 'available', (
+            f'Ticket {ticket_id} should be available but has status {ticket["status"]}'
+        )
