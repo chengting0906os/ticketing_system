@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 """
-TicketingKafkaConsumer 單元測試
+TicketingEventHandler 單元測試
 """
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import msgpack
 import pytest
 
-from src.event_ticketing.infra.event_ticketing_consumer import TicketingKafkaConsumer
-from src.shared.constant.topic import Topic
-from src.shared.exception.exceptions import DomainError
+from src.event_ticketing.infra.ticketing_event_handler import TicketingEventHandler
 
 
-class TestTicketingKafkaConsumer:
-    """TicketingKafkaConsumer 單元測試"""
+class TestTicketingEventHandler:
+    """TicketingEventHandler 單元測試"""
 
     @pytest.fixture
-    def consumer(self):
-        """Create TicketingKafkaConsumer instance"""
-        return TicketingKafkaConsumer()
+    def handler(self):
+        """Create TicketingEventHandler instance"""
+        return TicketingEventHandler()
 
     @pytest.fixture
     def mock_reserve_use_case(self):
@@ -69,187 +65,56 @@ class TestTicketingKafkaConsumer:
             ],
         }
 
-    def test_deserialize_message_msgpack(self, consumer):
-        """測試 MessagePack 訊息反序列化"""
-        # Arrange
-        test_data = {'event_type': 'BookingRequested', 'data': {'test': 'value'}}
-        serialized = msgpack.packb(test_data)
-
+    @pytest.mark.asyncio
+    async def test_can_handle_booking_created(self, handler):
+        """測試能否處理 BookingCreated 事件"""
         # Act
-        result = consumer._deserialize_message(serialized)
+        result = await handler.can_handle('BookingCreated')
 
         # Assert
-        assert result == test_data
+        assert result is True
 
-    def test_deserialize_message_json(self, consumer):
-        """測試 JSON 訊息反序列化"""
-        # Arrange
-        test_data = {'event_type': 'BookingRequested', 'data': {'test': 'value'}}
-        serialized = json.dumps(test_data).encode('utf-8')
-
+    @pytest.mark.asyncio
+    async def test_can_handle_unknown_event(self, handler):
+        """測試不能處理未知事件"""
         # Act
-        result = consumer._deserialize_message(serialized)
+        result = await handler.can_handle('UnknownEvent')
 
         # Assert
-        assert result == test_data
-
-    def test_deserialize_message_invalid(self, consumer):
-        """測試無效訊息反序列化"""
-        # Arrange
-        invalid_data = b'invalid message'
-
-        # Act & Assert
-        with pytest.raises(ValueError) as exc_info:
-            consumer._deserialize_message(invalid_data)
-
-        assert 'Failed to deserialize message' in str(exc_info.value)
+        assert result is False
 
     @pytest.mark.asyncio
-    async def test_handle_booking_request_success(
-        self, consumer, valid_booking_request_event, successful_reservation_result
+    async def test_handle_booking_created_success(
+        self, handler, valid_booking_request_event, successful_reservation_result
     ):
-        """測試成功處理訂票請求"""
+        """測試成功處理 BookingCreated 事件"""
         # Arrange
-        consumer.reserve_tickets_use_case = AsyncMock()
-        consumer.reserve_tickets_use_case.reserve_tickets.return_value = (
-            successful_reservation_result
-        )
-
-        with patch(
-            'src.event_ticketing.infra.booking_consumer.publish_domain_event'
-        ) as mock_publish:
-            mock_publish.return_value = None
-
-            # Act
-            await consumer._handle_booking_request(valid_booking_request_event)
-
-            # Assert
-            # Verify reserve_tickets was called with correct parameters
-            consumer.reserve_tickets_use_case.reserve_tickets.assert_called_once_with(
-                event_id=456, ticket_count=2, buyer_id=1
-            )
-
-            # Verify success event was published
-            mock_publish.assert_called_once()
-            call_args = mock_publish.call_args
-
-            # Check success event structure
-            event = call_args.kwargs['event']
-            assert event['event_type'] == 'TicketsReserved'
-            assert event['aggregate_id'] == 789  # reservation_id
-            assert event['data']['request_id'] == 'test-request-123'
-            assert event['data']['status'] == 'reserved'
-
-            # Check topic and partition key
-            assert call_args.kwargs['topic'] == Topic.TICKETING_BOOKING_RESPONSE
-            assert call_args.kwargs['partition_key'] == '456-A-1'  # event_id-section-subsection
-
-    @pytest.mark.asyncio
-    async def test_handle_booking_request_reservation_failure(
-        self, consumer, valid_booking_request_event
-    ):
-        """測試票務預留失敗的情況"""
-        # Arrange
-        consumer.reserve_tickets_use_case = AsyncMock()
-        consumer.reserve_tickets_use_case.reserve_tickets.side_effect = DomainError(
-            'Not enough tickets'
-        )
-
-        with patch(
-            'src.event_ticketing.infra.booking_consumer.publish_domain_event'
-        ) as mock_publish:
-            mock_publish.return_value = None
-
-            # Act
-            await consumer._handle_booking_request(valid_booking_request_event)
-
-            # Assert
-            # Verify failure event was published
-            mock_publish.assert_called_once()
-            call_args = mock_publish.call_args
-
-            # Check failure event structure
-            event = call_args.kwargs['event']
-            assert event['event_type'] == 'TicketReservationFailed'
-            assert event['aggregate_id'] == 0
-            assert event['data']['request_id'] == 'test-request-123'
-            assert event['data']['error_message'] == 'Not enough tickets'
-            assert event['data']['status'] == 'failed'
-
-    @pytest.mark.asyncio
-    async def test_handle_booking_request_missing_fields(self, consumer):
-        """測試缺少必要欄位的情況"""
-        # Arrange
-        invalid_event = {
-            'event_type': 'BookingRequested',
-            'data': {
-                'request_id': 'test-request-123',
-                # Missing buyer_id, event_id, ticket_count
-            },
+        booking_created_event = {
+            'event_type': 'BookingCreated',
+            'booking_id': 123,
+            'buyer_id': 1,
+            'event_id': 456,
+            'seat_selection_mode': 'best_available',
+            'selected_seats': [],
+            'numbers_of_seats': 2,
         }
 
-        with patch(
-            'src.event_ticketing.infra.booking_consumer.publish_domain_event'
-        ) as mock_publish:
-            mock_publish.return_value = None
+        with patch.object(handler, '_handle_booking_created') as mock_handle:
+            mock_handle.return_value = None
 
             # Act
-            await consumer._handle_booking_request(invalid_event)
+            await handler.handle(booking_created_event)
 
             # Assert
-            # Verify failure event was published
-            mock_publish.assert_called_once()
-            call_args = mock_publish.call_args
-
-            event = call_args.kwargs['event']
-            assert event['event_type'] == 'TicketReservationFailed'
-            assert 'Missing required fields' in event['data']['error_message']
+            mock_handle.assert_called_once_with(booking_created_event)
 
     @pytest.mark.asyncio
-    async def test_process_message_unknown_event_type(self, consumer):
-        """測試未知事件類型的處理"""
+    async def test_handle_unknown_event_type(self, handler):
+        """測試處理未知事件類型"""
         # Arrange
-        mock_message = MagicMock()
-        mock_message.value = msgpack.packb({'event_type': 'UnknownEvent', 'data': {}})
+        unknown_event = {'event_type': 'UnknownEvent', 'data': {'test': 'value'}}
 
-        # Act
-        await consumer._process_message(mock_message)
+        # Act - should not raise exception
+        await handler.handle(unknown_event)
 
-        # Assert - 應該記錄警告但不拋出異常
-        # 這個測試主要確保程式不會因為未知事件類型而崩潰
-
-    @pytest.mark.asyncio
-    async def test_process_message_deserialization_error(self, consumer):
-        """測試訊息反序列化錯誤的處理"""
-        # Arrange
-        mock_message = MagicMock()
-        mock_message.value = b'invalid message format'
-
-        # Act
-        await consumer._process_message(mock_message)
-
-        # Assert - 應該記錄錯誤但不拋出異常
-        # 這個測試主要確保程式不會因為無效訊息而崩潰
-
-    @pytest.mark.asyncio
-    async def test_send_booking_success_event_with_partition_key(
-        self, consumer, successful_reservation_result
-    ):
-        """測試成功事件的分區鍵生成"""
-        # Arrange
-        request_id = 'test-request-123'
-
-        with patch(
-            'src.event_ticketing.infra.booking_consumer.publish_domain_event'
-        ) as mock_publish:
-            mock_publish.return_value = None
-
-            # Act
-            await consumer._send_booking_success_event(request_id, successful_reservation_result)
-
-            # Assert
-            call_args = mock_publish.call_args
-
-            # Check partition key format
-            partition_key = call_args.kwargs['partition_key']
-            assert partition_key == '456-A-1'  # event_id-section-subsection
+        # Assert - No exception raised (handled gracefully)

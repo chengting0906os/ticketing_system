@@ -2,41 +2,42 @@ import asyncio
 import signal
 import sys
 
-from src.booking.infra.booking_consumer import start_booking_consumer, stop_booking_consumer
-from src.event_ticketing.infra.event_ticketing_consumer import (
-    start_ticketing_consumer,
-    stop_ticketing_consumer,
-)
+from src.booking.infra.booking_event_handler import BookingEventHandler
+from src.event_ticketing.infra.ticketing_event_handler import TicketingEventHandler
+from src.shared.constant.topic import Topic
+from src.shared.event_bus.event_consumer import start_unified_consumer, stop_unified_consumer
 from src.shared.logging.loguru_io import Logger
 
 
 class ConsumerManager:
     def __init__(self):
         self.running = False
-        self.tasks = []
 
     async def start_all(self):
         try:
-            Logger.base.info('Starting all Kafka consumers...')
+            Logger.base.info('Starting unified Kafka consumer...')
 
-            # 啟動 Event-Ticketing Consumer
-            ticketing_task = asyncio.create_task(
-                start_ticketing_consumer(), name='ticketing-consumer'
-            )
-            self.tasks.append(ticketing_task)
+            # 創建事件處理器
+            booking_handler = BookingEventHandler()
+            ticketing_handler = TicketingEventHandler()
 
-            # 啟動 Booking Consumer
-            booking_task = asyncio.create_task(start_booking_consumer(), name='booking-consumer')
-            self.tasks.append(booking_task)
+            # 定義要監聽的topics
+            topics = [
+                Topic.TICKETING_BOOKING_REQUEST.value,  # ticketing-booking-request
+                Topic.TICKETING_BOOKING_RESPONSE.value,  # ticketing-booking-response
+            ]
+
+            # 創建處理器列表
+            handlers = [booking_handler, ticketing_handler]
 
             self.running = True
-            Logger.base.info('All Kafka consumers started successfully')
+            Logger.base.info('Unified Kafka consumer started successfully')
 
-            # 等待所有任務完成或被中斷
-            await asyncio.gather(*self.tasks, return_exceptions=True)
+            # 啟動統一的消費者 (this will run indefinitely)
+            await start_unified_consumer(topics, handlers)
 
         except Exception as e:
-            Logger.base.error(f'Error starting consumers: {e}')
+            Logger.base.error(f'Error starting unified consumer: {e}')
             await self.stop_all()
             raise
 
@@ -44,26 +45,16 @@ class ConsumerManager:
         if not self.running:
             return
 
-        Logger.base.info('Stopping all Kafka consumers...')
+        Logger.base.info('Stopping unified Kafka consumer...')
         self.running = False
 
-        # 取消所有任務
-        for task in self.tasks:
-            if not task.done():
-                task.cancel()
-
-        # 等待任務完成
-        if self.tasks:
-            await asyncio.gather(*self.tasks, return_exceptions=True)
-
-        # 停止 consumers
+        # 停止統一消費者
         try:
-            await stop_ticketing_consumer()
-            await stop_booking_consumer()
+            await stop_unified_consumer()
         except Exception as e:
-            Logger.base.error(f'Error stopping consumers: {e}')
+            Logger.base.error(f'Error stopping unified consumer: {e}')
 
-        Logger.base.info('All Kafka consumers stopped')
+        Logger.base.info('Unified Kafka consumer stopped')
 
     def handle_signal(self, signum, _frame):
         """處理系統信號"""

@@ -112,15 +112,6 @@ io_log_format = ' | '.join(
     )
 )
 
-# Simpler format for system logs
-system_log_format = ' | '.join(
-    (
-        '<lk>{time:YYYY-MM-DD HH:mm:ss.SSS}</>',
-        '<lvl>{level:<8}</>',
-        '<c>{name}</>',
-        '{message}',
-    )
-)
 
 # Configure logger
 loguru_logger.remove()  # Remove default handler to avoid duplicate output and use custom format

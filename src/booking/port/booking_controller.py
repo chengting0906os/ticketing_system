@@ -25,7 +25,7 @@ router = APIRouter()
 
 
 @router.get('/my-bookings')
-@Logger.io
+@Logger.io(truncate_content=True)
 async def list_my_bookings(
     booking_status: str,
     current_user: CurrentUserInfo = Depends(get_current_user_info),
