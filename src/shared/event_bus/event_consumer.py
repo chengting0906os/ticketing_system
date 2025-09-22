@@ -64,16 +64,23 @@ class UnifiedEventConsumer:
     """
 
     @Logger.io
-    def __init__(self, topics: List[str], consumer_group_id: str = 'ticketing-system'):
+    def __init__(
+        self,
+        topics: List[str],
+        consumer_group_id: str = 'ticketing-system',
+        consumer_tag: str = '[CONSUMER]',
+    ):
         """
         初始化統一事件消費者
 
         Args:
             topics: 要訂閱的Kafka主題列表
             consumer_group_id: Kafka消費者組ID（同組內的消費者會分攤消息）
+            consumer_tag: 消費者標識，用於日志追蹤
         """
         self.topics = topics
         self.consumer_group_id = consumer_group_id
+        self.consumer_tag = consumer_tag
         self.consumer: Optional[KafkaConsumer] = None  # Kafka消費者實例
         self.running = False  # 運行狀態標誌
         self.handlers: List[EventHandler] = []  # 註冊的事件處理器列表
@@ -112,13 +119,15 @@ class UnifiedEventConsumer:
             )
 
             self.running = True
-            Logger.base.info(f'Unified Event Consumer started for topics: {self.topics}')
+            Logger.base.info(
+                f'{self.consumer_tag} Unified Event Consumer started for topics: {self.topics}'
+            )
 
             # 開始消費消息的主循環
             await self._consume_messages()
 
         except Exception as e:
-            Logger.base.error(f'Failed to start Unified Event Consumer: {e}')
+            Logger.base.error(f'{self.consumer_tag} Failed to start Unified Event Consumer: {e}')
             raise
 
     @Logger.io
@@ -134,7 +143,7 @@ class UnifiedEventConsumer:
         self.running = False
         if self.consumer:
             self.consumer.close()
-        Logger.base.info('Unified Event Consumer stopped')
+        Logger.base.info(f'{self.consumer_tag} Unified Event Consumer stopped')
 
     @Logger.io
     async def _consume_messages(self):
@@ -203,7 +212,7 @@ class UnifiedEventConsumer:
             event_type = event_data.get('event_type')
             Logger.base.critical(f'Extracted event_type: {event_type}')
 
-            Logger.base.info(f'Processing event: {event_type}')
+            Logger.base.info(f'{self.consumer_tag} Processing event: {event_type}')
 
             # 路由到合適的處理器
             if event_type:
@@ -229,11 +238,15 @@ class UnifiedEventConsumer:
                         break  # 找到處理器後停止查找
 
                 if not handled:
-                    Logger.base.warning(f'No handler found for event type: {event_type}')
+                    Logger.base.warning(
+                        f'{self.consumer_tag} No handler found for event type: {event_type}'
+                    )
                 else:
-                    Logger.base.critical(f'Event {event_type} was handled successfully')
+                    Logger.base.critical(
+                        f'{self.consumer_tag} Event {event_type} was handled successfully'
+                    )
             else:
-                Logger.base.warning('Event type is missing in event data')
+                Logger.base.warning(f'{self.consumer_tag} Event type is missing in event data')
 
             Logger.base.critical('_process_message_value completed successfully')
 
@@ -273,7 +286,9 @@ _unified_consumer: Optional[UnifiedEventConsumer] = None
 
 
 @Logger.io
-async def start_unified_consumer(topics: List[str], handlers: List[EventHandler]) -> None:
+async def start_unified_consumer(
+    topics: List[str], handlers: List[EventHandler], consumer_tag: str = '[CONSUMER]'
+) -> None:
     """
     啟動統一的事件消費者
 
@@ -282,6 +297,7 @@ async def start_unified_consumer(topics: List[str], handlers: List[EventHandler]
     Args:
         topics: 要監聽的Kafka主題列表
         handlers: 事件處理器列表（每個服務提供自己的處理器）
+        consumer_tag: 消費者標識，用於日志追蹤
 
     使用例子：
     ```python
@@ -294,7 +310,7 @@ async def start_unified_consumer(topics: List[str], handlers: List[EventHandler]
 
     if _unified_consumer is None:
         # 創建統一消費者實例
-        _unified_consumer = UnifiedEventConsumer(topics)
+        _unified_consumer = UnifiedEventConsumer(topics, consumer_tag=consumer_tag)
 
         # 註冊所有事件處理器
         for handler in handlers:
