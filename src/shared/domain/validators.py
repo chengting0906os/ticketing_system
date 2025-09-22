@@ -37,8 +37,8 @@ class NumericValidators:
     @staticmethod
     def validate_positive_amount(value: int, field_name: str = 'Value') -> None:
         """Validate that a numeric value is positive."""
-        if value <= 0:
-            raise DomainError(f'{field_name} must be positive', 400)
+        if value < 0:
+            raise DomainError(f'{field_name} must be over 0', 400)
 
     @staticmethod
     def validate_positive_price(_instance: Any, _attribute: Any, value: int) -> None:

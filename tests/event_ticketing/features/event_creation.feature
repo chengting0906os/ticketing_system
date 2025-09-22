@@ -109,13 +109,4 @@ Feature: Event Creation
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Ticket price must be positive |
-
-  Scenario: Cannot create event with zero ticket price
-    When seller creates event with zero ticket price:
-      | name       | description | venue_name   | seating_config                                                                                            |
-      | Free Event | Zero price  | Taipei Arena | {"sections": [{"name": "A", "price": 0, "subsections": [{"number": 1, "rows": 5, "seats_per_row": 10}]}]} |
-    Then the response status code should be:
-      | 400 |
-    And the error message should contain:
-      | Ticket price must be positive |
+      | Ticket price must over 0 |

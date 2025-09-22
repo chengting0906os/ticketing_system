@@ -63,7 +63,6 @@ class TestBookingKafkaConsumer:
         return Booking(
             id=456,
             buyer_id=1,
-            seller_id=2,
             event_id=123,
             total_price=200,
             status=BookingStatus.PENDING_PAYMENT,

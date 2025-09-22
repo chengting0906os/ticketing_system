@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from kafka import KafkaConsumer
 import msgpack
 
-from src.booking.use_case.create_booking_use_case import CreateBookingUseCase
+from src.booking.use_case.command.create_booking_use_case import CreateBookingUseCase
 from src.shared.config.core_setting import settings
 from src.shared.constant.topic import Topic
 from src.shared.logging.loguru_io import Logger
@@ -33,25 +33,14 @@ class BookingKafkaConsumer:
 
             # Get use case dependency
             from src.shared.config.db_setting import get_async_session
-            from src.shared.service.repo_di import (
-                get_booking_repo,
-                get_event_repo,
-                get_ticket_repo,
-                get_user_repo,
-            )
+            from src.shared.service.repo_di import get_booking_repo
 
             session = await get_async_session().__anext__()  # Get session
             booking_repo = get_booking_repo()
-            user_repo = get_user_repo()
-            ticket_repo = get_ticket_repo()
-            event_repo = get_event_repo()
 
             self.create_booking_use_case = CreateBookingUseCase(
                 session=session,
                 booking_repo=booking_repo,
-                user_repo=user_repo,
-                ticket_repo=ticket_repo,
-                event_repo=event_repo,
             )
 
             self.running = True

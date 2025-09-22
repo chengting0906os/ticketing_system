@@ -123,7 +123,7 @@ class BookingCreateRequest(BaseModel):
 class BookingResponse(BaseModel):
     id: int
     buyer_id: int
-    seller_id: int
+    event_id: int
     total_price: int
     status: str
     created_at: datetime
@@ -134,7 +134,7 @@ class BookingResponse(BaseModel):
             'example': {
                 'id': 1,
                 'buyer_id': 2,
-                'seller_id': 1,
+                'event_id': 1,
                 'total_price': 2000,
                 'status': 'pending_payment',
                 'created_at': '2025-01-10T10:30:00',

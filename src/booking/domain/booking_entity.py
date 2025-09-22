@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import List, Optional
 
 import attrs
@@ -8,7 +8,12 @@ from src.shared.domain.validators import NumericValidators
 from src.shared.logging.loguru_io import Logger
 
 
-class BookingStatus(str, Enum):
+class SeatSelectionMode(StrEnum):
+    MANUAL = 'manual'
+    BEST_AVAILABLE = 'best_available'
+
+
+class BookingStatus(StrEnum):
     PROCESSING = 'processing'
     PENDING_PAYMENT = 'pending_payment'
     PAID = 'paid'
@@ -22,7 +27,6 @@ class BookingStatus(str, Enum):
 @attrs.define
 class Booking:
     buyer_id: int = attrs.field(validator=attrs.validators.instance_of(int))
-    seller_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     event_id: int = attrs.field(validator=attrs.validators.instance_of(int))
     total_price: int = attrs.field(
         validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
@@ -42,7 +46,6 @@ class Booking:
         cls,
         *,
         buyer_id: int,
-        seller_id: int,
         event_id: int,
         total_price: int,
         ticket_ids: Optional[List[int]] = None,
@@ -50,7 +53,6 @@ class Booking:
         now = datetime.now()
         return cls(
             buyer_id=buyer_id,
-            seller_id=seller_id,
             event_id=event_id,
             total_price=total_price,
             status=BookingStatus.PROCESSING,

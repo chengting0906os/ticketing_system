@@ -18,7 +18,6 @@ class BookingModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
-    seller_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
     event_id: Mapped[int] = mapped_column(Integer, ForeignKey('event.id'))
     ticket_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=[])
     total_price: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -34,5 +33,4 @@ class BookingModel(Base):
 
     # Relationships
     buyer: Mapped['User'] = relationship('User', foreign_keys=[buyer_id], lazy='select')
-    seller: Mapped['User'] = relationship('User', foreign_keys=[seller_id], lazy='select')
     event: Mapped['EventModel'] = relationship('EventModel', foreign_keys=[event_id], lazy='select')

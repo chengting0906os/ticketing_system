@@ -7,11 +7,11 @@ from src.booking.port.booking_schema import (
     PaymentRequest,
     PaymentResponse,
 )
-from src.booking.use_case.create_booking_use_case import CreateBookingUseCase
-from src.booking.use_case.get_booking_use_case import GetBookingUseCase
-from src.booking.use_case.list_bookings_use_case import ListBookingsUseCase
-from src.booking.use_case.cancel_booking_use_case import CancelBookingUseCase
-from src.booking.use_case.mock_payment_use_case import MockPaymentUseCase
+from src.booking.use_case.command.create_booking_use_case import CreateBookingUseCase
+from src.booking.use_case.command.cancel_booking_use_case import CancelBookingUseCase
+from src.booking.use_case.command.mock_payment_use_case import MockPaymentUseCase
+from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
+from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.role_auth_service import get_current_user_info, require_buyer_info
@@ -57,7 +57,7 @@ async def create_booking(
     return BookingResponse(
         id=booking.id,
         buyer_id=booking.buyer_id,
-        seller_id=booking.seller_id,
+        event_id=booking.event_id,
         total_price=booking.total_price,
         status=booking.status.value,  # Should be 'pending_payment' now
         created_at=booking.created_at,
@@ -77,7 +77,7 @@ async def get_booking(
     return BookingResponse(
         id=booking_id,
         buyer_id=booking.buyer_id,
-        seller_id=booking.seller_id,
+        event_id=booking.event_id,
         total_price=booking.total_price,
         status=booking.status.value,
         created_at=booking.created_at,

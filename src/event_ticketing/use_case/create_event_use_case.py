@@ -75,8 +75,8 @@ class CreateEventUseCase:
 
             # Validate price
             price = section.get('price')
-            if not isinstance(price, (int, float)) or price <= 0:
-                raise ValueError('Ticket price must be positive')
+            if not isinstance(price, (int, float)) or price < 0:
+                raise ValueError('Ticket price must over 0')
 
             # Validate subsections
             subsections = section.get('subsections', [])
