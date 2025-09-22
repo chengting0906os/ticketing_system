@@ -148,6 +148,12 @@ consumer-start kcs:
 	@echo "Starting unified Kafka consumers..."
 	@set -a && source .env.example && set +a && PYTHONPATH=. uv run python -m src.shared.event_bus.start_unified_consumers
 
+.PHONY: consumers-start kcss
+consumers-start kcss:
+	@echo "Starting multiple Kafka consumers..."
+	@chmod +x src/shared/event_bus/start_multiple_consumers.sh
+	@./src/shared/event_bus/start_multiple_consumers.sh $(N)
+
 .PHONY: consumer-stop kcstop
 consumer-stop kcstop:
 	@echo "Stopping Kafka consumers..."
@@ -190,6 +196,7 @@ help:
 	@echo "  Kafka & Consumers:"
 	@echo "    make kafka-topics (kt)   - Create Kafka topics"
 	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
-	@echo "    make consumer-start (kcs) - Start Kafka consumers"
+	@echo "    make consumer-start (kcs) - Start single Kafka consumer"
+	@echo "    make consumers-start (kcss) N=3 - Start multiple Kafka consumers"
 	@echo "    make consumer-stop (kcstop) - Stop Kafka consumers"
 	@echo "    make consumer-status (kcst) - Check consumer status"
