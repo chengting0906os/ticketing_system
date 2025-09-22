@@ -145,18 +145,18 @@ kafka-status ks:
 # Kafka Consumers
 .PHONY: consumer-start kcs
 consumer-start kcs:
-	@echo "Starting Kafka consumers..."
-	@set -a && source .env.example && set +a && PYTHONPATH=. uv run python -m src.shared.scripts.start_consumers
+	@echo "Starting unified Kafka consumers..."
+	@set -a && source .env.example && set +a && PYTHONPATH=. uv run python -m src.shared.event_bus.start_unified_consumers
 
 .PHONY: consumer-stop kcstop
 consumer-stop kcstop:
 	@echo "Stopping Kafka consumers..."
-	@pkill -f start_consumers || echo "No consumer processes found"
+	@pkill -f start_unified_consumers || echo "No consumer processes found"
 
 .PHONY: consumer-status kcst
 consumer-status kcst:
 	@echo "Consumer processes:"
-	@ps aux | grep -E "(start_consumers|consumer)" | grep -v grep || echo "No consumer processes found"
+	@ps aux | grep -E "(start_unified_consumers|consumer)" | grep -v grep || echo "No consumer processes found"
 
 # Help
 .PHONY: help
