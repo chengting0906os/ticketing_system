@@ -20,9 +20,12 @@ dependencies = [
     "alembic>=1.16.4",
     "passlib[bcrypt]>=1.7.4",
     "loguru>=0.7.3",
-    "quixstreams>=2.0.0",
-    "kafka-python>=2.0.2",
+    "quixstreams[protobuf]>=3.23.0",
+    "grpcio-tools>=1.0.0",
     "sse-starlette>=3.0.2",
+    "uuid-v7>=1.0.0",
+    "asgiref>=3.9.2",
+    "orjson>=3.11.3",
 ]
 
 [dependency-groups]

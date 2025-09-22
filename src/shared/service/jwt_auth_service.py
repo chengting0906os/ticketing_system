@@ -1,17 +1,16 @@
+from typing import Any, Dict, Optional
+
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import (
     AuthenticationBackend,
     CookieTransport,
     JWTStrategy,
 )
+import jwt
 
 from src.shared.config.core_setting import settings
 from src.user.domain.user_model import User
 from src.user.use_case.manager import get_user_manager
-
-
-from typing import Optional, Any, Dict
-import jwt
 
 
 class CustomJWTStrategy(JWTStrategy):
@@ -117,7 +116,7 @@ class JWTAuthService:
     def __init__(self):
         self.cookie_transport = CookieTransport(
             cookie_name='fastapiusersauth',
-            cookie_max_age=3600,
+            cookie_max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             cookie_secure=False,  # Set to True in production with HTTPS
             cookie_httponly=True,
             cookie_samesite='lax',

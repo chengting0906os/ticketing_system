@@ -10,6 +10,7 @@ from src.shared.config.db_setting import Base
 
 if TYPE_CHECKING:
     from src.event_ticketing.infra.event_model import EventModel
+    from src.event_ticketing.infra.ticket_model import TicketModel
     from src.user.domain.user_model import User
 
 
@@ -19,10 +20,13 @@ class BookingModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
     event_id: Mapped[int] = mapped_column(Integer, ForeignKey('event.id'))
-    ticket_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=[])
+    section: Mapped[str] = mapped_column(String(10), nullable=False)
+    subsection: Mapped[int] = mapped_column(Integer, nullable=False)
+    seat_positions: Mapped[Optional[list]] = mapped_column(ARRAY(String), nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='processing', nullable=False)
-    seat_selection_mode: Mapped[str] = mapped_column(String(20))
+    seat_selection_mode: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -34,3 +38,16 @@ class BookingModel(Base):
     # Relationships
     buyer: Mapped['User'] = relationship('User', foreign_keys=[buyer_id], lazy='select')
     event: Mapped['EventModel'] = relationship('EventModel', foreign_keys=[event_id], lazy='select')
+    tickets: Mapped[list['TicketModel']] = relationship(
+        'TicketModel',
+        secondary='booking_ticket',
+        back_populates='bookings',
+        lazy='select',
+    )
+
+
+class BookingTicketModel(Base):
+    __tablename__ = 'booking_ticket'
+
+    booking_id: Mapped[int] = mapped_column(Integer, ForeignKey('booking.id'), primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey('ticket.id'), primary_key=True)

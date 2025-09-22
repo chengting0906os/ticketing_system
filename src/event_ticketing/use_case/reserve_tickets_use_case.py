@@ -89,30 +89,30 @@ class ReserveTicketsUseCase:
         self,
         *,
         mode: str,
-        selected_seats: Optional[List[str]] = None,
+        seat_positions: Optional[List[str]] = None,
         quantity: Optional[int] = None,
     ) -> List[int]:
         """Handle seat selection and return list of ticket IDs."""
         if mode == 'manual':
-            return await self._handle_manual_seat_selection(selected_seats=selected_seats)
+            return await self._handle_manual_seat_selection(seat_positions=seat_positions)
         elif mode == 'best_available':
             return await self._handle_best_available_selection(quantity=quantity)
         else:
             raise DomainError('Invalid seat selection mode', 400)
 
     async def _handle_manual_seat_selection(
-        self, *, selected_seats: Optional[List[str]]
+        self, *, seat_positions: Optional[List[str]]
     ) -> List[int]:
         """Handle manual seat selection and return ticket IDs."""
-        if not selected_seats or len(selected_seats) == 0:
+        if not seat_positions or len(seat_positions) == 0:
             raise DomainError('Selected seats cannot be empty for manual selection', 400)
-        if len(selected_seats) > 4:
+        if len(seat_positions) > 4:
             raise DomainError('Maximum 4 tickets per booking', 400)
 
         ticket_ids = []
         event_ids = set()
 
-        for seat in selected_seats:
+        for seat in seat_positions:
             try:
                 section, subsection_str, row_str, seat_str = seat.split('-')
                 subsection = int(subsection_str)

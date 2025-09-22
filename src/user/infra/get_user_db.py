@@ -7,4 +7,4 @@ from src.user.domain.user_model import User
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
-    yield SQLAlchemyUserDatabase(session, User)
+    yield SQLAlchemyUserDatabase(session, User)  # pyright: ignore[reportArgumentType]

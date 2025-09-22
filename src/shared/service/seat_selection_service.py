@@ -19,30 +19,30 @@ class SeatSelectionService:
         self,
         *,
         mode: str,
-        selected_seats: Optional[List[str]] = None,
+        seat_positions: Optional[List[str]] = None,
         quantity: Optional[int] = None,
     ) -> List[int]:
         """Handle seat selection and return list of ticket IDs."""
         if mode == 'manual':
-            return await self._handle_manual_seat_selection(selected_seats=selected_seats)
+            return await self._handle_manual_seat_selection(seat_positions=seat_positions)
         elif mode == 'best_available':
             return await self._handle_best_available_selection(quantity=quantity)
         else:
             raise DomainError('Invalid seat selection mode. Use "manual" or "best_available"', 400)
 
     async def _handle_manual_seat_selection(
-        self, *, selected_seats: Optional[List[str]]
+        self, *, seat_positions: Optional[List[str]]
     ) -> List[int]:
         """Handle manual seat selection and return ticket IDs."""
-        if not selected_seats:
+        if not seat_positions:
             raise DomainError('Selected seats cannot be empty for manual selection', 400)
 
-        BusinessRuleValidators.validate_ticket_count(len(selected_seats))
+        BusinessRuleValidators.validate_ticket_count(len(seat_positions))
 
         ticket_ids = []
         event_ids = set()
 
-        for seat_identifier in selected_seats:
+        for seat_identifier in seat_positions:
             section, subsection, row, seat = BusinessRuleValidators.validate_seat_identifier_format(
                 seat_identifier
             )

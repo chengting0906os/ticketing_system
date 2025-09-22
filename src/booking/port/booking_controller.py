@@ -50,9 +50,11 @@ async def create_booking(
     booking = await booking_use_case.create_booking(
         buyer_id=current_user.user_id,
         event_id=request.event_id,
+        section=request.section,
+        subsection=request.subsection,
         seat_selection_mode=request.seat_selection_mode,
-        selected_seats=request.selected_seats,
-        numbers_of_seats=request.numbers_of_seats,
+        seat_positions=request.seat_positions,
+        quantity=request.quantity,
     )
 
     if booking.id is None:
@@ -65,7 +67,6 @@ async def create_booking(
         total_price=booking.total_price,
         status=booking.status.value,  # Should be 'pending_payment' now
         created_at=booking.created_at,
-        paid_at=booking.paid_at,
     )
 
 

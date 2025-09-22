@@ -5,6 +5,7 @@ from typing import List, Optional
 import attrs
 
 from src.shared.domain.validators import NumericValidators
+from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
 
@@ -32,39 +33,101 @@ class Booking:
     total_price: int = attrs.field(
         validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
     )
+    section: str = attrs.field(validator=attrs.validators.instance_of(str))
+    subsection: int = attrs.field(validator=attrs.validators.instance_of(int))
+    quantity: int = attrs.field(validator=attrs.validators.instance_of(int))
     seat_selection_mode: str = attrs.field(validator=attrs.validators.instance_of(str))
+    seat_positions: Optional[List[str]] = attrs.field(default=[])
     status: BookingStatus = attrs.field(
         default=BookingStatus.PROCESSING, validator=attrs.validators.instance_of(BookingStatus)
     )
-    created_at: datetime = attrs.field(factory=datetime.now)
-    updated_at: datetime = attrs.field(factory=datetime.now)
-    paid_at: Optional[datetime] = None
     ticket_ids: List[int] = attrs.field(factory=list)  # Store ticket IDs in booking
     id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
 
     @classmethod
     @Logger.io
     def create(
         cls,
         *,
+        id: int = 0,
         buyer_id: int,
         event_id: int,
-        total_price: int,
+        total_price: int = 0,
+        section: str,
+        subsection: int,
         seat_selection_mode: str,
-        ticket_ids: Optional[List[int]] = None,
+        seat_positions: List[str],
+        quantity: int,
     ) -> 'Booking':
-        now = datetime.now()
+        # Validate seat selection parameters
+        if seat_selection_mode == 'manual':
+            if not seat_positions:
+                raise DomainError('seat_positions is required for manual selection', 400)
+            if quantity != len(seat_positions):
+                raise DomainError(
+                    'quantity must match the number of selected seat positions for manual selection',
+                    400,
+                )
+            if len(seat_positions) > 4:
+                raise DomainError('Maximum 4 tickets per booking', 400)
+        elif seat_selection_mode == 'best_available':
+            if seat_positions and len(seat_positions) > 0:
+                raise DomainError('seat_positions must be empty for best_available selection', 400)
+            if quantity < 1 or quantity > 4:
+                raise DomainError('quantity must be between 1 and 4', 400)
+        else:
+            raise DomainError(
+                'seat_selection_mode must be either "manual" or "best_available"', 400
+            )
+
+        # Validate seat_positions format for manual selection (now simple string format like "1-1", "1-2")
+
+        if seat_selection_mode == 'manual' and seat_positions:
+            for seat_position in seat_positions:
+                try:
+                    # Validate seat_position format: "row-seat" (e.g., "1-1", "2-3")
+                    if not isinstance(seat_position, str):
+                        raise DomainError('seat_position must be a string', 400)
+
+                    parts = seat_position.split('-')
+                    if len(parts) != 2:
+                        raise DomainError(
+                            'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
+                        )
+
+                    try:
+                        row = int(parts[0])
+                        column = int(parts[1])
+                        if row <= 0 or column <= 0:
+                            raise DomainError('Row and seat numbers must be positive', 400)
+                    except ValueError:
+                        raise DomainError(
+                            'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
+                        )
+
+                except Exception as e:
+                    if isinstance(e, DomainError):
+                        raise
+                    raise DomainError(f'Invalid seat_positions format: {e}', 400)
+
+        # For manual mode, validate that tickets are selected
+        if seat_selection_mode == 'manual' and not seat_positions:
+            raise DomainError('No tickets selected for booking', 400)
+
         return cls(
             buyer_id=buyer_id,
             event_id=event_id,
+            section=section,
+            subsection=subsection,
             total_price=total_price,
             seat_selection_mode=seat_selection_mode,
             status=BookingStatus.PROCESSING,
-            created_at=now,
-            updated_at=now,
-            paid_at=None,
-            ticket_ids=ticket_ids or [],
-            id=None,
+            seat_positions=seat_positions,
+            quantity=quantity,
+            id=0 if id == 0 else id,
         )
 
     @Logger.io

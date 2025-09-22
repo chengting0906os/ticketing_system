@@ -19,7 +19,7 @@ Feature: Booking with Seat Selection
 
   Scenario: Manual seat selection - happy path
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | selected_seats  |
+      | seat_selection_mode | seat_positions  |
       | manual              | A-1-1-1,A-1-1-2 |
     Then the response status code should be:
       | 201 |
@@ -34,7 +34,7 @@ Feature: Booking with Seat Selection
 
   Scenario: Manual seat selection - single seat
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | selected_seats |
+      | seat_selection_mode | seat_positions |
       | manual              | A-1-2-3        |
     Then the response status code should be:
       | 201 |
@@ -46,33 +46,32 @@ Feature: Booking with Seat Selection
 
   Scenario: Best available seat selection - happy path
     When buyer creates booking with best available seat selection:
-      | seat_selection_mode | numbers_of_seats |
-      | best_available      |                3 |
+      | seat_selection_mode | quantity |
+      | best_available      |        3 |
     Then the response status code should be:
       | 201 |
     And the booking status should be:
       | processing |
     And the booking should contain consecutive available seats:
       | count |
-      | 3     |
+      |     3 |
     And the selected seats should be from the lowest available row
 
   Scenario: Best available seat selection - single seat
     When buyer creates booking with best available seat selection:
-      | seat_selection_mode | numbers_of_seats |
-      | best_available      |                1 |
+      | seat_selection_mode | quantity |
+      | best_available      |        1 |
     Then the response status code should be:
       | 201 |
     And the booking status should be:
       | processing |
     And the booking should contain available seat:
       | count |
-      | 1     |
-
+      |     1 |
 
   Scenario: Cannot select more than 4 tickets
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | selected_seats                          |
+      | seat_selection_mode | seat_positions                          |
       | manual              | A-1-1-1,A-1-1-2,A-1-1-3,A-1-1-4,A-1-2-1 |
     Then the response status code should be:
       | 422 |
@@ -85,7 +84,7 @@ Feature: Booking with Seat Selection
       | A-1-1-1     |
       | A-1-1-2     |
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | selected_seats  |
+      | seat_selection_mode | seat_positions  |
       | manual              | A-1-1-1,A-1-1-3 |
     Then the response status code should be:
       | 400 |

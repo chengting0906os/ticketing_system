@@ -21,17 +21,28 @@ class BookingCommandRepoImpl(BookingCommandRepo):
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
+        # For new bookings, tickets relationship won't be loaded
+        # Avoid accessing it to prevent greenlet_spawn errors in async context
+        ticket_ids = []
+        if hasattr(db_booking, '__dict__') and 'tickets' in db_booking.__dict__:
+            # Only access tickets if they're already loaded in the instance
+            ticket_ids = [ticket.id for ticket in db_booking.tickets] if db_booking.tickets else []
+
         return Booking(
             buyer_id=db_booking.buyer_id,
             event_id=db_booking.event_id,
+            section=db_booking.section,
+            subsection=db_booking.subsection,  # Now directly int from DB
+            quantity=db_booking.quantity,
             total_price=db_booking.total_price,
             seat_selection_mode=db_booking.seat_selection_mode or 'manual',
+            seat_positions=db_booking.seat_positions or [],
             status=BookingStatus(db_booking.status),
+            ticket_ids=ticket_ids if hasattr(db_booking, 'tickets') and db_booking.tickets else [],
+            id=db_booking.id,
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
             paid_at=db_booking.paid_at,
-            ticket_ids=db_booking.ticket_ids or [],
-            id=db_booking.id,
         )
 
     @Logger.io
@@ -39,13 +50,13 @@ class BookingCommandRepoImpl(BookingCommandRepo):
         db_booking = BookingModel(
             buyer_id=booking.buyer_id,
             event_id=booking.event_id,
+            section=booking.section,
+            subsection=booking.subsection,  # Now directly int to DB
+            quantity=booking.quantity,
             total_price=booking.total_price,
+            seat_positions=booking.seat_positions,  # List[str] stored as ARRAY
             status=booking.status.value,
             seat_selection_mode=booking.seat_selection_mode,
-            created_at=booking.created_at,
-            updated_at=booking.updated_at,
-            paid_at=booking.paid_at,
-            ticket_ids=booking.ticket_ids,
         )
         self.session.add(db_booking)
         await self.session.flush()

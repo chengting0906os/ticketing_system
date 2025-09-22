@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
-from src.booking.domain.booking_entity import BookingStatus
+from src.booking.domain.booking_entity import Booking, BookingStatus
 
 
 @dataclass
@@ -12,14 +12,36 @@ class BookingCreated:
     booking_id: int
     buyer_id: int
     event_id: int
+    total_price: int
+    section: str
+    subsection: int
+    quantity: int
     seat_selection_mode: str
-    ticket_ids: List[int]
+    seat_positions: List[str]
     status: BookingStatus
-    occurred_at: datetime
+    occurred_at: datetime  # Required by DomainEvent protocol
 
     @property
     def aggregate_id(self) -> int:
         return self.booking_id
+
+    @classmethod
+    def from_booking(cls, booking: 'Booking') -> 'BookingCreated':
+        from datetime import datetime, timezone
+
+        return cls(
+            booking_id=booking.id,  # type: ignore
+            buyer_id=booking.buyer_id,
+            event_id=booking.event_id,
+            total_price=booking.total_price,
+            section=booking.section,
+            subsection=booking.subsection,
+            quantity=booking.quantity,
+            seat_selection_mode=booking.seat_selection_mode,
+            seat_positions=booking.seat_positions or [],
+            status=booking.status,
+            occurred_at=datetime.now(timezone.utc),
+        )
 
 
 @dataclass

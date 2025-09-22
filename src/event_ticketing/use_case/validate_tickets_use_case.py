@@ -61,24 +61,24 @@ class ValidateTicketsUseCase:
 
     @Logger.io
     async def reserve_tickets(self, *, ticket_ids: List[int], buyer_id: int) -> None:
-        async with self.session:
-            tickets = []
-            event_ids = set()
+        # 不使用 async with self.session，因為 session 已經由調用者管理
+        tickets = []
+        event_ids = set()
 
-            for ticket_id in ticket_ids:
-                ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
-                if ticket:
-                    ticket.reserve(buyer_id=buyer_id)
-                    tickets.append(ticket)
-                    event_ids.add(ticket.event_id)
+        for ticket_id in ticket_ids:
+            ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
+            if ticket:
+                ticket.reserve(buyer_id=buyer_id)
+                tickets.append(ticket)
+                event_ids.add(ticket.event_id)
 
-            if tickets:
-                await self.ticket_repo.update_batch(tickets=tickets)
+        if tickets:
+            await self.ticket_repo.update_batch(tickets=tickets)
 
-                # Notify SSE listeners about ticket status changes for each affected event
-                for event_id in event_ids:
-                    await self.session.execute(
-                        text(f"NOTIFY ticket_status_change_{event_id}, 'tickets_reserved'")
-                    )
+            # Notify SSE listeners about ticket status changes for each affected event
+            for event_id in event_ids:
+                await self.session.execute(
+                    text(f"NOTIFY ticket_status_change_{event_id}, 'tickets_reserved'")
+                )
 
-                await self.session.commit()
+            await self.session.commit()

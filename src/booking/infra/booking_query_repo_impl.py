@@ -20,26 +20,43 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
+        # Safely handle tickets relationship to avoid greenlet_spawn errors
+        ticket_ids = []
+        if hasattr(db_booking, '__dict__') and 'tickets' in db_booking.__dict__:
+            # Only access tickets if they're already loaded in the instance
+            ticket_ids = [ticket.id for ticket in db_booking.tickets] if db_booking.tickets else []
+
         return Booking(
             buyer_id=db_booking.buyer_id,
             event_id=db_booking.event_id,
+            section=db_booking.section,
+            subsection=db_booking.subsection,
+            quantity=db_booking.quantity,
             total_price=db_booking.total_price,
             seat_selection_mode=db_booking.seat_selection_mode or 'manual',
+            seat_positions=db_booking.seat_positions or [],
             status=BookingStatus(db_booking.status),
+            ticket_ids=ticket_ids,
+            id=db_booking.id,
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
             paid_at=db_booking.paid_at,
-            ticket_ids=db_booking.ticket_ids or [],
-            id=db_booking.id,
         )
 
     @staticmethod
     def _to_booking_dict(db_booking: BookingModel) -> dict:
-        # Get seller information through event relationship
+        # Safely access event relationship if loaded
+        event_name = 'Unknown Event'
         seller_name = 'Unknown Seller'
-        if db_booking.event and hasattr(db_booking.event, 'seller_id'):
-            # In real implementation, would need to join with User table
-            seller_name = f'Seller {db_booking.event.seller_id}'
+        if hasattr(db_booking, '__dict__') and 'event' in db_booking.__dict__ and db_booking.event:
+            event_name = db_booking.event.name  # pyright: ignore[reportAttributeAccessIssue]
+            if hasattr(db_booking.event, 'seller_id'):
+                seller_name = f'Seller {db_booking.event.seller_id}'
+
+        # Safely access buyer relationship if loaded
+        buyer_name = 'Unknown Buyer'
+        if hasattr(db_booking, '__dict__') and 'buyer' in db_booking.__dict__ and db_booking.buyer:
+            buyer_name = db_booking.buyer.name  # pyright: ignore[reportAttributeAccessIssue]
 
         return {
             'id': db_booking.id,
@@ -49,8 +66,8 @@ class BookingQueryRepoImpl(BookingQueryRepo):
             'status': db_booking.status,
             'created_at': db_booking.created_at,
             'paid_at': db_booking.paid_at,
-            'event_name': db_booking.event.name if db_booking.event else 'Unknown Event',  # pyright: ignore[reportAttributeAccessIssue]
-            'buyer_name': db_booking.buyer.name if db_booking.buyer else 'Unknown Buyer',  # pyright: ignore[reportAttributeAccessIssue]
+            'event_name': event_name,
+            'buyer_name': buyer_name,
             'seller_name': seller_name,
         }
 

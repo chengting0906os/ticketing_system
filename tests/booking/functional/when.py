@@ -230,11 +230,11 @@ def buyer_creates_booking_with_tickets(step, client: TestClient, booking_state):
 def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, booking_state):
     """Buyer creates booking with manual seat selection."""
     seat_data = extract_table_data(step)
-    selected_seat_locations = seat_data['selected_seats'].split(',')
+    selected_seat_locations = seat_data['seat_positions'].split(',')
 
     # Convert seat location strings to the new dict format [{ticket_id: seat_location}]
     event_id = booking_state['event_id']
-    selected_seats = []
+    seat_positions = []
 
     for seat_location in selected_seat_locations:
         seat_location = seat_location.strip()
@@ -259,14 +259,14 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
                 )  # Get all tickets, not just available ones
                 for ticket in all_tickets:
                     if ticket['row'] == int(row) and ticket['seat'] == int(seat):
-                        selected_seats.append({ticket['id']: seat_location})
+                        seat_positions.append({ticket['id']: seat_location})
                         break
 
     # Create booking with manual seat selection
     booking_request = {
         'event_id': booking_state['event_id'],
         'seat_selection_mode': 'manual',
-        'selected_seats': selected_seats,
+        'seat_positions': seat_positions,
     }
 
     response = client.post(BOOKING_BASE, json=booking_request)
@@ -275,7 +275,7 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
     # Store booking if created successfully
     if response.status_code == 201:
         booking_state['booking'] = response.json()
-        booking_state['selected_seats'] = selected_seats
+        booking_state['seat_positions'] = seat_positions
 
 
 @when('buyer creates booking with best available seat selection:')
@@ -284,13 +284,13 @@ def buyer_creates_booking_with_best_available_seat_selection(
 ):
     """Buyer creates booking with best available seat selection."""
     seat_data = extract_table_data(step)
-    quantity = int(seat_data['numbers_of_seats'])
+    quantity = int(seat_data['quantity'])
 
     # Create booking with best available seat selection
     booking_request = {
         'event_id': booking_state['event_id'],
         'seat_selection_mode': 'best_available',
-        'numbers_of_seats': quantity,
+        'quantity': quantity,
     }
 
     response = client.post(BOOKING_BASE, json=booking_request)

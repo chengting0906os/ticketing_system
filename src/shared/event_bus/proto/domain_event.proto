@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package ticketing.events;
+
+// 基礎領域事件結構
+message DomainEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string aggregate_id = 3;
+  string aggregate_type = 4;
+  int64 occurred_at = 5;  // Unix timestamp
+  map<string, string> metadata = 6;
+  bytes data = 7;  // 序列化的事件數據
+}
+
+// 票務預訂成功事件
+message TicketsReservedEvent {
+  string buyer_id = 1;
+  string booking_id = 2;
+  repeated string ticket_ids = 3;
+  string event_id = 4;
+  int32 quantity = 5;
+  double total_price = 6;
+}
+
+// 票務預訂失敗事件
+message TicketReservationFailedEvent {
+  string request_id = 1;
+  string buyer_id = 2;
+  string event_id = 3;
+  string error_code = 4;
+  string error_message = 5;
+  int32 requested_quantity = 6;
+}
+
+// 訂單支付成功事件
+message BookingPaidEvent {
+  string booking_id = 1;
+  string buyer_id = 2;
+  string payment_id = 3;
+  double amount = 4;
+  string currency = 5;
+  int64 paid_at = 6;
+}
+
+// 訂單取消事件
+message BookingCancelledEvent {
+  string booking_id = 1;
+  string buyer_id = 2;
+  string reason = 3;
+  int64 cancelled_at = 4;
+  repeated string refunded_ticket_ids = 5;
+}

@@ -194,7 +194,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
 
     # Build the correct JSON payload based on available tickets
     # For manual mode, format as {ticket_id: 'section-subsection-row-seat'}
-    selected_seats = [
+    seat_positions = [
         {
             available_tickets[0][
                 'id'
@@ -212,7 +212,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
         json={
             'event_id': event['id'],
             'seat_selection_mode': 'manual',
-            'selected_seats': selected_seats,
+            'seat_positions': seat_positions,
         },
     )
     assert booking_response.status_code == 201, f'Failed to create booking: {booking_response.text}'

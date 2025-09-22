@@ -2,8 +2,8 @@ import asyncio
 import signal
 import sys
 
-from src.booking.infra.booking_event_handler import BookingEventHandler
-from src.event_ticketing.infra.ticketing_event_handler import TicketingEventHandler
+from src.booking.infra.booking_event_consumer import BookingEventConsumer
+from src.event_ticketing.infra.ticketing_event_consumer import TicketingEventConsumer
 from src.shared.constant.topic import Topic
 from src.shared.event_bus.event_consumer import start_unified_consumer, stop_unified_consumer
 from src.shared.logging.loguru_io import Logger
@@ -18,8 +18,8 @@ class ConsumerManager:
             Logger.base.info('Starting unified Kafka consumer...')
 
             # 創建事件處理器
-            booking_handler = BookingEventHandler()
-            ticketing_handler = TicketingEventHandler()
+            booking_handler = BookingEventConsumer()
+            ticketing_handler = TicketingEventConsumer()
 
             # 定義要監聽的topics
             topics = [

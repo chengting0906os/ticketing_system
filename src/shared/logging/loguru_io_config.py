@@ -177,10 +177,6 @@ kafka_loggers = [
     'kafka.consumer.fetcher',
     'kafka.consumer.coordinator',
     'kafka.conn',
-    'aiokafka',
-    'aiokafka.client',
-    'aiokafka.consumer',
-    'aiokafka.producer',
 ]
 
 for logger_name in kafka_loggers:

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-TicketingEventHandler 單元測試
+TicketingEventConsumer 單元測試
 """
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.event_ticketing.infra.ticketing_event_handler import TicketingEventHandler
+from src.event_ticketing.infra.ticketing_event_consumer import TicketingEventConsumer
 
 
-class TestTicketingEventHandler:
-    """TicketingEventHandler 單元測試"""
+class TestTicketingEventConsumer:
+    """TicketingEventConsumer 單元測試"""
 
     @pytest.fixture
     def handler(self):
-        """Create TicketingEventHandler instance"""
-        return TicketingEventHandler()
+        """Create TicketingEventConsumer instance"""
+        return TicketingEventConsumer()
 
     @pytest.fixture
     def mock_reserve_use_case(self):
@@ -95,8 +95,8 @@ class TestTicketingEventHandler:
             'buyer_id': 1,
             'event_id': 456,
             'seat_selection_mode': 'best_available',
-            'selected_seats': [],
-            'numbers_of_seats': 2,
+            'seat_positions': [],
+            'quantity': 2,
         }
 
         with patch.object(handler, '_handle_booking_created') as mock_handle:
