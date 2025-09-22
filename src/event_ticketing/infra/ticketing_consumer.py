@@ -36,10 +36,15 @@ class TicketingKafkaConsumer:
             )
 
             # Get use case dependency
-            from src.shared.service.unit_of_work import get_unit_of_work
+            from src.shared.config.db_setting import get_async_session
+            from src.shared.service.repo_di import get_ticket_repo
 
-            uow = get_unit_of_work()
-            self.reserve_tickets_use_case = ReserveTicketsUseCase(uow=uow)  # type: ignore
+            session = await get_async_session().__anext__()
+            ticket_repo = get_ticket_repo(session)
+            self.reserve_tickets_use_case = ReserveTicketsUseCase(
+                session=session,
+                ticket_repo=ticket_repo,
+            )
 
             self.running = True
             Logger.base.info('Event-Ticketing Kafka consumer started')
@@ -66,19 +71,20 @@ class TicketingKafkaConsumer:
                 # Poll for messages (non-blocking)
                 message_batch = self.consumer.poll(timeout_ms=100)  # type: ignore
 
-                for _, messages in message_batch.items():
-                    for message in messages:
-                        await self._process_message(message)
+                if message_batch:
+                    for _, messages in message_batch.items():
+                        for message in messages:
+                            await self._process_message(message)
 
-                # Commit offsets
-                self.consumer.commit()  # type: ignore
+                    # Commit offsets after processing all messages
+                    self.consumer.commit()  # type: ignore
 
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(0.01)
 
             except Exception as e:
                 Logger.base.error(f'Error consuming messages: {e}')
-                await asyncio.sleep(1)  # Wait before retrying
+                await asyncio.sleep(1)  # Wait before retrying  # Wait before retrying
 
     @Logger.io
     async def _process_message(self, message):
@@ -128,12 +134,11 @@ class TicketingKafkaConsumer:
                 return
 
             # Get the booking to extract ticket_ids
-            from src.shared.service.repo_di import get_booking_repo
-            from src.shared.config.db_setting import get_async_session
             from src.event_ticketing.use_case.validate_tickets_use_case import (
                 ValidateTicketsUseCase,
             )
-            from src.shared.service.repo_di import get_ticket_repo
+            from src.shared.config.db_setting import get_async_session
+            from src.shared.service.repo_di import get_booking_repo, get_ticket_repo
 
             booking_repo = get_booking_repo()
             ticket_repo = get_ticket_repo()

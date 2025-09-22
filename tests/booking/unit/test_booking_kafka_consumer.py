@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import msgpack
 import pytest
 
-from src.booking.infra.ticketing_consumer import BookingKafkaConsumer
+from src.booking.infra.booking_consumer import BookingKafkaConsumer
 
 
 class TestBookingKafkaConsumer:
