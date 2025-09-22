@@ -1,31 +1,37 @@
 from typing import Any, Dict, List
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.booking.domain.booking_query_repo import BookingQueryRepo
+from src.shared.config.db_setting import get_async_session
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.service.repo_di import get_booking_query_repo
 
 
 class ListBookingsUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(self, session: AsyncSession, booking_query_repo: BookingQueryRepo):
+        self.session = session
+        self.booking_query_repo = booking_query_repo
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+    def depends(
+        cls,
+        session: AsyncSession = Depends(get_async_session),
+        booking_query_repo: BookingQueryRepo = Depends(get_booking_query_repo),
+    ):
+        return cls(session=session, booking_query_repo=booking_query_repo)
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def list_buyer_bookings(self, buyer_id: int, status: str) -> List[Dict[str, Any]]:
-        async with self.uow:
-            bookings = await self.uow.bookings.get_buyer_bookings_with_details(
-                buyer_id=buyer_id, status=status
-            )
-            return bookings
+        bookings = await self.booking_query_repo.get_buyer_bookings_with_details(
+            buyer_id=buyer_id, status=status
+        )
+        return bookings
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def list_seller_bookings(self, seller_id: int, status: str) -> List[Dict[str, Any]]:
-        async with self.uow:
-            bookings = await self.uow.bookings.get_seller_bookings_with_details(
-                seller_id=seller_id, status=status
-            )
-            return bookings
+        bookings = await self.booking_query_repo.get_seller_bookings_with_details(
+            seller_id=seller_id, status=status
+        )
+        return bookings

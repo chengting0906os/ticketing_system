@@ -66,7 +66,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
         return BookingQueryRepoImpl._to_entity(db_booking)
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         query = (
             select(BookingModel)
@@ -85,7 +85,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
         return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
 
-    @Logger.io
+    @Logger.io(truncate_content=True)
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
         # Join with event table to get bookings for events owned by seller
         from src.event_ticketing.infra.event_model import EventModel
