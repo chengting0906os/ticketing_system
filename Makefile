@@ -126,11 +126,11 @@ kafka-clean-all kca:
 .PHONY: kafka-topics kt
 kafka-topics kt: kafka-clean-all
 	@echo "Creating Kafka topics..."
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-events --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-bookings --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-tickets --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-requests --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-responses --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-event --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-ticket --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-request --partitions 6 --replication-factor 3
+	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-response --partitions 6 --replication-factor 3
 	@echo "Topics created successfully!"
 	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --list
 
@@ -141,6 +141,22 @@ kafka-status ks:
 	@echo ""
 	@echo "Kafka UI available at: http://localhost:8080"
 	@echo "Kafka brokers at: localhost:9092,localhost:9093,localhost:9094"
+
+# Kafka Consumers
+.PHONY: consumer-start kcs
+consumer-start kcs:
+	@echo "Starting Kafka consumers..."
+	@set -a && source .env.example && set +a && PYTHONPATH=. uv run python -m src.shared.scripts.start_consumers
+
+.PHONY: consumer-stop kcstop
+consumer-stop kcstop:
+	@echo "Stopping Kafka consumers..."
+	@pkill -f start_consumers || echo "No consumer processes found"
+
+.PHONY: consumer-status kcst
+consumer-status kcst:
+	@echo "Consumer processes:"
+	@ps aux | grep -E "(start_consumers|consumer)" | grep -v grep || echo "No consumer processes found"
 
 # Help
 .PHONY: help
@@ -170,3 +186,10 @@ help:
 	@echo "    make docker-down         - Stop Docker containers"
 	@echo "    make docker-logs         - View Docker logs"
 	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
+	@echo ""
+	@echo "  Kafka & Consumers:"
+	@echo "    make kafka-topics (kt)   - Create Kafka topics"
+	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
+	@echo "    make consumer-start (kcs) - Start Kafka consumers"
+	@echo "    make consumer-stop (kcstop) - Stop Kafka consumers"
+	@echo "    make consumer-status (kcst) - Check consumer status"
