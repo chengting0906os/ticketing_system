@@ -11,7 +11,6 @@ from src.shared.logging.loguru_io import Logger
 
 
 if TYPE_CHECKING:
-    from src.booking.domain.booking_repo import BookingRepo
     from src.event_ticketing.domain.event_repo import EventRepo
     from src.event_ticketing.domain.ticket_repo import TicketRepo
     from src.user.domain.user_repo import UserRepo
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
 class AbstractUnitOfWork(abc.ABC):
     events: EventRepo
-    bookings: BookingRepo
     users: UserRepo
     tickets: TicketRepo
 
@@ -79,13 +77,11 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         self.session = session
 
     async def __aenter__(self):
-        from src.booking.infra.booking_repo_impl import BookingRepoImpl
         from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
         from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
         from src.user.infra.user_repo_impl import UserRepoImpl
 
         self.events = EventRepoImpl(self.session)
-        self.bookings = BookingRepoImpl(self.session)
         self.users = UserRepoImpl(self.session)
         self.tickets = TicketRepoImpl(self.session)
         return await super().__aenter__()

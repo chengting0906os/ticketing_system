@@ -8,21 +8,11 @@ if TYPE_CHECKING:
     from src.event_ticketing.domain.ticket_entity import Ticket
 
 
-class BookingRepo(ABC):
-    @abstractmethod
-    async def create(self, *, booking: Booking) -> Booking:
-        pass
+class BookingQueryRepo(ABC):
+    """Repository interface for booking read operations"""
 
     @abstractmethod
     async def get_by_id(self, *, booking_id: int) -> Optional[Booking]:
-        pass
-
-    @abstractmethod
-    async def update(self, *, booking: Booking) -> Booking:
-        pass
-
-    @abstractmethod
-    async def cancel_booking_atomically(self, *, booking_id: int, buyer_id: int) -> Booking:
         pass
 
     @abstractmethod

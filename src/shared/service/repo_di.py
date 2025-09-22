@@ -1,8 +1,12 @@
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.booking.domain.booking_repo import BookingRepo
-from src.booking.infra.booking_repo_impl import BookingRepoImpl
+from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.domain.booking_query_repo import BookingQueryRepo
+
+# Combined repo implementation will be created by inheriting from command and query
+from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
+from src.booking.infra.booking_query_repo_impl import BookingQueryRepoImpl
 from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.domain.ticket_repo import TicketRepo
 from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
@@ -12,8 +16,14 @@ from src.user.domain.user_repo import UserRepo
 from src.user.infra.user_repo_impl import UserRepoImpl
 
 
-def get_booking_repo(session: AsyncSession = Depends(get_async_session)) -> BookingRepo:
-    return BookingRepoImpl(session)
+def get_booking_command_repo(
+    session: AsyncSession = Depends(get_async_session),
+) -> BookingCommandRepo:
+    return BookingCommandRepoImpl(session)
+
+
+def get_booking_query_repo(session: AsyncSession = Depends(get_async_session)) -> BookingQueryRepo:
+    return BookingQueryRepoImpl(session)
 
 
 def get_user_repo(session: AsyncSession = Depends(get_async_session)) -> UserRepo:

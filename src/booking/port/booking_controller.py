@@ -8,8 +8,12 @@ from src.booking.port.booking_schema import (
     PaymentResponse,
 )
 from src.booking.use_case.command.create_booking_use_case import CreateBookingUseCase
-from src.booking.use_case.command.cancel_booking_use_case import CancelBookingUseCase
-from src.booking.use_case.command.mock_payment_use_case import MockPaymentUseCase
+from src.booking.use_case.command.mock_payment_and_update_status_to_completed_use_case import (
+    MockPaymentUseCase,
+)
+from src.booking.use_case.command.update_booking_status_to_cancelled_use_case import (
+    CancelBookingUseCase,
+)
 from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo

@@ -1,35 +1,41 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking, BookingStatus
-from src.booking.domain.booking_repo import BookingRepo
 from src.shared.config.db_setting import get_async_session
+from src.shared.constant.topic import Topic
+from src.shared.event_bus.event_publisher import publish_domain_event
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import (
-    get_booking_repo,
+    get_booking_command_repo,
 )
+
+
+if TYPE_CHECKING:
+    from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
 
 
 class CreateBookingUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        booking_repo: BookingRepo,
+        booking_command_repo: BookingCommandRepo,
     ):
         self.session = session
-        self.booking_repo = booking_repo
+        self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        booking_repo: BookingRepo = Depends(get_booking_repo),
+        booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
     ):
-        return cls(session, booking_repo)
+        return cls(session, booking_command_repo)
 
     @Logger.io
     async def create_booking(
@@ -63,7 +69,7 @@ class CreateBookingUseCase:
 
         # Extract ticket IDs based on seat selection mode
         ticket_ids = []
-        if seat_selection_mode == 'manual':
+        if seat_selection_mode == 'manual' and selected_seats:
             # Extract ticket IDs from the selected_seats dict format
             for seat_dict in selected_seats:  # type: ignore
                 # Each dict should have format {ticket_id: seat_location}
@@ -88,35 +94,37 @@ class CreateBookingUseCase:
             total_price=0,  # Will be updated by event_ticketing service response later
             status=BookingStatus.PROCESSING,  # Start with PROCESSING, will be updated by Kafka
             ticket_ids=ticket_ids,
+            seat_selection_mode=seat_selection_mode,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
 
         try:
-            created_booking = await self.booking_repo.create(booking=booking)
+            created_booking = await self.booking_command_repo.create(booking=booking)
         except Exception as e:
-            # Handle database constraint violations
-            error_msg = str(e).lower()
-            if 'buyer_id' in error_msg:
-                raise DomainError('Buyer not found', 404)
-            elif 'seller_id' in error_msg:
-                raise DomainError('Seller not found', 404)
-            elif 'event_id' in error_msg or 'event' in error_msg:
-                raise DomainError('Event not found', 404)
-            elif 'check_seller_event_consistency' in error_msg:
-                raise DomainError('Invalid seller for this event', 400)
-            raise
+            raise DomainError(f'{e}', 400)
 
         # Commit the database transaction
         await self.session.commit()
 
-        # TODO: Add event publishing mechanism when needed
+        # Publish BookingCreated event to notify other services
+        booking_created_event = {
+            'event_type': 'BookingCreated',
+            'aggregate_id': created_booking.id,
+            'data': {
+                'buyer_id': created_booking.buyer_id,
+                'event_id': created_booking.event_id,
+                'seat_selection_mode': created_booking.seat_selection_mode,
+                'ticket_ids': created_booking.ticket_ids,
+                'status': created_booking.status.value,
+                'created_at': created_booking.created_at.isoformat(),
+            },
+        }
+
+        await publish_domain_event(
+            event=booking_created_event,  # type: ignore
+            topic=Topic.TICKETING_BOOKING_REQUEST,
+            partition_key=str(created_booking.id),
+        )
 
         return created_booking
-
-    @Logger.io
-    async def update_booking_status(self, booking: Booking) -> Booking:
-        """Update an existing booking's status in the repository"""
-        updated_booking = await self.booking_repo.update(booking=booking)
-        await self.session.commit()
-        return updated_booking

@@ -9,16 +9,26 @@ from typing import Any, Dict, Optional
 from kafka import KafkaConsumer
 import msgpack
 
+from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.booking.use_case.command.create_booking_use_case import CreateBookingUseCase
+from src.booking.use_case.command.update_booking_status_to_pending_payment_use_case import (
+    UpdateBookingToPendingPaymentUseCase,
+)
 from src.shared.config.core_setting import settings
+from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
 from src.shared.logging.loguru_io import Logger
+from src.shared.service.repo_di import get_booking_command_repo, get_booking_query_repo
 
 
 class BookingKafkaConsumer:
     def __init__(self):
         self.consumer: Optional[KafkaConsumer] = None
         self.create_booking_use_case: Optional[CreateBookingUseCase] = None
+        self.update_pending_payment_use_case: Optional[UpdateBookingToPendingPaymentUseCase] = None
+        self.booking_command_repo: Optional[BookingCommandRepo] = None
+        self.booking_query_repo: Optional[BookingQueryRepo] = None
         self.running = False
 
     async def start(self):
@@ -31,17 +41,24 @@ class BookingKafkaConsumer:
                 value_deserializer=None,
             )
 
-            # Get use case dependency
-            from src.shared.config.db_setting import get_async_session
-            from src.shared.service.repo_di import get_booking_repo
-
             session = await get_async_session().__anext__()  # Get session
-            booking_repo = get_booking_repo()
+            booking_command_repo = get_booking_command_repo(session)
+            booking_query_repo = get_booking_query_repo(session)
 
             self.create_booking_use_case = CreateBookingUseCase(
                 session=session,
-                booking_repo=booking_repo,
+                booking_command_repo=booking_command_repo,
             )
+
+            self.update_pending_payment_use_case = UpdateBookingToPendingPaymentUseCase(
+                session=session,
+                booking_command_repo=booking_command_repo,
+            )
+
+            # Store session and repos for direct use in consumer
+            self.session = session
+            self.booking_command_repo = booking_command_repo
+            self.booking_query_repo = booking_query_repo
 
             self.running = True
             Logger.base.info('Booking Kafka consumer started')
@@ -128,9 +145,11 @@ class BookingKafkaConsumer:
                 return
 
             # Get the existing booking
-            booking = await self.create_booking_use_case.booking_repo.get_by_id(
-                booking_id=booking_id
-            )
+            if not self.booking_query_repo:
+                Logger.base.error('BookingQueryRepo not initialized')
+                return
+
+            booking = await self.booking_query_repo.get_by_id(booking_id=booking_id)
             if not booking:
                 Logger.base.error(f'Booking {booking_id} not found')
                 return
@@ -141,8 +160,11 @@ class BookingKafkaConsumer:
                 return
 
             # Update booking status from PROCESSING to PENDING_PAYMENT
-            updated_booking = booking.mark_as_pending_payment()
-            await self.create_booking_use_case.update_booking_status(updated_booking)
+            if not self.update_pending_payment_use_case:
+                Logger.base.error('UpdateBookingToPendingPaymentUseCase not initialized')
+                return
+
+            await self.update_pending_payment_use_case.update_to_pending_payment(booking)
 
             Logger.base.info(f'Updated booking {booking_id} status to pending_payment')
 

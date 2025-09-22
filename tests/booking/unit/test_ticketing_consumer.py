@@ -53,25 +53,7 @@ class TestBookingKafkaConsumer:
             },
         }
 
-    @pytest.fixture
-    def successful_booking(self):
-        """Create a successful booking result"""
-        from datetime import datetime
-
-        from src.booking.domain.booking_entity import Booking, BookingStatus
-
-        return Booking(
-            id=456,
-            buyer_id=1,
-            event_id=123,
-            total_price=200,
-            status=BookingStatus.PENDING_PAYMENT,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-
     def test_deserialize_message_msgpack(self, consumer):
-        """測試 MessagePack 訊息反序列化"""
         # Arrange
         test_data = {'event_type': 'TicketsReserved', 'data': {'test': 'value'}}
         serialized = msgpack.packb(test_data)
@@ -83,7 +65,6 @@ class TestBookingKafkaConsumer:
         assert result == test_data
 
     def test_deserialize_message_json(self, consumer):
-        """測試 JSON 訊息反序列化"""
         # Arrange
         test_data = {'event_type': 'TicketsReserved', 'data': {'test': 'value'}}
         serialized = json.dumps(test_data).encode('utf-8')
@@ -95,7 +76,6 @@ class TestBookingKafkaConsumer:
         assert result == test_data
 
     def test_deserialize_message_invalid(self, consumer):
-        """測試無效訊息反序列化"""
         # Arrange
         invalid_data = b'invalid message format'
 

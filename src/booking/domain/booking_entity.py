@@ -19,6 +19,7 @@ class BookingStatus(StrEnum):
     PAID = 'paid'
     CANCELLED = 'cancelled'
     COMPLETED = 'completed'
+    FAILED = 'failed'
 
 
 # Validation logic moved to shared validators module
@@ -31,6 +32,7 @@ class Booking:
     total_price: int = attrs.field(
         validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
     )
+    seat_selection_mode: str = attrs.field(validator=attrs.validators.instance_of(str))
     status: BookingStatus = attrs.field(
         default=BookingStatus.PROCESSING, validator=attrs.validators.instance_of(BookingStatus)
     )
@@ -48,6 +50,7 @@ class Booking:
         buyer_id: int,
         event_id: int,
         total_price: int,
+        seat_selection_mode: str,
         ticket_ids: Optional[List[int]] = None,
     ) -> 'Booking':
         now = datetime.now()
@@ -55,6 +58,7 @@ class Booking:
             buyer_id=buyer_id,
             event_id=event_id,
             total_price=total_price,
+            seat_selection_mode=seat_selection_mode,
             status=BookingStatus.PROCESSING,
             created_at=now,
             updated_at=now,
@@ -72,6 +76,16 @@ class Booking:
     def mark_as_paid(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.PAID, paid_at=now, updated_at=now)
+
+    @Logger.io
+    def mark_as_failed(self) -> 'Booking':
+        now = datetime.now()
+        return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
+
+    @Logger.io
+    def mark_as_completed(self) -> 'Booking':
+        now = datetime.now()
+        return attrs.evolve(self, status=BookingStatus.COMPLETED, updated_at=now)
 
     @Logger.io
     def cancel(self) -> 'Booking':
