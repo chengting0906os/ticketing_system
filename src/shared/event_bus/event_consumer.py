@@ -8,55 +8,18 @@
 - 使用場景：booking服務接收ticketing服務的回應事件
 """
 
-from abc import ABC, abstractmethod
+import asyncio
 import base64
+import queue
+import threading
 from typing import Any, Dict, List, Optional
 
-import anyio
 from google.protobuf.json_format import MessageToDict
 import orjson
 from quixstreams import Application
-import sniffio
 
-from src.event_ticketing.port.event_ticketing_mq_gateway import (
-    BookingCreatedCommand,
-    EventTicketingMqGateway,
-)
 from src.shared.config.core_setting import settings
 from src.shared.logging.loguru_io import Logger
-
-
-class EventHandler(ABC):
-    """
-    事件處理器的抽象基類
-
-    【MVP原則】所有事件處理器必須實現的兩個核心方法：
-    1. can_handle: 判斷是否能處理某種事件類型
-    2. handle: 實際處理事件的業務邏輯
-    """
-
-    @abstractmethod
-    async def can_handle(self, event_type: str) -> bool:
-        """
-        檢查是否可以處理指定的事件類型
-
-        【MVP路由原則】
-        返回True表示這個處理器可以處理該事件類型
-        例如：BookingEventHandler.can_handle("TicketsReserved") -> True
-        """
-        pass
-
-    @abstractmethod
-    async def handle(self, event_data: Dict[str, Any]) -> bool:
-        """
-        處理事件的具體業務邏輯
-
-        【MVP處理原則】
-        接收反序列化後的事件數據，執行相應的業務操作
-        返回True表示處理成功，False表示處理失敗
-        例如：更新booking狀態、發送通知等
-        """
-        pass
 
 
 class UnifiedEventConsumer:
@@ -90,7 +53,11 @@ class UnifiedEventConsumer:
         self.consumer_group_id = consumer_group_id
         self.consumer_tag = consumer_tag
         self.running = False
-        self.handlers: List[EventHandler] = []
+        self.handlers: List[Any] = []
+
+        # 新架構：消息隊列和異步處理器
+        self.message_queue = queue.Queue()
+        self.worker_task = None
 
         # 初始化 Quix Application（使用新的 Consumer Group ID 以重新處理消息）
         import uuid
@@ -114,7 +81,7 @@ class UnifiedEventConsumer:
         )
 
     @Logger.io
-    def register_handler(self, handler: EventHandler) -> None:
+    def register_handler(self, handler: Any) -> None:
         """註冊事件處理器"""
         self.handlers.append(handler)
 
@@ -160,7 +127,7 @@ class UnifiedEventConsumer:
                 topic_sdf = topic_sdf.filter(
                     lambda x: x.get('event_type') is not None
                 )  # 過濾有效事件
-                topic_sdf = topic_sdf.apply(self._process_event_with_handlers_sync)
+                topic_sdf = topic_sdf.apply(self._collect_message_sync)
 
             Logger.base.info(f'✅ [CONSUMER] 監聽所有 topics: {self.topics}')
 
@@ -168,6 +135,18 @@ class UnifiedEventConsumer:
             Logger.base.info(
                 f'{self.consumer_tag} Quix Streams Consumer started for topics: {self.topics}'
             )
+
+            # 在後台線程啟動異步消息處理器
+
+            def start_worker():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._async_message_worker())
+
+            worker_thread = threading.Thread(target=start_worker, daemon=True)
+            worker_thread.start()
+            Logger.base.info('🚀 [WORKER] 異步處理器已在後台線程啟動')
+
             self.app.run()
 
         except Exception as e:
@@ -178,6 +157,15 @@ class UnifiedEventConsumer:
     async def stop(self):
         """停止 Quix Streams 消費者"""
         self.running = False
+
+        # 停止異步處理器
+        if self.worker_task:
+            self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:
+                pass
+
         # Quix Streams 會自動處理資源清理
         Logger.base.info(f'{self.consumer_tag} Quix Streams Consumer stopped')
 
@@ -228,127 +216,60 @@ class UnifiedEventConsumer:
         Logger.base.info(f'🔍 [CONSUMER] 過濾前檢查: {event_data}')
         return event_data
 
-    def _run_async_safely(self, coro):
-        """安全地在同步上下文中運行異步函數"""
-        from concurrent.futures import ThreadPoolExecutor
-
+    def _collect_message_sync(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """同步收集消息到隊列 - Quix Streams 專用"""
         try:
-            # 檢查是否在異步上下文中
-            sniffio.current_async_library()
-
-            # 如果在異步上下文中，使用 ThreadPoolExecutor 在新線程中運行
-            def run_in_thread():
-                async def wrapper():
-                    return await coro
-
-                return anyio.run(wrapper)
-
-            with ThreadPoolExecutor() as executor:
-                future = executor.submit(run_in_thread)
-                return future.result()
-
-        except sniffio.AsyncLibraryNotFoundError:
-            # 沒有運行的異步庫，直接使用 anyio.run
-            async def wrapper():
-                return await coro
-
-            return anyio.run(wrapper)
+            # 只做簡單的消息收集，不處理業務邏輯
+            self.message_queue.put(event_data)
+            Logger.base.info(f'📨 [CONSUMER] 消息已收集到隊列: {event_data.get("event_type")}')
+            return {'status': 'collected', 'event_type': event_data.get('event_type')}
+        except Exception as e:
+            Logger.base.error(f'❌ [CONSUMER] 消息收集失敗: {e}')
+            return {'status': 'collection_failed', 'error': str(e)}
 
     @Logger.io
-    def _process_event_with_handlers_sync(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        直接同步處理事件 - 調用異步 gateway
+    async def _async_message_worker(self):
+        """異步消息處理器 - 獨立於 Quix Streams"""
+        Logger.base.info('🚀 [WORKER] 異步消息處理器啟動')
 
-        【最直接的解決方案】
-        直接調用 gateway 的異步方法，用 anyio 執行
-        """
-        event_type = event_data.get('event_type')
-        Logger.base.info(f'🚀 [CONSUMER] 處理事件: {event_type}')
-
-        try:
-            # 直接處理 BookingCreated 事件
-            if event_type == 'BookingCreated':
-                Logger.base.info('📨 [CONSUMER] 處理 BookingCreated 事件')
-
-                # 找到 EventTicketingEventConsumer
-                ticketing_handler = None
-                for handler in self.handlers:
-                    if type(handler).__name__ == 'EventTicketingEventConsumer':
-                        ticketing_handler = handler
-                        break
-
-                if ticketing_handler:
-                    Logger.base.info('✅ [CONSUMER] 找到 EventTicketingEventConsumer，開始處理')
-
-                    # 從 handler 中獲取 gateway
-                    gateway: EventTicketingMqGateway = ticketing_handler.event_ticketing_gateway
-                    Logger.base.info(f'📡 [CONSUMER] 獲取到 」{gateway}')
-
-                    # 創建命令
-
-                    parsed_data = event_data if isinstance(event_data, dict) else {}
-                    Logger.base.info(f'📋 [CONSUMER] 事件數據: {parsed_data}')
-                    command = BookingCreatedCommand.from_event_data(event_data=parsed_data)
-                    Logger.base.info(f'🎯 [CONSUMER] 處理預訂: booking_id={command.booking_id}')
-
-                    # 直接調用 gateway 的異步方法
-
-                    try:
-                        # 調用 gateway.handle_booking_created (這個本來就是異步的)
-                        Logger.base.info('🔥 [DEBUG] 準備調用 anyio')
-                        Logger.base.info(f'🔥 [DEBUG] gateway 類型: {type(gateway)}')
-                        Logger.base.info(f'🔥 [DEBUG] command 類型: {type(command)}')
-
-                        result = self._run_async_safely(gateway.handle_booking_created(command))
-                        Logger.base.info('🔥 [DEBUG] anyio 執行完成')
-                        Logger.base.info(f'🚀 [CONSUMER] Gateway 處理結果: {result}')
-                        Logger.base.info(f'🔥 [DEBUG] result 類型: {type(result)}')
-
-                        # 根據結果發送回應
-                        if result.is_success:
-                            self._run_async_safely(gateway.send_success_response(result))
-                            Logger.base.info(
-                                f'✅ [CONSUMER] 處理成功: booking_id={command.booking_id}'
-                            )
-
-                            return {
-                                'status': 'processed',
-                                'event_type': event_type,
-                                'booking_id': command.booking_id,
-                                'ticket_ids': result.ticket_ids or [],
-                            }
-                        else:
-                            self._run_async_safely(
-                                gateway.send_failure_response(
-                                    command.booking_id, result.error_message or 'Unknown error'
-                                )
-                            )
-                            Logger.base.error(f'❌ [CONSUMER] 處理失敗: {result.error_message}')
-                            return {
-                                'status': 'error',
-                                'error': result.error_message,
-                                'event_type': event_type,
-                            }
-
-                    except Exception as e:
-                        Logger.base.error(f'❌ [CONSUMER] Gateway 調用失敗: {e}')
-                        return {'status': 'error', 'error': str(e), 'event_type': event_type}
-
+        while self.running:
+            try:
+                # 非阻塞方式從隊列取消息
+                if not self.message_queue.empty():
+                    event_data = self.message_queue.get_nowait()
+                    await self._process_message_async(event_data)
                 else:
-                    Logger.base.error('❌ [CONSUMER] 找不到 EventTicketingEventConsumer')
-                    return {'status': 'no_handler', 'event_type': event_type}
+                    # 沒有消息時短暫等待
+                    await asyncio.sleep(0.1)
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                Logger.base.error(f'❌ [WORKER] 異步處理器錯誤: {e}')
+                await asyncio.sleep(1)
 
-            # 處理其他事件類型
-            else:
-                Logger.base.info(f'📨 [CONSUMER] 其他事件類型: {event_type}')
-                return {'status': 'unhandled', 'event_type': event_type}
+    @Logger.io
+    async def _process_message_async(self, event_data: Dict[str, Any]):
+        """真正的異步消息處理 - 業務邏輯在這裡"""
+        event_type = event_data.get('event_type')
+        Logger.base.info(f'🚀 [WORKER] 處理事件: {event_type}')
 
-        except Exception as e:
-            Logger.base.error(f'💥 [CONSUMER] 處理事件失敗: {e}')
-            import traceback
+        # 調用原本的異步 handlers
+        for handler in self.handlers:
+            try:
+                Logger.base.info(f'🔍 [WORKER] 嘗試處理器: {type(handler).__name__}')
 
-            Logger.base.error(f'💥 [CONSUMER] 詳細錯誤: {traceback.format_exc()}')
-            return {'status': 'error', 'error': str(e), 'event_type': event_type}
+                # 直接 await async handler
+                result = await handler.handle(event_data)
+
+                if result:
+                    Logger.base.info(f'✅ [WORKER] 處理成功: {type(handler).__name__}')
+                    return
+
+            except Exception as e:
+                Logger.base.info(f'⚠️ [WORKER] 處理器 {type(handler).__name__} 跳過: {e}')
+                continue
+
+        Logger.base.warning(f'⚠️ [WORKER] 沒有處理器能處理事件: {event_type}')
 
     async def _process_event_with_handlers(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -411,7 +332,7 @@ _unified_consumer: Optional[UnifiedEventConsumer] = None
 
 @Logger.io
 async def start_unified_consumer(
-    topics: List[str], handlers: List[EventHandler], consumer_tag: str = '[CONSUMER]'
+    topics: List[str], handlers: List[Any], consumer_tag: str = '[CONSUMER]'
 ) -> None:
     """
     啟動統一的事件消費者

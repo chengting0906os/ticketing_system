@@ -49,13 +49,18 @@ class ProcessingResult:
 
     is_success: bool
     booking_id: int
+    buyer_id: int  # 新增：需要追蹤 buyer_id
     ticket_ids: Optional[List[int]] = None
     error_message: Optional[str] = None
 
     @property
     def data(self) -> Dict[str, Any]:
         """返回成功時的數據"""
-        return {'booking_id': self.booking_id, 'ticket_ids': self.ticket_ids or []}
+        return {
+            'booking_id': self.booking_id,
+            'buyer_id': self.buyer_id,
+            'ticket_ids': self.ticket_ids or [],
+        }
 
 
 class EventTicketingMqGateway:
@@ -84,11 +89,12 @@ class EventTicketingMqGateway:
                 f'🎫 [GATEWAY] 開始處理預訂: booking_id={command.booking_id}, event_id={command.event_id}'
             )
 
+            # 直接調用異步 use case
             reservation_result = await self.reserve_tickets_use_case.reserve_tickets(
-                event_id=command.event_id,  # 修復: 使用 command.event_id 而不是 command.aggregate_id
-                ticket_count=2,  # 暫時固定1張票，後續需要從 booking 查詢
+                event_id=command.event_id,
+                ticket_count=2,
                 buyer_id=command.buyer_id,
-                section='',  # 最佳可用座位
+                section='',
                 subsection=0,
             )
 
@@ -98,13 +104,19 @@ class EventTicketingMqGateway:
             Logger.base.info(f'✅ [GATEWAY] 票務預訂成功: ticket_ids={ticket_ids}')
 
             return ProcessingResult(
-                is_success=True, booking_id=command.booking_id, ticket_ids=ticket_ids
+                is_success=True,
+                booking_id=command.booking_id,
+                buyer_id=command.buyer_id,
+                ticket_ids=ticket_ids,
             )
 
         except Exception as e:
             Logger.base.error(f'❌ [GATEWAY] 票務預訂失敗: {e}')
             return ProcessingResult(
-                is_success=False, booking_id=command.booking_id, error_message=str(e)
+                is_success=False,
+                booking_id=command.booking_id,
+                buyer_id=command.buyer_id,
+                error_message=str(e),
             )
 
     async def send_success_response(self, result: ProcessingResult) -> None:
@@ -121,11 +133,7 @@ class EventTicketingMqGateway:
             buyer_id: int
             ticket_ids: List[int]
             status: str = 'reserved'
-            occurred_at: Optional[datetime] = None
-
-            def __post_init__(self):
-                if self.occurred_at is None:
-                    self.occurred_at = datetime.now(timezone.utc)
+            occurred_at: datetime = datetime.now(timezone.utc)
 
             @property
             def aggregate_id(self) -> int:
@@ -133,7 +141,7 @@ class EventTicketingMqGateway:
 
         event = TicketsReserved(
             booking_id=result.booking_id,
-            buyer_id=0,  # TODO: 需要從 command 傳入
+            buyer_id=result.buyer_id,  # 修復: 使用來自 result 的 buyer_id
             ticket_ids=result.ticket_ids or [],
         )
 
@@ -143,38 +151,42 @@ class EventTicketingMqGateway:
             partition_key=str(result.booking_id),
         )
 
-        Logger.base.info(f'📡 [GATEWAY] 發送成功回應: booking_id={result.booking_id}')
+        Logger.base.info(
+            f'📡 [GATEWAY] 發送成功回應: booking_id={result.booking_id}, buyer_id={result.buyer_id}'
+        )
 
-    async def send_failure_response(self, booking_id: int, error_message: str) -> None:
+    async def send_failure_response(
+        self, booking_id: int, buyer_id: int, error_message: str
+    ) -> None:
         """
         發送失敗回應事件
 
         Args:
             booking_id: 預訂ID
+            buyer_id: 買家ID
             error_message: 錯誤信息
         """
 
         @dataclass
         class TicketReservationFailed:
             booking_id: int
+            buyer_id: int  # 新增：失敗事件也需要 buyer_id
             error_message: str
             status: str = 'failed'
-            occurred_at: Optional[datetime] = None
-
-            def __post_init__(self):
-                if self.occurred_at is None:
-                    self.occurred_at = datetime.now(timezone.utc)
+            occurred_at: datetime = datetime.now(timezone.utc)
 
             @property
             def aggregate_id(self) -> int:
                 return self.booking_id
 
-        event = TicketReservationFailed(booking_id=booking_id, error_message=error_message)
+        event = TicketReservationFailed(
+            booking_id=booking_id, buyer_id=buyer_id, error_message=error_message
+        )
 
         await publish_domain_event(
             event=event, topic=Topic.TICKETING_BOOKING_RESPONSE.value, partition_key=str(booking_id)
         )
 
         Logger.base.info(
-            f'📡 [GATEWAY] 發送失敗回應: booking_id={booking_id}, error={error_message}'
+            f'📡 [GATEWAY] 發送失敗回應: booking_id={booking_id}, buyer_id={buyer_id}, error={error_message}'
         )

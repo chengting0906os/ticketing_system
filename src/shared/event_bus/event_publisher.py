@@ -9,7 +9,6 @@
 """
 
 from abc import ABC, abstractmethod
-import asyncio
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Protocol, runtime_checkable
@@ -234,7 +233,9 @@ class QuixStreamEventPublisher(EventPublisher):
                     Logger.base.warning(
                         f'Publish attempt {retry_count} failed, retrying in {wait_time}s: {e}'
                     )
-                    await asyncio.sleep(wait_time)
+                    import time
+
+                    time.sleep(wait_time)  # 使用同步 sleep 避免 loop 問題
 
         # 如果所有重試都失敗了，返回 False
         return False

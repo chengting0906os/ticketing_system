@@ -3,10 +3,14 @@ import signal
 import sys
 
 from src.booking.infra.booking_event_consumer import BookingEventConsumer
-from src.event_ticketing.infra.ticketing_event_consumer import TicketingEventConsumer
+from src.event_ticketing.infra.event_ticketing_event_consumer import EventTicketingEventConsumer
+from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMqGateway
+from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
 from src.shared.event_bus.event_consumer import start_unified_consumer, stop_unified_consumer
 from src.shared.logging.loguru_io import Logger
+from src.shared.service.repo_di import get_ticket_repo
 
 
 class ConsumerManager:
@@ -19,7 +23,15 @@ class ConsumerManager:
 
             # 創建事件處理器
             booking_handler = BookingEventConsumer()
-            ticketing_handler = TicketingEventConsumer()
+
+            # 創建依賴項
+            async_session_gen = get_async_session()
+            session = await async_session_gen.__anext__()
+            ticket_repo = get_ticket_repo(session)
+            reserve_tickets_use_case = ReserveTicketsUseCase(session, ticket_repo)
+            event_ticketing_gateway = EventTicketingMqGateway(reserve_tickets_use_case)
+
+            ticketing_handler = EventTicketingEventConsumer(event_ticketing_gateway)
 
             # 定義要監聽的topics
             topics = [

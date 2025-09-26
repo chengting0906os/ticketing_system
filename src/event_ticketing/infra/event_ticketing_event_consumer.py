@@ -15,11 +15,10 @@ from src.event_ticketing.port.event_ticketing_mq_gateway import (
     BookingCreatedCommand,
     EventTicketingMqGateway,
 )
-from src.shared.event_bus.event_consumer import EventHandler
 from src.shared.logging.loguru_io import Logger
 
 
-class EventTicketingEventConsumer(EventHandler):
+class EventTicketingEventConsumer:
     """
     Ticketing 事件消費者 (基礎設施層)
 
@@ -126,7 +125,7 @@ class EventTicketingEventConsumer(EventHandler):
                 )
             else:
                 await self.event_ticketing_gateway.send_failure_response(
-                    command.booking_id, result.error_message or 'Unknown error'
+                    command.booking_id, command.buyer_id, result.error_message or 'Unknown error'
                 )
                 Logger.base.error(f'❌ [TICKETING Consumer] 處理失敗: {result.error_message}')
 
