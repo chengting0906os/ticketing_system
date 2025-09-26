@@ -164,6 +164,68 @@ consumer-status kcst:
 	@echo "Consumer processes:"
 	@ps aux | grep -E "(start_unified_consumers|consumer)" | grep -v grep || echo "No consumer processes found"
 
+# Separated Consumer Architecture (New)
+.PHONY: check-kafka
+check-kafka:
+	@echo "🔍 檢查 Kafka 服務..."
+	@if nc -z localhost 9092 2>/dev/null; then \
+		echo "✅ Kafka 服務正常運行"; \
+	else \
+		echo "❌ Kafka 服務未運行，請先啟動 Kafka"; \
+		exit 1; \
+	fi
+
+.PHONY: consumers cs
+consumers cs: check-kafka  ## 🚀 啟動分離的消費者架構 (推薦)
+	@echo "🚀 啟動分離的消費者架構..."
+	@./scripts/start_separated_consumers.sh
+
+.PHONY: consumer-ticketing ct
+consumer-ticketing ct: check-kafka  ## 🎫 啟動票務請求消費者
+	@echo "🎫 啟動票務請求消費者..."
+	@uv run python -m src.event_ticketing.infra.ticketing_request_consumer
+
+.PHONY: consumer-booking cb
+consumer-booking cb: check-kafka  ## 📚 啟動訂單回應消費者
+	@echo "📚 啟動訂單回應消費者..."
+	@uv run python -m src.booking.infra.booking_response_consumer
+
+.PHONY: test-consumers tc
+test-consumers tc:  ## 🧪 測試消費者架構
+	@echo "🧪 測試消費者架構..."
+	@uv run python -c "import sys; sys.path.append('src'); from event_ticketing.infra.ticketing_request_consumer import TicketingRequestConsumer; from booking.infra.booking_response_consumer import BookingResponseConsumer; print('✅ TicketingRequestConsumer 可用'); print('✅ BookingResponseConsumer 可用'); print('🎯 消費者架構測試通過!')"
+
+.PHONY: stop-consumers sc
+stop-consumers sc:  ## 🛑 停止所有消費者進程
+	@echo "🛑 停止所有消費者進程..."
+	@pkill -f "ticketing_request_consumer" || true
+	@pkill -f "booking_response_consumer" || true
+	@pkill -f "start_unified_consumers" || true
+	@pkill -f "start_separated_consumers" || true
+	@echo "✅ 所有消費者已停止"
+
+.PHONY: restart-consumers rc
+restart-consumers rc: stop-consumers consumers  ## 🔄 重啟所有消費者
+
+.PHONY: consumer-architecture ca
+consumer-architecture ca:  ## 📐 顯示消費者架構圖
+	@echo "📐 分離消費者架構:"
+	@echo "=================="
+	@echo ""
+	@echo "  Booking Service                   Ticketing Service"
+	@echo "  ┌──────────────┐                 ┌──────────────────┐"
+	@echo "  │              │                 │                  │"
+	@echo "  │ Response     │◄──[response]────│                  │"
+	@echo "  │ Consumer     │                 │                  │"
+	@echo "  │              │                 │ Request Consumer │"
+	@echo "  │              │────[request]────►│                  │"
+	@echo "  │              │                 │                  │"
+	@echo "  └──────────────┘                 └──────────────────┘"
+	@echo ""
+	@echo "Topics:"
+	@echo "  • ticketing-booking-request  → Ticketing Consumer"
+	@echo "  • ticketing-booking-response → Booking Consumer"
+
 # Help
 .PHONY: help
 help:
@@ -196,7 +258,16 @@ help:
 	@echo "  Kafka & Consumers:"
 	@echo "    make kafka-topics (kt)   - Create Kafka topics"
 	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
-	@echo "    make consumer-start (kcs) - Start single Kafka consumer"
-	@echo "    make consumers-start (kcss) N=3 - Start multiple Kafka consumers"
-	@echo "    make consumer-stop (kcstop) - Stop Kafka consumers"
-	@echo "    make consumer-status (kcst) - Check consumer status"
+	@echo "    make consumer-start (kcs) - Start single Kafka consumer (old)"
+	@echo "    make consumers-start (kcss) N=3 - Start multiple Kafka consumers (old)"
+	@echo "    make consumer-stop (kcstop) - Stop Kafka consumers (old)"
+	@echo "    make consumer-status (kcst) - Check consumer status (old)"
+	@echo ""
+	@echo "  Separated Consumers (New Architecture):"
+	@echo "    make consumers (cs)      - 🚀 Start separated consumers (recommended)"
+	@echo "    make consumer-ticketing (ct) - 🎫 Start ticketing request consumer"
+	@echo "    make consumer-booking (cb) - 📚 Start booking response consumer"
+	@echo "    make test-consumers (tc) - 🧪 Test consumer architecture"
+	@echo "    make stop-consumers (sc) - 🛑 Stop all consumer processes"
+	@echo "    make restart-consumers (rc) - 🔄 Restart all consumers"
+	@echo "    make consumer-architecture (ca) - 📐 Show architecture diagram"
