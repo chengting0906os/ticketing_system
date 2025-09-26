@@ -33,7 +33,7 @@ class TicketModel(Base):
     )
 
     bookings: Mapped[list['BookingModel']] = relationship(
-        'BookingModel', secondary='booking_ticket', back_populates='tickets', lazy='select'
+        'BookingModel', secondary='booking_ticket', back_populates='tickets', lazy='selectin'
     )
 
     __table_args__ = (

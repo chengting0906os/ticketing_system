@@ -36,13 +36,15 @@ class BookingModel(Base):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    buyer: Mapped['User'] = relationship('User', foreign_keys=[buyer_id], lazy='select')
-    event: Mapped['EventModel'] = relationship('EventModel', foreign_keys=[event_id], lazy='select')
+    buyer: Mapped['User'] = relationship('User', foreign_keys=[buyer_id], lazy='selectin')
+    event: Mapped['EventModel'] = relationship(
+        'EventModel', foreign_keys=[event_id], lazy='selectin'
+    )
     tickets: Mapped[list['TicketModel']] = relationship(
         'TicketModel',
         secondary='booking_ticket',
         back_populates='bookings',
-        lazy='select',
+        lazy='selectin',
     )
 
 
