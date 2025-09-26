@@ -9,14 +9,14 @@
 """
 
 from abc import ABC, abstractmethod
-import anyio
-import sniffio
 import base64
 from typing import Any, Dict, List, Optional
 
+import anyio
 from google.protobuf.json_format import MessageToDict
 import orjson
 from quixstreams import Application
+import sniffio
 
 from src.event_ticketing.port.event_ticketing_mq_gateway import (
     BookingCreatedCommand,
@@ -295,14 +295,14 @@ class UnifiedEventConsumer:
 
                     try:
                         # 調用 gateway.handle_booking_created (這個本來就是異步的)
-                        Logger.base.critical('🔥 [DEBUG] 準備調用 anyio')
-                        Logger.base.critical(f'🔥 [DEBUG] gateway 類型: {type(gateway)}')
-                        Logger.base.critical(f'🔥 [DEBUG] command 類型: {type(command)}')
+                        Logger.base.info('🔥 [DEBUG] 準備調用 anyio')
+                        Logger.base.info(f'🔥 [DEBUG] gateway 類型: {type(gateway)}')
+                        Logger.base.info(f'🔥 [DEBUG] command 類型: {type(command)}')
 
                         result = self._run_async_safely(gateway.handle_booking_created(command))
-                        Logger.base.critical('🔥 [DEBUG] anyio 執行完成')
-                        Logger.base.critical(f'🚀 [CONSUMER] Gateway 處理結果: {result}')
-                        Logger.base.critical(f'🔥 [DEBUG] result 類型: {type(result)}')
+                        Logger.base.info('🔥 [DEBUG] anyio 執行完成')
+                        Logger.base.info(f'🚀 [CONSUMER] Gateway 處理結果: {result}')
+                        Logger.base.info(f'🔥 [DEBUG] result 類型: {type(result)}')
 
                         # 根據結果發送回應
                         if result.is_success:
