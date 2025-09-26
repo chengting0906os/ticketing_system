@@ -85,7 +85,7 @@ class EventTicketingMqGateway:
             )
 
             reservation_result = await self.reserve_tickets_use_case.reserve_tickets(
-                event_id=command.aggregate_id,
+                event_id=command.event_id,  # 修復: 使用 command.event_id 而不是 command.aggregate_id
                 ticket_count=2,  # 暫時固定1張票，後續需要從 booking 查詢
                 buyer_id=command.buyer_id,
                 section='',  # 最佳可用座位

@@ -9,7 +9,8 @@
 """
 
 from abc import ABC, abstractmethod
-import asyncio
+import anyio
+import sniffio
 import base64
 from typing import Any, Dict, List, Optional
 
@@ -227,13 +228,39 @@ class UnifiedEventConsumer:
         Logger.base.info(f'🔍 [CONSUMER] 過濾前檢查: {event_data}')
         return event_data
 
+    def _run_async_safely(self, coro):
+        """安全地在同步上下文中運行異步函數"""
+        from concurrent.futures import ThreadPoolExecutor
+
+        try:
+            # 檢查是否在異步上下文中
+            sniffio.current_async_library()
+
+            # 如果在異步上下文中，使用 ThreadPoolExecutor 在新線程中運行
+            def run_in_thread():
+                async def wrapper():
+                    return await coro
+
+                return anyio.run(wrapper)
+
+            with ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
+
+        except sniffio.AsyncLibraryNotFoundError:
+            # 沒有運行的異步庫，直接使用 anyio.run
+            async def wrapper():
+                return await coro
+
+            return anyio.run(wrapper)
+
     @Logger.io
     def _process_event_with_handlers_sync(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         直接同步處理事件 - 調用異步 gateway
 
         【最直接的解決方案】
-        直接調用 gateway 的異步方法，用 asyncio.run 執行
+        直接調用 gateway 的異步方法，用 anyio 執行
         """
         event_type = event_data.get('event_type')
         Logger.base.info(f'🚀 [CONSUMER] 處理事件: {event_type}')
@@ -255,7 +282,7 @@ class UnifiedEventConsumer:
 
                     # 從 handler 中獲取 gateway
                     gateway: EventTicketingMqGateway = ticketing_handler.event_ticketing_gateway
-                    Logger.base.info('📡 [CONSUMER] 獲取到 EventTicketingMqGateway')
+                    Logger.base.info(f'📡 [CONSUMER] 獲取到 」{gateway}')
 
                     # 創建命令
 
@@ -268,11 +295,18 @@ class UnifiedEventConsumer:
 
                     try:
                         # 調用 gateway.handle_booking_created (這個本來就是異步的)
-                        result = gateway.handle_booking_created(command)
+                        Logger.base.critical('🔥 [DEBUG] 準備調用 anyio')
+                        Logger.base.critical(f'🔥 [DEBUG] gateway 類型: {type(gateway)}')
+                        Logger.base.critical(f'🔥 [DEBUG] command 類型: {type(command)}')
+
+                        result = self._run_async_safely(gateway.handle_booking_created(command))
+                        Logger.base.critical('🔥 [DEBUG] anyio 執行完成')
+                        Logger.base.critical(f'🚀 [CONSUMER] Gateway 處理結果: {result}')
+                        Logger.base.critical(f'🔥 [DEBUG] result 類型: {type(result)}')
 
                         # 根據結果發送回應
                         if result.is_success:
-                            asyncio.run(gateway.send_success_response(result))
+                            self._run_async_safely(gateway.send_success_response(result))
                             Logger.base.info(
                                 f'✅ [CONSUMER] 處理成功: booking_id={command.booking_id}'
                             )
@@ -284,7 +318,7 @@ class UnifiedEventConsumer:
                                 'ticket_ids': result.ticket_ids or [],
                             }
                         else:
-                            asyncio.run(
+                            self._run_async_safely(
                                 gateway.send_failure_response(
                                     command.booking_id, result.error_message or 'Unknown error'
                                 )
