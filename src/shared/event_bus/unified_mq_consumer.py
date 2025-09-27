@@ -39,6 +39,7 @@ class UnifiedEventConsumer:
         topics: List[str],
         consumer_group_id: str = 'ticketing-system',
         consumer_tag: str = '[CONSUMER]',
+        assigned_partitions: Optional[List[int]] = None,  # 新增：指定partition
     ):
         """
         初始化統一事件消費者
@@ -52,6 +53,7 @@ class UnifiedEventConsumer:
         self.topics = topics
         self.consumer_group_id = consumer_group_id
         self.consumer_tag = consumer_tag
+        self.assigned_partitions = assigned_partitions  # 儲存指定的partition
         self.running = False
         self.handlers: List[Any] = []
 

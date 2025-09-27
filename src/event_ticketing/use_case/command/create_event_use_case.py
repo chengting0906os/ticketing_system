@@ -1,15 +1,14 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.event_entity import Event
 from src.event_ticketing.domain.event_command_repo import EventCommandRepo
-from src.event_ticketing.domain.event_query_repo import EventQueryRepo
-from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.domain.event_entity import Event
 from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
-from src.shared.logging.loguru_io import Logger
+from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
 from src.shared.config.db_setting import get_async_session
+from src.shared.logging.loguru_io import Logger
 
 
 class CreateEventUseCase:
@@ -116,12 +115,27 @@ class CreateEventUseCase:
                             f'Invalid seating configuration: {field} must be a positive integer'
                         )
 
-    def _generate_tickets_from_seating_config(
+    async def _generate_tickets_from_seating_config(
         self, *, event_id: int, seating_config: Dict
     ) -> List[Ticket]:
-        """Generate tickets based on seating configuration."""
+        """
+        Generate tickets based on seating configuration.
+
+        同時在 PostgreSQL 和 RocksDB 中初始化座位資料：
+        - PostgreSQL: 存儲票據實體（用於查詢和報表）
+        - RocksDB: 存儲座位狀態（用於高性能預訂）
+        """
         tickets = []
         sections = seating_config.get('sections', [])
+
+        # 導入 RocksDB 事件發送功能
+        from datetime import datetime
+
+        from src.shared.event_bus.unified_mq_publisher import publish_domain_event
+
+        Logger.base.info(
+            f'🏗️ [CREATE_EVENT] Initializing seats for event {event_id} in both PostgreSQL and RocksDB'
+        )
 
         for section in sections:
             section_name = section['name']
@@ -136,6 +150,7 @@ class CreateEventUseCase:
                 # Generate tickets for each seat
                 for row in range(1, rows + 1):
                     for seat in range(1, seats_per_row + 1):
+                        # 1) 創建 PostgreSQL 票據實體
                         ticket = Ticket(
                             event_id=event_id,
                             section=section_name,
@@ -147,52 +162,40 @@ class CreateEventUseCase:
                         )
                         tickets.append(ticket)
 
+                        # 2) 發送座位初始化命令到 RocksDB
+                        seat_id = f'{section_name}-{subsection_number}-{row}-{seat}'
+
+                        try:
+                            # 創建座位初始化事件（使用原始數據結構）
+                            init_event = {
+                                'event_type': 'SeatInitialization',
+                                'aggregate_id': event_id,
+                                'data': {
+                                    'action': 'INITIALIZE',
+                                    'seat_id': seat_id,
+                                    'event_id': event_id,
+                                    'price': section_price,
+                                    'section': section_name,
+                                    'subsection': subsection_number,
+                                    'row': row,
+                                    'seat': seat,
+                                },
+                                'occurred_at': datetime.now().isoformat(),
+                            }
+
+                            # 發送初始化命令到 RocksDB processor
+                            await publish_domain_event(
+                                event=init_event, topic='seat-commands', partition_key=seat_id
+                            )
+
+                        except Exception as e:
+                            Logger.base.warning(
+                                f'⚠️ [CREATE_EVENT] Failed to initialize seat {seat_id} in RocksDB: {e}'
+                            )
+                            # 繼續處理其他座位，不因單個座位失敗而中斷
+
+        Logger.base.info(
+            f'✅ [CREATE_EVENT] Generated {len(tickets)} tickets for event {event_id}, '
+            f'sent initialization commands to RocksDB'
+        )
         return tickets
-
-
-class UpdateEventUseCase:
-    def __init__(self, event_command_repo: EventCommandRepo, event_query_repo: EventQueryRepo):
-        self.event_command_repo = event_command_repo
-        self.event_query_repo = event_query_repo
-
-    @classmethod
-    def depends(
-        cls,
-        session: AsyncSession = Depends(get_async_session),
-    ):
-        from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-        from src.event_ticketing.infra.event_query_repo_impl import EventQueryRepoImpl
-
-        event_command_repo = EventCommandRepoImpl(session)
-        event_query_repo = EventQueryRepoImpl(session)
-        return cls(event_command_repo=event_command_repo, event_query_repo=event_query_repo)
-
-    @Logger.io
-    async def update(
-        self,
-        event_id: int,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        venue_name: Optional[str] = None,
-        seating_config: Optional[Dict] = None,
-        is_active: Optional[bool] = None,
-    ) -> Optional[Event]:
-        # Get existing event
-        event = await self.event_query_repo.get_by_id(event_id=event_id)
-        if not event:
-            return None
-
-        # Update only provided fields
-        if name is not None:
-            event.name = name
-        if description is not None:
-            event.description = description
-        if venue_name is not None:
-            event.venue_name = venue_name
-        if seating_config is not None:
-            event.seating_config = seating_config
-        if is_active is not None:
-            event.is_active = is_active
-
-        updated_event = await self.event_command_repo.update(event=event)
-        return updated_event
