@@ -47,7 +47,7 @@ dev = [
 line-length = 100
 indent-width = 4
 target-version = "py313"
-exclude = ["src/shared/alembic/"]
+exclude = ["src/shared/alembic/", "scripts/"]
 
 [tool.ruff.lint]
 select = [
@@ -112,7 +112,7 @@ addopts = "-v --tb=short --strict-markers"
 
 [tool.pyright]
 include = ["src", "tests"]
-exclude = ["src/shared/alembic/"]
+exclude = ["src/shared/alembic/", "scripts/"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 venvPath = "."

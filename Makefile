@@ -1,5 +1,12 @@
-# Database migrations
+# Database operations
 ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
+
+.PHONY: reset-db
+reset-db:
+	@echo "🚀 Resetting database with test data..."
+	@python -m scripts.reset_database
+
+# Database migrations
 
 .PHONY: migrate-up mu
 migrate-up mu:
