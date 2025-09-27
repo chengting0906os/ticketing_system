@@ -139,7 +139,7 @@ class Logger:
     base = custom_logger
 
     @staticmethod
-    def io(func=None, *, reraise=True, truncate_content=False):
+    def io(func=None, *, reraise=True, truncate_content=True):
         if func:
             return LoguruIO(
                 custom_logger=custom_logger, reraise=reraise, truncate_content=truncate_content
