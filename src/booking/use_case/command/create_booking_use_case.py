@@ -8,7 +8,7 @@ from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_events import BookingCreated
 from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.event_publisher import publish_domain_event
+from src.shared.event_bus.unified_mq_publisher import publish_domain_event
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import (

@@ -1,10 +1,10 @@
 """
-領域事件發布器 (Domain Event Publisher)
+統一的 MQ 發布器 (Unified MQ Publisher)
 
 【最小可行原則 MVP】
-- 這是什麼：將領域事件發送到Kafka的統一接口
+- 這是什麼：將領域事件發送到訊息佇列的統一接口
 - 為什麼需要：實現事件驅動架構，讓不同服務能異步通信
-- 核心概念：發布者模式 + 事件序列化 + Kafka傳輸
+- 核心概念：發布者模式 + 事件序列化 + MQ傳輸
 - 使用場景：booking創建後通知ticketing服務
 """
 
@@ -176,7 +176,6 @@ class QuixStreamEventPublisher(EventPublisher):
 
         # 直接序列化事件數據為 bytes (僅在有額外數據時)
         event_data = ProtobufEventSerializer._extract_event_data(event)
-        Logger.base.critical(event_data)
         if event_data:
             # 使用 orjson 序列化 (orjson.dumps 直接返回 bytes)
             proto_event.data = orjson.dumps(event_data)

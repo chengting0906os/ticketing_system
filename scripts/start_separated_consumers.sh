@@ -34,7 +34,7 @@ trap cleanup SIGINT SIGTERM
 
 # 啟動票務請求消費者
 echo -e "\n${BLUE}🎫 啟動票務請求消費者 (處理 BookingCreated 事件)...${NC}"
-uv run python -m src.event_ticketing.infra.ticketing_request_consumer &
+uv run python -m src.event_ticketing.infra.event_ticketing_mq_consumer &
 TICKETING_PID=$!
 echo -e "${GREEN}   PID: $TICKETING_PID${NC}"
 
@@ -43,7 +43,7 @@ sleep 1
 
 # 啟動訂單回應消費者
 echo -e "\n${BLUE}📚 啟動訂單回應消費者 (處理 TicketsReserved/Failed 事件)...${NC}"
-uv run python -m src.booking.infra.booking_response_consumer &
+uv run python -m src.booking.infra.booking_mq_consumer &
 BOOKING_PID=$!
 echo -e "${GREEN}   PID: $BOOKING_PID${NC}"
 

@@ -2,12 +2,16 @@
 
 import asyncio
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from src.booking.infra.booking_model import BookingModel, BookingTicketModel
-from src.event_ticketing.infra.event_model import EventModel
-from src.event_ticketing.infra.ticket_model import TicketModel
-from src.shared_kernel.user.infra.user_model import UserModel
+from src.shared.config.db_setting import Base
+
+# Import all SQLAlchemy models so they are registered with Base.metadata
+from src.booking.infra.booking_model import BookingModel, BookingTicketModel  # noqa: F401
+from src.event_ticketing.infra.event_model import EventModel  # noqa: F401
+from src.event_ticketing.infra.ticket_model import TicketModel  # noqa: F401
+from src.shared_kernel.user.infra.user_model import UserModel  # noqa: F401
 
 from src.event_ticketing.domain.event_entity import Event, EventStatus
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus as TicketStatus
@@ -19,24 +23,69 @@ from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHa
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 
 
-async def truncate_all_tables():
-    async with async_session_maker() as session:
-        try:
-            print("Truncating tables...")
+def get_database_url() -> str:
+    """取得資料庫連接 URL"""
+    from src.shared.config.core_setting import settings
+    return settings.DATABASE_URL_ASYNC
 
-            tables = ['booking_ticket', 'booking', 'ticket', 'event', 'user']
 
-            for table in tables:
-                await session.execute(text(f'TRUNCATE TABLE public.{table} RESTART IDENTITY CASCADE;'))
-                print(f"   Truncated {table}")
+async def drop_and_recreate_database():
+    """完全刪除並重新創建資料庫"""
+    database_url = get_database_url()
+    print(f"Database URL: {database_url}")
 
-            await session.commit()
-            print("All tables truncated!")
+    # 解析資料庫連接信息
+    if database_url.startswith('postgresql+asyncpg://'):
+        sync_url = database_url.replace('postgresql+asyncpg://', 'postgresql://')
+    else:
+        sync_url = database_url
 
-        except Exception as e:
-            await session.rollback()
-            print(f"Failed to truncate tables: {e}")
-            raise
+    # 提取資料庫名稱
+    db_name = sync_url.split('/')[-1]
+    server_url = sync_url.rsplit('/', 1)[0]
+
+    print(f"Server URL: {server_url}")
+    print(f"Database name: {db_name}")
+
+    try:
+        print("🗑️ Dropping database...")
+
+        # 連接到 postgres 預設資料庫以執行 DROP/CREATE
+        admin_engine = create_engine(f"{server_url}/postgres", isolation_level="AUTOCOMMIT")
+
+        with admin_engine.connect() as conn:
+            # 關閉現有連接
+            conn.execute(text(f"""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = '{db_name}' AND pid <> pg_backend_pid();
+            """))
+
+            # 刪除資料庫
+            conn.execute(text(f"DROP DATABASE IF EXISTS {db_name};"))
+            print(f"   ✅ Database '{db_name}' dropped")
+
+            # 重新創建資料庫
+            conn.execute(text(f"CREATE DATABASE {db_name};"))
+            print(f"   ✅ Database '{db_name}' created")
+
+        admin_engine.dispose()
+
+        print("🏗️ Creating database schema...")
+
+        # 創建所有表格
+        async_engine = create_async_engine(database_url)
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            print("   ✅ All tables created")
+
+        await async_engine.dispose()
+
+        print("Database recreation completed!")
+
+    except Exception as e:
+        print(f"❌ Failed to recreate database: {e}")
+        raise
 
 
 async def create_init_users():
@@ -157,6 +206,7 @@ async def create_init_event(seller_id: int):
                             total_tickets += 1
 
             await ticket_repo.create_batch(tickets=tickets)
+            await session.commit()  # 明確提交票務數據
             print(f"   Created tickets: {total_tickets}")
 
             print("Initial event and tickets created!")
@@ -164,6 +214,7 @@ async def create_init_event(seller_id: int):
 
         except Exception as e:
             print(f"Failed to create event: {e}")
+            await session.rollback()
             raise
 
 
@@ -205,7 +256,7 @@ async def main():
     print("=" * 50)
 
     try:
-        await truncate_all_tables()
+        await drop_and_recreate_database()
         print()
 
         seller_id = await create_init_users()

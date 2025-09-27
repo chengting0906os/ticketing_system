@@ -190,23 +190,23 @@ consumers cs: check-kafka  ## 🚀 啟動分離的消費者架構 (推薦)
 .PHONY: consumer-ticketing ct
 consumer-ticketing ct: check-kafka  ## 🎫 啟動票務請求消費者
 	@echo "🎫 啟動票務請求消費者..."
-	@uv run python -m src.event_ticketing.infra.ticketing_request_consumer
+	@uv run python -m src.event_ticketing.infra.event_ticketing_mq_consumer
 
 .PHONY: consumer-booking cb
 consumer-booking cb: check-kafka  ## 📚 啟動訂單回應消費者
 	@echo "📚 啟動訂單回應消費者..."
-	@uv run python -m src.booking.infra.booking_response_consumer
+	@uv run python -m src.booking.infra.booking_mq_consumer
 
 .PHONY: test-consumers tc
 test-consumers tc:  ## 🧪 測試消費者架構
 	@echo "🧪 測試消費者架構..."
-	@uv run python -c "import sys; sys.path.append('src'); from event_ticketing.infra.ticketing_request_consumer import TicketingRequestConsumer; from booking.infra.booking_response_consumer import BookingResponseConsumer; print('✅ TicketingRequestConsumer 可用'); print('✅ BookingResponseConsumer 可用'); print('🎯 消費者架構測試通過!')"
+	@uv run python -c "import sys; sys.path.append('src'); from event_ticketing.infra.event_ticketing_mq_consumer import EventTicketingMqConsumer; from booking.infra.booking_mq_consumer import BookingMqConsumer; print('✅ EventTicketingMqConsumer 可用'); print('✅ BookingMqConsumer 可用'); print('🎯 消費者架構測試通過!')"
 
 .PHONY: stop-consumers sc
 stop-consumers sc:  ## 🛑 停止所有消費者進程
 	@echo "🛑 停止所有消費者進程..."
-	@pkill -f "ticketing_request_consumer" || true
-	@pkill -f "booking_response_consumer" || true
+	@pkill -f "event_ticketing_mq_consumer" || true
+	@pkill -f "booking_mq_consumer" || true
 	@pkill -f "start_unified_consumers" || true
 	@pkill -f "start_separated_consumers" || true
 	@echo "✅ 所有消費者已停止"

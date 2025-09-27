@@ -1,6 +1,6 @@
 """
-Ticketing Request Consumer
-專門處理來自 Booking 服務的票務請求
+Event Ticketing MQ Consumer
+專門處理來自 Booking 服務的票務事件
 
 職責：
 - 監聽 ticketing-booking-request topic
@@ -13,37 +13,41 @@ import uuid
 
 import anyio
 
-from src.event_ticketing.infra.event_ticketing_event_consumer import EventTicketingEventConsumer
 from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMqGateway
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.event_consumer import UnifiedEventConsumer
+from src.shared.event_bus.unified_mq_consumer import UnifiedEventConsumer
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_ticket_repo
+from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 
-class TicketingRequestConsumer:
-    """處理票務預訂請求的消費者"""
+class EventTicketingMqConsumer:
+    """處理票務預訂事件的 MQ 消費者"""
 
     def __init__(self):
         self.consumer: Optional[UnifiedEventConsumer] = None
+        self.session = None
+        self.session_gen = None
         self.running = False
 
     async def start(self):
         """啟動消費者"""
         try:
             # 創建資料庫 session
-            async_session_gen = get_async_session()
-            session = await async_session_gen.__anext__()
+            self.session_gen = get_async_session()
+            self.session = await self.session_gen.__anext__()
 
             # 創建依賴項
-            ticket_repo = get_ticket_repo(session)
-            reserve_tickets_use_case = ReserveTicketsUseCase(session, ticket_repo)
+            ticket_command_repo = get_ticket_command_repo(self.session)
+            ticket_query_repo = get_ticket_query_repo(self.session)
+            reserve_tickets_use_case = ReserveTicketsUseCase(
+                self.session, ticket_command_repo, ticket_query_repo
+            )
             event_ticketing_gateway = EventTicketingMqGateway(reserve_tickets_use_case)
 
-            # 創建事件處理器
-            ticketing_handler = EventTicketingEventConsumer(event_ticketing_gateway)
+            # 直接使用 Gateway 作為事件處理器
+            ticketing_handler = event_ticketing_gateway
 
             # 定義要監聽的 topic - 只監聽請求
             topics = [Topic.TICKETING_BOOKING_REQUEST.value]
@@ -57,7 +61,7 @@ class TicketingRequestConsumer:
 
             # 創建統一消費者
             self.consumer = UnifiedEventConsumer(topics=topics, consumer_tag=consumer_tag)
-            # 註冊處理器
+            # 註冊處理器 - 使用 Gateway 對象
             self.consumer.register_handler(ticketing_handler)
 
             self.running = True
@@ -74,17 +78,33 @@ class TicketingRequestConsumer:
             self.running = False
             Logger.base.info('🛑 票務請求消費者已停止')
 
+        # 清理資料庫 session
+        if self.session:
+            try:
+                await self.session.close()
+            except Exception as e:
+                Logger.base.warning(f'⚠️ Session cleanup warning: {e}')
+            self.session = None
+
+        if self.session_gen:
+            try:
+                await self.session_gen.aclose()
+            except Exception as e:
+                Logger.base.warning(f'⚠️ Session generator cleanup warning: {e}')
+            self.session_gen = None
+
 
 async def main():
     """主函數"""
-    consumer = TicketingRequestConsumer()
+    consumer = EventTicketingMqConsumer()
     try:
         await consumer.start()
     except KeyboardInterrupt:
         Logger.base.info('⚠️ 收到中斷信號')
-        await consumer.stop()
     except Exception as e:
         Logger.base.error(f'💥 消費者發生錯誤: {e}')
+    finally:
+        # 確保 consumer 總是被正確停止
         await consumer.stop()
 
 

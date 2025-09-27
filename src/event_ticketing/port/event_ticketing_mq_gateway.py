@@ -8,13 +8,14 @@ Booking Event Gateway Port
 - 使用場景：ticketing 服務接收 booking 服務的事件並回應
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.event_publisher import publish_domain_event
+from src.shared.event_bus.unified_mq_publisher import publish_domain_event
 from src.shared.logging.loguru_io import Logger
 
 
@@ -25,6 +26,9 @@ class BookingCreatedCommand:
     booking_id: int
     buyer_id: int
     event_id: int
+    section: str
+    subsection: int
+    quantity: int
 
     @classmethod
     @Logger.io
@@ -40,6 +44,9 @@ class BookingCreatedCommand:
             booking_id=int(aggregate_id),
             buyer_id=data.get('buyer_id'),
             event_id=data.get('event_id'),
+            section=data.get('section', ''),
+            subsection=data.get('subsection', 0),
+            quantity=data.get('quantity', 2),
         )
 
 
@@ -83,19 +90,97 @@ class EventTicketingMqGateway:
         """
         self.reserve_tickets_use_case = reserve_tickets_use_case
 
+    def _parse_event_data(self, event_data: Any) -> Dict[str, Any]:
+        """
+        強健的事件數據解析，處理多種可能的輸入格式
+        """
+        try:
+            # 如果已經是字典，直接返回
+            if isinstance(event_data, dict):
+                return event_data
+
+            # 如果是字符串，嘗試 JSON 解析
+            elif isinstance(event_data, str):
+                return json.loads(event_data)
+
+            # 其他類型，嘗試轉換為字典
+            else:
+                if hasattr(event_data, '__dict__'):
+                    return vars(event_data)
+                else:
+                    Logger.base.error(f'❌ [GATEWAY] 無法解析事件數據格式: {type(event_data)}')
+                    return {}
+
+        except Exception as e:
+            Logger.base.error(f'❌ [GATEWAY] 事件數據解析失敗: {e}')
+            return {}
+
+    async def can_handle(self, event_type: str) -> bool:
+        """檢查是否可以處理指定的事件類型"""
+        return event_type == 'BookingCreated'
+
+    async def handle(self, event_data: Any) -> bool:
+        """
+        處理原始事件數據 (新增的主要入口)
+
+        Args:
+            event_data: 原始事件數據
+
+        Returns:
+            處理結果
+        """
+        try:
+            # 1. 解析事件數據
+            parsed_event_data = self._parse_event_data(event_data)
+            if not parsed_event_data:
+                Logger.base.error('Failed to parse event data')
+                return False
+
+            event_type = parsed_event_data.get('event_type')
+            Logger.base.info(f'📨 [GATEWAY] 收到事件: {event_type}')
+
+            # 2. 檢查事件類型
+            if not event_type or not await self.can_handle(event_type):
+                Logger.base.warning(f'Unknown event type: {event_type}')
+                return False
+
+            # 3. 轉換為業務命令
+            command = BookingCreatedCommand.from_event_data(parsed_event_data)
+            Logger.base.info(f'🎯 [GATEWAY] 處理預訂: booking_id={command.booking_id}')
+
+            # 4. 調用業務邏輯
+            result = await self.handle_booking_created(command)
+
+            # 5. 根據結果發送回應
+            if result.is_success:
+                await self.send_success_response(result)
+                Logger.base.info(f'✅ [GATEWAY] 處理成功: booking_id={command.booking_id}')
+            else:
+                await self.send_failure_response(
+                    command.booking_id, command.buyer_id, result.error_message or 'Unknown error'
+                )
+                Logger.base.error(f'❌ [GATEWAY] 處理失敗: {result.error_message}')
+
+            return result.is_success
+
+        except Exception as e:
+            Logger.base.error(f'💥 [GATEWAY] 處理異常: {e}')
+            return False
+
     async def handle_booking_created(self, command: BookingCreatedCommand) -> ProcessingResult:
         try:
             Logger.base.info(
-                f'🎫 [GATEWAY] 開始處理預訂: booking_id={command.booking_id}, event_id={command.event_id}'
+                f'🎫 [GATEWAY] 開始處理預訂: booking_id={command.booking_id}, event_id={command.event_id}, '
+                f'section={command.section}, subsection={command.subsection}, quantity={command.quantity}'
             )
 
-            # 直接調用異步 use case
+            # 直接調用異步 use case，使用從事件中解析的正確參數
             reservation_result = await self.reserve_tickets_use_case.reserve_tickets(
                 event_id=command.event_id,
-                ticket_count=2,
+                ticket_count=command.quantity,
                 buyer_id=command.buyer_id,
-                section='',
-                subsection=0,
+                section=command.section,
+                subsection=command.subsection,
             )
 
             # 提取票務 IDs
