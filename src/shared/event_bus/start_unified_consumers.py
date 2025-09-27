@@ -10,7 +10,7 @@ from uuid_v7.base import uuid7
 from src.booking.infra.booking_event_consumer import BookingEventConsumer
 from src.event_ticketing.infra.event_ticketing_event_consumer import EventTicketingEventConsumer
 from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMqGateway
-from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
 from src.shared.event_bus.event_consumer import start_unified_consumer

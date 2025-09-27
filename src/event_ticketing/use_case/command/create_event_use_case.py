@@ -1,20 +1,33 @@
 from typing import Dict, List, Optional
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_entity import Event
+from src.event_ticketing.domain.event_command_repo import EventCommandRepo
+from src.event_ticketing.domain.event_query_repo import EventQueryRepo
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.domain.ticket_repo import TicketRepo
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.shared.config.db_setting import get_async_session
 
 
 class CreateEventUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(self, event_repo: EventCommandRepo, ticket_repo: TicketRepo):
+        self.event_repo = event_repo
+        self.ticket_repo = ticket_repo
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
+    def depends(
+        cls,
+        session: AsyncSession = Depends(get_async_session),
+    ):
+        from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
+        from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
+
+        event_repo = EventCommandRepoImpl(session)
+        ticket_repo = TicketRepoImpl(session)
+        return cls(event_repo=event_repo, ticket_repo=ticket_repo)
 
     @Logger.io
     async def create(
@@ -27,30 +40,27 @@ class CreateEventUseCase:
         seating_config: Dict,
         is_active: bool = True,
     ) -> Event:
-        async with self.uow:
-            # Validate seating config and prices
-            self._validate_seating_config(seating_config=seating_config)
+        # Validate seating config and prices
+        self._validate_seating_config(seating_config=seating_config)
 
-            event = Event.create(
-                name=name,
-                description=description,
-                seller_id=seller_id,
-                venue_name=venue_name,
-                seating_config=seating_config,
-                is_active=is_active,
+        event = Event.create(
+            name=name,
+            description=description,
+            seller_id=seller_id,
+            venue_name=venue_name,
+            seating_config=seating_config,
+            is_active=is_active,
+        )
+
+        created_event = await self.event_repo.create(event=event)
+
+        # Auto-create tickets based on seating configuration
+        if created_event.id is not None:
+            tickets = self._generate_tickets_from_seating_config(
+                event_id=created_event.id, seating_config=seating_config
             )
+            await self.ticket_repo.create_batch(tickets=tickets)
 
-            created_event = await self.uow.events.create(event=event)
-
-            # Auto-create tickets based on seating configuration
-            if created_event.id is not None:
-                tickets = self._generate_tickets_from_seating_config(
-                    event_id=created_event.id, seating_config=seating_config
-                )
-                await self.uow.tickets.create_batch(tickets=tickets)
-
-            await self.uow.commit()
-        # raise Exception('Simulated error for testing rollback')  # --- IGNORE ---
         return created_event
 
     def _validate_seating_config(self, *, seating_config: Dict) -> None:
@@ -141,12 +151,21 @@ class CreateEventUseCase:
 
 
 class UpdateEventUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(self, event_command_repo: EventCommandRepo, event_query_repo: EventQueryRepo):
+        self.event_command_repo = event_command_repo
+        self.event_query_repo = event_query_repo
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
+    def depends(
+        cls,
+        session: AsyncSession = Depends(get_async_session),
+    ):
+        from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
+        from src.event_ticketing.infra.event_query_repo_impl import EventQueryRepoImpl
+
+        event_command_repo = EventCommandRepoImpl(session)
+        event_query_repo = EventQueryRepoImpl(session)
+        return cls(event_command_repo=event_command_repo, event_query_repo=event_query_repo)
 
     @Logger.io
     async def update(
@@ -158,61 +177,22 @@ class UpdateEventUseCase:
         seating_config: Optional[Dict] = None,
         is_active: Optional[bool] = None,
     ) -> Optional[Event]:
-        async with self.uow:
-            # Get existing event
-            event = await self.uow.events.get_by_id(event_id=event_id)
-            if not event:
-                return None
+        # Get existing event
+        event = await self.event_query_repo.get_by_id(event_id=event_id)
+        if not event:
+            return None
 
-            # Update only provided fields
-            if name is not None:
-                event.name = name
-            if description is not None:
-                event.description = description
-            if venue_name is not None:
-                event.venue_name = venue_name
-            if seating_config is not None:
-                event.seating_config = seating_config
-            if is_active is not None:
-                event.is_active = is_active
+        # Update only provided fields
+        if name is not None:
+            event.name = name
+        if description is not None:
+            event.description = description
+        if venue_name is not None:
+            event.venue_name = venue_name
+        if seating_config is not None:
+            event.seating_config = seating_config
+        if is_active is not None:
+            event.is_active = is_active
 
-            updated_event = await self.uow.events.update(event=event)
-            await self.uow.commit()
-
+        updated_event = await self.event_command_repo.update(event=event)
         return updated_event
-
-
-class GetEventUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
-
-    @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
-
-    @Logger.io
-    async def get_by_id(self, event_id: int) -> Optional[Event]:
-        async with self.uow:
-            event = await self.uow.events.get_by_id(event_id=event_id)
-        return event
-
-
-class ListEventsUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
-
-    @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow)
-
-    @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[Event]:
-        async with self.uow:
-            events = await self.uow.events.get_by_seller(seller_id=seller_id)
-        return events
-
-    @Logger.io(truncate_content=True)
-    async def list_available(self) -> List[Event]:
-        async with self.uow:
-            events = await self.uow.events.list_available()
-        return events

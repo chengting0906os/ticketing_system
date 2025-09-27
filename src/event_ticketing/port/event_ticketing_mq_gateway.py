@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.event_ticketing.use_case.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.constant.topic import Topic
 from src.shared.event_bus.event_publisher import publish_domain_event
 from src.shared.logging.loguru_io import Logger

@@ -7,12 +7,20 @@ from src.booking.domain.booking_query_repo import BookingQueryRepo
 # Combined repo implementation will be created by inheriting from command and query
 from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
 from src.booking.infra.booking_query_repo_impl import BookingQueryRepoImpl
+from src.event_ticketing.domain.event_command_repo import EventCommandRepo
+from src.event_ticketing.domain.event_query_repo import EventQueryRepo
 from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
+from src.event_ticketing.infra.event_query_repo_impl import EventQueryRepoImpl
 from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
 from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
 from src.shared.config.db_setting import get_async_session
+from src.shared_kernel.user.domain.user_command_repo import UserCommandRepo
+from src.shared_kernel.user.domain.user_query_repo import UserQueryRepo
 from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
+from src.shared_kernel.user.infra.user_query_repo_impl import UserQueryRepoImpl
 from src.shared_kernel.user.infra.user_repo_impl import UserRepoImpl
 
 
@@ -30,9 +38,25 @@ def get_user_repo(session: AsyncSession = Depends(get_async_session)) -> UserRep
     return UserRepoImpl(session)
 
 
+def get_user_command_repo(session: AsyncSession = Depends(get_async_session)) -> UserCommandRepo:
+    return UserCommandRepoImpl(session)
+
+
+def get_user_query_repo(session: AsyncSession = Depends(get_async_session)) -> UserQueryRepo:
+    return UserQueryRepoImpl(session)
+
+
 def get_ticket_repo(session: AsyncSession = Depends(get_async_session)) -> TicketRepo:
     return TicketRepoImpl(session)
 
 
 def get_event_repo(session: AsyncSession = Depends(get_async_session)) -> EventRepo:
     return EventRepoImpl(session)
+
+
+def get_event_command_repo(session: AsyncSession = Depends(get_async_session)) -> EventCommandRepo:
+    return EventCommandRepoImpl(session)
+
+
+def get_event_query_repo(session: AsyncSession = Depends(get_async_session)) -> EventQueryRepo:
+    return EventQueryRepoImpl(session)

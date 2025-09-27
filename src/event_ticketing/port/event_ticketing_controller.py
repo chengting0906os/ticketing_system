@@ -13,13 +13,11 @@ from src.event_ticketing.port.ticket_schema import (
     ListTicketsBySectionResponse,
     TicketResponse,
 )
-from src.event_ticketing.use_case.create_event_use_case import (
-    CreateEventUseCase,
-    GetEventUseCase,
-    ListEventsUseCase,
-)
-from src.event_ticketing.use_case.get_availability_use_case import GetAvailabilityUseCase
-from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCase
+from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
+from src.event_ticketing.use_case.query.get_availability_use_case import GetAvailabilityUseCase
+from src.event_ticketing.use_case.query.get_event_use_case import GetEventUseCase
+from src.event_ticketing.use_case.query.list_events_use_case import ListEventsUseCase
+from src.event_ticketing.use_case.query.list_tickets_use_case import ListTicketsUseCase
 from src.shared.config.core_setting import settings
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger

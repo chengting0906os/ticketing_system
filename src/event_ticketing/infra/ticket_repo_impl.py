@@ -58,7 +58,7 @@ class TicketRepoImpl(TicketRepo):
         db_tickets = [self._to_model(ticket) for ticket in tickets]
 
         self.session.add_all(db_tickets)
-        await self.session.flush()
+        await self.session.commit()
 
         # Refresh to get IDs and timestamps
         for db_ticket in db_tickets:
@@ -253,7 +253,7 @@ class TicketRepoImpl(TicketRepo):
             if ticket.updated_at is not None:
                 db_ticket.updated_at = ticket.updated_at
 
-        await self.session.flush()
+        await self.session.commit()
 
         # Return updated entities
         updated_tickets = []
