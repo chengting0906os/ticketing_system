@@ -27,7 +27,7 @@ from src.shared.service.role_auth_service import (
     require_buyer_or_seller,
     require_seller,
 )
-from src.user.infra.user_model import UserModel
+from src.shared_kernel.user.infra.user_model import UserModel
 
 
 router = APIRouter()

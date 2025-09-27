@@ -9,10 +9,10 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import get_user_repo
-from src.user.domain.user_entity import UserEntity, UserRole
-from src.user.domain.user_repo import UserRepo
-from src.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
-from src.user.use_case.auth_service import auth_service
+from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
+from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
+from src.shared_kernel.user.use_case.auth_service import auth_service
 
 
 # === API Router ===

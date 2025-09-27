@@ -4,7 +4,7 @@ User API Schemas - Pydantic models for request/response
 
 from pydantic import BaseModel, EmailStr, Field
 
-from src.user.domain.user_entity import UserRole
+from src.shared_kernel.user.domain.user_entity import UserRole
 
 
 class CreateUserRequest(BaseModel):

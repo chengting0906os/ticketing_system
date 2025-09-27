@@ -10,7 +10,7 @@ from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import create_db_and_tables
 from src.shared.exception.exception_handlers import register_exception_handlers
 from src.shared.port.system_controller import router as system_router
-from src.user.port.user_controller import router as auth_router
+from src.shared_kernel.user.port.user_controller import router as auth_router
 
 
 @asynccontextmanager

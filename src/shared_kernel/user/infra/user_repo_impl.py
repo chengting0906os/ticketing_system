@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.logging.loguru_io import Logger
-from src.user.domain.user_entity import UserEntity, UserRole
-from src.user.domain.user_repo import UserRepo
-from src.user.infra.user_model import UserModel
+from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
+from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.infra.user_model import UserModel
 
 
 class UserRepoImpl(UserRepo):

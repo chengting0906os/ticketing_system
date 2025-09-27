@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 
 if TYPE_CHECKING:
-    from src.user.infra.user_model import UserModel
+    from src.shared_kernel.user.infra.user_model import UserModel
 
 from src.event_ticketing.domain.event_entity import Event
 

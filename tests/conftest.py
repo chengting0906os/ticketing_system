@@ -40,9 +40,9 @@ from tests.pytest_bdd_ng_example.then import *  # noqa: F403
 from tests.pytest_bdd_ng_example.when import *  # noqa: F403
 from tests.shared.given import *  # noqa: F403
 from tests.shared.then import *  # noqa: F403
-from tests.user.functional.fixtures import *  # noqa: F403
-from tests.user.functional.then import *  # noqa: F403
-from tests.user.functional.when import *  # noqa: F403
+from tests.shared_kernel.user.functional.fixtures import *  # noqa: F403
+from tests.shared_kernel.user.functional.then import *  # noqa: F403
+from tests.shared_kernel.user.functional.when import *  # noqa: F403
 
 
 # Load environment variables from .env or .env.example
@@ -257,6 +257,7 @@ def sample_event():
 def sample_tickets():
     """Sample tickets for testing."""
     from datetime import datetime
+
     from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
 
     now = datetime.now()
@@ -292,6 +293,7 @@ def sample_tickets():
 def available_tickets():
     """Sample available tickets for testing."""
     from datetime import datetime
+
     from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
 
     now = datetime.now()

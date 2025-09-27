@@ -8,7 +8,7 @@ from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.infra.event_model import EventModel
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.user.infra.user_model import UserModel
+from src.shared_kernel.user.infra.user_model import UserModel
 
 
 class EventRepoImpl(EventRepo):

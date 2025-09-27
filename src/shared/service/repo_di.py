@@ -12,8 +12,8 @@ from src.event_ticketing.domain.ticket_repo import TicketRepo
 from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
 from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
 from src.shared.config.db_setting import get_async_session
-from src.user.domain.user_repo import UserRepo
-from src.user.infra.user_repo_impl import UserRepoImpl
+from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.infra.user_repo_impl import UserRepoImpl
 
 
 def get_booking_command_repo(

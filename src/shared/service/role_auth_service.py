@@ -3,8 +3,8 @@ from fastapi import Depends
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.exception.exceptions import ForbiddenError
 from src.shared.logging.loguru_io import Logger
-from src.user.domain.user_entity import UserEntity, UserRole
-from src.user.port.user_controller import get_current_user
+from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
+from src.shared_kernel.user.port.user_controller import get_current_user
 
 
 class RoleAuthService:

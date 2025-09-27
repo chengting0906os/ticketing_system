@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from src.user.domain.user_entity import UserEntity
+from src.shared_kernel.user.domain.user_entity import UserEntity
 
 
 class UserRepo(ABC):

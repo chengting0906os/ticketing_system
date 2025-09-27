@@ -13,7 +13,7 @@ from src.shared.logging.loguru_io import Logger
 if TYPE_CHECKING:
     from src.event_ticketing.domain.event_repo import EventRepo
     from src.event_ticketing.domain.ticket_repo import TicketRepo
-    from src.user.domain.user_repo import UserRepo
+    from src.shared_kernel.user.domain.user_repo import UserRepo
 
 
 class AbstractUnitOfWork(abc.ABC):
@@ -79,7 +79,7 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
     async def __aenter__(self):
         from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
         from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
-        from src.user.infra.user_repo_impl import UserRepoImpl
+        from src.shared_kernel.user.infra.user_repo_impl import UserRepoImpl
 
         self.events = EventRepoImpl(self.session)
         self.users = UserRepoImpl(self.session)

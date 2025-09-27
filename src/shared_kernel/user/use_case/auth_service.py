@@ -9,8 +9,8 @@ from fastapi import HTTPException, status
 import jwt
 
 from src.shared.config.core_setting import settings
-from src.user.domain.user_entity import UserEntity, UserRole
-from src.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
+from src.shared_kernel.user.domain.user_repo import UserRepo
 
 
 class AuthService:
