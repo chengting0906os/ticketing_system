@@ -4,7 +4,12 @@ from typing import Optional
 
 import attrs
 
-from src.shared.exception.exceptions import AuthenticationError, DomainError, ForbiddenError
+from src.shared.exception.exceptions import (
+    AuthenticationError,
+    DomainError,
+    ForbiddenError,
+    LoginError,
+)
 
 
 class UserRole(str, Enum):
@@ -27,7 +32,7 @@ class UserEntity:
 
     def validate_for_authentication(self) -> None:
         if not self.email:
-            raise AuthenticationError('Invalid credentials')
+            raise AuthenticationError('LOGIN_BAD_CREDENTIALS')
 
         if not self.is_active:
             raise ForbiddenError('User is inactive')
@@ -45,7 +50,7 @@ class UserEntity:
     @staticmethod
     def validate_user_exists(user_entity: Optional['UserEntity']) -> 'UserEntity':
         if not user_entity:
-            raise AuthenticationError('Invalid credentials')
+            raise LoginError('LOGIN_BAD_CREDENTIALS')
 
         return user_entity
 

@@ -23,3 +23,8 @@ class ConflictError(DomainError):
 class AuthenticationError(DomainError):
     def __init__(self, message: str):
         super().__init__(message, 401)
+
+
+class LoginError(DomainError):
+    def __init__(self, message: str):
+        super().__init__(message, 400)

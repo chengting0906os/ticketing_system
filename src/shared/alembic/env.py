@@ -10,12 +10,12 @@ from sqlalchemy import engine_from_config, pool
 sys.path.append(str(Path(__file__).parents[3]))
 
 # Import your models and database configuration
-from src.booking.infra.booking_model import BookingModel as BookingModel
-from src.event_ticketing.infra.event_model import EventModel as EventModel
-from src.event_ticketing.infra.ticket_model import TicketModel as TicketModel
+from src.booking.infra.booking_model import BookingModel, BookingTicketModel
+from src.event_ticketing.infra.event_model import EventModel
+from src.event_ticketing.infra.ticket_model import TicketModel
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import Base
-from src.shared_kernel.user.infra.user_model import UserModel as UserModel
+from src.shared_kernel.user.infra.user_model import UserModel
 
 
 # this is the Alembic Config object, which provides
