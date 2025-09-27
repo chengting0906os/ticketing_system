@@ -17,18 +17,13 @@ from src.booking.use_case.command.update_booking_status_to_cancelled_use_case im
 )
 from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
-from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import (
     get_current_user,
     require_buyer,
+    RoleAuthStrategy,
 )
-
-
-def require_buyer_info(user_entity: UserEntity = Depends(require_buyer)) -> CurrentUserInfo:
-    """Convert UserEntity to CurrentUserInfo for buyers"""
-    return CurrentUserInfo(user_id=user_entity.id or 0, role=user_entity.role.value)
 
 
 router = APIRouter()
@@ -38,13 +33,13 @@ router = APIRouter()
 @Logger.io(truncate_content=True)
 async def list_my_bookings(
     booking_status: str,
-    current_user: CurrentUserInfo = Depends(get_current_user),
+    current_user: UserEntity = Depends(get_current_user),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
 ):
-    if current_user.is_buyer():
-        return await use_case.list_buyer_bookings(current_user.user_id, booking_status)
-    elif current_user.is_seller():
-        return await use_case.list_seller_bookings(current_user.user_id, booking_status)
+    if RoleAuthStrategy.is_buyer(current_user):
+        return await use_case.list_buyer_bookings(current_user.id or 0, booking_status)
+    elif RoleAuthStrategy.is_seller(current_user):
+        return await use_case.list_seller_bookings(current_user.id or 0, booking_status)
     else:
         return []
 
@@ -53,12 +48,12 @@ async def list_my_bookings(
 @Logger.io
 async def create_booking(
     request: BookingCreateRequest,
-    current_user: CurrentUserInfo = Depends(require_buyer_info),
+    current_user: UserEntity = Depends(require_buyer),
     booking_use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
     # Create booking - ticket validation and reservation are now handled atomically inside use case
     booking = await booking_use_case.create_booking(
-        buyer_id=current_user.user_id,
+        buyer_id=current_user.id or 0,
         event_id=request.event_id,
         section=request.section,
         subsection=request.subsection,
@@ -84,7 +79,7 @@ async def create_booking(
 @Logger.io
 async def get_booking(
     booking_id: int,
-    current_user: CurrentUserInfo = Depends(get_current_user),
+    current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
 ) -> BookingResponse:
     booking = await use_case.get_booking(booking_id)
@@ -104,12 +99,12 @@ async def get_booking(
 @Logger.io
 async def cancel_booking(
     booking_id: int,
-    current_user: CurrentUserInfo = Depends(require_buyer_info),
+    current_user: UserEntity = Depends(require_buyer),
     use_case: CancelBookingUseCase = Depends(CancelBookingUseCase.depends),
 ):
     result = await use_case.cancel_booking(
         booking_id=booking_id,
-        buyer_id=current_user.user_id,
+        buyer_id=current_user.id or 0,
     )
     return CancelReservationResponse(**result)
 
@@ -119,11 +114,11 @@ async def cancel_booking(
 async def pay_booking(
     booking_id: int,
     request: PaymentRequest,
-    current_user: CurrentUserInfo = Depends(require_buyer_info),
+    current_user: UserEntity = Depends(require_buyer),
     use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
 ) -> PaymentResponse:
     result = await use_case.pay_booking(
-        booking_id=booking_id, buyer_id=current_user.user_id, card_number=request.card_number
+        booking_id=booking_id, buyer_id=current_user.id or 0, card_number=request.card_number
     )
 
     return PaymentResponse(
