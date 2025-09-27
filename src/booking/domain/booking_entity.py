@@ -4,7 +4,6 @@ from typing import List, Optional
 
 import attrs
 
-from src.shared.domain.validators import NumericValidators
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
@@ -28,19 +27,15 @@ class BookingStatus(StrEnum):
 
 @attrs.define
 class Booking:
-    buyer_id: int = attrs.field(validator=attrs.validators.instance_of(int))
-    event_id: int = attrs.field(validator=attrs.validators.instance_of(int))
-    total_price: int = attrs.field(
-        validator=[attrs.validators.instance_of(int), NumericValidators.validate_positive_price]
-    )
-    section: str = attrs.field(validator=attrs.validators.instance_of(str))
-    subsection: int = attrs.field(validator=attrs.validators.instance_of(int))
-    quantity: int = attrs.field(validator=attrs.validators.instance_of(int))
-    seat_selection_mode: str = attrs.field(validator=attrs.validators.instance_of(str))
-    seat_positions: Optional[List[str]] = attrs.field(default=[])
-    status: BookingStatus = attrs.field(
-        default=BookingStatus.PROCESSING, validator=attrs.validators.instance_of(BookingStatus)
-    )
+    buyer_id: int
+    event_id: int
+    total_price: int
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: Optional[List[str]] = attrs.field(factory=list)
+    status: BookingStatus = BookingStatus.PROCESSING
     ticket_ids: List[int] = attrs.field(factory=list)  # Store ticket IDs in booking
     id: Optional[int] = None
     created_at: Optional[datetime] = None
