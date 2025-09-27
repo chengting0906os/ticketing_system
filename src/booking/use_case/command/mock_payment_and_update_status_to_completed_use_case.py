@@ -9,16 +9,18 @@ from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.event_ticketing.domain.event_entity import EventStatus
-from src.event_ticketing.domain.event_repo import EventRepo
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.event_command_repo import EventCommandRepo
+from src.event_ticketing.domain.event_query_repo import EventQueryRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import (
     get_booking_command_repo,
     get_booking_query_repo,
-    get_event_repo,
-    get_ticket_repo,
+    get_event_command_repo,
+    get_event_query_repo,
+    get_ticket_command_repo,
 )
 
 
@@ -33,14 +35,16 @@ class MockPaymentUseCase:
         session: AsyncSession,
         booking_command_repo: BookingCommandRepo,
         booking_query_repo: BookingQueryRepo,
-        event_repo: EventRepo,
-        ticket_repo: TicketRepo,
+        event_command_repo: EventCommandRepo,
+        event_query_repo: EventQueryRepo,
+        ticket_command_repo: TicketCommandRepo,
     ):
         self.session = session
         self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
         self.booking_query_repo: 'BookingQueryRepoImpl' = booking_query_repo  # pyright: ignore[reportAttributeAccessIssue]
-        self.event_repo = event_repo
-        self.ticket_repo = ticket_repo
+        self.event_command_repo = event_command_repo
+        self.event_query_repo = event_query_repo
+        self.ticket_command_repo = ticket_command_repo
 
     @classmethod
     def depends(
@@ -48,15 +52,17 @@ class MockPaymentUseCase:
         session: AsyncSession = Depends(get_async_session),
         booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
         booking_query_repo: BookingQueryRepo = Depends(get_booking_query_repo),
-        event_repo: EventRepo = Depends(get_event_repo),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        event_command_repo: EventCommandRepo = Depends(get_event_command_repo),
+        event_query_repo: EventQueryRepo = Depends(get_event_query_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
     ):
         return cls(
             session=session,
             booking_command_repo=booking_command_repo,
             booking_query_repo=booking_query_repo,
-            event_repo=event_repo,
-            ticket_repo=ticket_repo,
+            event_command_repo=event_command_repo,
+            event_query_repo=event_query_repo,
+            ticket_command_repo=ticket_command_repo,
         )
 
     @Logger.io
@@ -89,10 +95,10 @@ class MockPaymentUseCase:
         )
 
         # Update event status to sold out
-        event = await self.event_repo.get_by_id(event_id=booking.event_id)
+        event = await self.event_query_repo.get_by_id(event_id=booking.event_id)
         if event:
             event.status = EventStatus.SOLD_OUT
-            await self.event_repo.update(event=event)
+            await self.event_command_repo.update(event=event)
 
         # Update reserved tickets to sold status when booking is paid
         reserved_tickets = await self.booking_query_repo.get_tickets_by_booking_id(
@@ -104,7 +110,7 @@ class MockPaymentUseCase:
             for ticket in reserved_tickets:
                 ticket.sell()  # Use the domain method instead of direct assignment
                 sold_tickets.append(ticket)
-            await self.ticket_repo.update_batch(tickets=sold_tickets)
+            await self.ticket_command_repo.update_batch(tickets=sold_tickets)
 
         # Generate mock payment ID
         payment_id = (

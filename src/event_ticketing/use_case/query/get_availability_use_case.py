@@ -2,8 +2,8 @@ from typing import TYPE_CHECKING, Optional
 
 from fastapi import Depends
 
-from src.event_ticketing.domain.event_repo import EventRepo
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.event_query_repo import EventQueryRepo
+from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.event_ticketing.port.event_schema import (
     EventAvailabilityResponse,
     EventStatusResponse,
@@ -15,40 +15,40 @@ from src.event_ticketing.port.event_schema import (
 )
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_event_repo, get_ticket_repo
+from src.shared.service.repo_di import get_event_query_repo, get_ticket_query_repo
 
 
 if TYPE_CHECKING:
-    from src.event_ticketing.infra.event_repo_impl import EventRepoImpl
-    from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
+    from src.event_ticketing.infra.event_query_repo_impl import EventQueryRepoImpl
+    from src.event_ticketing.infra.ticket_query_repo_impl import TicketQueryRepoImpl
 
 
 class GetAvailabilityUseCase:
-    def __init__(self, event_repo: EventRepo, ticket_repo: TicketRepo):
-        self.event_repo: 'EventRepoImpl' = event_repo  # pyright: ignore[reportAttributeAccessIssue]
-        self.ticket_repo: 'TicketRepoImpl' = ticket_repo  # pyright: ignore[reportAttributeAccessIssue]
+    def __init__(self, event_query_repo: EventQueryRepo, ticket_query_repo: TicketQueryRepo):
+        self.event_query_repo: 'EventQueryRepoImpl' = event_query_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.ticket_query_repo: 'TicketQueryRepoImpl' = ticket_query_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     def depends(
         cls,
-        event_repo: EventRepo = Depends(get_event_repo),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        event_query_repo: EventQueryRepo = Depends(get_event_query_repo),
+        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
     ):
-        return cls(event_repo=event_repo, ticket_repo=ticket_repo)
+        return cls(event_query_repo=event_query_repo, ticket_query_repo=ticket_query_repo)
 
     @Logger.io
     async def get_event_availability(self, *, event_id: int) -> EventAvailabilityResponse:
         """Get availability statistics for all sections of an event."""
         # Verify event exists
-        event = await self.event_repo.get_by_id(event_id=event_id)
+        event = await self.event_query_repo.get_by_id(event_id=event_id)
         if not event:
             raise NotFoundError(f'Event with id {event_id} not found')
 
         # Get overall event statistics
-        event_stats = await self.ticket_repo.get_ticket_stats_by_event(event_id=event_id)
+        event_stats = await self.ticket_query_repo.get_ticket_stats_by_event(event_id=event_id)
 
         # Get section-wise statistics
-        sections_data = await self.ticket_repo.get_sections_with_stats(event_id=event_id)
+        sections_data = await self.ticket_query_repo.get_sections_with_stats(event_id=event_id)
 
         # Build section availability objects
         sections = []
@@ -97,13 +97,13 @@ class GetAvailabilityUseCase:
     ) -> SectionAvailabilityResponse:
         """Get availability statistics for a specific section or subsection."""
         # Verify event exists
-        event = await self.event_repo.get_by_id(event_id=event_id)
+        event = await self.event_query_repo.get_by_id(event_id=event_id)
         if not event:
             raise NotFoundError(f'Event with id {event_id} not found')
 
         if subsection is not None:
             # Get specific subsection stats
-            stats = await self.ticket_repo.get_ticket_stats_by_section(
+            stats = await self.ticket_query_repo.get_ticket_stats_by_section(
                 event_id=event_id, section=section, subsection=subsection
             )
             subsections = [
@@ -117,7 +117,7 @@ class GetAvailabilityUseCase:
             ]
         else:
             # Get all subsections for the section
-            sections_data = await self.ticket_repo.get_sections_with_stats(event_id=event_id)
+            sections_data = await self.ticket_query_repo.get_sections_with_stats(event_id=event_id)
             section_data = None
             for s in sections_data:
                 if s['section'] == section:
@@ -165,12 +165,12 @@ class GetAvailabilityUseCase:
     ) -> EventStatusResponse:
         """Get event status grouped by price with subsection details."""
         # Verify event exists
-        event = await self.event_repo.get_by_id(event_id=event_id)
+        event = await self.event_query_repo.get_by_id(event_id=event_id)
         if not event:
             raise NotFoundError(f'Event with id {event_id} not found')
 
         # Get sections data with stats
-        sections_data = await self.ticket_repo.get_sections_with_stats(event_id=event_id)
+        sections_data = await self.ticket_query_repo.get_sections_with_stats(event_id=event_id)
 
         # Group subsections by price
         price_groups_dict = {}

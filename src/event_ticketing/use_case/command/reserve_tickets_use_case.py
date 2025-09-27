@@ -3,29 +3,33 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
+from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_ticket_repo
+from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 
 class ReserveTicketsUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        ticket_repo: TicketRepo,
+        ticket_command_repo: TicketCommandRepo,
+        ticket_query_repo: TicketQueryRepo,
     ):
         self.session = session
-        self.ticket_repo = ticket_repo
+        self.ticket_command_repo = ticket_command_repo
+        self.ticket_query_repo = ticket_query_repo
 
     @classmethod
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
+        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
     ):
-        return cls(session, ticket_repo)
+        return cls(session, ticket_command_repo, ticket_query_repo)
 
     @Logger.io
     async def reserve_tickets(
@@ -38,11 +42,11 @@ class ReserveTicketsUseCase:
 
         # Get available tickets for the event (optionally filtered by section/subsection)
         if section or subsection:
-            available_tickets = await self.ticket_repo.get_available_tickets_for_section(
+            available_tickets = await self.ticket_query_repo.get_available_tickets_for_section(
                 event_id=event_id, section=section, subsection=subsection, limit=ticket_count
             )
         else:
-            available_tickets = await self.ticket_repo.get_available_tickets_for_event(
+            available_tickets = await self.ticket_query_repo.get_available_tickets_for_event(
                 event_id=event_id, limit=ticket_count
             )
 
@@ -57,7 +61,7 @@ class ReserveTicketsUseCase:
             ticket.reserve(buyer_id=buyer_id)
 
         # Update tickets in database
-        await self.ticket_repo.update_batch(tickets=tickets_to_reserve)
+        await self.ticket_command_repo.update_batch(tickets=tickets_to_reserve)
         await self.session.commit()
 
         # Broadcast SSE events for real-time updates
@@ -127,7 +131,7 @@ class ReserveTicketsUseCase:
             # Find ticket by seat location
             # Note: In the current system structure, we need to search through all available tickets
             # This is a simplified approach for the minimal implementation
-            all_tickets = await self.ticket_repo.get_all_available()
+            all_tickets = await self.ticket_query_repo.get_all_available()
             matching_ticket = None
 
             for ticket in all_tickets:
@@ -161,7 +165,7 @@ class ReserveTicketsUseCase:
             raise DomainError('Maximum 4 tickets per booking', 400)
 
         # Get all available tickets
-        all_tickets = await self.ticket_repo.get_all_available()
+        all_tickets = await self.ticket_query_repo.get_all_available()
 
         if not all_tickets:
             raise DomainError('No tickets available', 400)

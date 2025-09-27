@@ -4,13 +4,9 @@ from typing import List
 from src.event_ticketing.domain.ticket_entity import Ticket
 
 
-class TicketRepo(ABC):
+class TicketQueryRepo(ABC):
     @abstractmethod
     async def get_by_id(self, *, ticket_id: int) -> Ticket | None:
-        pass
-
-    @abstractmethod
-    async def create_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         pass
 
     @abstractmethod
@@ -61,15 +57,8 @@ class TicketRepo(ABC):
     ) -> List[Ticket]:
         pass
 
-    # get_tickets_by_booking_id method moved to BookingRepo
-    # since booking now stores ticket_ids instead of tickets storing booking_id
-
     @abstractmethod
     async def get_all_reserved_tickets(self) -> List[Ticket]:
-        pass
-
-    @abstractmethod
-    async def update_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
         pass
 
     @abstractmethod

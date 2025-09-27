@@ -3,36 +3,54 @@ from typing import List
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.event_repo import EventRepo
+from src.event_ticketing.domain.event_query_repo import EventQueryRepo
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
+from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_event_repo, get_ticket_repo
+from src.shared.service.repo_di import (
+    get_event_query_repo,
+    get_ticket_command_repo,
+    get_ticket_query_repo,
+)
 
 
 class CreateTicketsUseCase:
-    def __init__(self, session: AsyncSession, event_repo: EventRepo, ticket_repo: TicketRepo):
+    def __init__(
+        self,
+        session: AsyncSession,
+        event_query_repo: EventQueryRepo,
+        ticket_command_repo: TicketCommandRepo,
+        ticket_query_repo: TicketQueryRepo,
+    ):
         self.session = session
-        self.event_repo = event_repo
-        self.ticket_repo = ticket_repo
+        self.event_query_repo = event_query_repo
+        self.ticket_command_repo = ticket_command_repo
+        self.ticket_query_repo = ticket_query_repo
 
     @classmethod
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        event_repo: EventRepo = Depends(get_event_repo),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        event_query_repo: EventQueryRepo = Depends(get_event_query_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
+        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
     ):
-        return cls(session=session, event_repo=event_repo, ticket_repo=ticket_repo)
+        return cls(
+            session=session,
+            event_query_repo=event_query_repo,
+            ticket_command_repo=ticket_command_repo,
+            ticket_query_repo=ticket_query_repo,
+        )
 
     @Logger.io(truncate_content=True)
     async def create_all_tickets_for_event(
         self, *, event_id: int, price: int, seller_id: int
     ) -> List[Ticket]:
         # Get event and verify ownership
-        event = await self.event_repo.get_by_id(event_id=event_id)
+        event = await self.event_query_repo.get_by_id(event_id=event_id)
         if not event:
             raise NotFoundError('Event not found')
 
@@ -40,7 +58,9 @@ class CreateTicketsUseCase:
             raise ForbiddenError('Not authorized to create tickets for this event')
 
         # Check if tickets already exist
-        tickets_exist = await self.ticket_repo.check_tickets_exist_for_event(event_id=event_id)
+        tickets_exist = await self.ticket_query_repo.check_tickets_exist_for_event(
+            event_id=event_id
+        )
         if tickets_exist:
             raise DomainError('Tickets already exist for this event')
 
@@ -49,7 +69,7 @@ class CreateTicketsUseCase:
         tickets_to_create = self._generate_tickets_from_config(event_id, price, seating_config)
 
         # Create tickets in batch
-        created_tickets = await self.ticket_repo.create_batch(tickets=tickets_to_create)
+        created_tickets = await self.ticket_command_repo.create_batch(tickets=tickets_to_create)
         await self.session.commit()
 
         return created_tickets

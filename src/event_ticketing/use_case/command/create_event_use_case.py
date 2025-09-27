@@ -7,13 +7,13 @@ from src.event_ticketing.domain.event_entity import Event
 from src.event_ticketing.domain.event_command_repo import EventCommandRepo
 from src.event_ticketing.domain.event_query_repo import EventQueryRepo
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.shared.logging.loguru_io import Logger
 from src.shared.config.db_setting import get_async_session
 
 
 class CreateEventUseCase:
-    def __init__(self, event_repo: EventCommandRepo, ticket_repo: TicketRepo):
+    def __init__(self, event_repo: EventCommandRepo, ticket_repo: TicketCommandRepo):
         self.event_repo = event_repo
         self.ticket_repo = ticket_repo
 
@@ -23,10 +23,10 @@ class CreateEventUseCase:
         session: AsyncSession = Depends(get_async_session),
     ):
         from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-        from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
+        from src.event_ticketing.infra.ticket_command_repo_impl import TicketCommandRepoImpl
 
         event_repo = EventCommandRepoImpl(session)
-        ticket_repo = TicketRepoImpl(session)
+        ticket_repo = TicketCommandRepoImpl(session)
         return cls(event_repo=event_repo, ticket_repo=ticket_repo)
 
     @Logger.io

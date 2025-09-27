@@ -4,20 +4,14 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.event_ticketing.infra.ticket_model import TicketModel
 from src.shared.logging.loguru_io import Logger
 
 
-class TicketRepoImpl(TicketRepo):
+class TicketQueryRepoImpl(TicketQueryRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    @Logger.io
-    async def get_by_id(self, *, ticket_id: int) -> Ticket | None:
-        result = await self.session.execute(select(TicketModel).where(TicketModel.id == ticket_id))
-        db_ticket = result.scalar_one_or_none()
-        return self._to_entity(db_ticket) if db_ticket else None
 
     @staticmethod
     def _to_entity(db_ticket: TicketModel) -> Ticket:
@@ -36,35 +30,11 @@ class TicketRepoImpl(TicketRepo):
             reserved_at=db_ticket.reserved_at,
         )
 
-    @staticmethod
-    def _to_model(ticket: Ticket) -> TicketModel:
-        return TicketModel(
-            id=ticket.id,
-            event_id=ticket.event_id,
-            section=ticket.section,
-            subsection=ticket.subsection,
-            row_number=ticket.row,
-            seat_number=ticket.seat,
-            price=ticket.price,
-            status=ticket.status.value,
-            buyer_id=ticket.buyer_id,
-            created_at=ticket.created_at,
-            updated_at=ticket.updated_at,
-            reserved_at=ticket.reserved_at,
-        )
-
-    @Logger.io(truncate_content=True)
-    async def create_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
-        db_tickets = [self._to_model(ticket) for ticket in tickets]
-
-        self.session.add_all(db_tickets)
-        await self.session.commit()
-
-        # Refresh to get IDs and timestamps
-        for db_ticket in db_tickets:
-            await self.session.refresh(db_ticket)
-
-        return [self._to_entity(db_ticket) for db_ticket in db_tickets]
+    @Logger.io
+    async def get_by_id(self, *, ticket_id: int) -> Ticket | None:
+        result = await self.session.execute(select(TicketModel).where(TicketModel.id == ticket_id))
+        db_ticket = result.scalar_one_or_none()
+        return self._to_entity(db_ticket) if db_ticket else None
 
     @Logger.io(truncate_content=True)
     async def get_by_event_id(self, *, event_id: int) -> List[Ticket]:
@@ -109,8 +79,6 @@ class TicketRepoImpl(TicketRepo):
 
     @Logger.io
     async def count_tickets_by_event(self, *, event_id: int) -> int:
-        from sqlalchemy import func
-
         result = await self.session.execute(
             select(func.count(TicketModel.id)).where(TicketModel.event_id == event_id)
         )
@@ -140,7 +108,7 @@ class TicketRepoImpl(TicketRepo):
             select(TicketModel)
             .where(TicketModel.event_id == event_id)
             .where(TicketModel.status == TicketStatus.AVAILABLE.value)
-            .where(TicketModel.buyer_id.is_(None))  # 確保票沒有被預訂
+            .where(TicketModel.buyer_id.is_(None))
             .order_by(
                 TicketModel.section,
                 TicketModel.subsection,
@@ -225,9 +193,6 @@ class TicketRepoImpl(TicketRepo):
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
 
-    # get_tickets_by_booking_id method moved to booking_repo_impl
-    # since booking now stores ticket_ids instead of tickets storing booking_id
-
     @Logger.io
     async def get_all_reserved_tickets(self) -> List[Ticket]:
         result = await self.session.execute(
@@ -235,36 +200,6 @@ class TicketRepoImpl(TicketRepo):
         )
         db_tickets = result.scalars().all()
         return [self._to_entity(db_ticket) for db_ticket in db_tickets]
-
-    @Logger.io
-    async def update_batch(self, *, tickets: List[Ticket]) -> List[Ticket]:
-        for ticket in tickets:
-            # Find the existing model
-            result = await self.session.execute(
-                select(TicketModel).where(TicketModel.id == ticket.id)
-            )
-            db_ticket = result.scalar_one()
-
-            # Update the fields
-            db_ticket.status = ticket.status.value
-            db_ticket.buyer_id = ticket.buyer_id
-            # booking_id no longer exists - booking stores ticket_ids instead
-            db_ticket.reserved_at = ticket.reserved_at
-            if ticket.updated_at is not None:
-                db_ticket.updated_at = ticket.updated_at
-
-        await self.session.commit()
-
-        # Return updated entities
-        updated_tickets = []
-        for ticket in tickets:
-            result = await self.session.execute(
-                select(TicketModel).where(TicketModel.id == ticket.id)
-            )
-            db_ticket = result.scalar_one()
-            updated_tickets.append(self._to_entity(db_ticket))
-
-        return updated_tickets
 
     @Logger.io
     async def get_all_available(self) -> List[Ticket]:
@@ -364,7 +299,6 @@ class TicketRepoImpl(TicketRepo):
     @Logger.io
     async def get_sections_with_stats(self, *, event_id: int) -> List[dict]:
         """Returns all sections with their subsection statistics."""
-        # Get distinct sections and subsections for the event
         result = await self.session.execute(
             select(
                 TicketModel.section,
@@ -387,7 +321,6 @@ class TicketRepoImpl(TicketRepo):
 
         rows = result.all()
 
-        # Group by section
         sections_dict = {}
         for row in rows:
             section = row.section

@@ -4,25 +4,37 @@ from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
+from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_ticket_repo
+from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 
 class ValidateTicketsUseCase:
-    def __init__(self, session: AsyncSession, ticket_repo: TicketRepo):
+    def __init__(
+        self,
+        session: AsyncSession,
+        ticket_command_repo: TicketCommandRepo,
+        ticket_query_repo: TicketQueryRepo,
+    ):
         self.session = session
-        self.ticket_repo = ticket_repo
+        self.ticket_command_repo = ticket_command_repo
+        self.ticket_query_repo = ticket_query_repo
 
     @classmethod
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
+        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
     ):
-        return cls(session=session, ticket_repo=ticket_repo)
+        return cls(
+            session=session,
+            ticket_command_repo=ticket_command_repo,
+            ticket_query_repo=ticket_query_repo,
+        )
 
     @Logger.io
     async def validate_tickets_for_booking(
@@ -36,7 +48,7 @@ class ValidateTicketsUseCase:
         Returns True if all tickets are valid, raises DomainError otherwise.
         """
         for ticket_id in ticket_ids:
-            ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
+            ticket = await self.ticket_query_repo.get_by_id(ticket_id=ticket_id)
 
             if not ticket:
                 raise DomainError(f'Ticket {ticket_id} not found', 404)
@@ -66,14 +78,14 @@ class ValidateTicketsUseCase:
         event_ids = set()
 
         for ticket_id in ticket_ids:
-            ticket = await self.ticket_repo.get_by_id(ticket_id=ticket_id)
+            ticket = await self.ticket_query_repo.get_by_id(ticket_id=ticket_id)
             if ticket:
                 ticket.reserve(buyer_id=buyer_id)
                 tickets.append(ticket)
                 event_ids.add(ticket.event_id)
 
         if tickets:
-            await self.ticket_repo.update_batch(tickets=tickets)
+            await self.ticket_command_repo.update_batch(tickets=tickets)
 
             # Notify SSE listeners about ticket status changes for each affected event
             for event_id in event_ids:

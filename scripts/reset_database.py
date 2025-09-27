@@ -12,7 +12,7 @@ from src.shared_kernel.user.infra.user_model import UserModel
 from src.event_ticketing.domain.event_entity import Event, EventStatus
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus as TicketStatus
 from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-from src.event_ticketing.infra.ticket_repo_impl import TicketRepoImpl
+from src.event_ticketing.infra.ticket_command_repo_impl import TicketCommandRepoImpl
 from src.shared.config.db_setting import async_session_maker
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
@@ -85,7 +85,7 @@ async def create_init_event(seller_id: int):
             print("Creating initial event...")
 
             event_repo = EventCommandRepoImpl(session)
-            ticket_repo = TicketRepoImpl(session)
+            ticket_repo = TicketCommandRepoImpl(session)
 
             seating_config = {
                 "sections": [

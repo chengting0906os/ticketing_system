@@ -7,14 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.booking.domain.booking_entity import BookingStatus
-from src.event_ticketing.domain.ticket_repo import TicketRepo
+from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
 from src.shared.service.repo_di import (
     get_booking_command_repo,
     get_booking_query_repo,
-    get_ticket_repo,
+    get_ticket_command_repo,
 )
 
 
@@ -24,12 +24,12 @@ class CancelReservationUseCase:
         session: AsyncSession,
         booking_command_repo: BookingCommandRepo,
         booking_query_repo: BookingQueryRepo,
-        ticket_repo: TicketRepo,
+        ticket_command_repo: TicketCommandRepo,
     ):
         self.session = session
         self.booking_command_repo = booking_command_repo
         self.booking_query_repo = booking_query_repo
-        self.ticket_repo = ticket_repo
+        self.ticket_command_repo = ticket_command_repo
 
     @classmethod
     def depends(
@@ -37,13 +37,13 @@ class CancelReservationUseCase:
         session: AsyncSession = Depends(get_async_session),
         booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
         booking_query_repo: BookingQueryRepo = Depends(get_booking_query_repo),
-        ticket_repo: TicketRepo = Depends(get_ticket_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
     ):
         return cls(
             session=session,
             booking_command_repo=booking_command_repo,
             booking_query_repo=booking_query_repo,
-            ticket_repo=ticket_repo,
+            ticket_command_repo=ticket_command_repo,
         )
 
     @Logger.io
@@ -88,7 +88,7 @@ class CancelReservationUseCase:
         await self.booking_command_repo.update_status_to_cancelled(booking=cancelled_booking)
 
         # Update tickets in database
-        await self.ticket_repo.update_batch(tickets=tickets)
+        await self.ticket_command_repo.update_batch(tickets=tickets)
 
         # Notify SSE listeners about ticket status changes for each affected event
         for event_id in event_ids:
