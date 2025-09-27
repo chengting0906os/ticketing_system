@@ -18,7 +18,10 @@ from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.role_auth_service import get_current_user_info, require_buyer_info
+from src.shared_kernel.user.use_case.role_auth_service import (
+    get_current_user_info,
+    require_buyer_info,
+)
 
 
 router = APIRouter()

@@ -13,6 +13,7 @@ from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
 from src.shared_kernel.user.use_case.auth_service import auth_service
+from src.shared_kernel.user.use_case import user_use_case
 
 
 # === API Router ===
@@ -33,7 +34,7 @@ async def create_user(request: CreateUserRequest, user_repo: UserRepo = Depends(
             )
 
         # 創建用戶
-        user_entity = await auth_service.create_user(
+        user_entity = await user_use_case.create_user(
             user_repo=user_repo,
             email=request.email,
             password=request.password,
@@ -118,7 +119,7 @@ async def get_current_user(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
         # 取得用戶 - validation logic now handled in use case layer
-        user_entity = await auth_service.get_user_by_id(user_repo, user_id)
+        user_entity = await user_use_case.get_user_by_id(user_repo, user_id)
 
         return user_entity
 

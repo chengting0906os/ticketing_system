@@ -23,11 +23,11 @@ from src.event_ticketing.use_case.list_tickets_use_case import ListTicketsUseCas
 from src.shared.config.core_setting import settings
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.role_auth_service import (
+from src.shared_kernel.user.infra.user_model import UserModel
+from src.shared_kernel.user.use_case.role_auth_service import (
     require_buyer_or_seller,
     require_seller,
 )
-from src.shared_kernel.user.infra.user_model import UserModel
 
 
 router = APIRouter()
