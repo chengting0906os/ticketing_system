@@ -20,19 +20,9 @@ class UserRepo(ABC):
         pass
 
     @abstractmethod
-    async def update(self, user_entity: UserEntity) -> UserEntity:
-        pass
-
-    @abstractmethod
     async def exists_by_email(self, email: str) -> bool:
         pass
 
     @abstractmethod
     async def verify_password(self, email: str, plain_password: str) -> Optional[UserEntity]:
-        pass
-
-    @abstractmethod
-    async def create_with_password(
-        self, user_entity: UserEntity, plain_password: str
-    ) -> UserEntity:
         pass

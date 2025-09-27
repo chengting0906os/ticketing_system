@@ -95,7 +95,7 @@ async def setup_test_database():
             await conn.execute(text(f'CREATE DATABASE {DB_CONFIG["test_db"]}'))
     await engine.dispose()
     await execute_sql(TEST_DATABASE_URL, ['DROP SCHEMA public CASCADE', 'CREATE SCHEMA public'])
-    alembic_cfg = Config(Path(__file__).parent.parent / 'src/shared/alembic/alembic.ini')
+    alembic_cfg = Config(Path(__file__).parent.parent / 'alembic.ini')
     alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
     command.upgrade(alembic_cfg, 'head')
 

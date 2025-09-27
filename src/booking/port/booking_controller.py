@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from typing import List
 
 from src.booking.port.booking_schema import (
     BookingCreateRequest,
@@ -18,20 +19,26 @@ from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
 from src.shared.auth.current_user_info import CurrentUserInfo
 from src.shared.logging.loguru_io import Logger
+from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import (
-    get_current_user_info,
-    require_buyer_info,
+    get_current_user,
+    require_buyer,
 )
+
+
+def require_buyer_info(user_entity: UserEntity = Depends(require_buyer)) -> CurrentUserInfo:
+    """Convert UserEntity to CurrentUserInfo for buyers"""
+    return CurrentUserInfo(user_id=user_entity.id or 0, role=user_entity.role.value)
 
 
 router = APIRouter()
 
 
-@router.get('/my-bookings')
+@router.get('/my-bookings', response_model=List[BookingResponse])
 @Logger.io(truncate_content=True)
 async def list_my_bookings(
     booking_status: str,
-    current_user: CurrentUserInfo = Depends(get_current_user_info),
+    current_user: CurrentUserInfo = Depends(get_current_user),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
 ):
     if current_user.is_buyer():
@@ -77,7 +84,7 @@ async def create_booking(
 @Logger.io
 async def get_booking(
     booking_id: int,
-    current_user: CurrentUserInfo = Depends(get_current_user_info),
+    current_user: CurrentUserInfo = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
 ) -> BookingResponse:
     booking = await use_case.get_booking(booking_id)

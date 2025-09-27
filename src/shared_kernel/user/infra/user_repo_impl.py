@@ -1,19 +1,19 @@
 from typing import Optional
 
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
 from src.shared_kernel.user.infra.user_model import UserModel
 
 
 class UserRepoImpl(UserRepo):
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
+        self.password_hasher = BcryptPasswordHasher()
 
     @Logger.io
     async def get_by_email(self, email: str) -> Optional[UserEntity]:
@@ -39,7 +39,7 @@ class UserRepoImpl(UserRepo):
     async def create(self, user_entity: UserEntity) -> UserEntity:
         user_model = UserModel(
             email=user_entity.email,
-            hashed_password='',  # 將在 auth_service 中設置
+            hashed_password=user_entity.hashed_password,
             name=user_entity.name,
             role=user_entity.role,
             is_active=user_entity.is_active,
@@ -48,27 +48,6 @@ class UserRepoImpl(UserRepo):
         )
 
         self.session.add(user_model)
-        await self.session.commit()
-        await self.session.refresh(user_model)
-
-        return self._model_to_entity(user_model)
-
-    @Logger.io
-    async def update(self, user_entity: UserEntity) -> UserEntity:
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_entity.id))
-        user_model = result.scalar_one_or_none()
-
-        if not user_model:
-            raise ValueError(f'User with id {user_entity.id} not found')
-
-        # 更新字段
-        user_model.email = user_entity.email
-        user_model.name = user_entity.name
-        user_model.role = user_entity.role
-        user_model.is_active = user_entity.is_active
-        user_model.is_superuser = user_entity.is_superuser
-        user_model.is_verified = user_entity.is_verified
-
         await self.session.commit()
         await self.session.refresh(user_model)
 
@@ -87,31 +66,10 @@ class UserRepoImpl(UserRepo):
         if not user_model:
             return None
 
-        # 驗證密碼
-        if not self.pwd_context.verify(plain_password, user_model.hashed_password):
+        if not self.password_hasher.verify_password(
+            plain_password=plain_password, hashed_password=user_model.hashed_password
+        ):
             return None
-
-        return self._model_to_entity(user_model)
-
-    @Logger.io
-    async def create_with_password(
-        self, user_entity: UserEntity, plain_password: str
-    ) -> UserEntity:
-        hashed_password = self.pwd_context.hash(plain_password)
-
-        user_model = UserModel(
-            email=user_entity.email,
-            hashed_password=hashed_password,
-            name=user_entity.name,
-            role=user_entity.role,
-            is_active=user_entity.is_active,
-            is_superuser=user_entity.is_superuser,
-            is_verified=user_entity.is_verified,
-        )
-
-        self.session.add(user_model)
-        await self.session.commit()
-        await self.session.refresh(user_model)
 
         return self._model_to_entity(user_model)
 

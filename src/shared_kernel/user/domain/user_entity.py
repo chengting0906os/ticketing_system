@@ -1,9 +1,10 @@
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from src.shared.exception.exceptions import AuthenticationError, ForbiddenError
+import attrs
+
+from src.shared.exception.exceptions import AuthenticationError, DomainError, ForbiddenError
 
 
 class UserRole(str, Enum):
@@ -12,13 +13,12 @@ class UserRole(str, Enum):
     ADMIN = 'admin'
 
 
-@dataclass
+@attrs.define
 class UserEntity:
-    """用戶業務實體 (Domain Layer)"""
-
-    id: Optional[int] = None
     email: str = ''
     name: str = ''
+    hashed_password: str = attrs.field(default='', repr=False)  # Hide from repr for security
+    id: Optional[int] = None
     role: UserRole = UserRole.BUYER
     is_active: bool = True
     is_superuser: bool = False
@@ -26,14 +26,14 @@ class UserEntity:
     created_at: Optional[datetime] = None
 
     def validate_for_authentication(self) -> None:
-        if not self:
+        if not self.email:
             raise AuthenticationError('Invalid credentials')
 
         if not self.is_active:
             raise ForbiddenError('User is inactive')
 
     def validate_exists(self) -> None:
-        if not self:
+        if not self.id or not self.email:
             raise AuthenticationError('User not found')
 
     def validate_active(self) -> None:
@@ -48,3 +48,19 @@ class UserEntity:
             raise AuthenticationError('Invalid credentials')
 
         return user_entity
+
+    @staticmethod
+    def validate_role(role: UserRole) -> None:
+        """驗證角色是否有效"""
+
+        valid_roles = [r.value for r in UserRole]
+        if role not in valid_roles:
+            raise DomainError(f'Invalid role: {role}. Must be one of: {", ".join(valid_roles)}')
+
+    def set_password(self, plain_password: str, password_hasher) -> None:
+        """Set password using provided password hasher"""
+        from src.shared_kernel.user.domain.services.password_hasher import PasswordHasher
+
+        if not isinstance(password_hasher, PasswordHasher):
+            raise TypeError('password_hasher must implement PasswordHasher interface')
+        self.hashed_password = password_hasher.hash_password(plain_password)

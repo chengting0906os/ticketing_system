@@ -3,7 +3,7 @@ User Authentication Service (Use Case Layer)
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import HTTPException, status
 import jwt
@@ -21,11 +21,9 @@ class AuthService:
 
     def create_jwt_token(self, user_entity: UserEntity) -> str:
         payload = {
-            #
             'sub': str(user_entity.id),
             'exp': datetime.now(timezone.utc) + timedelta(days=self.token_expire_days),
             'iat': datetime.now(timezone.utc),
-            #
             'user_id': user_entity.id,
             'email': user_entity.email,
             'name': user_entity.name,
@@ -43,11 +41,38 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
     async def authenticate_user(self, user_repo: UserRepo, email: str, password: str) -> UserEntity:
-        user_entity = await user_repo.verify_password(email, password)
+        user_entity = await user_repo.verify_password(email=email, plain_password=password)
         validated_user = UserEntity.validate_user_exists(user_entity)
         validated_user.validate_active()
 
         return validated_user
+
+    async def get_current_user(self, user_repo: UserRepo, token: Optional[str]) -> UserEntity:
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated'
+            )
+
+        # 解碼 token
+        payload = self.decode_jwt_token(token)
+        user_id = payload.get('user_id')
+
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+
+        # 取得用戶
+        from src.shared_kernel.user.use_case import user_use_case
+
+        user_entity = await user_use_case.get_user_by_id(user_repo, user_id)
+
+        # 驗證用戶
+        if not user_entity:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found')
+
+        if not user_entity.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User is inactive')
+
+        return user_entity
 
 
 # 全域實例
