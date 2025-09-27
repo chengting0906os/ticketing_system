@@ -11,7 +11,7 @@ from src.shared.config.db_setting import Base
 if TYPE_CHECKING:
     from src.event_ticketing.infra.event_model import EventModel
     from src.event_ticketing.infra.ticket_model import TicketModel
-    from src.user.domain.user_model import User
+    from src.user.infra.user_model import UserModel
 
 
 class BookingModel(Base):
@@ -36,7 +36,7 @@ class BookingModel(Base):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    buyer: Mapped['User'] = relationship('User', foreign_keys=[buyer_id], lazy='selectin')
+    buyer: Mapped['UserModel'] = relationship('UserModel', foreign_keys=[buyer_id], lazy='selectin')
     event: Mapped['EventModel'] = relationship(
         'EventModel', foreign_keys=[event_id], lazy='selectin'
     )

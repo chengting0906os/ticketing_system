@@ -18,3 +18,8 @@ class NotFoundError(DomainError):
 class ConflictError(DomainError):
     def __init__(self, message: str):
         super().__init__(message, 409)
+
+
+class AuthenticationError(DomainError):
+    def __init__(self, message: str):
+        super().__init__(message, 401)

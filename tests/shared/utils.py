@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from src.shared.constant.route_constant import AUTH_LOGIN, EVENT_BASE, USER_CREATE
+from src.shared.constant.route_constant import USER_LOGIN, EVENT_BASE, USER_CREATE
 from tests.event_test_constants import (
     DEFAULT_SEATING_CONFIG,
     DEFAULT_SEATING_CONFIG_JSON,
@@ -26,9 +26,8 @@ def extract_single_value(step, row_index: int = 0, col_index: int = 0) -> str:
 def login_user(client: TestClient, email: str, password: str) -> Any:
     """Helper function to login a user and set cookies."""
     login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': email, 'password': password},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json={'email': email, 'password': password},
     )
     assert login_response.status_code == 200, f'Login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:

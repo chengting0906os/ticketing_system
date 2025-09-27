@@ -1,61 +1,52 @@
-from fastapi_users import schemas
+"""
+User API Schemas - Pydantic models for request/response
+"""
+
 from pydantic import BaseModel, EmailStr, Field
 
+from src.user.domain.user_entity import UserRole
 
-class UserRead(schemas.BaseUser[int]):
+
+class CreateUserRequest(BaseModel):
+    """Create user request schema"""
+
+    email: EmailStr
+    password: str = Field(
+        ..., min_length=8, max_length=128, description='Password must be at least 8 characters'
+    )
+    name: str = Field(..., min_length=1, max_length=100, description="User's full name")
+    role: UserRole = UserRole.BUYER
+
+
+class LoginRequest(BaseModel):
+    """User login request schema"""
+
+    email: EmailStr
+    password: str = Field(..., min_length=1, description='User password')
+
+
+class UserResponse(BaseModel):
+    """User response schema"""
+
     id: int
+    email: str
     name: str
-    email: EmailStr
-    role: str
-    is_active: bool = True
-    is_superuser: bool = False
-    is_verified: bool = False
-
-
-class UserPublic(BaseModel):
-    id: int
-    name: str
-    email: EmailStr
-    role: str
+    role: UserRole
+    is_active: bool
 
     class Config:
-        json_schema_extra = {
-            'example': {
-                'id': 1,
-                'name': 'John Doe',
-                'email': 'john.doe@example.com',
-                'role': 'buyer',
-            }
-        }
+        from_attributes = True
 
 
-class UserCreate(schemas.BaseUserCreate):
-    name: str = Field(..., min_length=1, max_length=255)
-    email: EmailStr
-    password: str = Field(..., min_length=8)
-    role: str = 'buyer'
+class AuthResponse(BaseModel):
+    """Authentication response schema"""
 
-    def __repr__(self) -> str:
-        return f"UserCreate(email='{self.email}', password='********', is_active={self.is_active}, is_superuser={self.is_superuser}, is_verified={self.is_verified}, name='{self.name}', role='{self.role}')"
-
-    class Config:
-        json_schema_extra = {
-            'example': {
-                'email': 'seller@test.com',
-                'name': 'seller',
-                'password': 'P@ssw0rd',
-                'role': 'seller',
-            }
-        }
+    user: UserResponse
+    token: str
 
 
-class UserUpdate(schemas.BaseUserUpdate):
-    email: EmailStr | None = None
+class ErrorResponse(BaseModel):
+    """Error response schema"""
 
-    class Config:
-        json_schema_extra = {
-            'example': {
-                'email': 'seller@test.com',
-                'password': 'P@ssw0rd',
-            }
-        }
+    detail: str
+    error_code: str | None = None

@@ -1,66 +1,143 @@
-from fastapi import APIRouter, Depends, Response, status
-from fastapi.security import OAuth2PasswordRequestForm
+"""
+Authentication Controller - 簡化版本，只有 login 和 create
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.jwt_auth_service import auth_backend, fastapi_users
-from src.user.domain.user_entity import UserRole
-from src.user.port.user_schema import UserCreate, UserPublic, UserRead, UserUpdate
-from src.user.use_case.manager import get_user_manager
+from src.shared.service.repo_di import get_user_repo
+from src.user.domain.user_entity import UserEntity, UserRole
+from src.user.domain.user_repo import UserRepo
+from src.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
+from src.user.use_case.auth_service import auth_service
 
 
-auth_router = APIRouter()
+# === API Router ===
 
-users_router = APIRouter()
-users_router.include_router(
-    fastapi_users.get_users_router(
-        UserRead,
-        UserUpdate,
-    ),
-)
+router = APIRouter()
 
 
-# Custom login endpoint that returns user data (must be defined before including default router)
-@auth_router.post('/login', response_model=UserPublic)
+@router.post('', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @Logger.io
-async def login(
-    response: Response,
-    credentials: OAuth2PasswordRequestForm = Depends(),
-    user_manager=Depends(get_user_manager),
-    strategy=Depends(auth_backend.get_strategy),
-):
-    user = await user_manager.authenticate(credentials)
+async def create_user(request: CreateUserRequest, user_repo: UserRepo = Depends(get_user_repo)):
+    """創建新用戶"""
+    try:
+        # 驗證角色
+        valid_roles = [role.value for role in UserRole]
+        if request.role not in valid_roles:
+            raise DomainError(
+                f'Invalid role: {request.role}. Must be one of: {", ".join(valid_roles)}'
+            )
 
-    if user is None or not user.is_active:
-        raise DomainError('LOGIN_BAD_CREDENTIALS')
-
-    #
-    token = await strategy.write_token(user)
-
-    #
-    response.set_cookie(
-        key='fastapiusersauth',
-        value=token,
-        max_age=3600,
-        httponly=True,
-        samesite='lax',
-        secure=False,  # Set to True in production with HTTPS
-    )
-
-    return UserPublic(id=user.id, email=user.email, name=user.name, role=user.role)
-
-
-@users_router.post('', response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-@Logger.io
-async def register_user(
-    user_create: UserCreate,
-    user_manager=Depends(get_user_manager),
-):
-    valid_roles = [role.value for role in UserRole]
-    if user_create.role not in valid_roles:
-        raise DomainError(
-            f'Invalid role: {user_create.role}. Must be one of: {", ".join(valid_roles)}'
+        # 創建用戶
+        user_entity = await auth_service.create_user(
+            user_repo=user_repo,
+            email=request.email,
+            password=request.password,
+            name=request.name,
+            role=request.role,
         )
 
-    user = await user_manager.create(user_create, safe=True, request=None)
-    return user
+        return UserResponse(
+            id=user_entity.id or 0,
+            email=user_entity.email,
+            name=user_entity.name,
+            role=user_entity.role,
+            is_active=user_entity.is_active,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        Logger.base.error(f'創建用戶失敗: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Failed to create user'
+        )
+
+
+@router.post('/login', response_model=UserResponse)
+@Logger.io
+async def login(
+    response: Response, request: LoginRequest, user_repo: UserRepo = Depends(get_user_repo)
+):
+    try:
+        user_entity = await auth_service.authenticate_user(
+            user_repo=user_repo, email=request.email, password=request.password
+        )
+
+        token = auth_service.create_jwt_token(user_entity)
+
+        response.set_cookie(
+            key='fastapiusersauth',
+            value=token,
+            max_age=7 * 24 * 60 * 60,  # 7 天
+            httponly=True,
+            samesite='lax',
+            secure=False,  # 生產環境設為 True
+        )
+
+        return UserResponse(
+            id=user_entity.id or 0,
+            email=user_entity.email,
+            name=user_entity.name,
+            role=user_entity.role,
+            is_active=user_entity.is_active,
+        )
+
+    except DomainError as e:
+        Logger.base.error(f'登入失敗: {e}')
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='LOGIN_BAD_CREDENTIALS')
+    except HTTPException:
+        raise
+    except Exception as e:
+        Logger.base.error(f'登入失敗: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Login failed'
+        )
+
+
+# === 依賴注入：取得當前用戶 ===
+
+
+async def get_current_user(
+    user_repo: UserRepo = Depends(get_user_repo), fastapiusersauth: Optional[str] = Cookie(None)
+) -> UserEntity:
+    """從 Cookie 中取得當前用戶"""
+    if not fastapiusersauth:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated')
+
+    try:
+        # 解碼 token
+        payload = auth_service.decode_jwt_token(fastapiusersauth)
+        user_id = payload.get('user_id')
+
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
+
+        # 取得用戶 - validation logic now handled in use case layer
+        user_entity = await auth_service.get_user_by_id(user_repo, user_id)
+
+        return user_entity
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        Logger.base.error(f'認證失敗: {e}')
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail='Authentication failed'
+        )
+
+
+@router.get('', response_model=UserResponse)
+async def get_me(current_user: UserEntity = Depends(get_current_user)):
+    """取得當前用戶資料"""
+    return UserResponse(
+        id=current_user.id or 0,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role,
+        is_active=current_user.is_active,
+    )

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from pytest_bdd import given
 
 from src.shared.constant.route_constant import (
-    AUTH_LOGIN,
+    USER_LOGIN,
     BOOKING_BASE,
     BOOKING_CANCEL,
     BOOKING_GET,
@@ -95,9 +95,8 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     buyer_id = expected_buyer_id
 
     login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json={'email': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
     )
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
@@ -118,18 +117,16 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     print(f'TDD DEBUG: Created event with ID: {event["id"]}')
 
     login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json={'email': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
     )
     assert login_response.status_code == 200, f'Buyer login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
         client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
     # Check if tickets already exist for the event, if not, create them
     login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json={'email': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
     )
     assert login_response.status_code == 200, f'Seller login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:
@@ -184,9 +181,8 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
 
     # Switch back to buyer login
     login_response = client.post(
-        AUTH_LOGIN,
-        data={'username': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json={'email': TEST_BUYER_EMAIL, 'password': DEFAULT_PASSWORD},
     )
     assert login_response.status_code == 200, f'Buyer login failed: {login_response.text}'
     if 'fastapiusersauth' in login_response.cookies:

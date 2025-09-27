@@ -6,15 +6,8 @@ API_BASE = '/api'
 # User routes
 USER_BASE = f'{API_BASE}/user'
 USER_CREATE = USER_BASE
-USER_GET = f'{USER_BASE}/{{user_id}}'
-USER_UPDATE = f'{USER_BASE}/{{user_id}}'
-USER_DELETE = f'{USER_BASE}/{{user_id}}'
-
-# Auth routes
-AUTH_BASE = f'{API_BASE}/auth'
-AUTH_LOGIN = f'{AUTH_BASE}/login'
-AUTH_LOGOUT = f'{AUTH_BASE}/logout'
-AUTH_REGISTER = f'{AUTH_BASE}/register'
+USER_LOGIN = f'{USER_BASE}/login'
+USER_ME = USER_BASE
 
 # Event routes
 EVENT_BASE = f'{API_BASE}/event'

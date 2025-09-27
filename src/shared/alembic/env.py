@@ -15,7 +15,7 @@ from src.event_ticketing.infra.event_model import EventModel as EventModel
 from src.event_ticketing.infra.ticket_model import TicketModel as TicketModel
 from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import Base
-from src.user.domain.user_model import User as User
+from src.user.infra.user_model import UserModel as UserModel
 
 
 # this is the Alembic Config object, which provides

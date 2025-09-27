@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from pytest_bdd import then
 
 from src.shared.constant.route_constant import (
-    AUTH_LOGIN,
+    USER_LOGIN,
     BOOKING_GET,
     EVENT_GET,
     EVENT_TICKETS_BY_SUBSECTION,
@@ -206,7 +206,7 @@ def _(step, client: TestClient, booking_state=None, context=None):
     if expected_status == 'sold':
         # Login as seller to see all tickets
         login_response = client.post(
-            AUTH_LOGIN,
+            USER_LOGIN,
             data={'username': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
             headers={'Content-Type': 'application/x-www-form-urlencoded'},
         )

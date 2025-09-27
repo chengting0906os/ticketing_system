@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 
-from src.shared.constant.route_constant import AUTH_LOGIN, USER_CREATE
+from src.shared.constant.route_constant import USER_LOGIN, USER_CREATE
 from tests.shared.utils import extract_table_data
 
 
@@ -21,9 +21,8 @@ def send_api_request(step, client: TestClient, user_state):
 def login_with_credentials(step, client: TestClient, user_state):
     login_data = extract_table_data(step)
     user_state['login_data'] = login_data
-    form_data = {'username': login_data['email'], 'password': login_data['password']}
+    json_data = {'email': login_data['email'], 'password': login_data['password']}
     user_state['response'] = client.post(
-        AUTH_LOGIN,
-        data=form_data,
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        USER_LOGIN,
+        json=json_data,
     )

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 
 if TYPE_CHECKING:
-    from src.user.domain.user_model import User
+    from src.user.infra.user_model import UserModel
 
 from src.event_ticketing.domain.event_entity import Event
 
@@ -20,7 +20,7 @@ class EventRepo(ABC):
     @abstractmethod
     async def get_by_id_with_seller(
         self, *, event_id: int
-    ) -> tuple[Optional[Event], Optional['User']]:
+    ) -> tuple[Optional[Event], Optional['UserModel']]:
         pass
 
     @abstractmethod

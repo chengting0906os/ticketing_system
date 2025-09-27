@@ -8,7 +8,7 @@ from src.event_ticketing.domain.event_repo import EventRepo
 from src.event_ticketing.infra.event_model import EventModel
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.user.domain.user_model import User
+from src.user.infra.user_model import UserModel
 
 
 class EventRepoImpl(EventRepo):
@@ -58,10 +58,10 @@ class EventRepoImpl(EventRepo):
     @Logger.io
     async def get_by_id_with_seller(
         self, *, event_id: int
-    ) -> tuple[Optional[Event], Optional[User]]:
+    ) -> tuple[Optional[Event], Optional[UserModel]]:
         result = await self.session.execute(
-            select(EventModel, User)
-            .join(User, EventModel.seller_id == User.id)
+            select(EventModel, UserModel)
+            .join(UserModel, EventModel.seller_id == UserModel.id)
             .where(EventModel.id == event_id)
         )
         row = result.first()

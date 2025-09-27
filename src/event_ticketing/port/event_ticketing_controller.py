@@ -27,7 +27,7 @@ from src.shared.service.role_auth_service import (
     require_buyer_or_seller,
     require_seller,
 )
-from src.user.domain.user_model import User
+from src.user.infra.user_model import UserModel
 
 
 router = APIRouter()
@@ -37,7 +37,7 @@ router = APIRouter()
 @Logger.io
 async def create_event(
     request: EventCreateWithTicketConfigRequest,
-    current_user: User = Depends(require_seller),
+    current_user: UserModel = Depends(require_seller),
     use_case: CreateEventUseCase = Depends(CreateEventUseCase.depends),
 ) -> EventResponse:
     event = await use_case.create(
@@ -134,7 +134,7 @@ def _ticket_to_response(ticket) -> TicketResponse:
 async def sse_event_with_all_subsections_tickets_status(
     request: Request,
     event_id: int,
-    current_user: User = Depends(require_buyer_or_seller),
+    current_user: UserModel = Depends(require_buyer_or_seller),
     availability_use_case: GetAvailabilityUseCase = Depends(GetAvailabilityUseCase.depends),
 ):
     async def event_generator():

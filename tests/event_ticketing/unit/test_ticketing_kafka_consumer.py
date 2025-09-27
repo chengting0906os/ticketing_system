@@ -3,20 +3,25 @@
 TicketingEventConsumer 單元測試
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, Mock
 
 import pytest
 
-from src.event_ticketing.infra.ticketing_event_consumer import TicketingEventConsumer
+from src.event_ticketing.infra.event_ticketing_event_consumer import EventTicketingEventConsumer
 
 
 class TestTicketingEventConsumer:
     """TicketingEventConsumer 單元測試"""
 
     @pytest.fixture
-    def handler(self):
-        """Create TicketingEventConsumer instance"""
-        return TicketingEventConsumer()
+    def mock_event_ticketing_gateway(self):
+        """Mock EventTicketingMqGateway"""
+        return Mock()
+
+    @pytest.fixture
+    def handler(self, mock_event_ticketing_gateway):
+        """Create EventTicketingEventConsumer instance"""
+        return EventTicketingEventConsumer(mock_event_ticketing_gateway)
 
     @pytest.fixture
     def mock_reserve_use_case(self):

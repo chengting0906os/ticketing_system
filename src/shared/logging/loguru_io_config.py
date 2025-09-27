@@ -152,11 +152,7 @@ custom_logger.add(
 # Intercept standard logging
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
-# Intercept uvicorn and fastapi loggers
 for logger_name in [
-    'uvicorn',
-    'uvicorn.error',
-    'uvicorn.access',
     'fastapi',
     'sqlalchemy.engine',
     'sqlalchemy.pool',
