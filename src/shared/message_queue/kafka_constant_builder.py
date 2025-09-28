@@ -38,6 +38,10 @@ class KafkaTopicBuilder:
         return f'event-id-{event_id}::finalize-ticket-to-paid-by-rocksdb:::::event-ticketing-service>>>seat-reservation-service'
 
     @staticmethod
+    def seat_initialization_command(*, event_id: int) -> str:
+        return f'event-id-{event_id}::seat-initialization-command:::::event-ticketing-service>>>seat-reservation-service'
+
+    @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
         return [
             KafkaTopicBuilder.ticket_reserve_request(event_id=event_id),
@@ -48,6 +52,7 @@ class KafkaTopicBuilder:
             KafkaTopicBuilder.update_ticket_status_to_available(event_id=event_id),
             KafkaTopicBuilder.release_ticket_to_available_by_rocksdb(event_id=event_id),
             KafkaTopicBuilder.finalize_ticket_to_paid_by_rocksdb(event_id=event_id),
+            KafkaTopicBuilder.seat_initialization_command(event_id=event_id),
         ]
 
 

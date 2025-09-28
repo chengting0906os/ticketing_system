@@ -5,15 +5,15 @@ Seat Reservation Consumer
 """
 
 import asyncio
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src.shared.event_bus.unified_mq_consumer import UnifiedEventConsumer
-from src.shared.logging.loguru_io import Logger
 from src.seat_reservation.use_case.reserve_seats_use_case import (
-    ReserveSeatsUseCase,
     ReservationRequest,
+    ReserveSeatsUseCase,
     create_reserve_seats_use_case,
 )
+from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_consumer import UnifiedEventConsumer
 
 
 class SeatReservationEventHandler:
@@ -130,9 +130,10 @@ class SeatReservationEventHandler:
         發送預訂結果回 booking_service
         """
         try:
-            from src.shared.event_bus.unified_mq_publisher import publish_domain_event
-            from src.seat_reservation.use_case.reserve_seats_use_case import SeatReservationResult
             from datetime import datetime
+
+            from src.seat_reservation.use_case.reserve_seats_use_case import SeatReservationResult
+            from src.shared.message_queue.unified_mq_publisher import publish_domain_event
 
             if result.success:
                 event_type = 'SeatReservationSuccess'

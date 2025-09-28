@@ -13,8 +13,8 @@ from sqlalchemy import select
 
 from src.shared.config.db_setting import get_async_session
 from src.event_ticketing.infra.event_model import EventModel
-from src.shared.event_bus.kafka_config_service import KafkaConfigService
-from src.shared.event_bus.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
+from src.shared.message_queue.kafka_config_service import KafkaConfigService
+from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
 from src.shared.logging.loguru_io import Logger
 
 

@@ -3,19 +3,19 @@ Reserve Seats Use Case
 座位預訂用例 - 基於 RocksDB 狀態管理的無鎖實現
 """
 
-from typing import List, Optional
 from dataclasses import dataclass
 from datetime import datetime
+from typing import List, Optional
 
-from src.shared.logging.loguru_io import Logger
-from src.shared.exception.exceptions import DomainError
 from src.seat_reservation.domain.seat_selection_domain import (
+    AvailableSeat,
+    SeatPosition,
     SeatSelectionDomain,
     SeatSelectionRequest,
     SelectionMode,
-    AvailableSeat,
-    SeatPosition,
 )
+from src.shared.exception.exceptions import DomainError
+from src.shared.logging.loguru_io import Logger
 
 
 @dataclass
@@ -276,8 +276,9 @@ class ReserveSeatsUseCase:
 
         try:
             # 導入事件發布器
-            from src.shared.event_bus.unified_mq_publisher import publish_domain_event
             from datetime import datetime
+
+            from src.shared.message_queue.unified_mq_publisher import publish_domain_event
 
             # 為每個座位發送預訂命令
             for seat_id in selected_seats:

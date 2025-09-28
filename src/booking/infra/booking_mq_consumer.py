@@ -15,8 +15,8 @@ import anyio
 
 from src.booking.port.booking_mq_gateway import BookingMqGateway
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.unified_mq_consumer import UnifiedEventConsumer
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_consumer import UnifiedEventConsumer
 
 
 class BookingMqConsumer:

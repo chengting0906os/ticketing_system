@@ -8,15 +8,15 @@ Booking Event Gateway Port
 - 使用場景：ticketing 服務接收 booking 服務的事件並回應
 """
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Any, Dict, List, Optional
 
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.unified_mq_publisher import publish_domain_event
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_publisher import publish_domain_event
 
 
 @dataclass

@@ -8,10 +8,9 @@
 - 使用場景：booking創建後通知ticketing服務
 """
 
-from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Protocol, runtime_checkable
+from typing import Dict, List, Optional
 
 import orjson
 from quixstreams import Application
@@ -19,41 +18,7 @@ from quixstreams.models.serializers.protobuf import ProtobufDeserializer, Protob
 
 from src.shared.config.core_setting import settings
 from src.shared.logging.loguru_io import Logger
-
-
-@runtime_checkable
-class DomainEvent(Protocol):
-    """
-    領域事件協議定義
-
-    【MVP原則】所有領域事件必須包含的最基本屬性：
-    - aggregate_id: 業務實體ID（如booking_id）
-    - occurred_at: 事件發生時間
-    """
-
-    @property
-    def aggregate_id(self) -> int:
-        """業務聚合根ID，用於分區和關聯"""
-        ...
-
-    @property
-    def occurred_at(self) -> datetime:
-        """事件發生時間戳"""
-        ...
-
-
-class EventPublisher(ABC):
-    @abstractmethod
-    async def publish(
-        self, *, event: DomainEvent, topic: str, partition_key: Optional[str] = None
-    ) -> bool:
-        pass
-
-    @abstractmethod
-    async def publish_batch(
-        self, *, events: List[DomainEvent], topic: str, partition_key: Optional[str] = None
-    ) -> bool:
-        pass
+from src.shared.message_queue.domain import MqDomainEvent, MqPublisher
 
 
 class ProtobufEventSerializer:
@@ -67,7 +32,7 @@ class ProtobufEventSerializer:
     """
 
     @staticmethod
-    def _extract_event_data(event: DomainEvent) -> dict:
+    def _extract_event_data(event: MqDomainEvent) -> dict:
         """提取事件的數據屬性"""
         if hasattr(event, '__dict__'):
             data = event.__dict__.copy()
@@ -91,7 +56,7 @@ class ProtobufEventSerializer:
         return data
 
 
-class QuixStreamEventPublisher(EventPublisher):
+class QuixStreamMqPublisher(MqPublisher):
     """
     Quix Streams 事件發布器實現 (2024 最新版本 + Protobuf)
 
@@ -124,12 +89,12 @@ class QuixStreamEventPublisher(EventPublisher):
     def _check_protobuf_availability(self) -> bool:
         """檢查 Protobuf 是否可用"""
         try:
-            import src.shared.event_bus.proto.domain_event_pb2 as domain_event_pb2
+            import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
-            # Check DomainEvent class exists using getattr to avoid Pylance issues
-            _ = getattr(domain_event_pb2, 'DomainEvent', None)
+            # Check DomainMqEvent class exists using getattr to avoid Pylance issues
+            _ = getattr(domain_event_pb2, 'DomainMqEvent', None)
             if _ is None:
-                raise ImportError('DomainEvent class not found in protobuf module')
+                raise ImportError('DomainMqEvent class not found in protobuf module')
             return True
         except ImportError:
             Logger.base.error('Protobuf schema not available. Please generate proto files.')
@@ -138,16 +103,16 @@ class QuixStreamEventPublisher(EventPublisher):
     def _get_topic(self, topic_name: str):
         """獲取或創建 topic 對象 (純 Protobuf 序列化)"""
         if topic_name not in self._topics:
-            import src.shared.event_bus.proto.domain_event_pb2 as domain_event_pb2
+            import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
             # Protobuf class with type stub support
-            DomainEventClass = domain_event_pb2.DomainEvent
+            DomainMqEventClass = domain_event_pb2.DomainMqEvent
 
             self._topics[topic_name] = self.app.topic(
                 name=topic_name,
-                value_serializer=ProtobufSerializer(msg_type=DomainEventClass),
+                value_serializer=ProtobufSerializer(msg_type=DomainMqEventClass),
                 value_deserializer=ProtobufDeserializer(
-                    msg_type=DomainEventClass,
+                    msg_type=DomainMqEventClass,
                     to_dict=False,  # 保持 Protobuf 對象格式，提升性能
                 ),
                 key_serializer='str',
@@ -156,14 +121,14 @@ class QuixStreamEventPublisher(EventPublisher):
 
         return self._topics[topic_name]
 
-    def _create_protobuf_event(self, event: DomainEvent):
+    def _create_protobuf_event(self, event: MqDomainEvent):
         """創建 Protobuf 事件對象"""
-        import src.shared.event_bus.proto.domain_event_pb2 as domain_event_pb2
+        import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
         # Protobuf class with type stub support
-        DomainEventClass = domain_event_pb2.DomainEvent
+        DomainMqEventClass = domain_event_pb2.DomainMqEvent
 
-        proto_event = DomainEventClass()
+        proto_event = DomainMqEventClass()
         # event_id 在這裡是事件的唯一識別符，不是 BookingCreated 中的 event_id（活動 ID）
         # 生成唯一的事件 ID
         import uuid
@@ -184,7 +149,7 @@ class QuixStreamEventPublisher(EventPublisher):
 
     @Logger.io
     async def publish(
-        self, *, event: DomainEvent, topic: str, partition_key: Optional[str] = None
+        self, *, event: MqDomainEvent, topic: str, partition_key: Optional[str] = None
     ) -> bool:
         """
         發布單個事件 (純 Protobuf 序列化)
@@ -241,7 +206,7 @@ class QuixStreamEventPublisher(EventPublisher):
 
     @Logger.io
     async def publish_batch(
-        self, *, events: List[DomainEvent], topic: str, partition_key: Optional[str] = None
+        self, *, events: List[MqDomainEvent], topic: str, partition_key: Optional[str] = None
     ) -> bool:
         """
         批量發布事件 (利用 Quix Streams 內建批處理)
@@ -288,23 +253,23 @@ class QuixStreamEventPublisher(EventPublisher):
         self._topics.clear()
 
 
-class InMemoryEventPublisher(EventPublisher):
+class InMemoryMqPublisher(MqPublisher):
     """
     內存事件發布器（測試專用）
 
     【MVP測試原則】
     - 不需要真實的Kafka環境
     - 可以檢查發布的事件
-    - 測試時替換KafkaEventPublisher
+    - 測試時替換KafkaMqPublisher
     """
 
     def __init__(self):
         # 內存存儲：topic -> events列表
-        self.published_events: Dict[str, List[DomainEvent]] = {}
+        self.published_events: Dict[str, List[MqDomainEvent]] = {}
 
     @Logger.io
     async def publish(
-        self, *, event: DomainEvent, topic: str, partition_key: Optional[str] = None
+        self, *, event: MqDomainEvent, topic: str, partition_key: Optional[str] = None
     ) -> bool:
         """將事件存儲在內存中"""
         if topic not in self.published_events:
@@ -317,7 +282,7 @@ class InMemoryEventPublisher(EventPublisher):
 
     @Logger.io
     async def publish_batch(
-        self, *, events: List[DomainEvent], topic: str, partition_key: Optional[str] = None
+        self, *, events: List[MqDomainEvent], topic: str, partition_key: Optional[str] = None
     ) -> bool:
         """批量存儲事件在內存中"""
         if topic not in self.published_events:
@@ -328,7 +293,7 @@ class InMemoryEventPublisher(EventPublisher):
         )
         return True
 
-    def get_events(self, *, topic: str) -> List[DomainEvent]:
+    def get_events(self, *, topic: str) -> List[MqDomainEvent]:
         """獲取指定topic的所有事件（測試用）"""
         return self.published_events.get(topic, [])
 
@@ -337,7 +302,7 @@ class InMemoryEventPublisher(EventPublisher):
         self.published_events.clear()
 
 
-class EventPublisherFactory:
+class MqPublisherFactory:
     """
     事件發布器工廠 (純 Quix Streams + Protobuf)
 
@@ -348,7 +313,7 @@ class EventPublisherFactory:
 
     @Logger.io
     @staticmethod
-    def create_publisher(*, publisher_type: str = 'auto') -> EventPublisher:
+    def create_publisher(*, publisher_type: str = 'auto') -> MqPublisher:
         """
         創建事件發布器實例
 
@@ -360,13 +325,13 @@ class EventPublisherFactory:
         if publisher_type == 'auto':
             # 自動檢測：優先使用 Quix Streams
             if settings.DEBUG and not getattr(settings, 'KAFKA_BOOTSTRAP_SERVERS', None):
-                return InMemoryEventPublisher()
+                return InMemoryMqPublisher()
             else:
-                return QuixStreamEventPublisher()
+                return QuixStreamMqPublisher()
         elif publisher_type == 'quix':
-            return QuixStreamEventPublisher()
+            return QuixStreamMqPublisher()
         elif publisher_type == 'memory':
-            return InMemoryEventPublisher()
+            return InMemoryMqPublisher()
         else:
             raise ValueError(
                 f'Unsupported publisher type: {publisher_type}. Use: auto, quix, memory'
@@ -376,20 +341,20 @@ class EventPublisherFactory:
 # === 全局單例模式 ===
 # 【MVP原則】整個應用使用同一個發布器實例，避免重複連接
 
-_event_publisher: Optional[EventPublisher] = None
+_event_publisher: Optional[MqPublisher] = None
 
 
 @Logger.io
-def get_event_publisher() -> EventPublisher:
+def get_event_publisher() -> MqPublisher:
     """獲取全局事件發布器實例（單例模式）"""
     global _event_publisher
     if _event_publisher is None:
-        _event_publisher = EventPublisherFactory.create_publisher()
+        _event_publisher = MqPublisherFactory.create_publisher()
     return _event_publisher
 
 
 @Logger.io
-def set_event_publisher(publisher: EventPublisher) -> None:
+def set_event_publisher(publisher: MqPublisher) -> None:
     """設置自定義事件發布器（測試時有用）"""
     global _event_publisher
     _event_publisher = publisher
@@ -405,23 +370,11 @@ def reset_event_publisher() -> None:
     _event_publisher = None
 
 
-@Logger.io
-def _generate_default_topic(event: DomainEvent) -> str:
-    """
-    從事件類名生成默認topic名
-
-    【MVP命名規則】
-    BookingCreated -> ticketing.bookingcreated
-    """
-    event_type = event.__class__.__name__.replace('Event', '').lower()
-    return f'ticketing.{event_type}'
-
-
 # === 便捷函數 ===
 # 【MVP使用接口】最常用的兩個函數
 @Logger.io
 async def publish_domain_event(
-    event: DomainEvent,
+    event: MqDomainEvent,
     topic: str,  # 改為必填
     partition_key: str,  # 改為必填
 ) -> None:

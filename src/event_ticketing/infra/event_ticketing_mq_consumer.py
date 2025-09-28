@@ -17,8 +17,8 @@ from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMq
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.config.db_setting import get_async_session
 from src.shared.constant.topic import Topic
-from src.shared.event_bus.unified_mq_consumer import UnifiedEventConsumer
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_consumer import UnifiedEventConsumer
 from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 

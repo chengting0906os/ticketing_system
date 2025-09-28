@@ -100,7 +100,7 @@ class UnifiedEventConsumer:
         try:
             from quixstreams.models.serializers.protobuf import ProtobufDeserializer
 
-            import src.shared.event_bus.proto.domain_event_pb2 as domain_event_pb2
+            import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
             # Protobuf class with type stub support
             DomainEventProtoBufClass = domain_event_pb2.DomainEvent
