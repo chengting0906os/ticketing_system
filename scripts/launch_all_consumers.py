@@ -14,6 +14,7 @@ from sqlalchemy import select
 from src.shared.config.db_setting import get_async_session
 from src.event_ticketing.infra.event_model import EventModel
 from src.shared.event_bus.kafka_config_service import KafkaConfigService
+from src.shared.event_bus.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
 from src.shared.logging.loguru_io import Logger
 
 
@@ -128,13 +129,7 @@ class EventServiceLauncher:
 
     async def _ensure_kafka_topics(self, event: EventModel) -> None:
         """確保 Kafka topics 存在"""
-        topics = [
-            f"event-id-{event.id}-seat-commands",
-            f"event-id-{event.id}-seat-results",
-            f"event-id-{event.id}-booking-events",
-            f"event-id-{event.id}-seat-reservation-results",
-            f"event-id-{event.id}-ticket-status-updates"
-        ]
+        topics = KafkaTopicBuilder.get_all_topics(event_id=event.id)
 
         for topic in topics:
             print(f"  📌 檢查 topic: {topic}")
@@ -143,12 +138,13 @@ class EventServiceLauncher:
         await self.kafka_service._create_event_topics(event.id)
 
     async def _start_consumers(self, event: EventModel) -> None:
-        """啟動所有 consumers"""
+        """啟動所有 consumers (開發模式: 1:2:1 架構)"""
         consumers = [
-            ("🏗️ RocksDB 座位處理器", "src.seat_reservation.infra.rocksdb_seat_processor"),
-            ("📚 訂單消費者", "src.booking.infra.booking_mq_consumer"),
-            ("🪑 座位預訂消費者", "src.seat_reservation.infra.seat_reservation_consumer"),
-            ("🎫 票務同步消費者", "src.event_ticketing.infra.event_ticketing_mq_consumer")
+            # 1:2:1 架構 - 開發模式也可以測試真實的負載分配
+            ("📚 Booking Service Consumer", "src.booking.infra.booking_mq_consumer"),
+            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_consumer"),
+            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_consumer"),
+            ("🎫 Event Ticketing Consumer", "src.event_ticketing.infra.event_ticketing_mq_consumer")
         ]
 
         # 獲取項目根目錄
@@ -185,25 +181,22 @@ class EventServiceLauncher:
         seat_count = self._calculate_seat_count(event.seating_config)
 
         print(f"""
-📊 服務狀態摘要：
+📊 服務狀態摘要 (🛠️ 開發模式 - 1:2:1 架構)：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   活動 ID:     {event.id}
   活動名稱:    {event.name}
   場地:        {event.venue_name}
   座位數:      {seat_count:,}
 
-  Topics:
-    • event-id-{event.id}-seat-commands
-    • event-id-{event.id}-seat-results
-    • event-id-{event.id}-booking-events
-    • event-id-{event.id}-seat-reservation-results
-    • event-id-{event.id}-ticket-status-updates
+  主要 Topics:""" + "\n".join([f"    • {topic}" for topic in KafkaTopicBuilder.get_all_topics(event_id=event.id)]) + """
 
-  Consumers:
-    • RocksDB Seat Processor ✅
-    • Booking Consumer ✅
-    • Seat Reservation Consumer ✅
-    • Event Ticketing Consumer ✅
+  Consumer 配置 (1:2:1 架構):
+    • 📚 Booking Service (1個) ✅
+    • 🪑 Seat Reservation (2個) ✅
+    • 🎫 Event Ticketing (1個) ✅
+
+  🛠️ 開發模式: 使用真實的 1:2:1 架構來測試負載分配
+  🚀 生產環境: 直接使用相同架構，只需調整 partition 數量
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 💡 提示: 使用 Ctrl+C 停止所有服務
