@@ -421,38 +421,20 @@ def _generate_default_topic(event: DomainEvent) -> str:
 # 【MVP使用接口】最常用的兩個函數
 @Logger.io
 async def publish_domain_event(
-    event: DomainEvent, topic: Optional[str] = None, partition_key: Optional[str] = None
+    event: DomainEvent,
+    topic: str,  # 改為必填
+    partition_key: str,  # 改為必填
 ) -> None:
     """
-    發布領域事件的便捷函數
+    - topic: 確保事件路由到正確的處理者
+    - partition_key: 確保相同座位的事件順序處理
 
-    【MVP最常用】99%的場景都用這個函數：
+    範例：
     await publish_domain_event(
         event=BookingCreated(...),
-        topic="ticketing-booking-request"
+        topic="event-id-123-booking-events",
+        partition_key="event-123-section-A-1-1-1"
     )
     """
-    if topic is None:
-        topic = _generate_default_topic(event)
-
     publisher = get_event_publisher()
     await publisher.publish(event=event, topic=topic, partition_key=partition_key)
-
-
-@Logger.io
-async def publish_domain_events_batch(
-    events: List[DomainEvent], topic: Optional[str] = None, partition_key: Optional[str] = None
-) -> None:
-    """
-    批量發布領域事件的便捷函數
-
-    【MVP批量場景】當一個業務操作產生多個事件時使用
-    """
-    if not events:
-        return
-
-    if topic is None:
-        topic = _generate_default_topic(events[0])
-
-    publisher = get_event_publisher()
-    await publisher.publish_batch(events=events, topic=topic, partition_key=partition_key)
