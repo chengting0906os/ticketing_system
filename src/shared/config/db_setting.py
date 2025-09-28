@@ -10,6 +10,12 @@ engine = create_async_engine(
     settings.DATABASE_URL_ASYNC,
     echo=False,
     future=True,
+    # Connection pool settings for high-performance bulk operations
+    pool_size=50,  # 常駐連線數
+    max_overflow=50,  # 額外連線數
+    pool_timeout=30,  # 取得連線超時
+    pool_recycle=3600,  # 連線回收時間 (1小時)
+    pool_pre_ping=True,  # 連線前測試
 )
 
 async_session_maker = async_sessionmaker(
