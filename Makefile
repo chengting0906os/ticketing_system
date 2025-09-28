@@ -81,8 +81,8 @@ run:
 	@trap 'pkill -f granian' INT; \
 	set -a && source .env.example && set +a && uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --reload --http auto --loop uvloop --log-config src/shared/logging/granian_log_config.json --access-log
 
-.PHONY: stop
-stop:
+.PHONY: stop-granian
+stop-granian:
 	@echo "Stopping all granian processes..."
 	@pkill -f granian || echo "No granian processes found"
 
@@ -121,117 +121,93 @@ db-restart:
 	@docker restart ticketing_system_db
 
 # Kafka
-.PHONY: kafka-clean-all kca
-kafka-clean-all kca:
-	@echo "Deleting ALL Kafka topics..."
+.PHONY: kafka-clean kc
+kafka-clean kc:
+	@echo "🧹 Deleting ALL Kafka topics..."
 	@docker exec kafka1 sh -c 'for topic in $$(kafka-topics --bootstrap-server kafka1:29092 --list); do \
-		echo "Deleting topic: $$topic"; \
 		kafka-topics --bootstrap-server kafka1:29092 --delete --topic "$$topic" 2>/dev/null || true; \
 	done'
-	@echo "All topics deleted!"
-
-.PHONY: kafka-topics kt
-kafka-topics kt: kafka-clean-all
-	@echo "Creating Kafka topics..."
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-event --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-ticket --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-request --partitions 6 --replication-factor 3
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic ticketing-booking-response --partitions 6 --replication-factor 3
-	@echo "Topics created successfully!"
-	@docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --list
+	@echo "✅ All topics deleted"
 
 .PHONY: kafka-status ks
 kafka-status ks:
-	@echo "Kafka cluster status:"
+	@echo "📊 Kafka Status:"
 	@docker-compose ps kafka1 kafka2 kafka3 kafka-ui
 	@echo ""
-	@echo "Kafka UI available at: http://localhost:8080"
-	@echo "Kafka brokers at: localhost:9092,localhost:9093,localhost:9094"
+	@echo "🌐 Kafka UI: http://localhost:8080"
+	@echo "🔗 Brokers: localhost:9092,9093,9094"
 
-# Kafka Consumers
-.PHONY: consumer-start kcs
-consumer-start kcs:
-	@echo "Starting unified Kafka consumers..."
-	@set -a && source .env.example && set +a && PYTHONPATH=. uv run python -m src.shared.event_bus.start_unified_consumers
 
-.PHONY: consumers-start kcss
-consumers-start kcss:
-	@echo "Starting multiple Kafka consumers..."
-	@chmod +x src/shared/event_bus/start_multiple_consumers.sh
-	@./src/shared/event_bus/start_multiple_consumers.sh $(N)
-
-.PHONY: consumer-stop kcstop
-consumer-stop kcstop:
-	@echo "Stopping Kafka consumers..."
-	@pkill -f start_unified_consumers || echo "No consumer processes found"
-
-.PHONY: consumer-status kcst
-consumer-status kcst:
-	@echo "Consumer processes:"
-	@ps aux | grep -E "(start_unified_consumers|consumer)" | grep -v grep || echo "No consumer processes found"
-
-# Separated Consumer Architecture (New)
+# Services
 .PHONY: check-kafka
 check-kafka:
-	@echo "🔍 檢查 Kafka 服務..."
-	@if nc -z localhost 9092 2>/dev/null; then \
-		echo "✅ Kafka 服務正常運行"; \
-	else \
+	@if ! nc -z localhost 9092 2>/dev/null; then \
 		echo "❌ Kafka 服務未運行，請先啟動 Kafka"; \
 		exit 1; \
 	fi
 
-.PHONY: consumers cs
-consumers cs: check-kafka  ## 🚀 啟動分離的消費者架構 (推薦)
-	@echo "🚀 啟動分離的消費者架構..."
-	@./scripts/start_separated_consumers.sh
+.PHONY: services ss
+services ss: check-kafka  ## 🚀 智能啟動活動服務 (從資料庫選擇)
+	@echo "🚀 啟動智能活動服務選擇器..."
+	@PYTHONPATH=. uv run python scripts/launch_all_consumers.py
 
-.PHONY: consumer-ticketing ct
-consumer-ticketing ct: check-kafka  ## 🎫 啟動票務請求消費者
-	@echo "🎫 啟動票務請求消費者..."
-	@uv run python -m src.event_ticketing.infra.event_ticketing_mq_consumer
 
-.PHONY: consumer-booking cb
-consumer-booking cb: check-kafka  ## 📚 啟動訂單回應消費者
-	@echo "📚 啟動訂單回應消費者..."
-	@uv run python -m src.booking.infra.booking_mq_consumer
-
-.PHONY: test-consumers tc
-test-consumers tc:  ## 🧪 測試消費者架構
-	@echo "🧪 測試消費者架構..."
-	@uv run python -c "import sys; sys.path.append('src'); from event_ticketing.infra.event_ticketing_mq_consumer import EventTicketingMqConsumer; from booking.infra.booking_mq_consumer import BookingMqConsumer; print('✅ EventTicketingMqConsumer 可用'); print('✅ BookingMqConsumer 可用'); print('🎯 消費者架構測試通過!')"
-
-.PHONY: stop-consumers sc
-stop-consumers sc:  ## 🛑 停止所有消費者進程
-	@echo "🛑 停止所有消費者進程..."
-	@pkill -f "event_ticketing_mq_consumer" || true
+.PHONY: stop-services stop
+stop-services stop:  ## 🛑 停止所有服務
+	@echo "🛑 停止所有服務..."
+	@pkill -f "rocksdb_seat_processor" || true
 	@pkill -f "booking_mq_consumer" || true
-	@pkill -f "start_unified_consumers" || true
-	@pkill -f "start_separated_consumers" || true
-	@echo "✅ 所有消費者已停止"
+	@pkill -f "seat_reservation_consumer" || true
+	@pkill -f "event_ticketing_mq_consumer" || true
+	@pkill -f "launch_all_consumers" || true
+	@echo "✅ 所有服務已停止"
 
-.PHONY: restart-consumers rc
-restart-consumers rc: stop-consumers consumers  ## 🔄 重啟所有消費者
+.PHONY: restart-services restart
+restart-services restart: stop-services services  ## 🔄 重啟所有服務
+
+.PHONY: architecture arch
+architecture arch:  ## 📐 顯示架構圖
+	@echo "📐 三微服務分散式架構 (50,000張票 + RocksDB + 無鎖預訂):"
+	@echo "================================================================"
+	@echo ""
+	@echo "┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐"
+	@echo "│   booking_service   │     │   seat_reservation   │     │   event_ticketing   │"
+	@echo "│    (PostgreSQL)     │     │      (RocksDB)       │     │     (PostgreSQL)    │"
+	@echo "└─────────────────────┘     └──────────────────────┘     └─────────────────────┘"
+	@echo "         │                           │                          │"
+	@echo "         │                           │                          │"
+	@echo "         ▼                           ▼                          ▼"
+	@echo "┌─────────────────────────────────────────────────────────────────────────────┐"
+	@echo "│                             Kafka + Quix Streams                            │"
+	@echo "│                   Event-Driven + Stateful Stream + Lock-Free                │"
+	@echo "└─────────────────────────────────────────────────────────────────────────────┘"
+	@echo ""
+	@echo "流程："
+	@echo "  1. booking_service 創建訂單 → 發送 TicketReservedRequest"
+	@echo "  2. seat_reservation 選座位 → RocksDB 原子操作"
+	@echo "  3. RocksDB 成功 → 雙事件發送 (到 booking + event_ticketing)"
+	@echo "  4. booking_service 狀態 PROCESSING → PENDING_PAYMENT (Redis TTL 15分)"
+	@echo "  5. event_ticketing 票據狀態 AVAILABLE → RESERVED"
+	@echo ""
+	@echo "Topics (支援 event-id-{event_id}-* 格式)："
+	@echo "  Global Topics:"
+	@echo "    • seat-commands              → RocksDB Processor"
+	@echo "    • seat-results               → seat_reservation"
+	@echo "    • booking-events             → seat_reservation"
+	@echo "    • seat-reservation-results   → booking_service"
+	@echo "    • ticket-status-updates      → event_ticketing"
+	@echo ""
+	@echo "  Event-Specific Topics:"
+	@echo "    • event-id-{event_id}-seat-commands"
+	@echo "    • event-id-{event_id}-seat-results"
+	@echo "    • event-id-{event_id}-booking-events"
+	@echo "    • event-id-{event_id}-seat-reservation-results"
+	@echo "    • event-id-{event_id}-ticket-status-updates"
+	@echo ""
+	@echo "  使用方式: make kafka-topics-event EVENT_ID=123"
 
 .PHONY: consumer-architecture ca
-consumer-architecture ca:  ## 📐 顯示消費者架構圖
-	@echo "📐 分離消費者架構:"
-	@echo "=================="
-	@echo ""
-	@echo "  Booking Service                   Ticketing Service"
-	@echo "  ┌──────────────┐                 ┌──────────────────┐"
-	@echo "  │              │                 │                  │"
-	@echo "  │ Response     │◄──[response]────│                  │"
-	@echo "  │ Consumer     │                 │                  │"
-	@echo "  │              │                 │ Request Consumer │"
-	@echo "  │              │────[request]────►│                  │"
-	@echo "  │              │                 │                  │"
-	@echo "  └──────────────┘                 └──────────────────┘"
-	@echo ""
-	@echo "Topics:"
-	@echo "  • ticketing-booking-request  → Ticketing Consumer"
-	@echo "  • ticketing-booking-response → Booking Consumer"
+consumer-architecture ca: architecture  ## 📐 顯示架構圖 (別名)
 
 # Help
 .PHONY: help
@@ -262,19 +238,12 @@ help:
 	@echo "    make docker-logs         - View Docker logs"
 	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
 	@echo ""
-	@echo "  Kafka & Consumers:"
-	@echo "    make kafka-topics (kt)   - Create Kafka topics"
+	@echo "  Kafka:"
+	@echo "    make kafka-clean (kc)    - Clean all Kafka topics"
 	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
-	@echo "    make consumer-start (kcs) - Start single Kafka consumer (old)"
-	@echo "    make consumers-start (kcss) N=3 - Start multiple Kafka consumers (old)"
-	@echo "    make consumer-stop (kcstop) - Stop Kafka consumers (old)"
-	@echo "    make consumer-status (kcst) - Check consumer status (old)"
 	@echo ""
-	@echo "  Separated Consumers (New Architecture):"
-	@echo "    make consumers (cs)      - 🚀 Start separated consumers (recommended)"
-	@echo "    make consumer-ticketing (ct) - 🎫 Start ticketing request consumer"
-	@echo "    make consumer-booking (cb) - 📚 Start booking response consumer"
-	@echo "    make test-consumers (tc) - 🧪 Test consumer architecture"
-	@echo "    make stop-consumers (sc) - 🛑 Stop all consumer processes"
-	@echo "    make restart-consumers (rc) - 🔄 Restart all consumers"
-	@echo "    make consumer-architecture (ca) - 📐 Show architecture diagram"
+	@echo "  Services:"
+	@echo "    make services (ss)       - 🚀 Start services (interactive event selection)"
+	@echo "    make stop                - 🛑 Stop all services"
+	@echo "    make restart             - 🔄 Restart all services"
+	@echo "    make architecture (arch) - 📐 Show architecture diagram"
