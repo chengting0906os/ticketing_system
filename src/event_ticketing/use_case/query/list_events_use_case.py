@@ -3,27 +3,42 @@ from typing import List
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
-from src.event_ticketing.domain.event_entity import Event
-from src.event_ticketing.domain.event_query_repo import EventQueryRepo
+from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
+from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
 from src.shared.config.di import Container
 from src.shared.logging.loguru_io import Logger
 
 
 class ListEventsUseCase:
-    def __init__(self, event_repo: EventQueryRepo):
-        self.event_repo = event_repo
+    def __init__(self, event_ticketing_query_repo: EventTicketingQueryRepo):
+        self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @classmethod
     @inject
-    def depends(cls, event_repo: EventQueryRepo = Depends(Provide[Container.event_query_repo])):
-        return cls(event_repo=event_repo)
+    def depends(
+        cls,
+        event_ticketing_query_repo: EventTicketingQueryRepo = Depends(
+            Provide[Container.event_ticketing_query_repo]
+        ),
+    ):
+        return cls(event_ticketing_query_repo=event_ticketing_query_repo)
 
     @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[Event]:
-        events = await self.event_repo.get_by_seller(seller_id=seller_id)
+    async def get_by_seller(self, seller_id: int) -> List[EventTicketingAggregate]:
+        """獲取賣家的所有活動（不含票務，性能優化）"""
+        Logger.base.info(f'📋 [LIST_BY_SELLER] Loading events for seller {seller_id}')
+
+        events = await self.event_ticketing_query_repo.list_events_by_seller(seller_id=seller_id)
+
+        Logger.base.info(f'✅ [LIST_BY_SELLER] Found {len(events)} events for seller {seller_id}')
         return events
 
-    @Logger.io(truncate_content=True)
-    async def list_available(self) -> List[Event]:
-        events = await self.event_repo.list_available()
+    @Logger.io
+    async def list_available(self) -> List[EventTicketingAggregate]:
+        """獲取所有可用活動（不含票務，性能優化）"""
+        Logger.base.info('🌟 [LIST_AVAILABLE] Loading all available events')
+
+        events = await self.event_ticketing_query_repo.list_available_events()
+
+        Logger.base.info(f'✅ [LIST_AVAILABLE] Found {len(events)} available events')
         return events

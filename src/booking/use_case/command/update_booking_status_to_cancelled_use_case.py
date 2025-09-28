@@ -7,10 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
+from src.booking.domain.booking_domain_events import BookingCancelledEvent
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 class CancelBookingUseCase:
@@ -57,14 +60,50 @@ class CancelBookingUseCase:
 
         # Cancel the booking
         cancelled_booking = booking.cancel()
-        await self.booking_command_repo.update_status_to_cancelled(booking=cancelled_booking)
-        await self.session.commit()
+        updated_booking = await self.booking_command_repo.update_status_to_cancelled(
+            booking=cancelled_booking
+        )
 
-        # TODO: Emit BookingCancelled domain event for event_ticketing domain to handle ticket release
-        # This should be handled by an event handler that listens to BookingCancelled events
-        # and releases the associated tickets back to available status
+        # Publish domain event for event_ticketing service to handle ticket release
+        if booking.ticket_ids:
+            Logger.base.info(
+                f'🔓 [CANCEL] Publishing cancellation event for {len(booking.ticket_ids)} tickets in booking {booking_id}'
+            )
+
+            # Extract ticket IDs from booking
+            ticket_ids = [ticket_id for ticket_id in booking.ticket_ids if ticket_id is not None]
+
+            if ticket_ids:
+                # Create and publish BookingCancelledEvent
+                from datetime import datetime, timezone
+
+                cancelled_event = BookingCancelledEvent(
+                    booking_id=booking_id,
+                    buyer_id=buyer_id,
+                    event_id=booking.event_id,
+                    ticket_ids=ticket_ids,
+                    cancelled_at=datetime.now(timezone.utc),
+                )
+
+                # Publish to event_ticketing service according to README pattern
+                topic_name = KafkaTopicBuilder.update_ticket_status_to_available(
+                    event_id=booking.event_id
+                )
+                partition_key = f'event-{booking.event_id}'
+
+                await publish_domain_event(
+                    event=cancelled_event, topic=topic_name, partition_key=partition_key
+                )
+
+                Logger.base.info(
+                    f'✅ [CANCEL] Published BookingCancelledEvent to topic: {topic_name}'
+                )
+
+        await self.session.commit()
+        Logger.base.info(f'🎯 [CANCEL] Booking {booking_id} cancelled successfully')
 
         return {
             'status': 'ok',
             'cancelled_tickets': len(booking.ticket_ids),
+            'booking_id': updated_booking.id,
         }

@@ -1,14 +1,25 @@
-from typing import Any, Dict, List, Optional
+"""
+Reserve Tickets Use Case - 使用新的 EventTicketingAggregate
+
+重構後的票務預訂業務邏輯：
+- 使用 EventTicketingAggregate 作為聚合根
+- 保證票務預訂的事務一致性
+- 通過聚合根執行業務規則
+- 增強的日誌記錄
+"""
+
+from typing import Any, Dict, List
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
-from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
+from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
+from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
+from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
-from src.shared.exception.exceptions import DomainError
+from src.shared.exception.exceptions import DomainError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 
 
@@ -16,252 +27,295 @@ class ReserveTicketsUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        ticket_command_repo: TicketCommandRepo,
-        ticket_query_repo: TicketQueryRepo,
+        event_ticketing_command_repo: EventTicketingCommandRepo,
+        event_ticketing_query_repo: EventTicketingQueryRepo,
     ):
         self.session = session
-        self.ticket_command_repo = ticket_command_repo
-        self.ticket_query_repo = ticket_query_repo
+        self.event_ticketing_command_repo = event_ticketing_command_repo
+        self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @classmethod
     @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        ticket_command_repo: TicketCommandRepo = Depends(Provide[Container.ticket_command_repo]),
-        ticket_query_repo: TicketQueryRepo = Depends(Provide[Container.ticket_query_repo]),
+        event_ticketing_command_repo: EventTicketingCommandRepo = Depends(
+            Provide[Container.event_ticketing_command_repo]
+        ),
+        event_ticketing_query_repo: EventTicketingQueryRepo = Depends(
+            Provide[Container.event_ticketing_query_repo]
+        ),
     ):
-        return cls(session, ticket_command_repo, ticket_query_repo)
+        return cls(session, event_ticketing_command_repo, event_ticketing_query_repo)
 
     @Logger.io
     async def reserve_tickets(
         self, *, event_id: int, ticket_count: int, buyer_id: int, section: str, subsection: int
     ) -> Dict[str, Any]:
-        if ticket_count <= 0:
-            raise DomainError('Ticket count must be positive', 400)
-        if ticket_count > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
+        """
+        預訂票務 - 使用聚合根業務邏輯
 
-        # Get available tickets for the event (optionally filtered by section/subsection)
-        if section or subsection:
-            available_tickets = await self.ticket_query_repo.get_available_tickets_for_section(
-                event_id=event_id, section=section, subsection=subsection, limit=ticket_count
-            )
-        else:
-            available_tickets = await self.ticket_query_repo.get_available_tickets_for_event(
-                event_id=event_id, limit=ticket_count
-            )
+        Args:
+            event_id: 活動 ID
+            ticket_count: 票務數量
+            buyer_id: 購買者 ID
+            section: 區域
+            subsection: 子區域
 
-        if len(available_tickets) < ticket_count:
-            raise DomainError('Not enough available tickets', 400)
-
-        # Reserve the best available tickets (first n available)
-        tickets_to_reserve = available_tickets[:ticket_count]
-
-        # Reserve each ticket
-        for ticket in tickets_to_reserve:
-            ticket.reserve(buyer_id=buyer_id)
-
-        # Update tickets in database
-        await self.ticket_command_repo.update_batch(tickets=tickets_to_reserve)
-        await self.session.commit()
-
-        # Broadcast SSE events for real-time updates
-        await self._broadcast_reservation_events_sse(
-            event_id=event_id, tickets=tickets_to_reserve, buyer_id=buyer_id
+        Returns:
+            預訂結果
+        """
+        Logger.base.info(
+            f'🎫 [RESERVE] Starting ticket reservation for event {event_id}: '
+            f'buyer_id={buyer_id}, section={section}, subsection={subsection}, count={ticket_count}'
         )
 
-        # Return reservation details
+        # 驗證輸入
+        if ticket_count <= 0:
+            Logger.base.error(f'❌ [RESERVE] Invalid ticket count: {ticket_count}')
+            raise DomainError('Ticket count must be positive', 400)
+        if ticket_count > 4:
+            Logger.base.error(f'❌ [RESERVE] Ticket count too high: {ticket_count} (max 4)')
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        # 獲取 EventTicketingAggregate（只包含可用票務）
+        Logger.base.info(f'🔍 [RESERVE] Loading event aggregate for event {event_id}')
+        event_aggregate = await self.event_ticketing_query_repo.get_event_aggregate_by_id_with_available_tickets_only(
+            event_id=event_id
+        )
+
+        if not event_aggregate:
+            Logger.base.error(f'❌ [RESERVE] Event {event_id} not found')
+            raise NotFoundError('Event not found')
+
+        Logger.base.info(
+            f'📊 [RESERVE] Event {event_id} loaded: {event_aggregate.available_tickets_count} available tickets'
+        )
+
+        # 根據區域篩選可用票務
+        if section and subsection:
+            Logger.base.info(f'🎯 [RESERVE] Filtering tickets by section {section}-{subsection}')
+            available_tickets = event_aggregate.get_tickets_by_section(
+                section=section, subsection=subsection
+            )
+            # 只取可用的票務
+            available_tickets = [t for t in available_tickets if t.status.value == 'available']
+            Logger.base.info(
+                f'📍 [RESERVE] Found {len(available_tickets)} available tickets in section {section}-{subsection}'
+            )
+        else:
+            Logger.base.info('🌐 [RESERVE] Using all available tickets (no section filter)')
+            available_tickets = event_aggregate.get_available_tickets()
+            Logger.base.info(f'🎫 [RESERVE] Total available tickets: {len(available_tickets)}')
+
+        if len(available_tickets) < ticket_count:
+            Logger.base.error(
+                f'❌ [RESERVE] Not enough available tickets: {len(available_tickets)} < {ticket_count}'
+            )
+            raise DomainError('Not enough available tickets', 400)
+
+        # 選擇要預訂的票務（前 n 張可用票務）
+        tickets_to_reserve = available_tickets[:ticket_count]
+        ticket_ids_to_reserve = [t.id for t in tickets_to_reserve if t.id is not None]
+
+        Logger.base.info(
+            f'🎯 [RESERVE] Selected tickets for reservation: {[t.seat_identifier for t in tickets_to_reserve]}'
+        )
+
+        # 通過聚合根執行預訂業務邏輯
+        Logger.base.info('🔒 [RESERVE] Executing reservation through aggregate root')
+        reserved_tickets = event_aggregate.reserve_tickets(
+            ticket_ids=ticket_ids_to_reserve, buyer_id=buyer_id
+        )
+
+        # 更新聚合根
+        Logger.base.info('💾 [RESERVE] Updating event aggregate in database')
+        await self.event_ticketing_command_repo.update_event_aggregate(
+            event_aggregate=event_aggregate
+        )
+
+        await self.session.commit()
+        Logger.base.info('✅ [RESERVE] Transaction committed successfully')
+
+        # 詳細的成功日誌
+        self._log_reservation_details(event_id, buyer_id, reserved_tickets, event_aggregate)
+
         return {
-            'reservation_id': tickets_to_reserve[0].id,  # Use first ticket ID as reservation ID
-            'buyer_id': buyer_id,
+            'success': True,
             'event_id': event_id,
-            'ticket_count': ticket_count,
-            'status': 'reserved',
-            'tickets': [
+            'buyer_id': buyer_id,
+            'reserved_tickets': [
                 {
                     'id': ticket.id,
                     'seat_identifier': ticket.seat_identifier,
-                    'price': ticket.price,
                     'section': ticket.section,
                     'subsection': ticket.subsection,
+                    'row': ticket.row,
+                    'seat': ticket.seat,
+                    'price': ticket.price,
                 }
-                for ticket in tickets_to_reserve
+                for ticket in reserved_tickets
             ],
+            'total_price': sum(ticket.price for ticket in reserved_tickets),
+            'reservation_summary': {
+                'total_tickets_reserved': len(reserved_tickets),
+                'total_amount': sum(ticket.price for ticket in reserved_tickets),
+                'event_remaining_tickets': event_aggregate.available_tickets_count,
+            },
         }
 
     @Logger.io
-    async def handle_seat_selection(
+    async def reserve_specific_tickets(
+        self, *, event_id: int, ticket_ids: List[int], buyer_id: int
+    ) -> Dict[str, Any]:
+        """
+        預訂特定票務
+
+        Args:
+            event_id: 活動 ID
+            ticket_ids: 要預訂的票務 ID 列表
+            buyer_id: 購買者 ID
+
+        Returns:
+            預訂結果
+        """
+        Logger.base.info(
+            f'🎯 [RESERVE_SPECIFIC] Starting specific ticket reservation for event {event_id}: '
+            f'buyer_id={buyer_id}, ticket_ids={ticket_ids}'
+        )
+
+        if not ticket_ids:
+            Logger.base.error('❌ [RESERVE_SPECIFIC] Empty ticket ID list')
+            raise DomainError('Ticket IDs cannot be empty', 400)
+        if len(ticket_ids) > 4:
+            Logger.base.error(f'❌ [RESERVE_SPECIFIC] Too many tickets: {len(ticket_ids)} (max 4)')
+            raise DomainError('Maximum 4 tickets per booking', 400)
+
+        # 獲取完整的 EventTicketingAggregate
+        Logger.base.info(
+            f'🔍 [RESERVE_SPECIFIC] Loading complete event aggregate for event {event_id}'
+        )
+        event_aggregate = await self.event_ticketing_query_repo.get_event_aggregate_by_id(
+            event_id=event_id
+        )
+
+        if not event_aggregate:
+            Logger.base.error(f'❌ [RESERVE_SPECIFIC] Event {event_id} not found')
+            raise NotFoundError('Event not found')
+
+        Logger.base.info(
+            f'📊 [RESERVE_SPECIFIC] Event {event_id} loaded: '
+            f'{event_aggregate.total_tickets_count} total tickets, '
+            f'{event_aggregate.available_tickets_count} available'
+        )
+
+        # 驗證所有票務都存在且可用
+        ticket_details = []
+        for ticket_id in ticket_ids:
+            ticket = event_aggregate._find_ticket_by_id(ticket_id)
+            if not ticket:
+                Logger.base.error(
+                    f'❌ [RESERVE_SPECIFIC] Ticket {ticket_id} not found in event {event_id}'
+                )
+                raise NotFoundError(f'Ticket {ticket_id} not found')
+            if ticket.status.value != 'available':
+                Logger.base.error(
+                    f'❌ [RESERVE_SPECIFIC] Ticket {ticket_id} not available: status={ticket.status.value}'
+                )
+                raise DomainError(f'Ticket {ticket_id} is not available', 400)
+
+            ticket_details.append(f'{ticket.seat_identifier}(${ticket.price})')
+
+        Logger.base.info(f'✅ [RESERVE_SPECIFIC] All tickets validated: {ticket_details}')
+
+        # 通過聚合根執行預訂
+        Logger.base.info('🔒 [RESERVE_SPECIFIC] Executing reservation through aggregate root')
+        reserved_tickets = event_aggregate.reserve_tickets(ticket_ids=ticket_ids, buyer_id=buyer_id)
+
+        # 更新聚合根
+        Logger.base.info('💾 [RESERVE_SPECIFIC] Updating event aggregate in database')
+        await self.event_ticketing_command_repo.update_event_aggregate(
+            event_aggregate=event_aggregate
+        )
+
+        await self.session.commit()
+        Logger.base.info('✅ [RESERVE_SPECIFIC] Transaction committed successfully')
+
+        # 詳細的成功日誌
+        self._log_reservation_details(event_id, buyer_id, reserved_tickets, event_aggregate)
+
+        return {
+            'success': True,
+            'event_id': event_id,
+            'buyer_id': buyer_id,
+            'reserved_tickets': [
+                {
+                    'id': ticket.id,
+                    'seat_identifier': ticket.seat_identifier,
+                    'section': ticket.section,
+                    'subsection': ticket.subsection,
+                    'row': ticket.row,
+                    'seat': ticket.seat,
+                    'price': ticket.price,
+                }
+                for ticket in reserved_tickets
+            ],
+            'total_price': sum(ticket.price for ticket in reserved_tickets),
+            'reservation_summary': {
+                'total_tickets_reserved': len(reserved_tickets),
+                'total_amount': sum(ticket.price for ticket in reserved_tickets),
+                'event_remaining_tickets': event_aggregate.available_tickets_count,
+            },
+        }
+
+    def _log_reservation_details(
         self,
-        *,
-        mode: str,
-        seat_positions: Optional[List[str]] = None,
-        quantity: Optional[int] = None,
-    ) -> List[int]:
-        """Handle seat selection and return list of ticket IDs."""
-        if mode == 'manual':
-            return await self._handle_manual_seat_selection(seat_positions=seat_positions)
-        elif mode == 'best_available':
-            return await self._handle_best_available_selection(quantity=quantity)
-        else:
-            raise DomainError('Invalid seat selection mode', 400)
-
-    async def _handle_manual_seat_selection(
-        self, *, seat_positions: Optional[List[str]]
-    ) -> List[int]:
-        """Handle manual seat selection and return ticket IDs."""
-        if not seat_positions or len(seat_positions) == 0:
-            raise DomainError('Selected seats cannot be empty for manual selection', 400)
-        if len(seat_positions) > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
-
-        ticket_ids = []
-        event_ids = set()
-
-        for seat in seat_positions:
-            try:
-                section, subsection_str, row_str, seat_str = seat.split('-')
-                subsection = int(subsection_str)
-                row = int(row_str)
-                seat_num = int(seat_str)
-            except (ValueError, AttributeError):
-                raise DomainError(
-                    'Invalid seat format. Expected: section-subsection-row-seat (e.g., A-1-1-1)',
-                    400,
-                )
-
-            # Find ticket by seat location
-            # Note: In the current system structure, we need to search through all available tickets
-            # This is a simplified approach for the minimal implementation
-            all_tickets = await self.ticket_query_repo.get_all_available()
-            matching_ticket = None
-
-            for ticket in all_tickets:
-                if (
-                    ticket.section == section
-                    and ticket.subsection == subsection
-                    and ticket.row == row
-                    and ticket.seat == seat_num
-                    and ticket.status.value == 'available'
-                ):
-                    matching_ticket = ticket
-                    event_ids.add(ticket.event_id)
-                    break
-
-            if not matching_ticket:
-                raise DomainError(f'Seat {seat} is not available', 400)
-
-            ticket_ids.append(matching_ticket.id)
-
-        # Validate all seats are from same event
-        if len(event_ids) > 1:
-            raise DomainError('All tickets must be for the same event', 400)
-
-        return ticket_ids
-
-    async def _handle_best_available_selection(self, *, quantity: Optional[int]) -> List[int]:
-        """Handle best available seat selection and return ticket IDs."""
-        if not quantity or quantity <= 0:
-            raise DomainError('Quantity must be positive for best available selection', 400)
-        if quantity > 4:
-            raise DomainError('Maximum 4 tickets per booking', 400)
-
-        # Get all available tickets
-        all_tickets = await self.ticket_query_repo.get_all_available()
-
-        if not all_tickets:
-            raise DomainError('No tickets available', 400)
-
-        # Group tickets by event, section, subsection, and row
-        tickets_by_event = {}
-        for ticket in all_tickets:
-            if ticket.status.value == 'available':
-                event_id = ticket.event_id
-                if event_id not in tickets_by_event:
-                    tickets_by_event[event_id] = {}
-
-                section = ticket.section
-                if section not in tickets_by_event[event_id]:
-                    tickets_by_event[event_id][section] = {}
-
-                subsection = ticket.subsection
-                if subsection not in tickets_by_event[event_id][section]:
-                    tickets_by_event[event_id][section][subsection] = {}
-
-                row = ticket.row
-                if row not in tickets_by_event[event_id][section][subsection]:
-                    tickets_by_event[event_id][section][subsection][row] = []
-
-                tickets_by_event[event_id][section][subsection][row].append(ticket)
-
-        # Find continuous seats - prioritize lower row numbers
-        for event_id in tickets_by_event:
-            for section in tickets_by_event[event_id]:
-                for subsection in tickets_by_event[event_id][section]:
-                    # Sort rows by number (ascending)
-                    rows = sorted(tickets_by_event[event_id][section][subsection].keys())
-
-                    for row in rows:
-                        row_tickets = tickets_by_event[event_id][section][subsection][row]
-                        # Sort tickets by seat number
-                        row_tickets.sort(key=lambda t: t.seat)
-
-                        # Find continuous sequence of requested quantity
-                        continuous_tickets = self._find_continuous_seats(
-                            tickets=row_tickets, quantity=quantity
-                        )
-                        if continuous_tickets:
-                            return [t.id for t in continuous_tickets]
-
-        raise DomainError('No continuous seats available for requested quantity', 400)
-
-    def _find_continuous_seats(self, *, tickets: List, quantity: int) -> List:
-        """Find continuous seats in a row."""
-        if len(tickets) < quantity:
-            return []
-
-        for i in range(len(tickets) - quantity + 1):
-            # Check if seats are continuous
-            continuous = True
-            for j in range(1, quantity):
-                if tickets[i + j].seat != tickets[i + j - 1].seat + 1:
-                    continuous = False
-                    break
-
-            if continuous:
-                return tickets[i : i + quantity]
-
-        return []
-
-    @Logger.io
-    async def _broadcast_reservation_events_sse(
-        self, *, event_id: int, tickets: List, buyer_id: int
+        event_id: int,
+        buyer_id: int,
+        reserved_tickets: List,
+        event_aggregate: EventTicketingAggregate,
     ) -> None:
-        """Log ticket reservations (SSE broadcasting removed in favor of simplified implementation)."""
+        """記錄詳細的預訂信息"""
         try:
-            # Group tickets by subsection for logging
-            subsection_groups = {}
-            for ticket in tickets:
-                subsection_key = f'{ticket.section}-{ticket.subsection}'
-                if subsection_key not in subsection_groups:
-                    subsection_groups[subsection_key] = []
-                subsection_groups[subsection_key].append(ticket)
+            # 按區域分組統計
+            section_stats = {}
+            total_amount = 0
 
-            # Log reservation activity
-            for subsection_key, subsection_tickets in subsection_groups.items():
-                section, subsection = subsection_key.split('-')
+            for ticket in reserved_tickets:
+                section_key = f'{ticket.section}-{ticket.subsection}'
+                if section_key not in section_stats:
+                    section_stats[section_key] = {'count': 0, 'amount': 0, 'seats': []}
 
+                section_stats[section_key]['count'] += 1
+                section_stats[section_key]['amount'] += ticket.price
+                section_stats[section_key]['seats'].append(f'R{ticket.row}S{ticket.seat}')
+                total_amount += ticket.price
+
+            # 記錄每個區域的詳細信息
+            for section_key, stats in section_stats.items():
                 Logger.base.info(
-                    f'Reserved {len(subsection_tickets)} tickets '
-                    f'in subsection {section}-{subsection} for event {event_id} by buyer {buyer_id}'
+                    f'🎫 [RESERVE_DETAIL] Section {section_key}: '
+                    f'{stats["count"]} tickets, ${stats["amount"]}, '
+                    f'seats: {", ".join(stats["seats"])}'
                 )
 
+            # 記錄總體統計
             Logger.base.info(
-                f'Total reservation: {len(tickets)} tickets for event {event_id} '
-                f'affecting {len(subsection_groups)} subsections'
+                f'💰 [RESERVE_SUMMARY] Event {event_id} | Buyer {buyer_id} | '
+                f'Reserved: {len(reserved_tickets)} tickets | '
+                f'Total: ${total_amount} | '
+                f'Remaining: {event_aggregate.available_tickets_count}/{event_aggregate.total_tickets_count}'
             )
 
+            # 記錄活動狀態變化
+            if event_aggregate.available_tickets_count == 0:
+                Logger.base.info(f'🔥 [RESERVE_STATUS] Event {event_id} is now SOLD OUT!')
+            elif event_aggregate.available_tickets_count <= 10:
+                Logger.base.warning(
+                    f'⚠️ [RESERVE_STATUS] Event {event_id} is running low: '
+                    f'only {event_aggregate.available_tickets_count} tickets remaining'
+                )
+
         except Exception as e:
-            # Log error but don't fail the reservation
-            Logger.base.error(f'Failed to log reservation events: {e}')
-            # Continue execution - reservation is already committed to database
+            Logger.base.error(f'❌ [RESERVE_LOG] Failed to log reservation details: {e}')
+            # 不拋出異常，因為預訂已經成功

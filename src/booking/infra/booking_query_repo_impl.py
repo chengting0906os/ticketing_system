@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,11 +7,10 @@ from sqlalchemy.orm import selectinload
 from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.booking.infra.booking_model import BookingModel
+from src.event_ticketing.infra.ticket_model import TicketModel
 from src.shared.logging.loguru_io import Logger
-
-
-if TYPE_CHECKING:
-    from src.event_ticketing.domain.ticket_entity import Ticket
+from src.shared_kernel.domain.enum.ticket_status import TicketStatus
+from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingQueryRepoImpl(BookingQueryRepo):
@@ -126,10 +125,8 @@ class BookingQueryRepoImpl(BookingQueryRepo):
         return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['Ticket']:
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
         """Get all tickets for a booking using the ticket_ids stored in the booking"""
-        from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-        from src.event_ticketing.infra.ticket_model import TicketModel
 
         # First get the booking to get the ticket_ids
         booking = await self.get_by_id(booking_id=booking_id)
@@ -145,7 +142,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
         # Convert to Ticket entities
         tickets = []
         for db_ticket in db_tickets:
-            ticket = Ticket(
+            ticket = TicketRef(
                 event_id=db_ticket.event_id,
                 section=db_ticket.section,
                 subsection=db_ticket.subsection,

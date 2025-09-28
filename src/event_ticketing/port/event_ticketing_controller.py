@@ -7,7 +7,6 @@ from src.event_ticketing.port.event_schema import (
     EventCreateWithTicketConfigRequest,
     EventResponse,
 )
-from src.event_ticketing.port.ticket_schema import TicketResponse
 from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
 from src.event_ticketing.use_case.query.get_event_use_case import GetEventUseCase
 from src.event_ticketing.use_case.query.list_events_use_case import ListEventsUseCase
@@ -28,7 +27,7 @@ async def create_event(
     current_user: UserEntity = Depends(require_seller),
     use_case: CreateEventUseCase = Depends(CreateEventUseCase.depends),
 ) -> EventResponse:
-    event = await use_case.create_event_and_tickets(
+    event_aggregate = await use_case.create_event_and_tickets(
         name=request.name,
         description=request.description,
         seller_id=current_user.id or 0,  # Use current user's ID
@@ -36,6 +35,9 @@ async def create_event(
         seating_config=request.seating_config,
         is_active=request.is_active,
     )
+
+    # Extract event entity for better readability
+    event = event_aggregate.event
 
     if event.id is None:
         raise ValueError('Event ID should not be None after creation.')
@@ -58,10 +60,13 @@ async def create_event(
 async def get_event(
     event_id: int, use_case: GetEventUseCase = Depends(GetEventUseCase.depends)
 ) -> EventResponse:
-    event = await use_case.get_by_id(event_id=event_id)
+    event_aggregate = await use_case.get_by_id(event_id=event_id)
 
-    if not event:
+    if not event_aggregate:
         raise NotFoundError(f'Event with id {event_id} not found')
+
+    # Extract event entity for better readability
+    event = event_aggregate.event
 
     return EventResponse(
         id=event_id,
@@ -88,7 +93,9 @@ async def list_events(
         events = await use_case.list_available()
 
     result = []
-    for event in events:
+    for event_aggregate in events:
+        # Extract event entity for better readability
+        event = event_aggregate.event
         if event.id is not None:
             result.append(
                 EventResponse(
@@ -103,17 +110,3 @@ async def list_events(
                 )
             )
     return result
-
-
-def _ticket_to_response(ticket) -> TicketResponse:
-    return TicketResponse(
-        id=ticket.id,
-        event_id=ticket.event_id,
-        section=ticket.section,
-        subsection=ticket.subsection,
-        row=ticket.row,
-        seat=ticket.seat,
-        price=ticket.price,
-        status=ticket.status.value,
-        seat_identifier=ticket.seat_identifier,
-    )

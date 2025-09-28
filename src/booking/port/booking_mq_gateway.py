@@ -142,7 +142,7 @@ class BookingMqGateway:
 
             # 使用 use case 更新狀態
             update_use_case = UpdateBookingToPendingPaymentUseCase(session, cmd_repo)
-            await update_use_case.update_to_pending_payment(booking)
+            await update_use_case.update_booking_status_to_pending_payment(booking=booking)
 
             Logger.base.info(f'✅ 訂單狀態已更新為待付款: booking_id={booking_id}')
             return True

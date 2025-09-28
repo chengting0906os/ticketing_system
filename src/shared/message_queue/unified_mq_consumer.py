@@ -103,7 +103,7 @@ class UnifiedEventConsumer:
             import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
             # Protobuf class with type stub support
-            DomainEventProtoBufClass = domain_event_pb2.DomainEvent
+            DomainEventProtoBufClass = domain_event_pb2.MqDomainEvent
 
             # 為每個 topic 創建 Protobuf topic 對象
             quix_topics = []
@@ -164,7 +164,7 @@ class UnifiedEventConsumer:
         if self.worker_task:
             self.worker_task.cancel()
             try:
-                await self.worker_task
+                await self.worker_task  # pyright: ignore[reportGeneralTypeIssues]
             except asyncio.CancelledError:
                 pass
 

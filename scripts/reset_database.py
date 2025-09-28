@@ -13,19 +13,17 @@ from src.event_ticketing.infra.event_model import EventModel  # noqa: F401
 from src.event_ticketing.infra.ticket_model import TicketModel  # noqa: F401
 from src.shared_kernel.user.infra.user_model import UserModel  # noqa: F401
 
-from src.event_ticketing.domain.event_entity import Event, EventStatus
-from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus as TicketStatus
-from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-from src.event_ticketing.infra.ticket_command_repo_impl import TicketCommandRepoImpl
+from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
+from src.event_ticketing.infra.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.shared.config.db_setting import async_session_maker
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
-
+from src.shared.config.core_setting import settings
 
 def get_database_url() -> str:
     """取得資料庫連接 URL"""
-    from src.shared.config.core_setting import settings
+
     return settings.DATABASE_URL_ASYNC
 
 
@@ -71,15 +69,33 @@ async def drop_and_recreate_database():
 
         admin_engine.dispose()
 
-        print("🏗️ Creating database schema...")
+        print("🏗️ Running database migrations...")
 
-        # 創建所有表格
-        async_engine = create_async_engine(database_url)
-        async with async_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            print("   ✅ All tables created")
+        # 運行 Alembic 遷移
+        import subprocess
+        import os
+        from src.shared.constant.path import BASE_DIR
 
-        await async_engine.dispose()
+        # 運行 alembic upgrade head (alembic.ini 在專案根目錄)
+        print("   🔄 Running 'alembic upgrade head'...")
+        result = subprocess.run(
+            ['alembic', 'upgrade', 'head'],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print("   ✅ Database migrations completed")
+            if result.stdout:
+                print(f"   📋 Output: {result.stdout.strip()}")
+        else:
+            print(f"   ❌ Migration failed (return code: {result.returncode})")
+            if result.stdout:
+                print(f"   📋 STDOUT: {result.stdout}")
+            if result.stderr:
+                print(f"   📋 STDERR: {result.stderr}")
+            raise Exception(f"Alembic migration failed with return code {result.returncode}")
 
         print("Database recreation completed!")
 
@@ -131,11 +147,12 @@ async def create_init_users():
 async def create_init_event(seller_id: int):
     async with async_session_maker() as session:
         try:
-            print("Creating initial event...")
+            print("💫 Creating initial event through EventTicketingAggregate...")
 
-            event_repo = EventCommandRepoImpl(session)
-            ticket_repo = TicketCommandRepoImpl(session)
+            # 創建依賴服務
+            event_ticketing_repo = EventTicketingCommandRepoImpl(session)
 
+            # 座位配置
             seating_config = {
                 "sections": [
                     {
@@ -191,55 +208,43 @@ async def create_init_event(seller_id: int):
                 ]
             }
 
-            event = Event(
+            print("🎫 Creating event and tickets using EventTicketingAggregate...")
+
+            # 1. 使用工廠方法創建聚合根（包含Event，但還沒有tickets）
+            event_aggregate = EventTicketingAggregate.create_event_with_tickets(
                 name="Concert Event",
                 description="Amazing live music performance",
                 seller_id=seller_id,
                 venue_name="Taipei Arena",
                 seating_config=seating_config,
                 is_active=True,
-                status=EventStatus.AVAILABLE
             )
 
-            created_event = await event_repo.create_event(event=event)
-            print(f"   Created event: ID={created_event.id}, Name={created_event.name}")
+            # 2. 先創建Event以獲得ID（不帶tickets）
+            persisted_aggregate = await event_ticketing_repo.create_event_aggregate(
+                event_aggregate=event_aggregate
+            )
 
-            print("Generating tickets...")
-            tickets = []
-            total_tickets = 0
+            # 3. 現在Event有ID了，可以生成tickets
+            persisted_aggregate.generate_tickets()
 
-            for section in seating_config["sections"]:
-                section_name = section["name"]
-                section_price = section["price"]
+            # 4. 使用高效能批量方法重新創建，現在包含所有tickets
+            final_aggregate = await event_ticketing_repo.create_event_aggregate_with_batch_tickets(
+                event_aggregate=persisted_aggregate
+            )
 
-                for subsection in section["subsections"]:
-                    subsection_number = subsection["number"]
-                    rows = subsection["rows"]
-                    seats_per_row = subsection["seats_per_row"]
+            event = final_aggregate.event
+            tickets = final_aggregate.tickets
 
-                    for row in range(1, rows + 1):
-                        for seat in range(1, seats_per_row + 1):
-                            ticket = Ticket(
-                                event_id=created_event.id, # type: ignore
-                                section=section_name,
-                                subsection=subsection_number,
-                                row=row,
-                                seat=seat,
-                                price=section_price,
-                                status=TicketStatus.AVAILABLE
-                            )
-                            tickets.append(ticket)
-                            total_tickets += 1
+            print(f"   ✅ Created event: ID={event.id}, Name={event.name}")
+            print(f"   ✅ Created tickets: {len(tickets)}")
+            print(f"   🚀 High-performance batch creation completed")
 
-            await ticket_repo.create_batch(tickets=tickets)
-            await session.commit()  # 明確提交票務數據
-            print(f"   Created tickets: {total_tickets}")
-
-            print("Initial event and tickets created!")
-            return created_event.id
+            print("✨ Initial event and tickets created using EventTicketingAggregate!")
+            return event.id
 
         except Exception as e:
-            print(f"Failed to create event: {e}")
+            print(f"❌ Failed to create event: {e}")
             await session.rollback()
             raise
 

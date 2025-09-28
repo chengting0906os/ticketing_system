@@ -1,5 +1,6 @@
 from typing import Optional
 
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,8 +67,11 @@ class UserRepoImpl(UserRepo):
         if not user_model:
             return None
 
+        # 使用 SecretStr 保護敏感密碼資料
+        secret_password = SecretStr(plain_password)
+
         if not self.password_hasher.verify_password(
-            plain_password=plain_password, hashed_password=user_model.hashed_password
+            plain_password=secret_password, hashed_password=user_model.hashed_password
         ):
             return None
 

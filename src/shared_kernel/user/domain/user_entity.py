@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Optional
 
 import attrs
+from pydantic import SecretStr
 
 from src.shared.exception.exceptions import (
     AuthenticationError,
@@ -68,4 +69,7 @@ class UserEntity:
 
         if not isinstance(password_hasher, PasswordHasher):
             raise TypeError('password_hasher must implement PasswordHasher interface')
-        self.hashed_password = password_hasher.hash_password(plain_password)
+
+        # 使用 SecretStr 保護敏感密碼資料
+        secret_password = SecretStr(plain_password)
+        self.hashed_password = password_hasher.hash_password(plain_password=secret_password)

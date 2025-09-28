@@ -19,10 +19,10 @@ from src.shared.message_queue.unified_mq_publisher import QuixStreamMqPublisher
 from src.shared.message_queue.section_based_partition_strategy import SectionBasedPartitionStrategy
 from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
 from src.booking.infra.booking_query_repo_impl import BookingQueryRepoImpl
-from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-from src.event_ticketing.infra.event_query_repo_impl import EventQueryRepoImpl
-from src.event_ticketing.infra.ticket_command_repo_impl import TicketCommandRepoImpl
-from src.event_ticketing.infra.ticket_query_repo_impl import TicketQueryRepoImpl
+from src.event_ticketing.infra.event_ticketing_command_repo_impl import (
+    EventTicketingCommandRepoImpl,
+)
+from src.event_ticketing.infra.event_ticketing_query_repo_impl import EventTicketingQueryRepoImpl
 from src.shared_kernel.user.infra.user_repo_impl import UserRepoImpl
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared_kernel.user.infra.user_query_repo_impl import UserQueryRepoImpl
@@ -57,17 +57,11 @@ class Container(containers.DeclarativeContainer):
     # Booking 查询仓储
     booking_query_repo = providers.Singleton(BookingQueryRepoImpl)
 
-    # Event 命令仓储
-    event_command_repo = providers.Singleton(EventCommandRepoImpl)
+    # EventTicketing 統一命令仓储 - 新的聚合根倉儲
+    event_ticketing_command_repo = providers.Singleton(EventTicketingCommandRepoImpl)
 
-    # Event 查询仓储
-    event_query_repo = providers.Singleton(EventQueryRepoImpl)
-
-    # Ticket 命令仓储
-    ticket_command_repo = providers.Singleton(TicketCommandRepoImpl)
-
-    # Ticket 查询仓储
-    ticket_query_repo = providers.Singleton(TicketQueryRepoImpl)
+    # EventTicketing 統一查询仓储 - 新的聚合根倉儲
+    event_ticketing_query_repo = providers.Singleton(EventTicketingQueryRepoImpl)
 
     # User 仓储
     user_repo = providers.Singleton(UserRepoImpl)
@@ -137,8 +131,6 @@ def create_use_case_dependencies(session: AsyncSession) -> dict:
         # 仓储服务 (Singleton - 共享实例)
         'booking_command_repo': container.booking_command_repo(),
         'booking_query_repo': container.booking_query_repo(),
-        'event_command_repo': container.event_command_repo(),
-        'event_query_repo': container.event_query_repo(),
-        'ticket_command_repo': container.ticket_command_repo(),
-        'ticket_query_repo': container.ticket_query_repo(),
+        'event_ticketing_command_repo': container.event_ticketing_command_repo(),
+        'event_ticketing_query_repo': container.event_ticketing_query_repo(),
     }

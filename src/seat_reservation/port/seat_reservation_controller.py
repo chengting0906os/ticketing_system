@@ -9,11 +9,11 @@ from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, Request, status
 from sse_starlette.sse import EventSourceResponse
 
-from src.event_ticketing.port.ticket_schema import (
-    ListTicketsBySectionResponse,
-    TicketResponse,
-)
 from src.seat_reservation.infra.rocksdb_monitor import RocksDBMonitor
+from src.seat_reservation.port.seat_schema import (
+    ListSeatsBySectionResponse,
+    SeatResponse,
+)
 from src.seat_reservation.use_case.get_seat_availability_use_case import GetSeatAvailabilityUseCase
 from src.seat_reservation.use_case.list_seats_use_case import ListSeatsUseCase
 from src.shared.config.core_setting import settings
@@ -25,18 +25,18 @@ from src.shared_kernel.user.use_case.role_auth_service import require_buyer_or_s
 router = APIRouter(prefix='/api/seat_reservation', tags=['seat-reservation'])
 
 
-def _ticket_to_response(ticket) -> TicketResponse:
-    """將票據實體轉換為響應格式"""
-    return TicketResponse(
-        id=ticket.id,
-        event_id=ticket.event_id,
-        section=ticket.section,
-        subsection=ticket.subsection,
-        row=ticket.row,
-        seat=ticket.seat,
-        price=ticket.price,
-        status=ticket.status.value,
-        seat_identifier=ticket.seat_identifier,
+def _seat_to_response(seat) -> SeatResponse:
+    """將座位實體轉換為響應格式"""
+    return SeatResponse(
+        id=seat.id,
+        event_id=seat.event_id,
+        section=seat.section,
+        subsection=seat.subsection,
+        row=seat.row,
+        seat=seat.seat,
+        price=seat.price,
+        status=seat.status.value,
+        seat_identifier=seat.seat_identifier,
     )
 
 
@@ -102,7 +102,7 @@ async def sse_event_seat_status(
         listen_conn = None
         last_status = initial_status
         last_sent_time = anyio.current_time()
-        notification_received = anyio.Event()
+        notification_received: anyio.Event = anyio.Event()
 
         def notification_callback(connection, pid, channel, payload):
             """Called when a notification is received - just signal that we got one"""
@@ -130,7 +130,7 @@ async def sse_event_seat_status(
                     try:
                         with anyio.fail_after(30.0):
                             await notification_received.wait()
-                        notification_received.clear()
+                        notification_received.clear()  # pyright: ignore[reportAttributeAccessIssue]
 
                         # Got a notification - fetch updated status with debouncing
                         current_time = anyio.current_time()
@@ -216,7 +216,7 @@ async def list_seats_by_section_subsection(
     section: str,
     subsection: int,
     use_case: ListSeatsUseCase = Depends(ListSeatsUseCase.depends),
-) -> ListTicketsBySectionResponse:
+) -> ListSeatsBySectionResponse:
     """
     列出指定區域和子區域的所有座位
     從 PostgreSQL 獲取座位信息，結合 RocksDB 狀態
@@ -227,11 +227,11 @@ async def list_seats_by_section_subsection(
         subsection=subsection,
     )
 
-    ticket_responses = [_ticket_to_response(ticket) for ticket in tickets]
+    seat_responses = [_seat_to_response(seat) for seat in tickets]
 
-    return ListTicketsBySectionResponse(
-        tickets=ticket_responses,
-        total_count=len(ticket_responses),
+    return ListSeatsBySectionResponse(
+        seats=seat_responses,
+        total_count=len(seat_responses),
         event_id=event_id,
         section=section,
         subsection=subsection,

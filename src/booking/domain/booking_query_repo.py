@@ -1,11 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import List, Optional
 
 from src.booking.domain.booking_entity import Booking
-
-
-if TYPE_CHECKING:
-    from src.event_ticketing.domain.ticket_entity import Ticket
+from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingQueryRepo(ABC):
@@ -24,5 +21,5 @@ class BookingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['Ticket']:
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
         pass

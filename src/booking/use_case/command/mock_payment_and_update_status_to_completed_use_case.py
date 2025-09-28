@@ -9,14 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
-from src.event_ticketing.domain.event_command_repo import EventCommandRepo
-from src.event_ticketing.domain.event_entity import EventStatus
-from src.event_ticketing.domain.event_query_repo import EventQueryRepo
-from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
+from src.booking.domain.booking_domain_events import BookingPaidEvent
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 if TYPE_CHECKING:
@@ -30,16 +29,10 @@ class MockPaymentUseCase:
         session: AsyncSession,
         booking_command_repo: BookingCommandRepo,
         booking_query_repo: BookingQueryRepo,
-        event_command_repo: EventCommandRepo,
-        event_query_repo: EventQueryRepo,
-        ticket_command_repo: TicketCommandRepo,
     ):
         self.session = session
         self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
         self.booking_query_repo: 'BookingQueryRepoImpl' = booking_query_repo  # pyright: ignore[reportAttributeAccessIssue]
-        self.event_command_repo = event_command_repo
-        self.event_query_repo = event_query_repo
-        self.ticket_command_repo = ticket_command_repo
 
     @classmethod
     @inject
@@ -48,17 +41,11 @@ class MockPaymentUseCase:
         session: AsyncSession = Depends(get_async_session),
         booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
         booking_query_repo: BookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
-        event_command_repo: EventCommandRepo = Depends(Provide[Container.event_command_repo]),
-        event_query_repo: EventQueryRepo = Depends(Provide[Container.event_query_repo]),
-        ticket_command_repo: TicketCommandRepo = Depends(Provide[Container.ticket_command_repo]),
     ):
         return cls(
             session=session,
             booking_command_repo=booking_command_repo,
             booking_query_repo=booking_query_repo,
-            event_command_repo=event_command_repo,
-            event_query_repo=event_query_repo,
-            ticket_command_repo=ticket_command_repo,
         )
 
     @Logger.io
@@ -90,23 +77,42 @@ class MockPaymentUseCase:
             booking=paid_booking
         )
 
-        # Update event status to sold out
-        event = await self.event_query_repo.get_by_id(event_id=booking.event_id)
-        if event:
-            event.status = EventStatus.SOLD_OUT
-            await self.event_command_repo.update(event=event)
-
-        # Update reserved tickets to sold status when booking is paid
+        # Publish domain event for event_ticketing service to handle ticket finalization
         reserved_tickets = await self.booking_query_repo.get_tickets_by_booking_id(
             booking_id=booking_id
         )
         if reserved_tickets:
-            # Update all reserved tickets to sold using domain method
-            sold_tickets = []
-            for ticket in reserved_tickets:
-                ticket.sell()  # Use the domain method instead of direct assignment
-                sold_tickets.append(ticket)
-            await self.ticket_command_repo.update_batch(tickets=sold_tickets)
+            Logger.base.info(
+                f'💳 [PAYMENT] Publishing payment event for {len(reserved_tickets)} tickets in booking {booking_id}'
+            )
+
+            # Extract ticket IDs
+            ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
+
+            if ticket_ids:
+                # Create and publish BookingPaidEvent
+                from datetime import datetime, timezone
+
+                paid_event = BookingPaidEvent(
+                    booking_id=booking_id,
+                    buyer_id=buyer_id,
+                    event_id=booking.event_id,
+                    ticket_ids=ticket_ids,
+                    paid_at=updated_booking.paid_at or datetime.now(timezone.utc),
+                    total_amount=float(sum(ticket.price for ticket in reserved_tickets)),
+                )
+
+                # Publish to event_ticketing service according to README pattern
+                topic_name = KafkaTopicBuilder.update_ticket_status_to_paid(
+                    event_id=booking.event_id
+                )
+                partition_key = f'event-{booking.event_id}'
+
+                await publish_domain_event(
+                    event=paid_event, topic=topic_name, partition_key=partition_key
+                )
+
+                Logger.base.info(f'✅ [PAYMENT] Published BookingPaidEvent to topic: {topic_name}')
 
         # Generate mock payment ID
         payment_id = (

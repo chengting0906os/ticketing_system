@@ -9,7 +9,7 @@ from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+from src.event_ticketing.domain.event_ticketing_aggregate import Ticket, TicketStatus
 from src.event_ticketing.infra.ticket_model import TicketModel
 from src.seat_reservation.infra.rocksdb_monitor import RocksDBMonitor
 from src.shared.config.db_setting import get_async_session
