@@ -1,5 +1,6 @@
 from typing import List
 
+from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, status
 
 from src.booking.port.booking_schema import (
@@ -47,6 +48,7 @@ async def list_my_bookings(
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
+@inject
 async def create_booking(
     request: BookingCreateRequest,
     current_user: UserEntity = Depends(require_buyer),
@@ -78,6 +80,7 @@ async def create_booking(
 
 @router.get('/{booking_id}')
 @Logger.io
+@inject
 async def get_booking(
     booking_id: int,
     current_user: UserEntity = Depends(get_current_user),
@@ -98,6 +101,7 @@ async def get_booking(
 
 @router.patch('/{booking_id}', status_code=status.HTTP_200_OK)
 @Logger.io
+@inject
 async def cancel_booking(
     booking_id: int,
     current_user: UserEntity = Depends(require_buyer),
@@ -112,6 +116,7 @@ async def cancel_booking(
 
 @router.post('/{booking_id}/pay')
 @Logger.io
+@inject
 async def pay_booking(
     booking_id: int,
     request: PaymentRequest,

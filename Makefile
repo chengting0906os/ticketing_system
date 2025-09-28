@@ -1,10 +1,19 @@
 # Database operations
 ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
 
-.PHONY: reset-db
+.PHONY: reset reset-db
+reset:
+	@echo "🚀 Complete system reset (Kafka + Database)..."
+	@echo "Step 1: Resetting Kafka..."
+	@PYTHONPATH=. python scripts/reset_kafka.py
+	@echo ""
+	@echo "Step 2: Resetting Database..."
+	@PYTHONPATH=. python scripts/reset_database.py
+	@echo "✅ Complete system reset finished!"
+
 reset-db:
 	@echo "🚀 Resetting database with test data..."
-	@python -m scripts.reset_database
+	@PYTHONPATH=. python scripts/reset_database.py
 
 # Database migrations
 
@@ -123,7 +132,12 @@ db-restart:
 # Kafka
 .PHONY: kafka-clean kc
 kafka-clean kc:
-	@echo "🧹 Deleting ALL Kafka topics..."
+	@echo "🧹 Cleaning ALL Kafka topics and consumer groups..."
+	@PYTHONPATH=. python scripts/reset_kafka.py
+
+.PHONY: kafka-clean-topics kct
+kafka-clean-topics kct:
+	@echo "🧹 Deleting ALL Kafka topics only..."
 	@docker exec kafka1 sh -c 'for topic in $$(kafka-topics --bootstrap-server kafka1:29092 --list); do \
 		kafka-topics --bootstrap-server kafka1:29092 --delete --topic "$$topic" 2>/dev/null || true; \
 	done'
@@ -155,9 +169,8 @@ services ss: check-kafka  ## 🚀 智能啟動活動服務 (從資料庫選擇)
 .PHONY: stop-services stop
 stop-services stop:  ## 🛑 停止所有服務
 	@echo "🛑 停止所有服務..."
-	@pkill -f "rocksdb_seat_processor" || true
-	@pkill -f "booking_mq_consumer" || true
 	@pkill -f "seat_reservation_consumer" || true
+	@pkill -f "booking_mq_consumer" || true
 	@pkill -f "event_ticketing_mq_consumer" || true
 	@pkill -f "launch_all_consumers" || true
 	@echo "✅ 所有服務已停止"

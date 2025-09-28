@@ -6,9 +6,10 @@ Kafka Configuration Service
 import asyncio
 from dataclasses import dataclass
 import os
-from typing import Dict
+from typing import Dict, List
 
 from src.shared.logging.loguru_io import Logger
+from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
 
 from .kafka_constant_builder import KafkaTopicBuilder
 from .section_based_partition_strategy import SectionBasedPartitionStrategy
@@ -21,7 +22,7 @@ class ConsumerConfig:
     description: str
 
 
-class KafkaConfigService:
+class KafkaConfigService(KafkaConfigServiceInterface):
     """
     Kafka 配置服務
 
@@ -253,6 +254,37 @@ class KafkaConfigService:
         return self.partition_strategy.generate_partition_key(
             section=section, subsection=subsection, row=row, seat=seat, event_id=event_id
         )
+
+    async def get_active_consumer_groups(self) -> List[str]:
+        """獲取所有活躍的 consumer groups"""
+        try:
+            import subprocess
+
+            cmd = [
+                'docker',
+                'exec',
+                'kafka1',
+                'kafka-consumer-groups',
+                '--bootstrap-server',
+                'kafka1:29092',
+                '--list',
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+            if result.returncode == 0:
+                groups = [group.strip() for group in result.stdout.split('\n') if group.strip()]
+                Logger.base.info(f'📊 [KAFKA_CONFIG] Found {len(groups)} consumer groups: {groups}')
+                return groups
+            else:
+                Logger.base.warning(
+                    f'⚠️ [KAFKA_CONFIG] Failed to list consumer groups: {result.stderr}'
+                )
+                return []
+
+        except Exception as e:
+            Logger.base.error(f'❌ [KAFKA_CONFIG] Error checking consumer groups: {e}')
+            return []
 
     async def cleanup_event_infrastructure(self, event_id: int) -> bool:
         """

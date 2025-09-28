@@ -5,6 +5,7 @@ Seat Reservation Controller
 
 import anyio
 import asyncpg
+from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, Request, status
 from sse_starlette.sse import EventSourceResponse
 
@@ -12,6 +13,7 @@ from src.event_ticketing.port.ticket_schema import (
     ListTicketsBySectionResponse,
     TicketResponse,
 )
+from src.seat_reservation.infra.rocksdb_monitor import RocksDBMonitor
 from src.seat_reservation.use_case.get_seat_availability_use_case import GetSeatAvailabilityUseCase
 from src.seat_reservation.use_case.list_seats_use_case import ListSeatsUseCase
 from src.shared.config.core_setting import settings
@@ -20,7 +22,7 @@ from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import require_buyer_or_seller
 
 
-router = APIRouter(prefix='/seat-reservation', tags=['seat-reservation'])
+router = APIRouter(prefix='/api/seat_reservation', tags=['seat-reservation'])
 
 
 def _ticket_to_response(ticket) -> TicketResponse:
@@ -38,14 +40,9 @@ def _ticket_to_response(ticket) -> TicketResponse:
     )
 
 
-@router.get('/health')
-async def health_check():
-    """健康檢查端點"""
-    return {'status': 'healthy', 'service': 'seat_reservation'}
-
-
 @router.get('/{event_id}/sse/status')
 @Logger.io(truncate_content=True)
+@inject
 async def sse_event_seat_status(
     request: Request,
     event_id: int,
@@ -213,6 +210,7 @@ async def sse_event_seat_status(
     status_code=status.HTTP_200_OK,
 )
 @Logger.io(truncate_content=True)
+@inject
 async def list_seats_by_section_subsection(
     event_id: int,
     section: str,
@@ -238,3 +236,43 @@ async def list_seats_by_section_subsection(
         section=section,
         subsection=subsection,
     )
+
+
+# RocksDB 監控端點
+monitor = RocksDBMonitor()
+
+
+@router.get('/rocksdb/events/{event_id}/stats')
+async def get_event_stats(event_id: int):
+    """
+    獲取特定活動的統計資料
+    從 RocksDB 聚合座位狀態統計
+    """
+    stats = monitor.get_event_statistics(event_id)
+    if not stats:
+        return {'error': f'No data found for event {event_id}'}
+
+    return {
+        'event_id': stats.event_id,
+        'total_seats': stats.total_seats,
+        'available_seats': stats.available_seats,
+        'reserved_seats': stats.reserved_seats,
+        'sold_seats': stats.sold_seats,
+        'sections': stats.sections,
+    }
+
+
+@router.get('/rocksdb/events/{event_id}/seats/reserved')
+async def get_reserved_seats(event_id: int):
+    """
+    獲取特定活動的預訂座位
+    用於查看當前預訂狀況
+    """
+    all_seats = monitor.get_all_seats(limit=5000)
+    reserved_seats = [
+        seat.to_dict()
+        for seat in all_seats
+        if seat.event_id == event_id and seat.status == 'RESERVED'
+    ]
+
+    return {'event_id': event_id, 'reserved_seats': reserved_seats, 'count': len(reserved_seats)}

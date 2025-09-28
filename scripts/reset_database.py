@@ -201,7 +201,7 @@ async def create_init_event(seller_id: int):
                 status=EventStatus.AVAILABLE
             )
 
-            created_event = await event_repo.create(event=event)
+            created_event = await event_repo.create_event(event=event)
             print(f"   Created event: ID={created_event.id}, Name={created_event.name}")
 
             print("Generating tickets...")

@@ -1,18 +1,16 @@
 from typing import Any, Dict
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import (
-    get_booking_command_repo,
-    get_booking_query_repo,
-)
 
 
 class CancelBookingUseCase:
@@ -27,11 +25,12 @@ class CancelBookingUseCase:
         self.booking_query_repo = booking_query_repo
 
     @classmethod
+    @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
-        booking_query_repo: BookingQueryRepo = Depends(get_booking_query_repo),
+        booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
+        booking_query_repo: BookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
     ):
         return cls(
             session=session,

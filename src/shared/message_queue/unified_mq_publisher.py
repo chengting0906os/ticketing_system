@@ -18,7 +18,7 @@ from quixstreams.models.serializers.protobuf import ProtobufDeserializer, Protob
 
 from src.shared.config.core_setting import settings
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.domain import MqDomainEvent, MqPublisher
+from src.shared_kernel.domain import MqDomainEvent, MqPublisher
 
 
 class ProtobufEventSerializer:
@@ -91,10 +91,10 @@ class QuixStreamMqPublisher(MqPublisher):
         try:
             import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
-            # Check DomainMqEvent class exists using getattr to avoid Pylance issues
-            _ = getattr(domain_event_pb2, 'DomainMqEvent', None)
+            # Check MqDomainEvent class exists using getattr to avoid Pylance issues
+            _ = getattr(domain_event_pb2, 'MqDomainEvent', None)
             if _ is None:
-                raise ImportError('DomainMqEvent class not found in protobuf module')
+                raise ImportError('MqDomainEvent class not found in protobuf module')
             return True
         except ImportError:
             Logger.base.error('Protobuf schema not available. Please generate proto files.')
@@ -106,13 +106,13 @@ class QuixStreamMqPublisher(MqPublisher):
             import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
             # Protobuf class with type stub support
-            DomainMqEventClass = domain_event_pb2.DomainMqEvent
+            MqDomainEventClass = domain_event_pb2.MqDomainEvent
 
             self._topics[topic_name] = self.app.topic(
                 name=topic_name,
-                value_serializer=ProtobufSerializer(msg_type=DomainMqEventClass),
+                value_serializer=ProtobufSerializer(msg_type=MqDomainEventClass),
                 value_deserializer=ProtobufDeserializer(
-                    msg_type=DomainMqEventClass,
+                    msg_type=MqDomainEventClass,
                     to_dict=False,  # 保持 Protobuf 對象格式，提升性能
                 ),
                 key_serializer='str',
@@ -126,9 +126,9 @@ class QuixStreamMqPublisher(MqPublisher):
         import src.shared.message_queue.proto.domain_event_pb2 as domain_event_pb2
 
         # Protobuf class with type stub support
-        DomainMqEventClass = domain_event_pb2.DomainMqEvent
+        MqDomainEventClass = domain_event_pb2.MqDomainEvent
 
-        proto_event = DomainMqEventClass()
+        proto_event = MqDomainEventClass()
         # event_id 在這裡是事件的唯一識別符，不是 BookingCreated 中的 event_id（活動 ID）
         # 生成唯一的事件 ID
         import uuid

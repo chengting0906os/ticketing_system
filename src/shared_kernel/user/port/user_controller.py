@@ -4,10 +4,11 @@ Authentication Controller - 簡化版本，只有 login 和 create
 
 from typing import Optional
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Cookie, Depends, Response, status
 
+from src.shared.config.di import Container
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_user_repo
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
@@ -20,8 +21,9 @@ from src.shared_kernel.user.use_case.auth_service import auth_service
 router = APIRouter()
 
 
+@inject
 async def get_current_user(
-    user_repo: UserRepo = Depends(get_user_repo),
+    user_repo: UserRepo = Depends(Provide[Container.user_repo]),
     token: Optional[str] = Cookie(None, alias='fastapiusersauth'),
 ) -> UserEntity:
     return await auth_service.get_current_user(user_repo, token)
@@ -29,7 +31,10 @@ async def get_current_user(
 
 @router.post('', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @Logger.io
-async def create_user(request: CreateUserRequest, user_repo: UserRepo = Depends(get_user_repo)):
+@inject
+async def create_user(
+    request: CreateUserRequest, user_repo: UserRepo = Depends(Provide[Container.user_repo])
+):
     user_entity = await user_use_case.create_user(
         user_repo=user_repo,
         email=request.email,
@@ -49,8 +54,11 @@ async def create_user(request: CreateUserRequest, user_repo: UserRepo = Depends(
 
 @router.post('/login', response_model=UserResponse)
 @Logger.io
+@inject
 async def login(
-    response: Response, request: LoginRequest, user_repo: UserRepo = Depends(get_user_repo)
+    response: Response,
+    request: LoginRequest,
+    user_repo: UserRepo = Depends(Provide[Container.user_repo]),
 ):
     user_entity = await auth_service.authenticate_user(
         user_repo=user_repo, email=request.email, password=request.password.get_secret_value()

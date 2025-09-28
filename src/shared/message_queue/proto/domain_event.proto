@@ -3,7 +3,7 @@ syntax = "proto3";
 package ticketing.events;
 
 // 基礎領域事件結構
-message DomainEvent {
+message MqDomainEvent {
   string event_id = 1;
   string event_type = 2;
   string aggregate_id = 3;

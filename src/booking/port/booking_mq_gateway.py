@@ -9,8 +9,8 @@ from src.booking.use_case.command.update_booking_status_to_pending_payment_use_c
     UpdateBookingToPendingPaymentUseCase,
 )
 from src.shared.config.db_setting import async_session_maker
+from src.shared.config.di import container
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_booking_command_repo, get_booking_query_repo
 
 
 class BookingMqGateway:
@@ -124,11 +124,11 @@ class BookingMqGateway:
 
         try:
             # 取得 repositories
-            booking_command_repo = get_booking_command_repo(session)
-            booking_query_repo = get_booking_query_repo(session)
+            cmd_repo = container.booking_command_repo()
+            query_repo = container.booking_query_repo()
 
             # 查詢訂單
-            booking = await booking_query_repo.get_by_id(booking_id=booking_id)
+            booking = await query_repo.get_by_id(booking_id=booking_id)
             if not booking:
                 Logger.base.error(f'❌ 找不到訂單: booking_id={booking_id}')
                 return False
@@ -141,7 +141,7 @@ class BookingMqGateway:
                 return False
 
             # 使用 use case 更新狀態
-            update_use_case = UpdateBookingToPendingPaymentUseCase(session, booking_command_repo)
+            update_use_case = UpdateBookingToPendingPaymentUseCase(session, cmd_repo)
             await update_use_case.update_to_pending_payment(booking)
 
             Logger.base.info(f'✅ 訂單狀態已更新為待付款: booking_id={booking_id}')

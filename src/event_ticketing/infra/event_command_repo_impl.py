@@ -1,5 +1,4 @@
-from sqlalchemy import delete as sql_delete
-from sqlalchemy import update as sql_update
+from sqlalchemy import delete as sql_delete, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_command_repo import EventCommandRepo
@@ -27,7 +26,7 @@ class EventCommandRepoImpl(EventCommandRepo):
         )
 
     @Logger.io
-    async def create(self, *, event: Event) -> Event:
+    async def create_event(self, *, event: Event) -> Event:
         db_event = EventModel(
             name=event.name,
             description=event.description,

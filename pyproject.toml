@@ -28,6 +28,7 @@ dependencies = [
     "greenlet>=3.2.4",
     "bcrypt>=5.0.0",
     "attrs>=24.0.0",
+    "dependency-injector>=4.48.2",
 ]
 
 [dependency-groups]

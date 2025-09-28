@@ -16,10 +16,10 @@ import anyio
 from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMqGateway
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import container
 from src.shared.constant.topic import Topic
 from src.shared.logging.loguru_io import Logger
 from src.shared.message_queue.unified_mq_consumer import UnifiedEventConsumer
-from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 
 class EventTicketingMqConsumer:
@@ -39,11 +39,9 @@ class EventTicketingMqConsumer:
             self.session = await self.session_gen.__anext__()
 
             # 創建依賴項
-            ticket_command_repo = get_ticket_command_repo(self.session)
-            ticket_query_repo = get_ticket_query_repo(self.session)
-            reserve_tickets_use_case = ReserveTicketsUseCase(
-                self.session, ticket_command_repo, ticket_query_repo
-            )
+            cmd_repo = container.ticket_command_repo()
+            query_repo = container.ticket_query_repo()
+            reserve_tickets_use_case = ReserveTicketsUseCase(self.session, cmd_repo, query_repo)
             event_ticketing_gateway = EventTicketingMqGateway(reserve_tickets_use_case)
 
             # 直接使用 Gateway 作為事件處理器

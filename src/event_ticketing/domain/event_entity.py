@@ -28,7 +28,7 @@ class Event:
 
     @classmethod
     @Logger.io
-    def create(
+    def create_event_and_tickets(
         cls,
         *,
         name: str,

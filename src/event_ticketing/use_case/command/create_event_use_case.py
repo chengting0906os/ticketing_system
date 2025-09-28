@@ -1,4 +1,6 @@
-from datetime import datetime
+import asyncio
+import os
+import subprocess
 from typing import Dict, List
 
 from fastapi import Depends
@@ -6,33 +8,168 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_command_repo import EventCommandRepo
 from src.event_ticketing.domain.event_entity import Event
+from src.event_ticketing.domain.seat_initialization_event import SeatInitializationEvent
 from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-from src.event_ticketing.infra.event_command_repo_impl import EventCommandRepoImpl
-from src.event_ticketing.infra.ticket_command_repo_impl import TicketCommandRepoImpl
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import create_use_case_dependencies
+from src.shared.constant.path import BASE_DIR
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.kafka_config_service import KafkaConfigService
 from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
 
 
 class CreateEventUseCase:
-    def __init__(self, event_repo: EventCommandRepo, ticket_repo: TicketCommandRepo):
+    def __init__(
+        self,
+        event_repo: EventCommandRepo,
+        ticket_repo: TicketCommandRepo,
+        kafka_service: KafkaConfigServiceInterface,
+    ):
         self.event_repo = event_repo
         self.ticket_repo = ticket_repo
+        self.kafka_service = kafka_service
 
     @classmethod
-    def depends(
-        cls,
-        session: AsyncSession = Depends(get_async_session),
-    ):
-        event_repo = EventCommandRepoImpl(session)
-        ticket_repo = TicketCommandRepoImpl(session)
-        return cls(event_repo=event_repo, ticket_repo=ticket_repo)
+    def depends(cls, session: AsyncSession = Depends(get_async_session)):
+        # 使用统一DI容器获取所有依赖
+        deps = create_use_case_dependencies(session)
+
+        return cls(
+            event_repo=deps['event_command_repo'],
+            ticket_repo=deps['ticket_command_repo'],
+            kafka_service=deps['kafka_service'],
+        )
+
+    async def _check_consumer_availability(self) -> bool:
+        """檢查必要的 consumer 是否運行"""
+        try:
+            # 檢查必要的 consumer groups 是否存在且活躍
+            required_groups = [
+                'booking-service-consumer',
+                'seat-reservation-consumer',
+                'event-ticketing-consumer',
+            ]
+
+            active_groups = await self.kafka_service.get_active_consumer_groups()
+
+            for group in required_groups:
+                if group not in active_groups:
+                    Logger.base.warning(f"⚠️ [CREATE_EVENT] Consumer group '{group}' is not active")
+                    return False
+
+            Logger.base.info('✅ [CREATE_EVENT] All required consumers are active')
+            return True
+
+        except Exception as e:
+            Logger.base.warning(f'⚠️ [CREATE_EVENT] Failed to check consumer status: {e}')
+            return False
+
+    async def _auto_start_consumers(self, event_id: int) -> bool:
+        """自動啟動 consumers"""
+        try:
+            # 獲取項目根目錄
+            project_root = BASE_DIR
+
+            # 啟動所有必要的 consumers (1:2:1 架構)
+            consumers = [
+                ('booking_mq_consumer', 'src.booking.infra.booking_mq_consumer'),
+                (
+                    'seat_reservation_consumer_1',
+                    'src.seat_reservation.infra.seat_reservation_consumer',
+                ),
+                (
+                    'seat_reservation_consumer_2',
+                    'src.seat_reservation.infra.seat_reservation_consumer',
+                ),
+                (
+                    'event_ticketing_mq_consumer',
+                    'src.event_ticketing.infra.event_ticketing_mq_consumer',
+                ),
+            ]
+
+            processes = []
+            for name, module in consumers:
+                try:
+                    # 設置環境變數
+                    env = os.environ.copy()
+                    env['EVENT_ID'] = str(event_id)
+                    env['PYTHONPATH'] = str(project_root)
+
+                    # 啟動 consumer
+                    cmd = ['uv', 'run', 'python', '-m', module]
+
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        cwd=project_root,
+                        env=env,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        start_new_session=True,
+                    )
+
+                    processes.append((name, process))
+                    Logger.base.info(f'✅ [CREATE_EVENT] Started {name} (PID: {process.pid})')
+
+                except Exception as e:
+                    Logger.base.error(f'❌ [CREATE_EVENT] Failed to start {name}: {e}')
+                    return False
+
+            # 等待一下讓 consumers 初始化
+            await asyncio.sleep(3)
+
+            # 驗證 consumers 是否真的啟動了
+            return await self._check_consumer_availability()
+
+        except Exception as e:
+            Logger.base.error(f'❌ [CREATE_EVENT] Auto-start consumers failed: {e}')
+            return False
+
+    async def _generate_tickets_database_only(
+        self, *, event_id: int, seating_config: Dict
+    ) -> List[Ticket]:
+        """只在資料庫中生成票據，不初始化 RocksDB"""
+        tickets = []
+        sections = seating_config.get('sections', [])
+
+        Logger.base.info(
+            f'🎫 [CREATE_EVENT] Generating tickets in database only for event {event_id}'
+        )
+
+        for section in sections:
+            section_name = section['name']
+            section_price = int(section['price'])
+            subsections = section['subsections']
+
+            for subsection in subsections:
+                subsection_number = subsection['number']
+                rows = subsection['rows']
+                seats_per_row = subsection['seats_per_row']
+
+                for row in range(1, rows + 1):
+                    for seat in range(1, seats_per_row + 1):
+                        ticket = Ticket(
+                            event_id=event_id,
+                            section=section_name,
+                            subsection=subsection_number,
+                            row=row,
+                            seat=seat,
+                            price=section_price,
+                            status=TicketStatus.AVAILABLE,
+                        )
+                        tickets.append(ticket)
+
+        Logger.base.info(
+            f'✅ [CREATE_EVENT] Generated {len(tickets)} tickets in database for event {event_id}'
+        )
+        Logger.base.warning(
+            "⚠️ [CREATE_EVENT] RocksDB not initialized - seats won't be available for reservation until consumers start"
+        )
+        return tickets
 
     @Logger.io
-    async def create(
+    async def create_event_and_tickets(
         self,
         *,
         name: str,
@@ -45,7 +182,7 @@ class CreateEventUseCase:
         # Validate seating config and prices
         self._validate_seating_config(seating_config=seating_config)
 
-        event = Event.create(
+        event = Event.create_event_and_tickets(
             name=name,
             description=description,
             seller_id=seller_id,
@@ -54,14 +191,24 @@ class CreateEventUseCase:
             is_active=is_active,
         )
 
-        created_event = await self.event_repo.create(event=event)
+        created_event = await self.event_repo.create_event(event=event)
 
         # Auto-create tickets based on seating configuration
         if created_event.id is not None:
-            # 1. 設置 Kafka 基礎設施 (topics + consumers)
+            # 檢查 consumer 是否運行，如果沒有就自動啟動
+            consumers_available = await self._check_consumer_availability()
 
-            kafka_service = KafkaConfigService()
-            infrastructure_success = await kafka_service.setup_event_infrastructure(
+            if not consumers_available:
+                Logger.base.info('🚀 [CREATE_EVENT] Consumers not available, auto-starting them...')
+                startup_success = await self._auto_start_consumers(created_event.id)
+                if startup_success:
+                    Logger.base.info('✅ [CREATE_EVENT] Consumers started successfully')
+                    consumers_available = True
+                else:
+                    Logger.base.warning('⚠️ [CREATE_EVENT] Failed to auto-start consumers')
+
+            # 1. 設置 Kafka 基礎設施 (topics + consumers)
+            infrastructure_success = await self.kafka_service.setup_event_infrastructure(
                 event_id=created_event.id, seating_config=seating_config
             )
 
@@ -71,11 +218,23 @@ class CreateEventUseCase:
                 )
 
             # 2. 生成票據並初始化 RocksDB (使用優化的 partition key)
-            tickets = await self._generate_tickets_from_seating_config(
-                event_id=created_event.id,
-                seating_config=seating_config,
-                kafka_service=kafka_service,
-            )
+            if consumers_available:
+                Logger.base.info(
+                    '🎯 [CREATE_EVENT] Consumers are active, proceeding with RocksDB initialization'
+                )
+                tickets = await self._generate_tickets_from_seating_config(
+                    event_id=created_event.id,
+                    seating_config=seating_config,
+                )
+            else:
+                Logger.base.warning(
+                    '⚠️ [CREATE_EVENT] Consumers unavailable, creating tickets without RocksDB initialization'
+                )
+                tickets = await self._generate_tickets_database_only(
+                    event_id=created_event.id,
+                    seating_config=seating_config,
+                )
+
             await self.ticket_repo.create_batch(tickets=tickets)
 
         return created_event
@@ -138,7 +297,6 @@ class CreateEventUseCase:
         """
         為特定活動創建 Kafka topics
         """
-        import subprocess
 
         Logger.base.info(
             f'🎯 [CREATE_EVENT] Creating event-specific topics for EVENT_ID={event_id}'
@@ -187,7 +345,7 @@ class CreateEventUseCase:
                 Logger.base.error(f'❌ [CREATE_EVENT] Error creating topic {topic}: {e}')
 
     async def _generate_tickets_from_seating_config(
-        self, *, event_id: int, seating_config: Dict, kafka_service
+        self, *, event_id: int, seating_config: Dict
     ) -> List[Ticket]:
         """
         Generate tickets based on seating configuration.
@@ -212,7 +370,7 @@ class CreateEventUseCase:
             subsections = section['subsections']
 
             # 記錄該區域使用的 partition
-            sample_partition_key = kafka_service.get_partition_key_for_seat(
+            sample_partition_key = self.kafka_service.get_partition_key_for_seat(
                 section=section_name, subsection=1, row=1, seat=1, event_id=event_id
             )
             Logger.base.info(
@@ -240,7 +398,7 @@ class CreateEventUseCase:
                         tickets.append(ticket)
 
                         # 2) 生成優化的 partition key
-                        partition_key = kafka_service.get_partition_key_for_seat(
+                        partition_key = self.kafka_service.get_partition_key_for_seat(
                             section=section_name,
                             subsection=subsection_number,
                             row=row,
@@ -251,22 +409,16 @@ class CreateEventUseCase:
                         seat_id = f'{section_name}-{subsection_number}-{row}-{seat}'
 
                         try:
-                            # 創建座位初始化事件（使用原始數據結構）
-                            init_event = {
-                                'event_type': 'SeatInitialization',
-                                'aggregate_id': event_id,
-                                'data': {
-                                    'action': 'INITIALIZE',
-                                    'seat_id': seat_id,
-                                    'event_id': event_id,
-                                    'price': section_price,
-                                    'section': section_name,
-                                    'subsection': subsection_number,
-                                    'row': row,
-                                    'seat': seat,
-                                },
-                                'occurred_at': datetime.now().isoformat(),
-                            }
+                            # 創建座位初始化事件
+                            init_event = SeatInitializationEvent(
+                                event_id=event_id,
+                                seat_id=seat_id,
+                                section=section_name,
+                                subsection=subsection_number,
+                                row=row,
+                                seat=seat,
+                                price=section_price,
+                            )
 
                             # 發送初始化命令到 RocksDB processor (使用 event-specific topic)
                             topic_name = KafkaTopicBuilder.seat_initialization_command(

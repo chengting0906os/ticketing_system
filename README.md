@@ -57,9 +57,9 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 
 ### 📡 Topic 命名格式
 ```
-event-id-{event_id}-{action}-{target}-{status}
-例如：event-id-123-seat-reserving-request
-例如：event-id-123-booking-status-update-to-pending-payment
+event-id-{event_id}______{action}______{from_service}___to___{to_service}
+例如：event-id-123______ticket-reserve-request______booking-service___to___seat-reservation-service
+例如：event-id-123______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service
 ```
 
 ### 🎯 Partition Key 格式
@@ -69,14 +69,15 @@ event-{event_id}-section-{section}-partition-{partition_number}
 ```
 
 ### 🗂️ 主要 Topics
-- `event-id-{event_id}:::ticket-reserve-request:::seat-reservation-service` - 票據預訂請求
-- `event-id-{event_id}:::update-ticket-status-to-reserved:::event-ticketing-service` - 更新票據狀態為預訂
-- `event-id-{event_id}:::update-booking-status-to-pending-payment:::booking-service` - 更新訂單狀態為待付款
-- `event-id-{event_id}:::booking-status-to-failed:::booking-service` - 訂單狀態為失敗
-- `event-id-{event_id}:::update-ticket-status-to-paid:::event-ticketing-service` - 更新票據狀態為已付款
-- `event-id-{event_id}:::update-ticket-status-to-available:::event-ticketing-service` - 更新票據狀態為可用
-- `event-id-{event_id}:::release-ticket-to-available-by-rocksdb:::seat-reservation-service` - 釋放票據到可用狀態
-- `event-id-{event_id}:::finalize-ticket-to-paid-by-rocksdb:::seat-reservation-service` - 確認票據為已付款
+- `event-id-{event_id}______ticket-reserve-request______booking-service___to___seat-reservation-service` - 票據預訂請求
+- `event-id-{event_id}______update-ticket-status-to-reserved______seat-reservation-service___to___event-ticketing-service` - 更新票據狀態為預訂
+- `event-id-{event_id}______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service` - 更新訂單狀態為待付款
+- `event-id-{event_id}______update-booking-status-to-failed______seat-reservation-service___to___booking-service` - 訂單狀態為失敗
+- `event-id-{event_id}______update-ticket-status-to-paid______booking-service___to___event-ticketing-service` - 更新票據狀態為已付款
+- `event-id-{event_id}______update-ticket-status-to-available______booking-service___to___event-ticketing-service` - 更新票據狀態為可用
+- `event-id-{event_id}______release-ticket-to-available-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 釋放票據到可用狀態
+- `event-id-{event_id}______finalize-ticket-to-paid-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 確認票據為已付款
+- `event-id-{event_id}______seat-initialization-command______event-ticketing-service___to___seat-reservation-service` - 座位初始化指令
 
 ### ⚡ 區域集中式 Partition 策略
 - **A區所有座位** → 固定 partition (例如 partition-0)
@@ -92,7 +93,7 @@ event-{event_id}-section-{section}-partition-{partition_number}
 **booking_service** 創建訂單:
 ```
 → booking raw create and status: PROCESSING
-→ 發送事件到: event-id-123:::ticket-reserve-request:::seat-reservation-service
+→ 發送事件到: event-id-123___:ticket-reserve-request___:seat-reservation-service
 → partition_key: event-123-section-A-partition-0 # booking_service 透過 partition_key 分流到不同 consumer/partition
 → 事件: TicketReservedRequest(**booking_data)
 → return booking detail 200
@@ -100,7 +101,7 @@ event-{event_id}-section-{section}-partition-{partition_number}
 
 ### 🪑 Step 2: seat_selection service 座位選擇 2 server 2 consumer  1 consumer <=> 5 partition
 **seat_reservation** 
-收到 topic event-id-123:::ticket-reserve-request:::seat-reservation-service 
+收到 topic event-id-123___:ticket-reserve-request___:seat-reservation-service 
 
 **seat selection service 查詢座位 strategry**
 exactly once sequential processing
@@ -122,13 +123,13 @@ exactly once sequential processing
 publish to **event_ticketing_service**
 ```
 → 事件: SeatUpdatedToReserved
-→ topic: event-id-123:::update-ticket-status-to-reserved:::event-ticketing-service
+→ topic: event-id-123___:update-ticket-status-to-reserved___:event-ticketing-service
 → partition_key: event-123-section-A-partition-0 # 原子更新 RocksDB
 ```
 publish to **booking_service:**
 ```
 → 事件: BookingUpdatedToPendingPayment
-→ topic: event-id-123:::update-booking-status-to-pending-payment:::booking-service
+→ topic: event-id-123___:update-booking-status-to-pending-payment___:booking-service
 → partition_key: event-123 # 暫不分太細的 partition
 ```
 
@@ -137,7 +138,7 @@ publish to **booking_service:**
 publish to **booking_service:**
 ```
 → 事件: BookingUpdatedToFailed
-→ topic: event-id-123:::booking-status-to-failed:::booking-service
+→ topic: event-id-123___:booking-status-to-failed___:booking-service
 → partition_key: event-123 # 暫不分太細的 partition
 ```
 
@@ -162,14 +163,14 @@ subsection 狀況
 ### ✅ Step 4: 後續服務處理
 
 **event_ticketing service** 收到 topic:
-- `event-id-123:::update-ticket-status-to-reserved:::event-ticketing-service`
+- `event-id-123___:update-ticket-status-to-reserved___:event-ticketing-service`
 ```
 根據 ticket_id 更改 PostgreSQL ticket 狀態: AVAILABLE → RESERVED
 ```
 
 **booking service** 收到 topic:
-- `event-id-123:::update-booking-status-to-pending-payment:::booking-service` (成功情況)
-- `event-id-123:::booking-status-to-failed:::booking-service` (失敗情況)
+- `event-id-123___:update-booking-status-to-pending-payment___:booking-service` (成功情況)
+- `event-id-123___:booking-status-to-failed___:booking-service` (失敗情況)
 ```
 根據 booking_id 更改 PostgreSQL booking 狀態:
 - PROCESSING → PENDING_PAYMENT + Redis TTL (15分鐘)
@@ -216,7 +217,7 @@ subsection 狀況
 3. 發送事件到 event_ticketing:
 ```
 → 事件: BookingPaidSuccess
-→ topic: event-id-123:::update-ticket-status-to-paid:::event-ticketing-service
+→ topic: event-id-123___:update-ticket-status-to-paid___:event-ticketing-service
 → partition_key: event-123
 ```
 4. event_ticketing 更新票據狀態 (RESERVED → SOLD)
@@ -230,7 +231,7 @@ subsection 狀況
 **Step 4.1 - 通知 event_ticketing 釋放票據:**
 ```
 → 事件: BookingExpiredReleaseTickets
-→ topic: event-id-123:::update-ticket-status-to-available:::event-ticketing-service
+→ topic: event-id-123___:update-ticket-status-to-available___:event-ticketing-service
 → partition_key: event-123
 → 消費者: event_ticketing
 → 動作: 更新票據狀態 RESERVED → AVAILABLE
@@ -239,7 +240,7 @@ subsection 狀況
 **Step 4.2 - event_ticketing 通知 seat_reservation 釋放座位:**
 ```
 → 事件: ReleaseSeat
-→ topic: event-id-123:::release-ticket-to-available-by-rocksdb:::seat-reservation-service
+→ topic: event-id-123___:release-ticket-to-available-by-rocksdb___:seat-reservation-service
 → partition_key: event-123-section-A-partition-0
 → 消費者: seat_reservation
 → 動作: 清理 RocksDB 座位狀態 RESERVED → AVAILABLE
@@ -279,3 +280,13 @@ subsection 狀況
 - **Redis**: 付款超時管理 (TTL 15 分鐘)
 - **SSE**: 實時前端通知
 - **2 服務器部署**: 支持 50,000 張票高並發處理
+
+
+### DI
+https://python-dependency-injector.ets-labs.org/index.html
+
+### Quix Streams
+https://quix.io/docs/get-started/welcome.html
+https://quix.io/docs/quix-streams/advanced/serialization.html
+https://quix.io/docs/quix-streams/advanced/topics.html
+https://quix.io/docs/quix-streams/advanced/stateful-processing.html

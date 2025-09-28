@@ -1,21 +1,18 @@
 from typing import Any, Dict
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_command_repo import BookingCommandRepo
-from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.booking.domain.booking_entity import BookingStatus
+from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import Container
 from src.shared.exception.exceptions import NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import (
-    get_booking_command_repo,
-    get_booking_query_repo,
-    get_ticket_command_repo,
-)
 
 
 class CancelReservationUseCase:
@@ -32,12 +29,13 @@ class CancelReservationUseCase:
         self.ticket_command_repo = ticket_command_repo
 
     @classmethod
+    @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
-        booking_query_repo: BookingQueryRepo = Depends(get_booking_query_repo),
-        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
+        booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
+        booking_query_repo: BookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
+        ticket_command_repo: TicketCommandRepo = Depends(Provide[Container.ticket_command_repo]),
     ):
         return cls(
             session=session,

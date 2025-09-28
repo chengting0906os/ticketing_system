@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, List
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,13 +8,11 @@ from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_events import BookingCreated
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import Container
 from src.shared.constant.topic import Topic
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 from src.shared.message_queue.unified_mq_publisher import publish_domain_event
-from src.shared.service.repo_di import (
-    get_booking_command_repo,
-)
 
 
 if TYPE_CHECKING:
@@ -30,12 +29,13 @@ class CreateBookingUseCase:
         self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
+    @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        booking_command_repo: BookingCommandRepo = Depends(get_booking_command_repo),
+        booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
     ):
-        return cls(session, booking_command_repo)
+        return cls(session=session, booking_command_repo=booking_command_repo)
 
     @Logger.io
     async def create_booking(

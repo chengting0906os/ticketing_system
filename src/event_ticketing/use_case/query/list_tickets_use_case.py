@@ -1,19 +1,29 @@
 from typing import List
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
 from src.event_ticketing.domain.event_query_repo import EventQueryRepo
 from src.event_ticketing.domain.ticket_entity import Ticket
 from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
+from src.shared.config.di import Container
 from src.shared.exception.exceptions import ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_event_query_repo, get_ticket_query_repo
 
 
 class ListTicketsUseCase:
     def __init__(self, event_repo: EventQueryRepo, ticket_query_repo: TicketQueryRepo):
         self.event_repo = event_repo
         self.ticket_query_repo = ticket_query_repo
+
+    @classmethod
+    @inject
+    def depends(
+        cls,
+        event_repo: EventQueryRepo = Depends(Provide[Container.event_query_repo]),
+        ticket_query_repo: TicketQueryRepo = Depends(Provide[Container.ticket_query_repo]),
+    ):
+        return cls(event_repo=event_repo, ticket_query_repo=ticket_query_repo)
 
     @Logger.io(truncate_content=True)
     async def list_tickets_by_event(
@@ -48,11 +58,3 @@ class ListTicketsUseCase:
             event_id=event_id, section=section, subsection=subsection
         )
         return tickets
-
-    @classmethod
-    def depends(
-        cls,
-        event_repo: EventQueryRepo = Depends(get_event_query_repo),
-        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
-    ):
-        return cls(event_repo=event_repo, ticket_query_repo=ticket_query_repo)

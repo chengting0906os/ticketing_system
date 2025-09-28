@@ -1,14 +1,15 @@
 from typing import Any, Dict, List, Optional
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.ticket_command_repo import TicketCommandRepo
 from src.event_ticketing.domain.ticket_query_repo import TicketQueryRepo
 from src.shared.config.db_setting import get_async_session
+from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.service.repo_di import get_ticket_command_repo, get_ticket_query_repo
 
 
 class ReserveTicketsUseCase:
@@ -23,11 +24,12 @@ class ReserveTicketsUseCase:
         self.ticket_query_repo = ticket_query_repo
 
     @classmethod
+    @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        ticket_command_repo: TicketCommandRepo = Depends(get_ticket_command_repo),
-        ticket_query_repo: TicketQueryRepo = Depends(get_ticket_query_repo),
+        ticket_command_repo: TicketCommandRepo = Depends(Provide[Container.ticket_command_repo]),
+        ticket_query_repo: TicketQueryRepo = Depends(Provide[Container.ticket_query_repo]),
     ):
         return cls(session, ticket_command_repo, ticket_query_repo)
 

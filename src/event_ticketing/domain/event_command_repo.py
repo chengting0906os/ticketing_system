@@ -7,7 +7,7 @@ class EventCommandRepo(ABC):
     """事件命令倉庫抽象介面 (Domain Layer) - 處理寫入操作"""
 
     @abstractmethod
-    async def create(self, *, event: Event) -> Event:
+    async def create_event(self, *, event: Event) -> Event:
         pass
 
     @abstractmethod
