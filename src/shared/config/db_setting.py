@@ -1,5 +1,6 @@
 from typing import AsyncGenerator
 
+import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,6 +24,33 @@ async_session_maker = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+# asyncpg connection pool for high-performance bulk operations
+asyncpg_pool = None
+
+
+async def get_asyncpg_pool():
+    """Get or create asyncpg connection pool for COPY operations"""
+    global asyncpg_pool
+    if asyncpg_pool is None:
+        # Convert SQLAlchemy URL to asyncpg format (remove +asyncpg driver specification)
+        dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
+
+        asyncpg_pool = await asyncpg.create_pool(
+            dsn,
+            min_size=5,  # Minimum connections in pool
+            max_size=20,  # Maximum connections in pool
+            command_timeout=60,  # Command timeout in seconds
+        )
+    return asyncpg_pool
+
+
+async def close_asyncpg_pool():
+    """Close the asyncpg connection pool"""
+    global asyncpg_pool
+    if asyncpg_pool:
+        await asyncpg_pool.close()
+        asyncpg_pool = None
 
 
 class Base(DeclarativeBase):
