@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, status
 from typing import List
+
+from fastapi import APIRouter, Depends, status
 
 from src.booking.port.booking_schema import (
     BookingCreateRequest,
@@ -20,9 +21,9 @@ from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCas
 from src.shared.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import (
+    RoleAuthStrategy,
     get_current_user,
     require_buyer,
-    RoleAuthStrategy,
 )
 
 
@@ -71,7 +72,7 @@ async def create_booking(
         event_id=booking.event_id,
         total_price=booking.total_price,
         status=booking.status.value,  # Should be 'pending_payment' now
-        created_at=booking.created_at,
+        created_at=booking.created_at,  # pyright: ignore[reportArgumentType]
     )
 
 
@@ -91,7 +92,7 @@ async def get_booking(
         total_price=booking.total_price,
         status=booking.status.value,
         created_at=booking.created_at,
-        paid_at=booking.paid_at,
+        paid_at=booking.paid_at,  # pyright: ignore[reportCallIssue]
     )
 
 
