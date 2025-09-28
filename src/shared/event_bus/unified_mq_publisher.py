@@ -432,8 +432,8 @@ async def publish_domain_event(
     範例：
     await publish_domain_event(
         event=BookingCreated(...),
-        topic="event-id-123-booking-events",
-        partition_key="event-123-section-A-1-1-1"
+        topic=KafkaTopicBuilder.ticket_reserve_request(event_id=123),
+        partition_key=PartitionKeyBuilder.section_based(event_id=123, section="A", partition_number=0)
     )
     """
     publisher = get_event_publisher()
