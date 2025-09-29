@@ -1,4 +1,3 @@
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.logging.loguru_io import Logger
@@ -28,39 +27,6 @@ class UserCommandRepoImpl(UserCommandRepo):
         await self.session.refresh(user_model)
 
         return self._model_to_entity(user_model)
-
-    @Logger.io
-    async def update(self, user_entity: UserEntity) -> UserEntity:
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_entity.id))
-        user_model = result.scalar_one_or_none()
-
-        if not user_model:
-            raise ValueError(f'User with id {user_entity.id} not found')
-
-        user_model.email = user_entity.email
-        user_model.name = user_entity.name
-        user_model.hashed_password = user_entity.hashed_password
-        user_model.role = user_entity.role
-        user_model.is_active = user_entity.is_active
-        user_model.is_superuser = user_entity.is_superuser
-        user_model.is_verified = user_entity.is_verified
-
-        await self.session.commit()
-        await self.session.refresh(user_model)
-
-        return self._model_to_entity(user_model)
-
-    @Logger.io
-    async def delete(self, user_id: int) -> bool:
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))
-        user_model = result.scalar_one_or_none()
-
-        if not user_model:
-            return False
-
-        await self.session.delete(user_model)
-        await self.session.commit()
-        return True
 
     def _model_to_entity(self, user_model: UserModel) -> UserEntity:
         return UserEntity(
