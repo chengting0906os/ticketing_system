@@ -95,7 +95,10 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
 
     @Logger.io
     async def create_event_aggregate_with_batch_tickets(
-        self, *, event_aggregate: EventTicketingAggregate
+        self,
+        *,
+        event_aggregate: EventTicketingAggregate,
+        ticket_tuples: Optional[List[tuple]] = None,
     ) -> EventTicketingAggregate:
         """創建 Event Aggregate 使用高效能批量票務創建
 
@@ -116,19 +119,24 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
 
             start_time = time.time()
 
-            # 準備批量數據
-            ticket_tuples = [
-                (
-                    event_aggregate.event.id,  # 使用已存在的 event_id
-                    ticket.section,
-                    ticket.subsection,
-                    ticket.row,
-                    ticket.seat,
-                    ticket.price,
-                    ticket.status.value,
-                )
-                for ticket in event_aggregate.tickets
-            ]
+            # 使用傳入的批量數據，如果沒有則從 tickets 生成
+            if ticket_tuples is None:
+                ticket_tuples = [
+                    (
+                        event_aggregate.event.id,  # 使用已存在的 event_id
+                        ticket.section,
+                        ticket.subsection,
+                        ticket.row,
+                        ticket.seat,
+                        ticket.price,
+                        ticket.status.value,
+                    )
+                    for ticket in event_aggregate.tickets
+                ]
+            else:
+                Logger.base.info('📦 [BATCH_CREATE] Using pre-generated ticket tuples')
+
+            actual_tuples = ticket_tuples
 
             # 使用 asyncpg connection pool 進行 COPY 操作
             async with (await get_asyncpg_pool()).acquire() as conn:
@@ -136,7 +144,7 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
                 copy_start = time.time()
                 await conn.copy_records_to_table(
                     'ticket',
-                    records=ticket_tuples,
+                    records=actual_tuples,
                     columns=[
                         'event_id',
                         'section',

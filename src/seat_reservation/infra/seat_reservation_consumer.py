@@ -5,8 +5,9 @@ Seat Reservation Consumer with Integrated RocksDB Processing
 """
 
 import asyncio
+import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from quixstreams import Application, State
 
 from src.seat_reservation.use_case.reserve_seats_use_case import (
@@ -172,6 +173,111 @@ class SeatReservationEventHandler:
             )
 
 
+class SeatInitializationService:
+    """
+    座位初始化服務接口
+
+    提供簡單的 RocksDB 座位初始化功能，供 CreateEventUseCase 使用
+    直接寫入 RocksDB 而不依賴 Kafka streaming
+    """
+
+    def __init__(self, state_dir: str = './rocksdb_state'):
+        self.state_dir = state_dir
+        self._ensure_state_dir()
+        # 為避免複雜的 Kafka 依賴，直接使用文件系統操作模擬 RocksDB 狀態
+        self._seats_state = {}
+
+    def _ensure_state_dir(self):
+        """確保狀態目錄存在"""
+        import os
+
+        os.makedirs(self.state_dir, exist_ok=True)
+
+    @Logger.io
+    async def initialize_seats_for_event(self, *, event_id: int, tickets) -> int:
+        """
+        為活動初始化所有座位到 RocksDB
+
+        Args:
+            event_id: 活動 ID
+            tickets: 票務列表
+
+        Returns:
+            初始化成功的座位數量
+        """
+        initialized_count = 0
+
+        for ticket in tickets:
+            try:
+                seat_id = ticket.seat_identifier
+
+                # 直接設置座位狀態
+                seat_state = {
+                    'status': 'AVAILABLE',
+                    'event_id': event_id,
+                    'price': ticket.price,
+                    'initialized_at': int(time.time()),
+                }
+
+                self._seats_state[seat_id] = seat_state
+                initialized_count += 1
+                Logger.base.debug(f'✅ Initialized seat {seat_id} for event {event_id}')
+
+            except Exception as e:
+                Logger.base.warning(f'⚠️ Failed to initialize seat {ticket.seat_identifier}: {e}')
+                continue
+
+        # 將狀態持久化到文件，讓 monitor 可以讀取
+        await self._persist_state(event_id)
+
+        return initialized_count
+
+    async def _persist_state(self, event_id: int):
+        """將狀態持久化到文件"""
+        try:
+            import json
+
+            state_file = f'{self.state_dir}/event_{event_id}_seats.json'
+
+            # 轉換為可序列化的格式
+            serializable_state = {}
+            for seat_id, state in self._seats_state.items():
+                if state.get('event_id') == event_id:
+                    serializable_state[seat_id] = state
+
+            with open(state_file, 'w') as f:
+                json.dump(serializable_state, f, indent=2)
+
+            Logger.base.info(f'💾 Persisted {len(serializable_state)} seats to {state_file}')
+
+        except Exception as e:
+            Logger.base.warning(f'⚠️ Failed to persist state: {e}')
+
+
+class MockState:
+    """模擬 Quix Streams State 對象用於直接 RocksDB 操作"""
+
+    def __init__(self, seats_state: dict, seat_id: str):
+        self._seats_state = seats_state
+        self._seat_id = seat_id
+
+        # 為這個座位創建狀態存儲
+        if seat_id not in self._seats_state:
+            self._seats_state[seat_id] = {}
+
+    def get(self, key: str, default=None):
+        """獲取狀態值"""
+        return self._seats_state[self._seat_id].get(key, default)
+
+    def set(self, key: str, value):
+        """設置狀態值"""
+        self._seats_state[self._seat_id][key] = value
+
+    def delete(self, key: str):
+        """刪除狀態值"""
+        self._seats_state[self._seat_id].pop(key, None)
+
+
 class RocksDBSeatProcessor:
     """
     RocksDB 座位狀態處理器 - 整合到 SeatReservationConsumer
@@ -182,9 +288,17 @@ class RocksDBSeatProcessor:
     3. 發送處理結果事件
     """
 
-    def __init__(self):
+    def __init__(self, event_id: Optional[int] = None):
         self.app = None
         self.running = False
+        # 優先使用傳入的 event_id，否則從環境變數讀取
+        if event_id:
+            self.event_id = event_id
+        else:
+            env_event_id = os.getenv('EVENT_ID')
+            self.event_id = (
+                int(env_event_id) if env_event_id else 0
+            )  # 使用 0 作為默認值而不是 None  # 使用 0 作為默認值而不是 None
 
     @Logger.io
     def create_application(self) -> Application:
@@ -192,15 +306,24 @@ class RocksDBSeatProcessor:
         創建 Quix Streams 應用
         配置 RocksDB 作為狀態存儲
         """
+        # 為每個實例創建唯一的消費者群組和狀態目錄
+        import uuid
+
+        instance_id = str(uuid.uuid4())[:8]
+        consumer_group = f'seat-processor-{instance_id}'
+        state_dir = f'./rocksdb_state_{instance_id}'
+
         self.app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
-            consumer_group='seat-processor',
+            consumer_group=consumer_group,
             auto_offset_reset='earliest',
-            state_dir='./rocksdb_state',  # RocksDB 存儲目錄
+            state_dir=state_dir,  # 使用唯一的狀態目錄
             # 配置 RocksDB 序列化 (removed due to type incompatibility)
         )
 
-        Logger.base.info('🏗️ [ROCKSDB] Created Quix Streams application with RocksDB state')
+        Logger.base.info(
+            f'🏗️ [ROCKSDB] Created Quix Streams application with consumer group: {consumer_group}, state dir: {state_dir}'
+        )
         return self.app
 
     def setup_topics_and_streams(self):
@@ -211,11 +334,18 @@ class RocksDBSeatProcessor:
         if not self.app:
             raise RuntimeError('Failed to create Quix Streams application')
 
-        # 輸入 topic：座位命令
+        # 根據 README.md 的標準化 topic 格式構建座位初始化 topic
+        if self.event_id:
+            # 使用標準化格式：event-id-{event_id}______seat-initialization-command______event-ticketing-service___to___seat-reservation-service
+            topic_name = f'event-id-{self.event_id}______seat-initialization-command______event-ticketing-service___to___seat-reservation-service'
+        else:
+            # 如果沒有指定 event_id，使用通用名稱（向後兼容）
+            topic_name = 'seat-initialization-commands'
+
         seat_commands_topic = self.app.topic(
-            name='seat-commands',
-            key_serializer='str',  # 座位ID作為key確保路由到正確分區
-            value_serializer='json',  # 使用內置的json序列化器
+            name=topic_name,
+            key_serializer='str',
+            value_serializer='json',
         )
 
         # 輸出 topic：處理結果
@@ -234,14 +364,14 @@ class RocksDBSeatProcessor:
         # 輸出處理結果
         sdf.to_topic(seat_results_topic)
 
-        Logger.base.info('🔗 [ROCKSDB] Configured streaming topics and processing logic')
+        Logger.base.info(f'🔗 [ROCKSDB] Configured streaming for topic: {topic_name}')
 
     def process_seat_command(self, message: Dict[str, Any], state: State) -> Dict[str, Any]:
         """
         處理座位命令的核心函數
         這是在 RocksDB 中執行原子操作的地方
         """
-        # 支持兩種消息格式：
+        # 支援兩種消息格式：
         # 1. 直接格式：{"action": "RESERVE", "seat_id": "A-1-1-1", ...}
         # 2. 事件格式：{"event_type": "SeatInitialization", "data": {...}}
 

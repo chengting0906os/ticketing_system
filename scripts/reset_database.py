@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.shared.config.db_setting import Base
 
-# Import all SQLAlchemy models so they are registered with Base.metadata
 from src.booking.infra.booking_model import BookingModel, BookingTicketModel  # noqa: F401
 from src.event_ticketing.infra.event_model import EventModel  # noqa: F401
 from src.event_ticketing.infra.ticket_model import TicketModel  # noqa: F401
@@ -21,7 +20,7 @@ from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHa
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared.config.core_setting import settings
 from src.shared.message_queue.kafka_config_service import KafkaConfigService
-
+from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
 def get_database_url() -> str:
     """取得資料庫連接 URL"""
 
@@ -162,60 +161,7 @@ async def create_init_event(seller_id: int):
             )
 
             # 座位配置
-            seating_config = {
-                "sections": [
-                    {
-                        "name": "A",
-                        "price": 3000,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "B",
-                        "price": 2800,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "C",
-                        "price": 2500,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "D",
-                        "price": 2200,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "E",
-                        "price": 2000,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "F",
-                        "price": 1800,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "G",
-                        "price": 1500,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "H",
-                        "price": 1200,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "I",
-                        "price": 1000,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    },
-                    {
-                        "name": "J",
-                        "price": 800,
-                        "subsections": [{"number": i, "rows": 25, "seats_per_row": 20} for i in range(1, 11)]
-                    }
-                ]
-            }
+            
 
             print("🎫 Creating event and tickets using CreateEventUseCase.create_event_and_tickets()...")
 
@@ -225,7 +171,7 @@ async def create_init_event(seller_id: int):
                 description="Amazing live music performance",
                 seller_id=seller_id,
                 venue_name="Taipei Arena",
-                seating_config=seating_config,
+                seating_config=SEATING_CONFIG_50000,
                 is_active=True,
             )
 

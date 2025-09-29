@@ -37,6 +37,28 @@ class EventTicketingCommandRepo(ABC):
         pass
 
     @abstractmethod
+    async def create_event_aggregate_with_batch_tickets(
+        self,
+        *,
+        event_aggregate: EventTicketingAggregate,
+        ticket_tuples: Optional[List[tuple]] = None,
+    ) -> EventTicketingAggregate:
+        """
+        使用高效能批量方式創建帶有大量票務的 Event Aggregate
+
+        注意：這個方法假設 Event 已經存在並且有 ID
+        專門用於需要創建大量票務的場景（如數萬張票）
+
+        Args:
+            event_aggregate: 已有 Event ID 的活動聚合根
+            ticket_tuples: 預先準備好的批量插入資料格式（可選）
+
+        Returns:
+            保存後的聚合根（包含所有票務 ID）
+        """
+        pass
+
+    @abstractmethod
     async def update_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:

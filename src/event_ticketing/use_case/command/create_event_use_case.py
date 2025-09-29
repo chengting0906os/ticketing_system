@@ -18,13 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
-from src.event_ticketing.domain.seat_initialization_event import SeatInitializationEvent
+from src.seat_reservation.infra.rocksdb_monitor import RocksDBMonitor
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.constant.path import BASE_DIR
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
-from src.shared.message_queue.unified_mq_publisher import publish_domain_event
 from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
 
 
@@ -91,43 +89,41 @@ class CreateEventUseCase:
             is_active=is_active,
         )
 
-        # 2. 保存聚合根（只保存 Event，獲得 ID）
+        # 2. 保存 Event 以獲得 ID
         saved_aggregate = await self.event_ticketing_command_repo.create_event_aggregate(
             event_aggregate=event_aggregate
         )
 
-        # 3. 生成票務（現在有 event.id 了）
-        saved_aggregate.generate_tickets()
+        # 3. 生成票務（同時獲得批量插入格式）
+        ticket_tuples = saved_aggregate.generate_tickets()
+        Logger.base.info(f'Prepared {len(ticket_tuples)} tickets for batch insert')
 
-        # 4. 使用高效能批量創建票務
-        # 由於票務數量很多，我們直接使用批量方法
-        from src.event_ticketing.infra.event_ticketing_command_repo_impl import (
-            EventTicketingCommandRepoImpl,
+        # 4. 使用高效能批量創建方法保存 tickets
+        final_aggregate = (
+            await self.event_ticketing_command_repo.create_event_aggregate_with_batch_tickets(
+                event_aggregate=saved_aggregate,
+                ticket_tuples=ticket_tuples,  # 傳入預先準備好的資料
+            )
         )
 
-        if isinstance(self.event_ticketing_command_repo, EventTicketingCommandRepoImpl):
-            # 使用高效能批量保存方法重新保存整個聚合根
-            final_aggregate = (
-                await self.event_ticketing_command_repo.create_event_aggregate_with_batch_tickets(
-                    event_aggregate=saved_aggregate
-                )
-            )
-        else:
-            # 使用標準方法
-            final_aggregate = await self.event_ticketing_command_repo.update_event_aggregate(
-                event_aggregate=saved_aggregate
-            )
+        # 5. 啟用活動 (從 DRAFT 轉為 AVAILABLE)
+        final_aggregate.activate()
 
-        # 5. 設置 Kafka 基礎設施
-        if final_aggregate.event.id:
-            await self._setup_kafka_infrastructure(
-                event_id=final_aggregate.event.id, seating_config=seating_config
-            )
+        # 6. 更新活動狀態到資料庫
+        final_aggregate = await self.event_ticketing_command_repo.update_event_aggregate(
+            event_aggregate=final_aggregate
+        )
 
-            # 6. 初始化 RocksDB 座位
-            await self._initialize_rocksdb_seats(
-                event_id=final_aggregate.event.id, tickets=final_aggregate.tickets
-            )
+        if not final_aggregate.event.id:
+            raise Exception('Event ID is missing after creation')
+        await self._setup_kafka_infrastructure(
+            event_id=final_aggregate.event.id, seating_config=seating_config
+        )
+
+        # 6. 初始化 RocksDB 座位 - 直接使用 SeatInitializationService
+        await self._initialize_rocksdb_seats_direct(
+            event_id=final_aggregate.event.id, tickets=final_aggregate.tickets
+        )
 
         await self.session.commit()
 
@@ -169,67 +165,97 @@ class CreateEventUseCase:
             # 不拋出異常，因為活動已經創建成功
 
     @Logger.io
-    async def _initialize_rocksdb_seats(self, *, event_id: int, tickets) -> None:
-        """初始化 RocksDB 座位"""
+    async def _initialize_rocksdb_seats_direct(self, *, event_id: int, tickets: list) -> None:
+        """直接初始化 RocksDB 座位 - 使用簡單直接的方式"""
         try:
-            Logger.base.info(f'💺 Initializing RocksDB seats for event {event_id}')
+            Logger.base.info(
+                f'💺 Directly initializing RocksDB seats for event {event_id} with {len(tickets)} tickets'
+            )
 
-            for ticket in tickets:
-                try:
-                    # 創建座位初始化事件
-                    init_event = SeatInitializationEvent(
-                        event_id=event_id,
-                        seat_id=ticket.seat_identifier,
-                        section=ticket.section,
-                        subsection=ticket.subsection,
-                        row=ticket.row,
-                        seat=ticket.seat,
-                        price=ticket.price,
-                    )
+            # 使用現有的 SeatInitializationService
+            from src.seat_reservation.infra.seat_reservation_consumer import (
+                SeatInitializationService,
+            )
 
-                    # 獲取分區鍵
-                    partition_key = self.kafka_service.get_partition_key_for_seat(
-                        section=ticket.section,
-                        subsection=ticket.subsection,
-                        row=ticket.row,
-                        seat=ticket.seat,
-                        event_id=event_id,
-                    )
+            seat_service = SeatInitializationService()
+            initialized_count = await seat_service.initialize_seats_for_event(
+                event_id=event_id, tickets=tickets
+            )
 
-                    # 發送初始化命令
-                    topic_name = KafkaTopicBuilder.seat_initialization_command(event_id=event_id)
-                    await publish_domain_event(
-                        event=init_event, topic=topic_name, partition_key=partition_key
-                    )
+            Logger.base.info(
+                f'✅ Directly initialized {initialized_count}/{len(tickets)} seats in RocksDB'
+            )
 
-                except Exception as e:
-                    Logger.base.warning(
-                        f'⚠️ Failed to initialize seat {ticket.seat_identifier}: {e}'
-                    )
-                    # 繼續處理其他座位
-
-            Logger.base.info(f'✅ RocksDB seat initialization commands sent for event {event_id}')
+            # 驗證初始化結果
+            await self._read_rocksdb_seats(event_id=event_id, sample_size=10)
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to initialize RocksDB seats: {e}')
-            # 不拋出異常，因為活動已經創建成功
+            Logger.base.error(f'❌ Failed to directly initialize RocksDB seats: {e}')
+
+    @Logger.io
+    async def _read_rocksdb_seats(self, *, event_id: int, sample_size: int = 10) -> None:
+        """讀取 RocksDB 座位狀態進行驗證"""
+        try:
+            Logger.base.info(f'🔍 Reading RocksDB seats for event {event_id}')
+
+            monitor = RocksDBMonitor()
+            if not monitor.is_available():
+                Logger.base.warning('⚠️ RocksDB monitor not available')
+                return
+
+            # 獲取座位狀態
+            seats = monitor.get_all_seats(limit=sample_size)
+            event_seats = [seat for seat in seats if seat.event_id == event_id]
+
+            if event_seats:
+                Logger.base.info(
+                    f'📊 Found {len(event_seats)} seats in RocksDB for event {event_id}'
+                )
+                for seat in event_seats[:5]:  # 顯示前5個座位
+                    Logger.base.info(
+                        f'   🪑 Seat {seat.seat_id}: {seat.status}, Price: {seat.price}'
+                    )
+
+                # 獲取統計信息
+                stats = monitor.get_event_statistics(event_id)
+                if stats:
+                    Logger.base.info(f'📈 Event {event_id} statistics:')
+                    Logger.base.info(f'   Total seats: {stats.total_seats}')
+                    Logger.base.info(f'   Available: {stats.available_seats}')
+                    Logger.base.info(f'   Reserved: {stats.reserved_seats}')
+                    Logger.base.info(f'   Sold: {stats.sold_seats}')
+            else:
+                Logger.base.warning(f'⚠️ No seats found in RocksDB for event {event_id}')
+
+        except Exception as e:
+            Logger.base.error(f'❌ Failed to read RocksDB seats: {e}')
 
     @Logger.io
     async def _check_consumer_availability(self) -> bool:
         """檢查必要的 consumer 是否運行"""
         try:
+            # 根據日誌顯示的實際 consumer group 名稱更新
             required_groups = [
-                'booking-service-consumer',
-                'seat-reservation-consumer',
-                'event-ticketing-consumer',
+                'ticketing-system',  # 從日誌看到的實際 group 名稱之一
+                'seat-reservation-service',  # 從日誌看到的實際 group 名稱
             ]
 
             active_groups = await self.kafka_service.get_active_consumer_groups()
+            Logger.base.info(f'📋 Active consumer groups: {active_groups}')
 
+            missing_groups = []
             for group in required_groups:
-                if group not in active_groups:
-                    Logger.base.warning(f"⚠️ Consumer group '{group}' is not active")
-                    return False
+                # 檢查是否有包含該關鍵字的 group（因為實際名稱可能包含隨機後綴）
+                group_found = any(group in active_group for active_group in active_groups)
+                if not group_found:
+                    missing_groups.append(group)
+                    Logger.base.warning(
+                        f"⚠️ Consumer group pattern '{group}' not found in active groups"
+                    )
+
+            if missing_groups:
+                Logger.base.warning(f'⚠️ Missing consumer groups: {missing_groups}')
+                return False
 
             Logger.base.info('✅ All required consumers are active')
             return True

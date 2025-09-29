@@ -155,7 +155,7 @@ class EventTicketingAggregate:
         # 驗證座位配置
         cls._validate_seating_config(seating_config)
 
-        # 創建 Event 實體
+        # 創建 Event 實體 (初始狀態為 DRAFT)
         event = Event(
             name=name,
             description=description,
@@ -163,7 +163,7 @@ class EventTicketingAggregate:
             venue_name=venue_name,
             seating_config=seating_config,
             is_active=is_active,
-            status=EventStatus.AVAILABLE,
+            status=EventStatus.DRAFT,  # 初始狀態為 DRAFT，等票務創建完成後再轉為 AVAILABLE
             created_at=datetime.now(timezone.utc),
         )
 
@@ -173,11 +173,15 @@ class EventTicketingAggregate:
         return aggregate
 
     @Logger.io
-    def generate_tickets(self) -> None:
+    def generate_tickets(self) -> List[tuple]:
         """
         根據座位配置生成票務
 
         必須在活動持久化後調用（需要 event.id）
+
+        Returns:
+            ticket_tuples: 適合批量插入的票務資料格式
+                [(event_id, section, subsection, row, seat, price, status), ...]
         """
         if not self.event.id:
             raise ValueError('Event must be persisted before generating tickets')
@@ -187,6 +191,22 @@ class EventTicketingAggregate:
 
         self.tickets = self._generate_tickets_from_seating_config()
         Logger.base.info(f'Generated {len(self.tickets)} tickets for event {self.event.id}')
+
+        # 同時返回批量插入格式
+        ticket_tuples = [
+            (
+                ticket.event_id,
+                ticket.section,
+                ticket.subsection,
+                ticket.row,
+                ticket.seat,
+                ticket.price,
+                ticket.status.value,
+            )
+            for ticket in self.tickets
+        ]
+
+        return ticket_tuples
 
     def _generate_tickets_from_seating_config(self) -> List[Ticket]:
         """根據座位配置生成票務實體"""
@@ -410,6 +430,25 @@ class EventTicketingAggregate:
             self.event.status = EventStatus.AVAILABLE
         else:
             self.event.status = EventStatus.DRAFT
+
+    @Logger.io
+    def activate(self) -> None:
+        """
+        啟用活動 - 從 DRAFT 轉為 AVAILABLE
+
+        只有在票務都創建完成後才能啟用活動
+        確保活動在所有準備工作完成後才開放購買
+        """
+        if self.event.status != EventStatus.DRAFT:
+            raise ValueError(
+                f'Cannot activate event with status {self.event.status}. Must be DRAFT.'
+            )
+
+        if not self.tickets:
+            raise ValueError('Cannot activate event without tickets')
+
+        Logger.base.info(f'Activating event {self.event.id} with {len(self.tickets)} tickets')
+        self.event.status = EventStatus.AVAILABLE
 
     def get_statistics(self) -> dict:
         """獲取聚合統計信息"""

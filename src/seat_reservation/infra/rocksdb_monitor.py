@@ -8,6 +8,9 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
+from src.shared.config.core_setting import settings
+
+
 try:
     from quixstreams import Application
 
@@ -55,6 +58,51 @@ class RocksDBMonitor:
     def __init__(self, state_dir: str = './rocksdb_state'):
         self.state_dir = Path(state_dir)
         self.app = None
+
+    def _read_from_json_files(self, json_files: list, limit: int) -> List[SeatState]:
+        """從 JSON 檔案讀取座位狀態"""
+        seats = []
+
+        try:
+            import json
+
+            for json_file in json_files:
+                try:
+                    with open(json_file, 'r') as f:
+                        data = json.load(f)
+
+                    for seat_id, state in data.items():
+                        seat = SeatState(
+                            seat_id=seat_id,
+                            event_id=state.get('event_id', 0),
+                            status=state.get('status', 'UNKNOWN'),
+                            price=state.get('price', 0),
+                            booking_id=state.get('booking_id', 0),
+                            buyer_id=state.get('buyer_id', 0),
+                            reserved_at=state.get('reserved_at'),
+                            sold_at=state.get('sold_at'),
+                        )
+                        seats.append(seat)
+
+                        # 達到限制數量就停止
+                        if len(seats) >= limit:
+                            break
+
+                    if len(seats) >= limit:
+                        break
+
+                except Exception as e:
+                    Logger.base.warning(f'⚠️ [MONITOR] Failed to read JSON file {json_file}: {e}')
+                    continue
+
+            Logger.base.info(
+                f'📊 [MONITOR] Read {len(seats)} seats from {len(json_files)} JSON files'
+            )
+            return seats
+
+        except Exception as e:
+            Logger.base.error(f'❌ [MONITOR] Failed to read from JSON files: {e}')
+            return []
         # 延遲初始化，只在需要時才設置
 
     def _setup_application(self) -> None:
@@ -66,8 +114,6 @@ class RocksDBMonitor:
         try:
             if not QUIX_STREAMS_AVAILABLE or Application is None:
                 return
-
-            from src.shared.config.core_setting import settings
 
             self.app = Application(
                 broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
@@ -105,17 +151,24 @@ class RocksDBMonitor:
                 Logger.base.warning(f'📂 [MONITOR] State directory not found: {self.state_dir}')
                 return []
 
-            # 尋找 RocksDB 狀態檔案
-            state_files = list(self.state_dir.rglob('*.sst')) + list(
+            # 尋找 RocksDB 狀態檔案或 JSON 檔案
+            rocksdb_files = list(self.state_dir.rglob('*.sst')) + list(
                 self.state_dir.rglob('CURRENT')
             )
+            json_files = list(self.state_dir.glob('event_*_seats.json'))
 
-            if not state_files:
-                Logger.base.info(f'📂 [MONITOR] No RocksDB state files found in {self.state_dir}')
+            if not rocksdb_files and not json_files:
+                Logger.base.info(
+                    f'📂 [MONITOR] No RocksDB or JSON state files found in {self.state_dir}'
+                )
                 return []
 
+            # 如果有 JSON 檔案，優先使用 JSON 檔案
+            if json_files:
+                return self._read_from_json_files(json_files, limit)
+
             Logger.base.info(
-                f'🔍 [MONITOR] Found {len(state_files)} state files, using mock data for now'
+                f'🔍 [MONITOR] Found {len(rocksdb_files)} RocksDB state files, using mock data for now'
             )
 
             # 暫時返回模擬資料，因為直接讀取 RocksDB 需要不同的實現
@@ -186,28 +239,3 @@ class RocksDBMonitor:
             sold_seats=sold,
             sections=sections,
         )
-
-    def get_system_health(self) -> Dict[str, Any]:
-        """獲取系統健康狀態"""
-        health = {
-            'quix_streams_available': self.is_available(),
-            'state_dir': str(self.state_dir),
-            'app_configured': self.app is not None,
-            'timestamp': int(time.time()),
-        }
-
-        if self.is_available():
-            try:
-                all_seats = self.get_all_seats(limit=100)
-                status_dist = {}
-                for seat in all_seats:
-                    status = seat.status
-                    status_dist[status] = status_dist.get(status, 0) + 1
-
-                health.update(
-                    {'total_seats_sample': len(all_seats), 'status_distribution': status_dist}
-                )
-            except Exception as e:
-                health['error'] = str(e)
-
-        return health

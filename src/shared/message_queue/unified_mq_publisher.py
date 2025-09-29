@@ -10,7 +10,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import orjson
 from quixstreams import Application
@@ -377,7 +377,7 @@ async def publish_domain_event(
     event: MqDomainEvent,
     topic: str,  # 改為必填
     partition_key: str,  # 改為必填
-) -> None:
+) -> Literal[True]:
     """
     - topic: 確保事件路由到正確的處理者
     - partition_key: 確保相同座位的事件順序處理
@@ -391,3 +391,29 @@ async def publish_domain_event(
     """
     publisher = get_event_publisher()
     await publisher.publish(event=event, topic=topic, partition_key=partition_key)
+    return True
+
+
+@Logger.io
+async def publish_domain_events_batch(
+    events: List[MqDomainEvent],
+    topic: str,  # 必填
+    partition_key: str,  # 必填
+) -> Literal[True]:
+    """
+    批量發布領域事件
+
+    - events: 要發布的事件列表
+    - topic: 確保事件路由到正確的處理者
+    - partition_key: 確保相同座位的事件順序處理
+
+    範例：
+    await publish_domain_events_batch(
+        events=[SeatInitializationEvent(...), SeatInitializationEvent(...)],
+        topic=KafkaTopicBuilder.seat_initialization_command(event_id=123),
+        partition_key=PartitionKeyBuilder.section_based(event_id=123, section="A", partition_number=0)
+    )
+    """
+    publisher = get_event_publisher()
+    await publisher.publish_batch(events=events, topic=topic, partition_key=partition_key)
+    return True
