@@ -41,8 +41,13 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 
 ```
 ┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│   booking_service   │     │   seat_reservation   │     │   event_ticketing   │
-│    (PostgreSQL)     │     │      (RocksDB)       │     │     (PostgreSQL)    │
+│   booking_service   │────▶│   seat_reservation   │────▶│   event_ticketing   │
+│    (PostgreSQL)     │     │   (Algorithm Router) │     │ (PostgreSQL+RocksDB)│
+│                     │◀────│                      │◀────│                     │
+│  📊 Consumer: 1     │     │  📊 Consumer: 1      │     │  📊 Consumer: 2     │
+│ event-id-1__        │     │ event-id-1__         │     │ event-id-1__        │
+│ booking-service-1   │     │ seat-reservation-    │     │ event-ticketing-    │
+│                     │     │ service-1            │     │ service-1           │
 └─────────────────────┘     └──────────────────────┘     └─────────────────────┘
          │                           │                          │
          │                           │                          │
@@ -50,6 +55,7 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             Kafka + Quix Streams                            │
 │                   Event-Driven + Stateful Stream + Lock-Free                │
+│                          🔄 1:1:2 Consumer Architecture                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,7 +105,7 @@ event-{event_id}-section-{section}-partition-{partition_number}
 → return booking detail 200
 ```
 
-### 🪑 Step 2: seat_selection service 座位選擇 2 server 2 consumer  1 consumer <=> 5 partition
+### 🪑 Step 2: seat_reservation service  2 server 2 consumer
 **seat_reservation** 
 收到 topic event-id-123___:ticket-reserve-request___:seat-reservation-service 
 
@@ -148,7 +154,7 @@ subsection 狀況
 
 
 
-### 🏗️ Step 3: RocksDB 原子操作
+### 🏗️ Step 3: RocksDB 原子操作 2 server 2 consumer
 **seat_reservation 內部處理流程:**
 1. 透過 `partition_key: event-123-section-A-partition-0` 路由到對應的 RocksDB 實例
 2. 執行原子座位預訂操作:
@@ -180,19 +186,21 @@ subsection 狀況
 **SSE 即時通知 buyer:**
 - 通知購票者 booking 狀態變化
 
-### 🔄 Consumer Group 配置 (1:2:1 架構)
-- **booking-service-{uuid}** - 訂單服務 (1個)
-- **seat-reservation-service-{uuid}** - 座位預訂服務 (2個)
-- **event-ticketing-service-{uuid}** - 票務同步服務 (1個)
+### 🔄 Consumer Group 配置 (1:1:2 架構)
+**統一命名規則:** `event-id-{event_id}__{service_name}-{event_id}`
+
+- **event-id-1__booking-service-1** - 訂單服務 (1個實例)
+- **event-id-1__seat-reservation-service-1** - 座位預訂服務 (1個實例)
+- **event-id-1__event-ticketing-service-1** - 票務狀態管理服務 (2個實例)
 
 **負載分配:**
 ```
-1 booking consumer    : 處理訂單創建和狀態更新
-2 seat-reservation    : 處理座位選擇和RocksDB操作 (高負載)
-1 event-ticketing     : 處理票據狀態同步
+1 booking consumer       : 處理訂單創建和狀態更新
+1 seat-reservation       : 處理座位選擇算法和服務協調
+2 event-ticketing        : 處理RocksDB狀態管理和PostgreSQL同步 (高負載)
 ```
 
-每個 consumer 都有獨立的 UUID 和消費進度，確保系統穩定性。
+每個 consumer group 使用統一命名，無隨機UUID後綴，確保系統可預測性和可維護性。
 
 ## 付款流程圖 
 
@@ -248,30 +256,7 @@ subsection 狀況
 
 5. SSE 推送 "訂單已取消" 到前端
 
-## 高並發部署架構 (50,000 張票 + 2 台伺服器)
 
-```
-                    Load Balancer
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-         Server 1                Server 2
-    ┌─────────────────┐      ┌─────────────────┐
-    │  5 Partitions   │      │  5 Partitions   │
-    │  P0, P1, P2     │      │  P5, P6, P7     │
-    │  P3, P4         │      │  P8, P9         │
-    │                 │      │                 │
-    │ 25,000 tickets  │      │ 25,000 tickets  │
-    │                 │      │                 │
-    │ RocksDB Store   │      │ RocksDB Store   │
-    │ seat-processor  │      │ seat-processor  │
-    └─────────────────┘      └─────────────────┘
-              │                     │
-              └──────────┬──────────┘
-                         │
-                   Kafka Cluster
-                  (10 Partitions)
-```
 
 ## 技術棧
 - **RocksDB + Quix Streams**: 無鎖座位狀態管理

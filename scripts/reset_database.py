@@ -171,7 +171,7 @@ async def create_init_event(seller_id: int):
                 description="Amazing live music performance",
                 seller_id=seller_id,
                 venue_name="Taipei Arena",
-                seating_config=SEATING_CONFIG_50000,
+                seating_config=SEATING_CONFIG_30,
                 is_active=True,
             )
 

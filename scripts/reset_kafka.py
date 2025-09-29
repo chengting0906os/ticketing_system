@@ -77,6 +77,11 @@ class KafkaReset:
 
     def delete_topic(self, topic: str) -> bool:
         """刪除指定 topic"""
+        # 保護包含 "event-id-1" 的 topics
+        if "event-id-1" in topic:
+            Logger.base.info(f"🛡️ Protecting topic: {topic} (contains event-id-1)")
+            return True
+
         command = [
             "kafka-topics",
             "--bootstrap-server", self.bootstrap_server,
@@ -116,6 +121,11 @@ class KafkaReset:
 
     def delete_consumer_group(self, group: str) -> bool:
         """刪除指定 consumer group"""
+        # 保護包含 "event-id-1" 的 consumer groups
+        if "event-id-1" in group:
+            Logger.base.info(f"🛡️ Protecting consumer group: {group} (contains event-id-1)")
+            return True
+
         command = [
             "kafka-consumer-groups",
             "--bootstrap-server", self.bootstrap_server,
@@ -135,9 +145,22 @@ class KafkaReset:
         topics = self.list_topics()
 
         if topics:
-            Logger.base.info(f"Found {len(topics)} topics to delete")
-            for topic in topics:
-                self.delete_topic(topic)
+            # 分離受保護的和需要刪除的 topics
+            protected_topics = [t for t in topics if "event-id-1" in t]
+            deletable_topics = [t for t in topics if "event-id-1" not in t]
+
+            Logger.base.info(f"Found {len(topics)} total topics")
+            if protected_topics:
+                Logger.base.info(f"🛡️ Protected topics (event-id-1): {len(protected_topics)}")
+                for topic in protected_topics:
+                    Logger.base.info(f"   🔒 {topic}")
+
+            if deletable_topics:
+                Logger.base.info(f"🗑️ Topics to delete: {len(deletable_topics)}")
+                for topic in deletable_topics:
+                    self.delete_topic(topic)
+            else:
+                Logger.base.info("No deletable topics found")
         else:
             Logger.base.info("No user topics found")
 
@@ -149,9 +172,22 @@ class KafkaReset:
         groups = self.list_consumer_groups()
 
         if groups:
-            Logger.base.info(f"Found {len(groups)} consumer groups to delete")
-            for group in groups:
-                self.delete_consumer_group(group)
+            # 分離受保護的和需要刪除的 groups
+            protected_groups = [g for g in groups if "event-id-1" in g]
+            deletable_groups = [g for g in groups if "event-id-1" not in g]
+
+            Logger.base.info(f"Found {len(groups)} total consumer groups")
+            if protected_groups:
+                Logger.base.info(f"🛡️ Protected groups (event-id-1): {len(protected_groups)}")
+                for group in protected_groups:
+                    Logger.base.info(f"   🔒 {group}")
+
+            if deletable_groups:
+                Logger.base.info(f"🗑️ Groups to delete: {len(deletable_groups)}")
+                for group in deletable_groups:
+                    self.delete_consumer_group(group)
+            else:
+                Logger.base.info("No deletable consumer groups found")
         else:
             Logger.base.info("No consumer groups found")
 
@@ -160,13 +196,35 @@ class KafkaReset:
         remaining_topics = self.list_topics()
         remaining_groups = self.list_consumer_groups()
 
-        if not remaining_topics and not remaining_groups:
+        # 分離受保護的和不應該存在的 topics 和 groups
+        protected_topics = [t for t in remaining_topics if "event-id-1" in t]
+        unexpected_topics = [t for t in remaining_topics if "event-id-1" not in t]
+
+        protected_groups = [g for g in remaining_groups if "event-id-1" in g]
+        unexpected_groups = [g for g in remaining_groups if "event-id-1" not in g]
+
+        if not unexpected_topics and not unexpected_groups:
             Logger.base.info("✅ Kafka reset completed successfully!")
+
+            if protected_topics:
+                Logger.base.info(f"🛡️ Protected topics preserved: {len(protected_topics)}")
+                for topic in protected_topics:
+                    Logger.base.info(f"   🔒 {topic}")
+
+            if protected_groups:
+                Logger.base.info(f"🛡️ Protected consumer groups preserved: {len(protected_groups)}")
+                for group in protected_groups:
+                    Logger.base.info(f"   🔒 {group}")
         else:
-            if remaining_topics:
-                Logger.base.warning(f"⚠️ Some topics remain: {remaining_topics}")
-            if remaining_groups:
-                Logger.base.warning(f"⚠️ Some consumer groups remain: {remaining_groups}")
+            if unexpected_topics:
+                Logger.base.warning(f"⚠️ Unexpected topics remain: {unexpected_topics}")
+            if unexpected_groups:
+                Logger.base.warning(f"⚠️ Unexpected consumer groups remain: {unexpected_groups}")
+
+            if protected_topics:
+                Logger.base.info(f"🛡️ Protected topics (as expected): {len(protected_topics)}")
+            if protected_groups:
+                Logger.base.info(f"🛡️ Protected groups (as expected): {len(protected_groups)}")
 
 
 def main():

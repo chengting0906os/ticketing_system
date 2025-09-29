@@ -130,6 +130,11 @@ db-restart:
 	@docker restart ticketing_system_db
 
 # Kafka
+.PHONY: clean-all ca
+clean-all ca:
+	@echo "🧹 Complete system cleanup (ALL topics, consumer groups, RocksDB state)..."
+	@PYTHONPATH=. uv run python scripts/clean_all.py
+
 .PHONY: kafka-clean kc
 kafka-clean kc:
 	@echo "🧹 Cleaning ALL Kafka topics and consumer groups..."
@@ -178,50 +183,6 @@ stop-services stop:  ## 🛑 停止所有服務
 .PHONY: restart-services restart
 restart-services restart: stop-services services  ## 🔄 重啟所有服務
 
-.PHONY: architecture arch
-architecture arch:  ## 📐 顯示架構圖
-	@echo "📐 三微服務分散式架構 (50,000張票 + RocksDB + 無鎖預訂):"
-	@echo "================================================================"
-	@echo ""
-	@echo "┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐"
-	@echo "│   booking_service   │     │   seat_reservation   │     │   event_ticketing   │"
-	@echo "│    (PostgreSQL)     │     │      (RocksDB)       │     │     (PostgreSQL)    │"
-	@echo "└─────────────────────┘     └──────────────────────┘     └─────────────────────┘"
-	@echo "         │                           │                          │"
-	@echo "         │                           │                          │"
-	@echo "         ▼                           ▼                          ▼"
-	@echo "┌─────────────────────────────────────────────────────────────────────────────┐"
-	@echo "│                             Kafka + Quix Streams                            │"
-	@echo "│                   Event-Driven + Stateful Stream + Lock-Free                │"
-	@echo "└─────────────────────────────────────────────────────────────────────────────┘"
-	@echo ""
-	@echo "流程："
-	@echo "  1. booking_service 創建訂單 → 發送 TicketReservedRequest"
-	@echo "  2. seat_reservation 選座位 → RocksDB 原子操作"
-	@echo "  3. RocksDB 成功 → 雙事件發送 (到 booking + event_ticketing)"
-	@echo "  4. booking_service 狀態 PROCESSING → PENDING_PAYMENT (Redis TTL 15分)"
-	@echo "  5. event_ticketing 票據狀態 AVAILABLE → RESERVED"
-	@echo ""
-	@echo "Topics (支援 event-id-{event_id}-* 格式)："
-	@echo "  Global Topics:"
-	@echo "    • seat-commands              → RocksDB Processor"
-	@echo "    • seat-results               → seat_reservation"
-	@echo "    • booking-events             → seat_reservation"
-	@echo "    • seat-reservation-results   → booking_service"
-	@echo "    • ticket-status-updates      → event_ticketing"
-	@echo ""
-	@echo "  Event-Specific Topics:"
-	@echo "    • event-id-{event_id}-seat-commands"
-	@echo "    • event-id-{event_id}-seat-results"
-	@echo "    • event-id-{event_id}-booking-events"
-	@echo "    • event-id-{event_id}-seat-reservation-results"
-	@echo "    • event-id-{event_id}-ticket-status-updates"
-	@echo ""
-	@echo "  使用方式: make kafka-topics-event EVENT_ID=123"
-
-.PHONY: consumer-architecture ca
-consumer-architecture ca: architecture  ## 📐 顯示架構圖 (別名)
-
 # Help
 .PHONY: help
 help:
@@ -251,7 +212,8 @@ help:
 	@echo "    make docker-logs         - View Docker logs"
 	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
 	@echo ""
-	@echo "  Kafka:"
+	@echo "  Cleanup:"
+	@echo "    make clean-all (ca)      - 🧹 Complete cleanup (topics, groups, RocksDB)"
 	@echo "    make kafka-clean (kc)    - Clean all Kafka topics"
 	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
 	@echo ""
@@ -259,4 +221,3 @@ help:
 	@echo "    make services (ss)       - 🚀 Start services (interactive event selection)"
 	@echo "    make stop                - 🛑 Stop all services"
 	@echo "    make restart             - 🔄 Restart all services"
-	@echo "    make architecture (arch) - 📐 Show architecture diagram"
