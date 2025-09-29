@@ -5,15 +5,15 @@ ALEMBIC_CONFIG = src/shared/alembic/alembic.ini
 reset:
 	@echo "🚀 Complete system reset (Kafka + Database)..."
 	@echo "Step 1: Resetting Kafka..."
-	@PYTHONPATH=. python scripts/reset_kafka.py
+	@PYTHONPATH=. uv run python scripts/reset_kafka.py
 	@echo ""
 	@echo "Step 2: Resetting Database..."
-	@PYTHONPATH=. python scripts/reset_database.py
+	@PYTHONPATH=. uv run python scripts/reset_database.py
 	@echo "✅ Complete system reset finished!"
 
 reset-db:
 	@echo "🚀 Resetting database with test data..."
-	@PYTHONPATH=. python scripts/reset_database.py
+	@PYTHONPATH=. uv run python scripts/reset_database.py
 
 # Database migrations
 

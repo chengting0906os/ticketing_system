@@ -13,13 +13,14 @@ from src.event_ticketing.infra.event_model import EventModel  # noqa: F401
 from src.event_ticketing.infra.ticket_model import TicketModel  # noqa: F401
 from src.shared_kernel.user.infra.user_model import UserModel  # noqa: F401
 
-from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
+from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
 from src.event_ticketing.infra.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.shared.config.db_setting import async_session_maker
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared.config.core_setting import settings
+from src.shared.message_queue.kafka_config_service import KafkaConfigService
 
 def get_database_url() -> str:
     """取得資料庫連接 URL"""
@@ -147,10 +148,18 @@ async def create_init_users():
 async def create_init_event(seller_id: int):
     async with async_session_maker() as session:
         try:
-            print("💫 Creating initial event through EventTicketingAggregate...")
+            print("💫 Creating initial event through CreateEventUseCase...")
 
             # 創建依賴服務
             event_ticketing_repo = EventTicketingCommandRepoImpl(session)
+            kafka_config = KafkaConfigService()
+
+            # 創建 UseCase
+            create_event_use_case = CreateEventUseCase(
+                session=session,
+                event_ticketing_command_repo=event_ticketing_repo,
+                kafka_service=kafka_config
+            )
 
             # 座位配置
             seating_config = {
@@ -208,10 +217,10 @@ async def create_init_event(seller_id: int):
                 ]
             }
 
-            print("🎫 Creating event and tickets using EventTicketingAggregate...")
+            print("🎫 Creating event and tickets using CreateEventUseCase.create_event_and_tickets()...")
 
-            # 1. 使用工廠方法創建聚合根（包含Event，但還沒有tickets）
-            event_aggregate = EventTicketingAggregate.create_event_with_tickets(
+            # 使用 UseCase 的 create_event_and_tickets 方法
+            event_aggregate = await create_event_use_case.create_event_and_tickets(
                 name="Concert Event",
                 description="Amazing live music performance",
                 seller_id=seller_id,
@@ -220,27 +229,14 @@ async def create_init_event(seller_id: int):
                 is_active=True,
             )
 
-            # 2. 先創建Event以獲得ID（不帶tickets）
-            persisted_aggregate = await event_ticketing_repo.create_event_aggregate(
-                event_aggregate=event_aggregate
-            )
-
-            # 3. 現在Event有ID了，可以生成tickets
-            persisted_aggregate.generate_tickets()
-
-            # 4. 使用高效能批量方法重新創建，現在包含所有tickets
-            final_aggregate = await event_ticketing_repo.create_event_aggregate_with_batch_tickets(
-                event_aggregate=persisted_aggregate
-            )
-
-            event = final_aggregate.event
-            tickets = final_aggregate.tickets
+            event = event_aggregate.event
+            tickets = event_aggregate.tickets
 
             print(f"   ✅ Created event: ID={event.id}, Name={event.name}")
             print(f"   ✅ Created tickets: {len(tickets)}")
-            print(f"   🚀 High-performance batch creation completed")
+            print(f"   🚀 Event created successfully via UseCase")
 
-            print("✨ Initial event and tickets created using EventTicketingAggregate!")
+            print("✨ Initial event and tickets created using CreateEventUseCase!")
             return event.id
 
         except Exception as e:
