@@ -14,7 +14,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
-from src.shared.constant.topic import Topic
+from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.shared.logging.loguru_io import Logger
 from src.shared.message_queue.unified_mq_publisher import publish_domain_event
 
@@ -153,11 +153,14 @@ class EventTicketingMqGateway:
 
             # 5. 根據結果發送回應
             if result.is_success:
-                await self.send_success_response(result)
+                await self.send_success_response(result, event_id=command.event_id)
                 Logger.base.info(f'✅ [GATEWAY] 處理成功: booking_id={command.booking_id}')
             else:
                 await self.send_failure_response(
-                    command.booking_id, command.buyer_id, result.error_message or 'Unknown error'
+                    command.booking_id,
+                    command.buyer_id,
+                    result.error_message or 'Unknown error',
+                    event_id=command.event_id,
                 )
                 Logger.base.error(f'❌ [GATEWAY] 處理失敗: {result.error_message}')
 
@@ -204,7 +207,7 @@ class EventTicketingMqGateway:
                 error_message=str(e),
             )
 
-    async def send_success_response(self, result: ProcessingResult) -> None:
+    async def send_success_response(self, result: ProcessingResult, event_id: int) -> None:
         """
         發送成功回應事件
 
@@ -232,7 +235,7 @@ class EventTicketingMqGateway:
 
         await publish_domain_event(
             event=event,
-            topic=Topic.TICKETING_BOOKING_RESPONSE.value,
+            topic=KafkaTopicBuilder.update_booking_status_to_pending_payment(event_id=event_id),
             partition_key=str(result.booking_id),
         )
 
@@ -241,7 +244,7 @@ class EventTicketingMqGateway:
         )
 
     async def send_failure_response(
-        self, booking_id: int, buyer_id: int, error_message: str
+        self, booking_id: int, buyer_id: int, error_message: str, event_id: int
     ) -> None:
         """
         發送失敗回應事件
@@ -269,7 +272,9 @@ class EventTicketingMqGateway:
         )
 
         await publish_domain_event(
-            event=event, topic=Topic.TICKETING_BOOKING_RESPONSE.value, partition_key=str(booking_id)
+            event=event,
+            topic=KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
+            partition_key=str(booking_id),
         )
 
         Logger.base.info(

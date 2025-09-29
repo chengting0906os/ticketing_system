@@ -330,15 +330,6 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
             return False
 
     @Logger.io
-    async def reserve_tickets_for_booking(
-        self, *, event_id: int, ticket_ids: List[int], buyer_id: int, booking_id: int
-    ) -> List[Ticket]:
-        """為訂單預訂票務"""
-        return await self.update_tickets_status(
-            ticket_ids=ticket_ids, status=TicketStatus.RESERVED, buyer_id=buyer_id
-        )
-
-    @Logger.io
     async def release_tickets_from_booking(
         self, *, event_id: int, ticket_ids: List[int], booking_id: int
     ) -> List[Ticket]:

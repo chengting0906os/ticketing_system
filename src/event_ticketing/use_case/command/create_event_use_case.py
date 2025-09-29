@@ -14,15 +14,21 @@ from typing import Dict
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
+from quixstreams import Application
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
-from src.seat_reservation.infra.rocksdb_monitor import RocksDBMonitor
+from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.constant.path import BASE_DIR
 from src.shared.logging.loguru_io import Logger
+from src.shared.message_queue.kafka_constant_builder import (
+    KafkaConsumerGroupBuilder,
+    PartitionKeyBuilder,
+)
+from src.shared_kernel.domain.event_status import EventStatus
 from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
 
 
@@ -106,13 +112,8 @@ class CreateEventUseCase:
             )
         )
 
-        # 5. 啟用活動 (從 DRAFT 轉為 AVAILABLE)
-        final_aggregate.activate()
-
-        # 6. 更新活動狀態到資料庫
-        final_aggregate = await self.event_ticketing_command_repo.update_event_aggregate(
-            event_aggregate=final_aggregate
-        )
+        # 5. 啟用活動 (DRAFT → AVAILABLE)
+        final_aggregate.event.status = EventStatus.AVAILABLE
 
         if not final_aggregate.event.id:
             raise Exception('Event ID is missing after creation')
@@ -120,9 +121,9 @@ class CreateEventUseCase:
             event_id=final_aggregate.event.id, seating_config=seating_config
         )
 
-        # 6. 初始化 RocksDB 座位 - 直接使用 SeatInitializationService
-        await self._initialize_rocksdb_seats_direct(
-            event_id=final_aggregate.event.id, tickets=final_aggregate.tickets
+        # 6. 啟動 RocksDB consumer 並初始化座位
+        await self._start_rocksdb_consumer_and_initialize_seats(
+            event_id=final_aggregate.event.id, ticket_tuples=ticket_tuples
         )
 
         await self.session.commit()
@@ -140,7 +141,7 @@ class CreateEventUseCase:
             Logger.base.info(f'🚀 Setting up Kafka infrastructure for event {event_id}')
 
             # 檢查 consumer 是否可用
-            consumers_available = await self._check_consumer_availability()
+            consumers_available = await self._check_consumer_availability(event_id=event_id)
 
             if not consumers_available:
                 Logger.base.info('🔄 Consumers not available, attempting to start them...')
@@ -165,134 +166,261 @@ class CreateEventUseCase:
             # 不拋出異常，因為活動已經創建成功
 
     @Logger.io
-    async def _initialize_rocksdb_seats_direct(self, *, event_id: int, tickets: list) -> None:
-        """直接初始化 RocksDB 座位 - 使用簡單直接的方式"""
+    async def _start_rocksdb_consumer_and_initialize_seats(
+        self, *, event_id: int, ticket_tuples: list
+    ) -> None:
+        """啟動 RocksDB consumer 並透過 Kafka 初始化座位"""
         try:
-            Logger.base.info(
-                f'💺 Directly initializing RocksDB seats for event {event_id} with {len(tickets)} tickets'
+            # 1. 啟動 RocksDB consumer
+            Logger.base.info(f'🚀 Starting RocksDB consumer for event {event_id}')
+            await self._start_rocksdb_consumer(event_id=event_id)
+
+            # 2. 等待 consumer 準備就緒
+            await asyncio.sleep(3)
+
+            # 3. 發送座位初始化事件
+            await self._send_seat_initialization_events(
+                event_id=event_id, ticket_tuples=ticket_tuples
             )
 
-            # 使用現有的 SeatInitializationService
-            from src.seat_reservation.infra.seat_reservation_consumer import (
-                SeatInitializationService,
-            )
-
-            seat_service = SeatInitializationService()
-            initialized_count = await seat_service.initialize_seats_for_event(
-                event_id=event_id, tickets=tickets
-            )
-
-            Logger.base.info(
-                f'✅ Directly initialized {initialized_count}/{len(tickets)} seats in RocksDB'
-            )
-
-            # 驗證初始化結果
-            await self._read_rocksdb_seats(event_id=event_id, sample_size=10)
+            # 4. 等待處理完成
+            await asyncio.sleep(8)
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to directly initialize RocksDB seats: {e}')
+            Logger.base.error(f'❌ Failed to start consumer and initialize seats: {e}')
 
     @Logger.io
-    async def _read_rocksdb_seats(self, *, event_id: int, sample_size: int = 10) -> None:
-        """讀取 RocksDB 座位狀態進行驗證"""
+    async def _start_rocksdb_consumer(self, *, event_id: int) -> None:
+        """啟動特定事件的 RocksDB consumer"""
         try:
-            Logger.base.info(f'🔍 Reading RocksDB seats for event {event_id}')
+            project_root = BASE_DIR
+            env = os.environ.copy()
+            env['EVENT_ID'] = str(event_id)
+            env['PYTHONPATH'] = str(project_root)
 
-            monitor = RocksDBMonitor()
-            if not monitor.is_available():
-                Logger.base.warning('⚠️ RocksDB monitor not available')
-                return
-
-            # 獲取座位狀態
-            seats = monitor.get_all_seats(limit=sample_size)
-            event_seats = [seat for seat in seats if seat.event_id == event_id]
-
-            if event_seats:
-                Logger.base.info(
-                    f'📊 Found {len(event_seats)} seats in RocksDB for event {event_id}'
-                )
-                for seat in event_seats[:5]:  # 顯示前5個座位
-                    Logger.base.info(
-                        f'   🪑 Seat {seat.seat_id}: {seat.status}, Price: {seat.price}'
-                    )
-
-                # 獲取統計信息
-                stats = monitor.get_event_statistics(event_id)
-                if stats:
-                    Logger.base.info(f'📈 Event {event_id} statistics:')
-                    Logger.base.info(f'   Total seats: {stats.total_seats}')
-                    Logger.base.info(f'   Available: {stats.available_seats}')
-                    Logger.base.info(f'   Reserved: {stats.reserved_seats}')
-                    Logger.base.info(f'   Sold: {stats.sold_seats}')
-            else:
-                Logger.base.warning(f'⚠️ No seats found in RocksDB for event {event_id}')
-
-        except Exception as e:
-            Logger.base.error(f'❌ Failed to read RocksDB seats: {e}')
-
-    @Logger.io
-    async def _check_consumer_availability(self) -> bool:
-        """檢查必要的 consumer 是否運行"""
-        try:
-            # 根據日誌顯示的實際 consumer group 名稱更新
-            required_groups = [
-                'ticketing-system',  # 從日誌看到的實際 group 名稱之一
-                'seat-reservation-service',  # 從日誌看到的實際 group 名稱
+            cmd = [
+                'uv',
+                'run',
+                'python',
+                '-m',
+                'src.event_ticketing.infra.event_ticketing_mq_consumer',
             ]
 
-            active_groups = await self.kafka_service.get_active_consumer_groups()
-            Logger.base.info(f'📋 Active consumer groups: {active_groups}')
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=project_root,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
 
+            Logger.base.info(
+                f'✅ Started RocksDB consumer (PID: {process.pid}) for event {event_id}'
+            )
+
+        except Exception as e:
+            Logger.base.error(f'❌ Failed to start RocksDB consumer: {e}')
+            raise
+
+    @Logger.io
+    async def _send_seat_initialization_events(self, *, event_id: int, ticket_tuples: list) -> None:
+        """發送座位初始化事件到 Kafka"""
+        try:
+            Logger.base.info(
+                f'💺 Sending seat initialization events for event {event_id} with {len(ticket_tuples)} tickets'
+            )
+
+            app = Application(
+                broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
+                producer_extra_config={
+                    'enable.idempotence': True,
+                    'acks': 'all',
+                    'retries': 3,
+                },
+            )
+
+            # 使用 KafkaTopicBuilder 統一管理 topic 名稱
+            from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
+
+            topic_name = KafkaTopicBuilder.seat_initialization_command(event_id=event_id)
+            Logger.base.info(f'📡 Using seat initialization topic: {topic_name}')
+
+            seat_init_topic = app.topic(
+                name=topic_name,
+                key_serializer='str',
+                value_serializer='json',
+            )
+
+            initialized_count = 0
+
+            with app.get_producer() as producer:
+                for ticket_tuple in ticket_tuples:
+                    try:
+                        # ticket_tuple: (event_id, section, subsection, row, seat, price, status)
+                        _, section, subsection, row, seat, price, _ = ticket_tuple
+                        seat_id = f'{section}-{subsection}-{row}-{seat}'
+
+                        # 創建座位初始化事件
+                        init_message = {
+                            'action': 'INITIALIZE',
+                            'seat_id': seat_id,
+                            'event_id': event_id,
+                            'price': price,
+                            'section': section,
+                            'subsection': subsection,
+                            'row': row,
+                            'seat': seat,
+                        }
+
+                        # 使用 section-based partition key (按照 README.md)
+                        partition_key = PartitionKeyBuilder.section_based(
+                            event_id=event_id, section=section, partition_number=0
+                        )
+
+                        # 發送到 Kafka
+                        message = seat_init_topic.serialize(key=partition_key, value=init_message)
+                        producer.produce(
+                            topic=seat_init_topic.name,
+                            value=message.value,
+                            key=message.key,
+                        )
+
+                        initialized_count += 1
+
+                    except Exception as e:
+                        try:
+                            # ticket_tuple: (event_id, section, subsection, row, seat, price, status)
+                            if len(ticket_tuple) >= 5:
+                                _, section_name, subsection_num, row_num, seat_num = ticket_tuple[
+                                    :5
+                                ]
+                                seat_identifier = (
+                                    f'{section_name}-{subsection_num}-{row_num}-{seat_num}'
+                                )
+                            else:
+                                seat_identifier = 'invalid_tuple'
+                        except (ValueError, IndexError):
+                            seat_identifier = 'unknown'
+                        Logger.base.warning(
+                            f'⚠️ Failed to send initialization for seat {seat_identifier}: {e}'
+                        )
+                        continue
+
+                # 確保所有事件都發送完成
+                producer.flush(timeout=10.0)
+
+            Logger.base.info(
+                f'✅ Sent {initialized_count}/{len(ticket_tuples)} seat initialization events to topic: {topic_name}'
+            )
+
+        except Exception as e:
+            Logger.base.error(f'❌ Failed to send seat initialization events: {e}')
+
+    @Logger.io
+    async def _check_consumer_availability(
+        self, *, event_id: int, max_retries: int = 3, retry_delay: float = 2.0
+    ) -> bool:
+        """檢查必要的 consumer 是否運行，包含重試機制"""
+        try:
+            # 1-1-2 配置的 consumer groups
+            required_groups = KafkaConsumerGroupBuilder.get_all_consumer_groups(event_id=event_id)
             missing_groups = []
-            for group in required_groups:
-                # 檢查是否有包含該關鍵字的 group（因為實際名稱可能包含隨機後綴）
-                group_found = any(group in active_group for active_group in active_groups)
-                if not group_found:
-                    missing_groups.append(group)
-                    Logger.base.warning(
-                        f"⚠️ Consumer group pattern '{group}' not found in active groups"
+
+            for attempt in range(max_retries):
+                active_groups = await self.kafka_service.get_active_consumer_groups()
+                Logger.base.info(
+                    f'📋 Active consumer groups (attempt {attempt + 1}): {active_groups}'
+                )
+
+                missing_groups = []
+                for group in required_groups:
+                    # 檢查是否有包含該關鍵字的 group（因為實際名稱可能包含隨機後綴）
+                    group_found = any(group in active_group for active_group in active_groups)
+                    if not group_found:
+                        missing_groups.append(group)
+                        Logger.base.warning(
+                            f"⚠️ Consumer group pattern '{group}' not found in active groups"
+                        )
+
+                if not missing_groups:
+                    Logger.base.info('✅ All required consumers are active')
+                    return True
+
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    Logger.base.info(
+                        f'🔄 Retrying consumer verification in {retry_delay}s... (attempt {attempt + 1}/{max_retries})'
                     )
+                    await asyncio.sleep(retry_delay)
 
-            if missing_groups:
-                Logger.base.warning(f'⚠️ Missing consumer groups: {missing_groups}')
-                return False
-
-            Logger.base.info('✅ All required consumers are active')
-            return True
+            Logger.base.warning(
+                f'⚠️ Missing consumer groups after {max_retries} attempts: {missing_groups}'
+            )
+            return False
 
         except Exception as e:
             Logger.base.warning(f'⚠️ Failed to check consumer status: {e}')
             return False
 
     async def _auto_start_consumers(self, event_id: int) -> bool:
-        """自動啟動 consumers"""
+        """
+        自動啟動 consumers - 1-1-2 配置
+
+        架構配置：
+        - booking: 1 consumer (輕量級訂單處理)
+        - seat_reservation: 1 consumer (座位選擇算法)
+        - event_ticketing: 2 consumers (狀態管理高負載)
+        """
         try:
             project_root = BASE_DIR
 
+            # 1-1-2 Consumer 配置
             consumers = [
-                ('booking_mq_consumer', 'src.booking.infra.booking_mq_consumer'),
-                (
-                    'seat_reservation_consumer_1',
-                    'src.seat_reservation.infra.seat_reservation_consumer',
-                ),
-                (
-                    'seat_reservation_consumer_2',
-                    'src.seat_reservation.infra.seat_reservation_consumer',
-                ),
-                (
-                    'event_ticketing_mq_consumer',
-                    'src.event_ticketing.infra.event_ticketing_mq_consumer',
-                ),
+                # Booking Service - 1 consumer
+                {
+                    'name': 'booking_consumer',
+                    'module': 'src.booking.infra.booking_mq_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
+                    'instance_id': 1,
+                },
+                # Seat Reservation - 1 consumer
+                {
+                    'name': 'seat_reservation_consumer',
+                    'module': 'src.seat_reservation.infra.seat_reservation_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
+                        event_id=event_id
+                    ),
+                    'instance_id': 1,
+                },
+                # Event Ticketing - 2 consumers (高負載狀態管理)
+                {
+                    'name': 'event_ticketing_consumer_1',
+                    'module': 'src.event_ticketing.infra.event_ticketing_mq_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
+                        event_id=event_id
+                    ),
+                    'instance_id': 1,
+                },
+                {
+                    'name': 'event_ticketing_consumer_2',
+                    'module': 'src.event_ticketing.infra.event_ticketing_mq_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
+                        event_id=event_id
+                    ),
+                    'instance_id': 2,
+                },
             ]
 
             processes = []
-            for name, module in consumers:
+            for consumer_config in consumers:
                 try:
                     env = os.environ.copy()
                     env['EVENT_ID'] = str(event_id)
                     env['PYTHONPATH'] = str(project_root)
+                    env['CONSUMER_GROUP_ID'] = consumer_config['group_id']
+                    env['CONSUMER_INSTANCE_ID'] = str(consumer_config['instance_id'])
 
-                    cmd = ['uv', 'run', 'python', '-m', module]
+                    cmd = ['uv', 'run', 'python', '-m', consumer_config['module']]
 
                     process = await asyncio.create_subprocess_exec(
                         *cmd,
@@ -303,18 +431,24 @@ class CreateEventUseCase:
                         start_new_session=True,
                     )
 
-                    processes.append((name, process))
-                    Logger.base.info(f'✅ Started {name} (PID: {process.pid})')
+                    processes.append((consumer_config['name'], process))
+                    Logger.base.info(
+                        f'✅ Started {consumer_config["name"]} '
+                        f'(PID: {process.pid}, Group: {consumer_config["group_id"]})'
+                    )
 
                 except Exception as e:
-                    Logger.base.error(f'❌ Failed to start {name}: {e}')
+                    Logger.base.error(f'❌ Failed to start {consumer_config["name"]}: {e}')
                     return False
 
             # 等待 consumers 初始化
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)  # 增加等待時間確保所有 consumer 啟動
+
+            Logger.base.info(f'📊 [1-1-2 CONFIG] Total consumers started: {len(processes)}')
+            Logger.base.info('🔄 [1-1-2 CONFIG] booking:1, seat_reservation:1, event_ticketing:2')
 
             # 驗證 consumers 是否真的啟動了
-            return await self._check_consumer_availability()
+            return await self._check_consumer_availability(event_id=event_id)
 
         except Exception as e:
             Logger.base.error(f'❌ Auto-start consumers failed: {e}')

@@ -104,24 +104,6 @@ class EventTicketingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def reserve_tickets_for_booking(
-        self, *, event_id: int, ticket_ids: List[int], buyer_id: int, booking_id: int
-    ) -> List[Ticket]:
-        """
-        為訂單預訂票務
-
-        Args:
-            event_id: 活動 ID
-            ticket_ids: 票務 ID 列表
-            buyer_id: 購買者 ID
-            booking_id: 訂單 ID
-
-        Returns:
-            預訂的票務列表
-        """
-        pass
-
-    @abstractmethod
     async def release_tickets_from_booking(
         self, *, event_id: int, ticket_ids: List[int], booking_id: int
     ) -> List[Ticket]:

@@ -83,7 +83,7 @@ event-{event_id}-section-{section}-partition-{partition_number}
 - `event-id-{event_id}______update-ticket-status-to-available______booking-service___to___event-ticketing-service` - 更新票據狀態為可用
 - `event-id-{event_id}______release-ticket-to-available-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 釋放票據到可用狀態
 - `event-id-{event_id}______finalize-ticket-to-paid-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 確認票據為已付款
-- `event-id-{event_id}______seat-initialization-command______event-ticketing-service___to___seat-reservation-service` - 座位初始化指令
+- `event-id-{event_id}______seat-initialization-command______event-ticketing-service___to___event-ticketing-service` - 座位初始化指令
 
 ### ⚡ 區域集中式 Partition 策略
 - **A區所有座位** → 固定 partition (例如 partition-0)

@@ -39,21 +39,22 @@ class UnifiedEventConsumer:
         topics: List[str],
         consumer_group_id: str = 'ticketing-system',
         consumer_tag: str = '[CONSUMER]',
-        assigned_partitions: Optional[List[int]] = None,  # 新增：指定partition
+        assigned_partitions: Optional[List[int]] = None,
     ):
         """
         初始化統一事件消費者
 
         Args:
             topics: 要訂閱的Kafka主題列表
-            consumer_group_id: Kafka消費者組ID
+            consumer_group_id: Kafka消費者組ID (直接使用，不再加UUID後綴)
             consumer_tag: 消費者標識，用於日誌追蹤
+            assigned_partitions: 指定partition
         """
 
         self.topics = topics
         self.consumer_group_id = consumer_group_id
         self.consumer_tag = consumer_tag
-        self.assigned_partitions = assigned_partitions  # 儲存指定的partition
+        self.assigned_partitions = assigned_partitions
         self.running = False
         self.handlers: List[Any] = []
 
@@ -61,19 +62,14 @@ class UnifiedEventConsumer:
         self.message_queue = queue.Queue()
         self.worker_task = None
 
-        # 初始化 Quix Application（使用新的 Consumer Group ID 以重新處理消息）
-        import uuid
-
-        new_consumer_group = f'{consumer_group_id}-{uuid.uuid4().hex[:8]}'
-        Logger.base.info(
-            f'\033[93m🔄 [CONSUMER] 使用新的 Consumer Group: {new_consumer_group}\033[0m'
-        )
+        # 直接使用提供的 consumer_group_id，不再添加 UUID 後綴
+        Logger.base.info(f'\033[93m🔧 [CONSUMER] Using Consumer Group: {consumer_group_id}\033[0m')
 
         self.app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
-            consumer_group=new_consumer_group,
-            auto_offset_reset='latest',  # 從最新消息開始，跳過有問題的舊消息
-            processing_guarantee='exactly-once',  # 啟用 exactly-once 語義
+            consumer_group=consumer_group_id,  # 直接使用原始 consumer_group_id
+            auto_offset_reset='latest',
+            processing_guarantee='exactly-once',
             consumer_extra_config={
                 'enable.auto.commit': True,
                 'auto.commit.interval.ms': 1000,
