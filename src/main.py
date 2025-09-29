@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
             'src.event_ticketing.use_case.command.reserve_tickets_use_case',
             'src.event_ticketing.use_case.query.list_events_use_case',
             'src.event_ticketing.use_case.query.get_event_use_case',
+            'src.shared_kernel.user.port.user_controller',
         ]
     )
 

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import AsyncContextManager, Callable, Optional
 
 from pydantic import SecretStr
 from sqlalchemy import select
@@ -12,57 +12,62 @@ from src.shared_kernel.user.infra.user_model import UserModel
 
 
 class UserRepoImpl(UserRepo):
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+        self.session_factory = session_factory
         self.password_hasher = BcryptPasswordHasher()
 
     @Logger.io
     async def get_by_email(self, email: str) -> Optional[UserEntity]:
-        result = await self.session.execute(select(UserModel).where(UserModel.email == email))
-        user_model = result.scalar_one_or_none()
+        async with self.session_factory() as session:
+            result = await session.execute(select(UserModel).where(UserModel.email == email))
+            user_model = result.scalar_one_or_none()
 
-        if not user_model:
-            return None
+            if not user_model:
+                return None
 
-        return self._model_to_entity(user_model)
+            return self._model_to_entity(user_model)
 
     @Logger.io
     async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))
-        user_model = result.scalar_one_or_none()
+        async with self.session_factory() as session:
+            result = await session.execute(select(UserModel).where(UserModel.id == user_id))
+            user_model = result.scalar_one_or_none()
 
-        if not user_model:
-            return None
+            if not user_model:
+                return None
 
-        return self._model_to_entity(user_model)
+            return self._model_to_entity(user_model)
 
     @Logger.io
     async def create(self, user_entity: UserEntity) -> UserEntity:
-        user_model = UserModel(
-            email=user_entity.email,
-            hashed_password=user_entity.hashed_password,
-            name=user_entity.name,
-            role=user_entity.role,
-            is_active=user_entity.is_active,
-            is_superuser=user_entity.is_superuser,
-            is_verified=user_entity.is_verified,
-        )
+        async with self.session_factory() as session:
+            user_model = UserModel(
+                email=user_entity.email,
+                hashed_password=user_entity.hashed_password,
+                name=user_entity.name,
+                role=user_entity.role,
+                is_active=user_entity.is_active,
+                is_superuser=user_entity.is_superuser,
+                is_verified=user_entity.is_verified,
+            )
 
-        self.session.add(user_model)
-        await self.session.commit()
-        await self.session.refresh(user_model)
+            session.add(user_model)
+            await session.commit()
+            await session.refresh(user_model)
 
-        return self._model_to_entity(user_model)
+            return self._model_to_entity(user_model)
 
     @Logger.io
     async def exists_by_email(self, email: str) -> bool:
-        result = await self.session.execute(select(UserModel.id).where(UserModel.email == email))
-        return result.scalar_one_or_none() is not None
+        async with self.session_factory() as session:
+            result = await session.execute(select(UserModel.id).where(UserModel.email == email))
+            return result.scalar_one_or_none() is not None
 
     @Logger.io
     async def verify_password(self, email: str, plain_password: str) -> Optional[UserEntity]:
-        result = await self.session.execute(select(UserModel).where(UserModel.email == email))
-        user_model = result.scalar_one_or_none()
+        async with self.session_factory() as session:
+            result = await session.execute(select(UserModel).where(UserModel.email == email))
+            user_model = result.scalar_one_or_none()
 
         if not user_model:
             return None

@@ -7,7 +7,7 @@ Event Ticketing Command Repository Implementation - CQRS Write Side
 
 from datetime import datetime, timezone
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable, AsyncContextManager
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,71 +27,64 @@ from src.shared.logging.loguru_io import Logger
 class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
     """Event Ticketing Command Repository Implementation"""
 
-    def __init__(self, session: Optional[AsyncSession] = None):
-        self.session = session
-
-    def _get_session(self) -> AsyncSession:
-        """獲取數據庫會話 - 使用注入的會話"""
-        if not self.session:
-            raise ValueError('Session not provided - repository must be initialized with a session')
-        return self.session
+    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+        self.session_factory = session_factory
 
     @Logger.io
     async def create_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """創建 Event Aggregate (包含 Event 和 Tickets)"""
-        session = self._get_session()
+        async with self.session_factory() as session:
+            # 1. 保存 Event
+            event_model = EventModel(
+                name=event_aggregate.event.name,
+                description=event_aggregate.event.description,
+                seller_id=event_aggregate.event.seller_id,
+                venue_name=event_aggregate.event.venue_name,
+                seating_config=event_aggregate.event.seating_config,
+                is_active=event_aggregate.event.is_active,
+                status=event_aggregate.event.status.value,
+            )
 
-        # 1. 保存 Event
-        event_model = EventModel(
-            name=event_aggregate.event.name,
-            description=event_aggregate.event.description,
-            seller_id=event_aggregate.event.seller_id,
-            venue_name=event_aggregate.event.venue_name,
-            seating_config=event_aggregate.event.seating_config,
-            is_active=event_aggregate.event.is_active,
-            status=event_aggregate.event.status.value,
-        )
+            session.add(event_model)
+            await session.flush()  # 獲取 ID
 
-        session.add(event_model)
-        await session.flush()  # 獲取 ID
+            # 2. 更新 Event 實體的 ID
+            event_aggregate.event.id = event_model.id
 
-        # 2. 更新 Event 實體的 ID
-        event_aggregate.event.id = event_model.id
+            # 3. 保存 Tickets (如果有的話)
+            if event_aggregate.tickets:
+                ticket_models = []
+                for ticket in event_aggregate.tickets:
+                    ticket_model = TicketModel(
+                        event_id=event_model.id,
+                        section=ticket.section,
+                        subsection=ticket.subsection,
+                        row_number=ticket.row,
+                        seat_number=ticket.seat,
+                        price=ticket.price,
+                        status=ticket.status.value,
+                        buyer_id=ticket.buyer_id,
+                        reserved_at=ticket.reserved_at,
+                    )
+                    ticket_models.append(ticket_model)
+                    session.add(ticket_model)
 
-        # 3. 保存 Tickets (如果有的話)
-        if event_aggregate.tickets:
-            ticket_models = []
-            for ticket in event_aggregate.tickets:
-                ticket_model = TicketModel(
-                    event_id=event_model.id,
-                    section=ticket.section,
-                    subsection=ticket.subsection,
-                    row_number=ticket.row,
-                    seat_number=ticket.seat,
-                    price=ticket.price,
-                    status=ticket.status.value,
-                    buyer_id=ticket.buyer_id,
-                    reserved_at=ticket.reserved_at,
-                )
-                ticket_models.append(ticket_model)
-                session.add(ticket_model)
+                await session.flush()
 
-            await session.flush()
+                # 更新 Ticket 實體的 ID
+                for i, ticket_model in enumerate(ticket_models):
+                    event_aggregate.tickets[i].id = ticket_model.id
 
-            # 更新 Ticket 實體的 ID
-            for i, ticket_model in enumerate(ticket_models):
-                event_aggregate.tickets[i].id = ticket_model.id
+            # 提交變更確保 asyncpg 能看到
+            await session.commit()
 
-        # 提交變更確保 asyncpg 能看到
-        await session.commit()
+            Logger.base.info(
+                f'🗾 [CREATE_AGGREGATE] Created event {event_model.id} with {len(event_aggregate.tickets)} tickets'
+            )
 
-        Logger.base.info(
-            f'💾 [CREATE_AGGREGATE] Created event {event_model.id} with {len(event_aggregate.tickets)} tickets'
-        )
-
-        return event_aggregate
+            return event_aggregate
 
     @Logger.io
     async def create_event_aggregate_with_batch_tickets(
@@ -105,8 +98,6 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
         注意：這個方法假設 Event 已經存在並且有 ID
         只會批量創建 tickets，不會重新創建 event
         """
-        _ = self._get_session()
-
         # 檢查 Event 是否已經有 ID（已經持久化）
         if not event_aggregate.event.id:
             raise ValueError('Event must be persisted before using batch ticket creation')
@@ -199,61 +190,60 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """更新 Event Aggregate"""
-        session = self._get_session()
+        async with self.session_factory() as session:
+            if not event_aggregate.event.id:
+                raise ValueError('Event must have an ID to be updated')
 
-        if not event_aggregate.event.id:
-            raise ValueError('Event must have an ID to be updated')
-
-        # 1. 更新 Event
-        await session.execute(
-            update(EventModel)
-            .where(EventModel.id == event_aggregate.event.id)
-            .values(
-                name=event_aggregate.event.name,
-                description=event_aggregate.event.description,
-                venue_name=event_aggregate.event.venue_name,
-                seating_config=event_aggregate.event.seating_config,
-                is_active=event_aggregate.event.is_active,
-                status=event_aggregate.event.status.value,
+            # 1. 更新 Event
+            await session.execute(
+                update(EventModel)
+                .where(EventModel.id == event_aggregate.event.id)
+                .values(
+                    name=event_aggregate.event.name,
+                    description=event_aggregate.event.description,
+                    venue_name=event_aggregate.event.venue_name,
+                    seating_config=event_aggregate.event.seating_config,
+                    is_active=event_aggregate.event.is_active,
+                    status=event_aggregate.event.status.value,
+                )
             )
-        )
 
-        # 2. 更新 Tickets
-        for ticket in event_aggregate.tickets:
-            if ticket.id:
-                # 更新現有票務
-                await session.execute(
-                    update(TicketModel)
-                    .where(TicketModel.id == ticket.id)
-                    .values(
+            # 2. 更新 Tickets
+            for ticket in event_aggregate.tickets:
+                if ticket.id:
+                    # 更新現有票務
+                    await session.execute(
+                        update(TicketModel)
+                        .where(TicketModel.id == ticket.id)
+                        .values(
+                            status=ticket.status.value,
+                            buyer_id=ticket.buyer_id,
+                            updated_at=datetime.now(timezone.utc),
+                            reserved_at=ticket.reserved_at,
+                        )
+                    )
+                else:
+                    # 新增票務
+                    ticket_model = TicketModel(
+                        event_id=event_aggregate.event.id,
+                        section=ticket.section,
+                        subsection=ticket.subsection,
+                        row_number=ticket.row,
+                        seat_number=ticket.seat,
+                        price=ticket.price,
                         status=ticket.status.value,
                         buyer_id=ticket.buyer_id,
-                        updated_at=datetime.now(timezone.utc),
                         reserved_at=ticket.reserved_at,
                     )
-                )
-            else:
-                # 新增票務
-                ticket_model = TicketModel(
-                    event_id=event_aggregate.event.id,
-                    section=ticket.section,
-                    subsection=ticket.subsection,
-                    row_number=ticket.row,
-                    seat_number=ticket.seat,
-                    price=ticket.price,
-                    status=ticket.status.value,
-                    buyer_id=ticket.buyer_id,
-                    reserved_at=ticket.reserved_at,
-                )
-                session.add(ticket_model)
-                await session.flush()
-                ticket.id = ticket_model.id
+                    session.add(ticket_model)
+                    await session.flush()
+                    ticket.id = ticket_model.id
 
-        Logger.base.info(
-            f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
-        )
+            Logger.base.info(
+                f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
+            )
 
-        return event_aggregate
+            return event_aggregate
 
     @Logger.io
     async def update_tickets_status(
@@ -264,70 +254,70 @@ class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
         buyer_id: Optional[int] = None,
     ) -> List[Ticket]:
         """批量更新票務狀態"""
-        session = self._get_session()
+        async with self.session_factory() as session:
+            # 更新票務狀態
+            update_values: Dict[str, Any] = {
+                'status': status.value,
+            }
 
-        # 更新票務狀態
-        update_values: Dict[str, Any] = {
-            'status': status.value,
-        }
+            if buyer_id is not None:
+                update_values['buyer_id'] = buyer_id
 
-        if buyer_id is not None:
-            update_values['buyer_id'] = buyer_id
+            if status == TicketStatus.RESERVED:
+                update_values['reserved_at'] = datetime.now(timezone.utc)
+            elif status == TicketStatus.AVAILABLE:
+                update_values['buyer_id'] = None
+                update_values['reserved_at'] = None
 
-        if status == TicketStatus.RESERVED:
-            update_values['reserved_at'] = datetime.now(timezone.utc)
-        elif status == TicketStatus.AVAILABLE:
-            update_values['buyer_id'] = None
-            update_values['reserved_at'] = None
-
-        await session.execute(
-            update(TicketModel).where(TicketModel.id.in_(ticket_ids)).values(**update_values)
-        )
-
-        # 查詢更新後的票務
-        result = await session.execute(select(TicketModel).where(TicketModel.id.in_(ticket_ids)))
-        ticket_models = result.scalars().all()
-
-        tickets = []
-        for model in ticket_models:
-            ticket = Ticket(
-                event_id=model.event_id,
-                section=model.section,
-                subsection=model.subsection,
-                row=model.row_number,
-                seat=model.seat_number,
-                price=model.price,
-                status=TicketStatus(model.status),
-                buyer_id=model.buyer_id,
-                id=model.id,
-                created_at=model.created_at,
-                updated_at=model.updated_at,
-                reserved_at=model.reserved_at,
+            await session.execute(
+                update(TicketModel).where(TicketModel.id.in_(ticket_ids)).values(**update_values)
             )
-            tickets.append(ticket)
 
-        Logger.base.info(f'🎫 [UPDATE_STATUS] Updated {len(tickets)} tickets to {status.value}')
-        return tickets
+            # 查詢更新後的票務
+            result = await session.execute(
+                select(TicketModel).where(TicketModel.id.in_(ticket_ids))
+            )
+            ticket_models = result.scalars().all()
+
+            tickets = []
+            for model in ticket_models:
+                ticket = Ticket(
+                    event_id=model.event_id,
+                    section=model.section,
+                    subsection=model.subsection,
+                    row=model.row_number,
+                    seat=model.seat_number,
+                    price=model.price,
+                    status=TicketStatus(model.status),
+                    buyer_id=model.buyer_id,
+                    id=model.id,
+                    created_at=model.created_at,
+                    updated_at=model.updated_at,
+                    reserved_at=model.reserved_at,
+                )
+                tickets.append(ticket)
+
+            Logger.base.info(f'🎫 [UPDATE_STATUS] Updated {len(tickets)} tickets to {status.value}')
+            return tickets
 
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:
         """刪除 Event Aggregate (cascade delete tickets)"""
-        session = self._get_session()
+        async with self.session_factory() as session:
+            try:
+                # 先刪除票務
+                await session.execute(update(TicketModel).where(TicketModel.event_id == event_id))
 
-        try:
-            # 先刪除票務
-            await session.execute(update(TicketModel).where(TicketModel.event_id == event_id))
+                # 然後刪除活動
+                result = await session.execute(update(EventModel).where(EventModel.id == event_id))
 
-            # 然後刪除活動
-            result = await session.execute(update(EventModel).where(EventModel.id == event_id))
+                success = result.rowcount > 0
+                Logger.base.info(f'🗑️ [DELETE_AGGREGATE] Deleted event {event_id}: {success}')
+                return success
 
-            success = result.rowcount > 0
-            Logger.base.info(f'🗑️ [DELETE_AGGREGATE] Deleted event {event_id}: {success}')
-            return success
-
-        except Exception as e:
-            Logger.base.error(f'❌ [DELETE_AGGREGATE] Failed to delete event {event_id}: {e}')
-            return False
+            except Exception as e:
+                Logger.base.error(f'❌ [DELETE_AGGREGATE] Failed to delete event {event_id}: {e}')
+                return False
 
     @Logger.io
     async def release_tickets_from_booking(

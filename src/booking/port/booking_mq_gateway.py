@@ -8,7 +8,6 @@ from typing import Any, Dict, List
 from src.booking.use_case.command.update_booking_status_to_pending_payment_use_case import (
     UpdateBookingToPendingPaymentUseCase,
 )
-from src.shared.config.db_setting import async_session_maker
 from src.shared.config.di import container
 from src.shared.logging.loguru_io import Logger
 
@@ -120,12 +119,11 @@ class BookingMqGateway:
     async def handle_tickets_reserved(
         self, booking_id: int, buyer_id: int, ticket_ids: List[int]
     ) -> bool:
-        session = async_session_maker()
-
         try:
-            # 取得 repositories
+            # 取得 repositories 和 use case 使用 DI container
             cmd_repo = container.booking_command_repo()
             query_repo = container.booking_query_repo()
+            update_use_case = UpdateBookingToPendingPaymentUseCase(cmd_repo)
 
             # 查詢訂單
             booking = await query_repo.get_by_id(booking_id=booking_id)
@@ -140,8 +138,7 @@ class BookingMqGateway:
                 )
                 return False
 
-            # 使用 use case 更新狀態
-            update_use_case = UpdateBookingToPendingPaymentUseCase(session, cmd_repo)
+            # 使用 use case 更新狀態 (不需要傳遞 session)
             await update_use_case.update_booking_status_to_pending_payment(booking=booking)
 
             Logger.base.info(f'✅ 訂單狀態已更新為待付款: booking_id={booking_id}')
@@ -149,11 +146,7 @@ class BookingMqGateway:
 
         except Exception as e:
             Logger.base.error(f'❌ 處理票券預訂事件失敗: {e}')
-            await session.rollback()
             return False
-        finally:
-            # 確保 session 被關閉
-            await session.close()
 
     @Logger.io
     async def handle_ticket_reservation_failed(

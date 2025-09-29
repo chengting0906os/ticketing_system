@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable, AsyncContextManager
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +14,8 @@ from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingQueryRepoImpl(BookingQueryRepo):
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+        self.session_factory = session_factory
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
@@ -72,90 +72,92 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
     @Logger.io
     async def get_by_id(self, *, booking_id: int) -> Booking | None:
-        result = await self.session.execute(
-            select(BookingModel).where(BookingModel.id == booking_id)
-        )
-        db_booking = result.scalar_one_or_none()
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(BookingModel).where(BookingModel.id == booking_id)
+            )
+            db_booking = result.scalar_one_or_none()
 
-        if not db_booking:
-            return None
+            if not db_booking:
+                return None
 
-        return BookingQueryRepoImpl._to_entity(db_booking)
+            return BookingQueryRepoImpl._to_entity(db_booking)
 
     @Logger.io(truncate_content=True)
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
-        query = (
-            select(BookingModel)
-            .options(
-                selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
-                selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+        async with self.session_factory() as session:
+            query = (
+                select(BookingModel)
+                .options(
+                    selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                )
+                .where(BookingModel.buyer_id == buyer_id)
             )
-            .where(BookingModel.buyer_id == buyer_id)
-        )
 
-        if status:
-            query = query.where(BookingModel.status == status)
+            if status:
+                query = query.where(BookingModel.status == status)
 
-        result = await self.session.execute(query.order_by(BookingModel.id))
-        db_bookings = result.scalars().all()
+            result = await session.execute(query.order_by(BookingModel.id))
+            db_bookings = result.scalars().all()
 
-        return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
+            return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
 
     @Logger.io(truncate_content=True)
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
-        # Join with event table to get bookings for events owned by seller
         from src.event_ticketing.infra.event_model import EventModel
 
-        query = (
-            select(BookingModel)
-            .join(EventModel, BookingModel.event_id == EventModel.id)
-            .options(
-                selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
-                selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+        async with self.session_factory() as session:
+            query = (
+                select(BookingModel)
+                .join(EventModel, BookingModel.event_id == EventModel.id)
+                .options(
+                    selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                )
+                .where(EventModel.seller_id == seller_id)
             )
-            .where(EventModel.seller_id == seller_id)
-        )
 
-        if status:
-            query = query.where(BookingModel.status == status)
+            if status:
+                query = query.where(BookingModel.status == status)
 
-        result = await self.session.execute(query.order_by(BookingModel.id))
-        db_bookings = result.scalars().all()
+            result = await session.execute(query.order_by(BookingModel.id))
+            db_bookings = result.scalars().all()
 
-        return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
+            return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
         """Get all tickets for a booking using the ticket_ids stored in the booking"""
+        async with self.session_factory() as session:
+            # First get the booking to get the ticket_ids
+            booking = await self.get_by_id(booking_id=booking_id)
+            if not booking or not booking.ticket_ids:
+                return []
 
-        # First get the booking to get the ticket_ids
-        booking = await self.get_by_id(booking_id=booking_id)
-        if not booking or not booking.ticket_ids:
-            return []
-
-        # Then get the tickets by their IDs
-        result = await self.session.execute(
-            select(TicketModel).where(TicketModel.id.in_(booking.ticket_ids))
-        )
-        db_tickets = result.scalars().all()
-
-        # Convert to Ticket entities
-        tickets = []
-        for db_ticket in db_tickets:
-            ticket = TicketRef(
-                event_id=db_ticket.event_id,
-                section=db_ticket.section,
-                subsection=db_ticket.subsection,
-                row=db_ticket.row_number,
-                seat=db_ticket.seat_number,
-                price=db_ticket.price,
-                status=TicketStatus(db_ticket.status),
-                buyer_id=db_ticket.buyer_id,
-                id=db_ticket.id,
-                created_at=db_ticket.created_at,
-                updated_at=db_ticket.updated_at,
-                reserved_at=db_ticket.reserved_at,
+            # Then get the tickets by their IDs
+            result = await session.execute(
+                select(TicketModel).where(TicketModel.id.in_(booking.ticket_ids))
             )
-            tickets.append(ticket)
+            db_tickets = result.scalars().all()
 
-        return tickets
+            # Convert to Ticket entities
+            tickets = []
+            for db_ticket in db_tickets:
+                ticket = TicketRef(
+                    event_id=db_ticket.event_id,
+                    section=db_ticket.section,
+                    subsection=db_ticket.subsection,
+                    row=db_ticket.row_number,
+                    seat=db_ticket.seat_number,
+                    price=db_ticket.price,
+                    status=TicketStatus(db_ticket.status),
+                    buyer_id=db_ticket.buyer_id,
+                    id=db_ticket.id,
+                    created_at=db_ticket.created_at,
+                    updated_at=db_ticket.updated_at,
+                    reserved_at=db_ticket.reserved_at,
+                )
+                tickets.append(ticket)
+
+            return tickets

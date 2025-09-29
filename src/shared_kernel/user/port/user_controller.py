@@ -12,8 +12,8 @@ from src.shared.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
-from src.shared_kernel.user.use_case import user_use_case
-from src.shared_kernel.user.use_case.auth_service import auth_service
+from src.shared_kernel.user.use_case.user_use_case import UserUseCase
+from src.shared_kernel.user.use_case.auth_service import AuthService
 
 
 # === API Router ===
@@ -24,6 +24,7 @@ router = APIRouter()
 @inject
 async def get_current_user(
     user_repo: UserRepo = Depends(Provide[Container.user_repo]),
+    auth_service: AuthService = Depends(Provide[Container.auth_service]),
     token: Optional[str] = Cookie(None, alias='fastapiusersauth'),
 ) -> UserEntity:
     return await auth_service.get_current_user(user_repo, token)
@@ -35,8 +36,9 @@ async def get_current_user(
 async def create_user(
     request: CreateUserRequest, user_repo: UserRepo = Depends(Provide[Container.user_repo])
 ):
-    user_entity = await user_use_case.create_user(
-        user_repo=user_repo,
+    # Create UserUseCase with injected repo
+    use_case = UserUseCase(user_repo=user_repo)
+    user_entity = await use_case.create_user(
         email=request.email,
         password=request.password.get_secret_value(),
         name=request.name,
@@ -59,6 +61,7 @@ async def login(
     response: Response,
     request: LoginRequest,
     user_repo: UserRepo = Depends(Provide[Container.user_repo]),
+    auth_service: AuthService = Depends(Provide[Container.auth_service]),
 ):
     user_entity = await auth_service.authenticate_user(
         user_repo=user_repo, email=request.email, password=request.password.get_secret_value()

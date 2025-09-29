@@ -1,4 +1,6 @@
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import logging
 
 import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -6,17 +8,20 @@ from sqlalchemy.orm import DeclarativeBase
 
 from src.shared.config.core_setting import settings
 
+logger = logging.getLogger(__name__)
 
+
+# Legacy engine and session maker - used by create_db_and_tables() and get_async_session()
+# TODO: Migrate these functions to use Database class
 engine = create_async_engine(
     settings.DATABASE_URL_ASYNC,
     echo=False,
     future=True,
-    # Connection pool settings for high-performance bulk operations
-    pool_size=50,  # 常駐連線數
-    max_overflow=50,  # 額外連線數
-    pool_timeout=30,  # 取得連線超時
-    pool_recycle=3600,  # 連線回收時間 (1小時)
-    pool_pre_ping=True,  # 連線前測試
+    pool_size=50,
+    max_overflow=50,
+    pool_timeout=30,
+    pool_recycle=3600,
+    pool_pre_ping=True,
 )
 
 async_session_maker = async_sessionmaker(
@@ -65,3 +70,37 @@ async def create_db_and_tables():
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:
         yield session
+
+
+class Database:
+    """Database class for managing async sessions following dependency-injector best practices"""
+
+    def __init__(self, db_url: str) -> None:
+        self._engine = create_async_engine(
+            db_url,
+            echo=False,
+            future=True,
+            pool_size=50,
+            max_overflow=50,
+            pool_timeout=30,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+        )
+        self._session_factory = async_sessionmaker(
+            self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        """Context manager for database sessions"""
+        async with self._session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                logger.exception('Session rollback because of exception')
+                await session.rollback()
+                raise
+            finally:
+                await session.close()

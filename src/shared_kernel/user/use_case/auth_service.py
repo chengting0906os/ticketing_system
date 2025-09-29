@@ -11,6 +11,7 @@ import jwt
 from src.shared.config.core_setting import settings
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.domain.user_repo import UserRepo
+from src.shared_kernel.user.use_case.user_use_case import UserUseCase
 
 
 class AuthService:
@@ -60,10 +61,9 @@ class AuthService:
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
-        # 取得用戶
-        from src.shared_kernel.user.use_case import user_use_case
-
-        user_entity = await user_use_case.get_user_by_id(user_repo, user_id)
+        # 取得用戶 - 創建 UserUseCase 實例並注入 user_repo
+        use_case = UserUseCase(user_repo=user_repo)
+        user_entity = await use_case.get_user_by_id(user_id)
 
         # 驗證用戶
         if not user_entity:
@@ -73,7 +73,3 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User is inactive')
 
         return user_entity
-
-
-# 全域實例
-auth_service = AuthService()

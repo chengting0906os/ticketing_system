@@ -269,6 +269,7 @@ subsection 狀況
 
 ### DI
 https://python-dependency-injector.ets-labs.org/index.html
+https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 
 ### Quix Streams
 https://quix.io/docs/get-started/welcome.html
