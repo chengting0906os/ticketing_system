@@ -1,11 +1,12 @@
 """
-Booking Event Gateway Port
+Event Ticketing Gateway
+票券預訂閘道 - 處理預訂創建請求並執行票券預訂
 
 【最小可行原則 MVP】
-- 這是什麼：處理 booking 事件的業務接口
-- 為什麼需要：定義事件處理的業務契約，與基礎設施解耦
-- 核心概念：Gateway 模式 + 依賴反轉
-- 使用場景：ticketing 服務接收 booking 服務的事件並回應
+- 這是什麼：處理預訂創建請求的業務接口
+- 為什麼需要：執行票券預訂並發送結果事件
+- 核心概念：Gateway 模式 + 依賴反轉 + 1:1 Topic 架構
+- 使用場景：接收預訂創建事件，執行票券預訂，發送結果
 """
 
 from dataclasses import dataclass
@@ -56,7 +57,7 @@ class ProcessingResult:
 
     is_success: bool
     booking_id: int
-    buyer_id: int  # 新增：需要追蹤 buyer_id
+    buyer_id: int
     ticket_ids: Optional[List[int]] = None
     error_message: Optional[str] = None
 
@@ -72,10 +73,10 @@ class ProcessingResult:
 
 class EventTicketingMqGateway:
     """
-    預訂事件網關實現
+    票券預訂事件網關實現
 
     【MVP Gateway 職責】
-    1. 接收外部事件
+    1. 接收預訂創建事件 (專一處理 BookingCreated)
     2. 調用業務邏輯 (ReserveTicketsUseCase)
     3. 發送回應事件
     4. 錯誤處理
@@ -83,7 +84,7 @@ class EventTicketingMqGateway:
 
     def __init__(self, reserve_tickets_use_case: ReserveTicketsUseCase):
         """
-        初始化預訂事件網關
+        初始化票券預訂事件網關
 
         Args:
             reserve_tickets_use_case: 票務預訂 Use Case
@@ -108,20 +109,18 @@ class EventTicketingMqGateway:
                 if hasattr(event_data, '__dict__'):
                     return vars(event_data)
                 else:
-                    Logger.base.error(f'❌ [GATEWAY] 無法解析事件數據格式: {type(event_data)}')
+                    Logger.base.error(
+                        f'❌ [TICKETING-GATEWAY] 無法解析事件數據格式: {type(event_data)}'
+                    )
                     return {}
 
         except Exception as e:
-            Logger.base.error(f'❌ [GATEWAY] 事件數據解析失敗: {e}')
+            Logger.base.error(f'❌ [TICKETING-GATEWAY] 事件數據解析失敗: {e}')
             return {}
-
-    async def can_handle(self, event_type: str) -> bool:
-        """檢查是否可以處理指定的事件類型"""
-        return event_type == 'BookingCreated'
 
     async def handle(self, event_data: Any) -> bool:
         """
-        處理原始事件數據 (新增的主要入口)
+        處理預訂創建事件 (1:1 Topic 架構 - 只處理 BookingCreated)
 
         Args:
             event_data: 原始事件數據
@@ -136,25 +135,21 @@ class EventTicketingMqGateway:
                 Logger.base.error('Failed to parse event data')
                 return False
 
-            event_type = parsed_event_data.get('event_type')
-            Logger.base.info(f'📨 [GATEWAY] 收到事件: {event_type}')
+            Logger.base.info('📨 [TICKETING-GATEWAY] 收到預訂創建事件')
 
-            # 2. 檢查事件類型
-            if not event_type or not await self.can_handle(event_type):
-                Logger.base.warning(f'Unknown event type: {event_type}')
-                return False
-
-            # 3. 轉換為業務命令
+            # 2. 轉換為業務命令 (不需要檢查 event_type，因為 topic 已經確定)
             command = BookingCreatedCommand.from_event_data(parsed_event_data)
-            Logger.base.info(f'🎯 [GATEWAY] 處理預訂: booking_id={command.booking_id}')
+            Logger.base.info(f'🎯 [TICKETING-GATEWAY] 處理預訂: booking_id={command.booking_id}')
 
-            # 4. 調用業務邏輯
+            # 3. 調用業務邏輯
             result = await self.handle_booking_created(command)
 
-            # 5. 根據結果發送回應
+            # 4. 根據結果發送回應
             if result.is_success:
                 await self.send_success_response(result, event_id=command.event_id)
-                Logger.base.info(f'✅ [GATEWAY] 處理成功: booking_id={command.booking_id}')
+                Logger.base.info(
+                    f'✅ [TICKETING-GATEWAY] 處理成功: booking_id={command.booking_id}'
+                )
             else:
                 await self.send_failure_response(
                     command.booking_id,
@@ -162,18 +157,19 @@ class EventTicketingMqGateway:
                     result.error_message or 'Unknown error',
                     event_id=command.event_id,
                 )
-                Logger.base.error(f'❌ [GATEWAY] 處理失敗: {result.error_message}')
+                Logger.base.error(f'❌ [TICKETING-GATEWAY] 處理失敗: {result.error_message}')
 
             return result.is_success
 
         except Exception as e:
-            Logger.base.error(f'💥 [GATEWAY] 處理異常: {e}')
+            Logger.base.error(f'💥 [TICKETING-GATEWAY] 處理異常: {e}')
             return False
 
     async def handle_booking_created(self, command: BookingCreatedCommand) -> ProcessingResult:
+        """處理預訂創建命令"""
         try:
             Logger.base.info(
-                f'🎫 [GATEWAY] 開始處理預訂: booking_id={command.booking_id}, event_id={command.event_id}, '
+                f'🎫 [TICKETING-GATEWAY] 開始處理預訂: booking_id={command.booking_id}, event_id={command.event_id}, '
                 f'section={command.section}, subsection={command.subsection}, quantity={command.quantity}'
             )
 
@@ -189,7 +185,7 @@ class EventTicketingMqGateway:
             # 提取票務 IDs
             ticket_ids = [ticket['id'] for ticket in reservation_result.get('tickets', [])]
 
-            Logger.base.info(f'✅ [GATEWAY] 票務預訂成功: ticket_ids={ticket_ids}')
+            Logger.base.info(f'✅ [TICKETING-GATEWAY] 票務預訂成功: ticket_ids={ticket_ids}')
 
             return ProcessingResult(
                 is_success=True,
@@ -199,7 +195,7 @@ class EventTicketingMqGateway:
             )
 
         except Exception as e:
-            Logger.base.error(f'❌ [GATEWAY] 票務預訂失敗: {e}')
+            Logger.base.error(f'❌ [TICKETING-GATEWAY] 票務預訂失敗: {e}')
             return ProcessingResult(
                 is_success=False,
                 booking_id=command.booking_id,
@@ -208,12 +204,7 @@ class EventTicketingMqGateway:
             )
 
     async def send_success_response(self, result: ProcessingResult, event_id: int) -> None:
-        """
-        發送成功回應事件
-
-        Args:
-            result: 成功的處理結果
-        """
+        """發送成功回應事件"""
 
         @dataclass
         class TicketsReserved:
@@ -229,7 +220,7 @@ class EventTicketingMqGateway:
 
         event = TicketsReserved(
             booking_id=result.booking_id,
-            buyer_id=result.buyer_id,  # 修復: 使用來自 result 的 buyer_id
+            buyer_id=result.buyer_id,
             ticket_ids=result.ticket_ids or [],
         )
 
@@ -240,25 +231,18 @@ class EventTicketingMqGateway:
         )
 
         Logger.base.info(
-            f'📡 [GATEWAY] 發送成功回應: booking_id={result.booking_id}, buyer_id={result.buyer_id}'
+            f'📡 [TICKETING-GATEWAY] 發送成功回應: booking_id={result.booking_id}, buyer_id={result.buyer_id}'
         )
 
     async def send_failure_response(
         self, booking_id: int, buyer_id: int, error_message: str, event_id: int
     ) -> None:
-        """
-        發送失敗回應事件
-
-        Args:
-            booking_id: 預訂ID
-            buyer_id: 買家ID
-            error_message: 錯誤信息
-        """
+        """發送失敗回應事件"""
 
         @dataclass
         class TicketReservationFailed:
             booking_id: int
-            buyer_id: int  # 新增：失敗事件也需要 buyer_id
+            buyer_id: int
             error_message: str
             status: str = 'failed'
             occurred_at: datetime = datetime.now(timezone.utc)
@@ -278,5 +262,5 @@ class EventTicketingMqGateway:
         )
 
         Logger.base.info(
-            f'📡 [GATEWAY] 發送失敗回應: booking_id={booking_id}, buyer_id={buyer_id}, error={error_message}'
+            f'📡 [TICKETING-GATEWAY] 發送失敗回應: booking_id={booking_id}, buyer_id={buyer_id}, error={error_message}'
         )

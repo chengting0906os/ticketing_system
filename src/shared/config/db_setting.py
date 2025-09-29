@@ -63,8 +63,21 @@ class Base(DeclarativeBase):
 
 
 async def create_db_and_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Create database tables if they don't exist, with better error handling"""
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+    except Exception as e:
+        # Log but don't fail if tables already exist (e.g., created by Alembic)
+        error_msg = str(e).lower()
+        if any(
+            keyword in error_msg
+            for keyword in ['already exists', 'duplicate key', 'unique constraint']
+        ):
+            logger.info('Tables already exist, skipping creation')
+        else:
+            logger.error(f'Error creating tables: {e}')
+            raise
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

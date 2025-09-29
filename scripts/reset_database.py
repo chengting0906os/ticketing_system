@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
-
+import time
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -63,18 +63,70 @@ async def drop_and_recreate_database():
             conn.execute(text(f"DROP DATABASE IF EXISTS {db_name};"))
             print(f"   ✅ Database '{db_name}' dropped")
 
+            # 等待一下確保完全清理
+            
+            time.sleep(1)
+
             # 重新創建資料庫
             conn.execute(text(f"CREATE DATABASE {db_name};"))
             print(f"   ✅ Database '{db_name}' created")
+
+            # 等待確保資料庫完全創建
+            time.sleep(1)
 
         admin_engine.dispose()
 
         print("🏗️ Running database migrations...")
 
+        # 確保沒有應用程式運行來避免自動表創建
+        print("   ⏸️ Ensuring no FastAPI app is running during migration...")
+
         # 運行 Alembic 遷移
         import subprocess
         import os
         from src.shared.constant.path import BASE_DIR
+
+        # 設置環境變量防止 SQLAlchemy 自動創建表
+        env = os.environ.copy()
+        env['SKIP_DB_INIT'] = 'true'
+
+        # 首先檢查資料庫是否真的是空的
+        print("   🔍 Verifying database is empty...")
+        table_count = 0
+        check_engine = create_engine(sync_url)
+        try:
+            with check_engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT count(*) FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                """))
+                table_count = result.scalar() or 0
+                print(f"   📊 Found {table_count} existing tables")
+
+                if table_count > 0:
+                    print("   🧹 Database not empty, recreating it again...")
+        finally:
+            check_engine.dispose()
+
+        # 如果需要重新創建，在外面執行以避免連接問題
+        if table_count > 0:
+            # 重新創建資料庫確保完全乾淨
+            admin_engine = create_engine(f"{server_url}/postgres", isolation_level="AUTOCOMMIT")
+            try:
+                with admin_engine.connect() as admin_conn:
+                    admin_conn.execute(text(f"""
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = '{db_name}' AND pid <> pg_backend_pid();
+                    """))
+                    admin_conn.execute(text(f"DROP DATABASE IF EXISTS {db_name};"))
+                    time.sleep(1)
+                    admin_conn.execute(text(f"CREATE DATABASE {db_name};"))
+                    time.sleep(1)
+            finally:
+                admin_engine.dispose()
+
+            print("   ✅ Database recreated and verified empty")
 
         # 運行 alembic upgrade head (alembic.ini 在專案根目錄)
         print("   🔄 Running 'alembic upgrade head'...")
@@ -82,7 +134,8 @@ async def drop_and_recreate_database():
             ['alembic', 'upgrade', 'head'],
             cwd=BASE_DIR,
             capture_output=True,
-            text=True
+            text=True,
+            env=env
         )
 
         if result.returncode == 0:
@@ -104,12 +157,18 @@ async def drop_and_recreate_database():
         raise
 
 
-async def create_init_users():
-    async with async_session_maker() as session:
+async def create_init_users_in_session(session):
         try:
             print("Creating initial users...")
 
-            user_repo = UserCommandRepoImpl(session)
+            # 創建一個使用當前 session 的 repo
+            from contextlib import asynccontextmanager
+
+            @asynccontextmanager
+            async def get_current_user_session():
+                yield session
+
+            user_repo = UserCommandRepoImpl(lambda: get_current_user_session())
             password_hasher = BcryptPasswordHasher()
 
             seller = UserEntity(
@@ -136,6 +195,7 @@ async def create_init_users():
             created_buyer = await user_repo.create(buyer)
             print(f"   Created buyer: ID={created_buyer.id}, Email={created_buyer.email}")
 
+            # Note: commit will be handled by main() function
             print("Initial users created!")
             return created_seller.id
 
@@ -144,13 +204,28 @@ async def create_init_users():
             raise
 
 
-async def create_init_event(seller_id: int):
-    async with async_session_maker() as session:
+async def create_init_event_in_session(session, seller_id: int):
         try:
             print("💫 Creating initial event through CreateEventUseCase...")
 
-            # 創建依賴服務
-            event_ticketing_repo = EventTicketingCommandRepoImpl(session)
+            # 調試：確認用戶是否存在於數據庫中
+            from sqlalchemy import text
+            result = await session.execute(text(f'SELECT id, email FROM "user" WHERE id = {seller_id}'))
+            user_check = result.fetchone()
+            if user_check:
+                print(f"   🔍 User found in DB: ID={user_check[0]}, Email={user_check[1]}")
+            else:
+                print(f"   ❌ User {seller_id} NOT found in database!")
+                return None
+
+            # 創建依賴服務 - 使用當前 session 而不是新的 session factory
+            from contextlib import asynccontextmanager
+
+            @asynccontextmanager
+            async def get_current_session():
+                yield session
+
+            event_ticketing_repo = EventTicketingCommandRepoImpl(lambda: get_current_session())
             kafka_config = KafkaConfigService()
 
             # 創建 UseCase
@@ -187,7 +262,6 @@ async def create_init_event(seller_id: int):
 
         except Exception as e:
             print(f"❌ Failed to create event: {e}")
-            await session.rollback()
             raise
 
 
@@ -232,11 +306,23 @@ async def main():
         await drop_and_recreate_database()
         print()
 
-        seller_id = await create_init_users()
-        print()
+        # 使用單一 session 來處理所有數據操作
+        async with async_session_maker() as session:
+            try:
+                seller_id = await create_init_users_in_session(session)
+                print()
 
-        await create_init_event(seller_id) # type: ignore
-        print()
+                await create_init_event_in_session(session, seller_id) # type: ignore
+                print()
+
+                # 一次性提交所有操作
+                await session.commit()
+                print("✅ All data operations committed successfully!")
+
+            except Exception as e:
+                await session.rollback()
+                print(f"❌ Rolling back all operations: {e}")
+                raise
 
         await verify_data()
         print()

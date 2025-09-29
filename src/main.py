@@ -18,7 +18,10 @@ from src.shared_kernel.user.port.user_controller import router as auth_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await create_db_and_tables()
+    import os
+
+    if os.getenv('SKIP_DB_INIT', '').lower() not in ('true', '1'):
+        await create_db_and_tables()
     setup()
 
     # Wire the container for dependency injection

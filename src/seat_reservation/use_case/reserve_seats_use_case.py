@@ -14,6 +14,7 @@ from src.seat_reservation.domain.seat_selection_domain import (
     SeatSelectionRequest,
     SelectionMode,
 )
+from src.seat_reservation.domain.seat_state_handler import SeatStateHandler
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
 
@@ -84,14 +85,17 @@ class ReserveSeatsUseCase:
 
     這個 Use Case 負責：
     1. 使用領域服務選擇座位
-    2. 發送預訂命令到 RocksDB 狀態處理器
+    2. 直接操作 RocksDB 狀態進行預訂
     3. 處理預訂結果並回傳
 
-    注意：這裡不直接操作 PostgreSQL！
+    注意：直接使用 RocksDB 狀態，不通過 Kafka 命令！
     """
 
-    def __init__(self, seat_selection_domain: SeatSelectionDomain):
+    def __init__(
+        self, seat_selection_domain: SeatSelectionDomain, seat_state_handler: SeatStateHandler
+    ):
         self.seat_domain = seat_selection_domain
+        self.seat_state_handler = seat_state_handler
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
@@ -145,11 +149,12 @@ class ReserveSeatsUseCase:
                     event_id=request.event_id,
                 )
 
-            # 5. 發送預訂命令到 RocksDB（通過 Kafka）
-            reservation_success = await self._send_reservation_commands(
+            # 5. 直接預訂座位到 RocksDB
+            reservation_success = await self._reserve_seats_directly(
                 booking_id=request.booking_id,
                 buyer_id=request.buyer_id,
                 selected_seats=selection_result.selected_seats,
+                event_id=request.event_id,
             )
 
             if reservation_success:
@@ -169,7 +174,7 @@ class ReserveSeatsUseCase:
                 return ReservationResult(
                     success=False,
                     booking_id=request.booking_id,
-                    error_message='Failed to reserve seats in RocksDB',
+                    error_message='Failed to reserve seats directly in RocksDB',
                     event_id=request.event_id,
                 )
 
@@ -227,86 +232,114 @@ class ReserveSeatsUseCase:
         self, event_id: int, request: ReservationRequest
     ) -> List[AvailableSeat]:
         """
-        獲取可用座位
-
-        TODO: 這裡需要實現從 RocksDB 或 PostgreSQL 查詢可用座位的邏輯
-        現在先返回模擬數據
+        獲取可用座位 - 從 RocksDB 狀態查詢
         """
-        # 模擬數據 - 實際實現需要查詢真實數據源
-        mock_seats = []
+        # 使用 SeatStateHandler 獲取可用座位
+        if request.section_filter and request.subsection_filter:
+            # 如果有特定區域篩選，直接查詢該區域
+            seat_data_list = self.seat_state_handler.get_available_seats_by_section(
+                event_id=event_id,
+                section=request.section_filter,
+                subsection=request.subsection_filter,
+                limit=request.quantity * 2 if request.quantity else None,  # 獲取多一些以便選擇
+            )
+        else:
+            # 沒有特定區域篩選，獲取所有區域
+            all_seats = []
+            for section in ['A', 'B']:
+                for subsection in [1, 2]:
+                    section_seats = self.seat_state_handler.get_available_seats_by_section(
+                        event_id=event_id,
+                        section=section,
+                        subsection=subsection,
+                        limit=50,  # 每個區域限制數量
+                    )
+                    all_seats.extend(section_seats)
+            seat_data_list = all_seats
 
-        for section in ['A', 'B']:
-            for subsection in [1, 2]:
-                for row in range(1, 6):  # 5排
-                    for seat in range(1, 21):  # 每排20個座位
-                        seat_position = SeatPosition(
-                            section=section, subsection=subsection, row=row, seat=seat
-                        )
+        # 轉換為 AvailableSeat 領域物件
+        available_seats = []
+        for seat_data in seat_data_list:
+            if seat_data.get('status') != 'AVAILABLE':
+                continue
 
-                        mock_seats.append(
-                            AvailableSeat(
-                                position=seat_position,
-                                price=1000 + (row * 100),  # 前排價格高
-                                event_id=event_id,
-                            )
+            # 解析座位位置
+            seat_id = seat_data['seat_id']
+            try:
+                parts = seat_id.split('-')
+                if len(parts) >= 4:
+                    section, subsection, row, seat = parts[:4]
+                    seat_position = SeatPosition(
+                        section=section, subsection=int(subsection), row=int(row), seat=int(seat)
+                    )
+
+                    available_seats.append(
+                        AvailableSeat(
+                            position=seat_position,
+                            price=seat_data.get('price', 1000),
+                            event_id=event_id,
                         )
+                    )
+            except (ValueError, IndexError) as e:
+                Logger.base.warning(f'⚠️ [RESERVE] Invalid seat_id format: {seat_id}, error: {e}')
+                continue
 
         # 應用過濾條件
         if request.section_filter:
-            mock_seats = [s for s in mock_seats if s.position.section == request.section_filter]
+            available_seats = [
+                s for s in available_seats if s.position.section == request.section_filter
+            ]
 
         if request.subsection_filter:
-            mock_seats = [
-                s for s in mock_seats if s.position.subsection == request.subsection_filter
+            available_seats = [
+                s for s in available_seats if s.position.subsection == request.subsection_filter
             ]
 
         Logger.base.info(
-            f'📊 [RESERVE] Found {len(mock_seats)} available seats for event {event_id}'
+            f'📊 [RESERVE] Found {len(available_seats)} available seats for event {event_id}'
         )
 
-        return mock_seats
+        return available_seats
 
-    async def _send_reservation_commands(
-        self, booking_id: int, buyer_id: int, selected_seats: List[str]
+    async def _reserve_seats_directly(
+        self, booking_id: int, buyer_id: int, selected_seats: List[str], event_id: int
     ) -> bool:
         """
-        發送預訂命令到 RocksDB（通過 Kafka）
+        直接預訂座位 - 使用 RocksDB 狀態處理器
         """
-        Logger.base.info(f'📤 [RESERVE] Sending reservation commands for seats: {selected_seats}')
+        Logger.base.info(f'📤 [RESERVE] Directly reserving seats: {selected_seats}')
 
         try:
-            # 導入事件發布器
-            from datetime import datetime
+            # 使用 SeatStateHandler 直接預訂座位
+            reservation_results = self.seat_state_handler.reserve_seats(
+                seat_ids=selected_seats, booking_id=booking_id, buyer_id=buyer_id, event_id=event_id
+            )
 
-            from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+            # 檢查預訂結果
+            successful_reservations = [
+                seat_id for seat_id, success in reservation_results.items() if success
+            ]
+            failed_reservations = [
+                seat_id for seat_id, success in reservation_results.items() if not success
+            ]
 
-            # 為每個座位發送預訂命令
-            for seat_id in selected_seats:
-                command_event = SeatReservationCommand(
-                    booking_id=booking_id,
-                    seat_id=seat_id,
-                    action='RESERVE',
-                    buyer_id=buyer_id,
-                    occurred_at=datetime.now(),
-                )
+            if failed_reservations:
+                Logger.base.warning(f'⚠️ [RESERVE] Failed to reserve seats: {failed_reservations}')
 
-                # 使用座位ID作為partition key確保同一座位的命令順序處理
-                await publish_domain_event(
-                    event=command_event, topic='seat-commands', partition_key=seat_id
-                )
+                # 如果部分失敗，釋放已成功預訂的座位
+                if successful_reservations:
+                    Logger.base.info(
+                        f'🔄 [RESERVE] Rolling back successful reservations: {successful_reservations}'
+                    )
+                    self.seat_state_handler.release_seats(successful_reservations, event_id)
+
+                return False
 
             Logger.base.info(
-                f'✅ [RESERVE] Successfully sent {len(selected_seats)} reservation commands'
+                f'✅ [RESERVE] Successfully reserved {len(successful_reservations)} seats directly in RocksDB'
             )
             return True
 
         except Exception as e:
-            Logger.base.error(f'❌ [RESERVE] Failed to send reservation commands: {e}')
+            Logger.base.error(f'❌ [RESERVE] Failed to reserve seats directly: {e}')
             return False
-
-
-# 依賴注入工廠
-def create_reserve_seats_use_case() -> ReserveSeatsUseCase:
-    """創建座位預訂用例實例"""
-    seat_domain = SeatSelectionDomain()
-    return ReserveSeatsUseCase(seat_domain)

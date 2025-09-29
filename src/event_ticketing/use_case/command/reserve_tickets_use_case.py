@@ -10,15 +10,9 @@ Reserve Tickets Use Case - 使用新的 EventTicketingAggregate
 
 from typing import Any, Dict, List
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
 from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
-from src.shared.config.db_setting import get_async_session
-from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError, NotFoundError
 from src.shared.logging.loguru_io import Logger
 
@@ -26,27 +20,11 @@ from src.shared.logging.loguru_io import Logger
 class ReserveTicketsUseCase:
     def __init__(
         self,
-        session: AsyncSession,
         event_ticketing_command_repo: EventTicketingCommandRepo,
         event_ticketing_query_repo: EventTicketingQueryRepo,
     ):
-        self.session = session
         self.event_ticketing_command_repo = event_ticketing_command_repo
         self.event_ticketing_query_repo = event_ticketing_query_repo
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        session: AsyncSession = Depends(get_async_session),
-        event_ticketing_command_repo: EventTicketingCommandRepo = Depends(
-            Provide[Container.event_ticketing_command_repo]
-        ),
-        event_ticketing_query_repo: EventTicketingQueryRepo = Depends(
-            Provide[Container.event_ticketing_query_repo]
-        ),
-    ):
-        return cls(session, event_ticketing_command_repo, event_ticketing_query_repo)
 
     @Logger.io
     async def reserve_tickets(
@@ -134,8 +112,8 @@ class ReserveTicketsUseCase:
             event_aggregate=event_aggregate
         )
 
-        await self.session.commit()
-        Logger.base.info('✅ [RESERVE] Transaction committed successfully')
+        # Transaction is handled by the repository layer
+        Logger.base.info('✅ [RESERVE] Event aggregate updated successfully')
 
         # 詳細的成功日誌
         self._log_reservation_details(event_id, buyer_id, reserved_tickets, event_aggregate)
@@ -238,8 +216,8 @@ class ReserveTicketsUseCase:
             event_aggregate=event_aggregate
         )
 
-        await self.session.commit()
-        Logger.base.info('✅ [RESERVE_SPECIFIC] Transaction committed successfully')
+        # Transaction is handled by the repository layer
+        Logger.base.info('✅ [RESERVE_SPECIFIC] Event aggregate updated successfully')
 
         # 詳細的成功日誌
         self._log_reservation_details(event_id, buyer_id, reserved_tickets, event_aggregate)
