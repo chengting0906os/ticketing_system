@@ -45,3 +45,4 @@ static/
 static/*
 cookies.txt
 rocksdb_state/
+rocksdb_state_*/
