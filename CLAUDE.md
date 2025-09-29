@@ -23,3 +23,21 @@ Avoid building functionality on speculation. Implement features only when they a
 ### Import Organization
 - All imports must be placed at the top of the file, never inside functions or methods
 - Follow PEP 8 import ordering: standard library, third-party packages, local modules
+
+## RocksDB Key-Value Structure
+### Seat State Storage
+**Key Pattern:** `seat:{seat_id}` (e.g., `seat:A-1-1-1`)
+
+**Value Structure (JSON):**
+```json
+{
+  "status": "AVAILABLE|RESERVED|SOLD",
+  "event_id": 123,
+  "price": 3000,
+  "initialized_at": 1695123456,
+  "booking_id": 456,           // Only when reserved/sold
+  "buyer_id": 789,             // Only when reserved/sold
+  "reserved_at": 1695123500,   // Only when reserved
+  "sold_at": 1695123600        // Only when sold
+}
+```
