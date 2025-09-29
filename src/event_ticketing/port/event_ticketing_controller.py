@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, status
 
 from src.event_ticketing.port.event_schema import (
@@ -21,7 +20,6 @@ router = APIRouter()
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
-@inject
 async def create_event(
     request: EventCreateWithTicketConfigRequest,
     current_user: UserEntity = Depends(require_seller),
@@ -56,7 +54,6 @@ async def create_event(
 
 @router.get('/{event_id}', status_code=status.HTTP_200_OK)
 @Logger.io
-@inject
 async def get_event(
     event_id: int, use_case: GetEventUseCase = Depends(GetEventUseCase.depends)
 ) -> EventResponse:
@@ -82,7 +79,6 @@ async def get_event(
 
 @router.get('', status_code=status.HTTP_200_OK)
 @Logger.io(truncate_content=True)
-@inject
 async def list_events(
     seller_id: Optional[int] = None,
     use_case: ListEventsUseCase = Depends(ListEventsUseCase.depends),

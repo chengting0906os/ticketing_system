@@ -11,6 +11,7 @@ from src.shared.config.core_setting import settings
 from src.shared.config.db_setting import create_db_and_tables
 from src.shared.config.di import cleanup, container, setup
 from src.shared.exception.exception_handlers import register_exception_handlers
+from src.shared.logging.loguru_io import Logger
 from src.shared_kernel.user.port.user_controller import router as auth_router
 
 
@@ -33,9 +34,6 @@ async def lifespan(app: FastAPI):
             'src.booking.use_case.query.get_booking_use_case',
             'src.event_ticketing.use_case.command.create_event_use_case',
             'src.event_ticketing.use_case.command.reserve_tickets_use_case',
-            'src.event_ticketing.use_case.command.cancel_booking_use_case',
-            'src.event_ticketing.use_case.command.create_tickets_use_case',
-            'src.event_ticketing.use_case.query.validate_tickets_use_case',
             'src.event_ticketing.use_case.query.list_events_use_case',
             'src.event_ticketing.use_case.query.get_event_use_case',
         ]
@@ -47,9 +45,8 @@ async def lifespan(app: FastAPI):
         cleanup()
     except Exception as e:
         # Log but don't fail the shutdown
-        import logging
 
-        logging.getLogger(__name__).warning(f'Error during cleanup: {e}')
+        Logger.base.warning(f'Error during cleanup: {e}')
 
 
 app = FastAPI(

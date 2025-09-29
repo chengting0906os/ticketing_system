@@ -5,7 +5,6 @@ Seat Reservation Controller
 
 import anyio
 import asyncpg
-from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, Request, status
 from sse_starlette.sse import EventSourceResponse
 
@@ -42,7 +41,6 @@ def _seat_to_response(seat) -> SeatResponse:
 
 @router.get('/{event_id}/sse/status')
 @Logger.io(truncate_content=True)
-@inject
 async def sse_event_seat_status(
     request: Request,
     event_id: int,
@@ -210,7 +208,6 @@ async def sse_event_seat_status(
     status_code=status.HTTP_200_OK,
 )
 @Logger.io(truncate_content=True)
-@inject
 async def list_seats_by_section_subsection(
     event_id: int,
     section: str,
