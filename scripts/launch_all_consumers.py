@@ -7,10 +7,10 @@ Interactive Event Service Launcher
 import asyncio
 import sys
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from sqlalchemy import select
-
+import signal
 from src.shared.config.db_setting import get_async_session
 from src.event_ticketing.infra.event_model import EventModel
 from src.shared.message_queue.kafka_config_service import KafkaConfigService
@@ -30,6 +30,8 @@ class EventServiceLauncher:
 
     def __init__(self):
         self.kafka_service = KafkaConfigService()
+        self.consumer_processes: Dict[str, asyncio.subprocess.Process] = {}
+        self.log_tasks: List[asyncio.Task] = []
 
     async def get_all_events(self) -> List[EventModel]:
         """從資料庫獲取所有活動"""
@@ -107,21 +109,117 @@ class EventServiceLauncher:
 
         return total
 
+    async def _kill_existing_consumers(self) -> None:
+        """停止所有現有的 consumer 進程"""
+        import subprocess
+
+        # 定義要殺死的進程名稱模式
+        consumer_patterns = [
+            "booking_mq_consumer",
+            "seat_reservation_consumer",
+            "event_ticketing_mq_consumer",
+        ]
+
+        for pattern in consumer_patterns:
+            try:
+                # 使用 pkill 殺死進程
+                result = subprocess.run(
+                    ["pkill", "-f", pattern],
+                    capture_output=True,
+                    text=True
+                )
+
+                if result.returncode == 0:
+                    print(f"  ✅ 停止了 {pattern} 進程")
+                else:
+                    print(f"  ℹ️ 沒有找到運行中的 {pattern}")
+            except Exception as e:
+                print(f"  ⚠️ 停止 {pattern} 時出錯: {e}")
+
+        # 等待一下確保進程完全停止
+        await asyncio.sleep(1)
+        print("  ✅ 所有舊的 consumers 已停止")
+
+    async def _stream_consumer_logs(self, consumer_id: str, _desc: str, process: asyncio.subprocess.Process) -> None:
+        if not process.stdout:
+            return
+
+        try:
+            async for line in process.stdout:
+                try:
+                    decoded_line = line.decode('utf-8').strip()
+                    if decoded_line:  # 只顯示非空行
+                        print(f"[{consumer_id}] {decoded_line}")
+                except UnicodeDecodeError:
+                    # 如果無法解碼，使用 latin-1 作為備用
+                    decoded_line = line.decode('latin-1').strip()
+                    if decoded_line:
+                        print(f"[{consumer_id}] {decoded_line}")
+        except Exception as e:
+            print(f"[{consumer_id}] 日誌串流錯誤: {e}")
+
+    async def _stop_all_consumers(self) -> None:
+        """停止所有 consumer processes"""
+        print("\n🛑 正在終止 consumer processes...")
+
+        # 取消所有 log 任務
+        for task in self.log_tasks:
+            if not task.done():
+                task.cancel()
+
+        # 等待任務取消
+        if self.log_tasks:
+            try:
+                await asyncio.gather(*self.log_tasks, return_exceptions=True)
+            except Exception:
+                pass
+
+        # 終止所有 processes
+        for consumer_id, process in self.consumer_processes.items():
+            try:
+                if process.returncode is None:  # 還在運行
+                    print(f"  停止 {consumer_id} (PID: {process.pid})")
+                    process.terminate()
+            except Exception as e:
+                print(f"  終止 {consumer_id} 時出錯: {e}")
+
+        # 等待 processes 結束
+        if self.consumer_processes:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*[p.wait() for p in self.consumer_processes.values()], return_exceptions=True),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                print("  部分 processes 未在時限內結束，強制殺死...")
+                # 強制殺死還在運行的 processes
+                for consumer_id, process in self.consumer_processes.items():
+                    try:
+                        if process.returncode is None:
+                            process.kill()
+                            print(f"    強制殺死 {consumer_id}")
+                    except Exception as e:
+                        print(f"    殺死 {consumer_id} 時出錯: {e}")
+
     async def launch_event_services(self, event: EventModel) -> None:
         """啟動特定活動的所有服務"""
         print("\n" + "=" * 60)
         print(f"🚀 正在為活動 [{event.id}] {event.name} 啟動服務...")
         print("=" * 60)
 
-        # 1. 檢查並創建 Kafka topics
-        print("\n📡 Step 1: 配置 Kafka Topics...")
+        # 1. 先停止現有的 consumers
+        print("\n🛑 Step 1: 停止現有的 Consumers...")
+        await self._kill_existing_consumers()
+
+        # 2. 檢查並創建 Kafka topics
+        print("\n📡 Step 2: 配置 Kafka Topics...")
         await self._ensure_kafka_topics(event)
 
-        # 2. 啟動所有 consumers
-        print("\n🎯 Step 2: 啟動 Event-Specific Consumers...")
+        # 3. 啟動所有 consumers
+        print("\n🎯 Step 3: 啟動 Event-Specific Consumers...")
         await self._start_consumers(event)
 
-        # 3. 顯示啟動狀態
+        # 4. 顯示啟動狀態
         print("\n" + "=" * 60)
         print("✅ 服務啟動完成！")
         print("=" * 60)
@@ -138,25 +236,30 @@ class EventServiceLauncher:
         await self.kafka_service._create_event_topics(event.id)
 
     async def _start_consumers(self, event: EventModel) -> None:
-        """啟動所有 consumers (開發模式: 1:2:1 架構)"""
+        """啟動所有 consumers 並創建 log 串流任務"""
         consumers = [
             # 1:2:1 架構 - 開發模式也可以測試真實的負載分配
-            ("📚 Booking Service Consumer", "src.booking.infra.booking_mq_consumer"),
-            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_consumer"),
-            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_consumer"),
-            ("🎫 Event Ticketing Consumer", "src.event_ticketing.infra.event_ticketing_mq_consumer")
+            ("📚 Booking Service Consumer", "src.booking.infra.booking_mq_consumer", "booking-service"),
+            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_consumer", "seat-reservation-1"),
+            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_consumer", "seat-reservation-2"),
+            ("🎫 Event Ticketing Consumer", "src.event_ticketing.infra.event_ticketing_mq_consumer", "event-ticketing-service")
         ]
 
         # 獲取項目根目錄
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        for desc, module in consumers:
+        for desc, module, consumer_id in consumers:
             print(f"  {desc}")
 
             # 設置環境變數
             env = os.environ.copy()
             env["EVENT_ID"] = str(event.id)
             env["PYTHONPATH"] = project_root
+            # 為 Seat Reservation consumers 設置不同的 consumer group
+            if "seat-reservation" in consumer_id:
+                instance_id = consumer_id.split('-')[-1]
+                env["CONSUMER_GROUP_ID"] = f"seat-reservation-service-{instance_id}"
+                env["CONSUMER_INSTANCE_ID"] = instance_id
 
             # 啟動 consumer
             cmd = ["uv", "run", "python", "-m", module]
@@ -167,9 +270,18 @@ class EventServiceLauncher:
                     cwd=project_root,
                     env=env,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,  # 將 stderr 重定向到 stdout
                     start_new_session=True
                 )
+
+                # 儲存 process 參考
+                self.consumer_processes[consumer_id] = process
+
+                # 創建 log 串流任務
+                log_task = asyncio.create_task(
+                    self._stream_consumer_logs(consumer_id, desc, process)
+                )
+                self.log_tasks.append(log_task)
 
                 print(f"    ✅ 啟動成功 (PID: {process.pid})")
 
@@ -190,14 +302,9 @@ class EventServiceLauncher:
 
   主要 Topics:""" + "\n".join([f"    • {topic}" for topic in KafkaTopicBuilder.get_all_topics(event_id=event.id)]) + """
 
-  Consumer 配置 (1:2:1 架構):
-    • 📚 Booking Service (1個) ✅
-    • 🪑 Seat Reservation (2個) ✅
-    • 🎫 Event Ticketing (1個) ✅
-
-  🛠️ 開發模式: 使用真實的 1:2:1 架構來測試負載分配
-  🚀 生產環境: 直接使用相同架構，只需調整 partition 數量
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 正在串流所有 consumer 日誌...
 
 💡 提示: 使用 Ctrl+C 停止所有服務
         """)
@@ -219,16 +326,30 @@ class EventServiceLauncher:
                 # 4. 等待用戶中斷
                 print("\n按 Ctrl+C 停止所有服務...")
                 try:
-                    await asyncio.Event().wait()
+                    # 等待中斷信號
+                    stop_event = asyncio.Event()
+
+                    def signal_handler():
+                        stop_event.set()
+
+                    # 設置信號處理器
+                    loop = asyncio.get_event_loop()
+                    loop.add_signal_handler(signal.SIGINT, signal_handler)
+                    loop.add_signal_handler(signal.SIGTERM, signal_handler)
+
+                    await stop_event.wait()
                 except KeyboardInterrupt:
-                    print("\n\n🛑 正在停止所有服務...")
-                    # TODO: 實現服務停止邏輯
-                    print("✅ 所有服務已停止")
+                    pass
+
+                print("\n\n🛑 正在停止所有服務...")
+                await self._stop_all_consumers()
+                print("✅ 所有服務已停止")
 
         except Exception as e:
             Logger.base.error(f"❌ 啟動器發生錯誤: {e}")
             import traceback
             traceback.print_exc()
+            await self._stop_all_consumers()
             sys.exit(1)
 
 

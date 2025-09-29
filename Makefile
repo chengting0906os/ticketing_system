@@ -183,6 +183,17 @@ stop-services stop:  ## 🛑 停止所有服務
 .PHONY: restart-services restart
 restart-services restart: stop-services services  ## 🔄 重啟所有服務
 
+# Kafka Topic Monitor
+.PHONY: monitor-topics mkt
+monitor-topics mkt:  ## 📊 監控 Kafka Topic 消息流 (需要 EVENT_ID)
+	@if [ -z "$(EVENT_ID)" ]; then \
+		echo "❌ Error: EVENT_ID is required"; \
+		echo "Usage: make mkt EVENT_ID=1"; \
+		exit 1; \
+	fi
+	@echo "📊 啟動 Kafka Topic Monitor for Event $(EVENT_ID)..."
+	@PYTHONPATH=. uv run python scripts/topic_monitor.py $(EVENT_ID)
+
 # Help
 .PHONY: help
 help:
@@ -221,3 +232,4 @@ help:
 	@echo "    make services (ss)       - 🚀 Start services (interactive event selection)"
 	@echo "    make stop                - 🛑 Stop all services"
 	@echo "    make restart             - 🔄 Restart all services"
+	@echo "    make mkt EVENT_ID=1      - 📊 Monitor Kafka topics for event"
