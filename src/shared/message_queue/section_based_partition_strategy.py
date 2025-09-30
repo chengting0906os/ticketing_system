@@ -37,17 +37,25 @@ class SectionBasedPartitionStrategy:
         """
         為指定區域分配固定的 partition
 
-        使用 section name 的穩定雜湊確保：
+        使用字母順序映射：A→0, B→1, C→2, D→3, E→4...
         - 相同區域永遠分配到相同 partition
-        - 不同活動的相同區域名稱會有不同分配（避免全局熱點）
+        - 簡單直觀的映射關係，便於調試和監控
         """
         cache_key = f'{event_id}-{section}'
 
         if cache_key not in self._section_partition_cache:
-            # 使用 event_id + section 確保不同活動有不同分佈
-            hash_input = f'{event_id}-{section}'
-            section_hash = hashlib.md5(hash_input.encode()).hexdigest()
-            partition = int(section_hash[:8], 16) % self.total_partitions
+            # 使用字母順序直接映射到 partition
+            # A→0, B→1, C→2, D→3, E→4, F→5, G→6, H→7, I→8, J→9
+            if len(section) == 1 and section.isalpha():
+                # 單字母區域：直接使用字母順序
+                partition = ord(section.upper()) - ord('A')
+                partition = partition % self.total_partitions
+            else:
+                # 非單字母區域：使用哈希（向後兼容）
+                hash_input = f'{event_id}-{section}'
+                section_hash = hashlib.md5(hash_input.encode()).hexdigest()
+                partition = int(section_hash[:8], 16) % self.total_partitions
+
             self._section_partition_cache[cache_key] = partition
 
         return self._section_partition_cache[cache_key]
