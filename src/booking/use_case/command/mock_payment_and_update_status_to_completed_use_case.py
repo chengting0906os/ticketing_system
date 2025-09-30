@@ -103,7 +103,7 @@ class MockPaymentUseCase:
                 )
 
                 # Publish to event_ticketing service according to README pattern
-                topic_name = KafkaTopicBuilder.update_ticket_status_to_paid(
+                topic_name = KafkaTopicBuilder.update_ticket_status_to_paid_in_postgresql(
                     event_id=booking.event_id
                 )
                 partition_key = f'event-{booking.event_id}'

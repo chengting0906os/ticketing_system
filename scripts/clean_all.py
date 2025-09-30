@@ -2,6 +2,11 @@
 """
 Complete System Cleanup Script
 完整系統清理腳本 - 清除所有 Kafka topics, consumer groups 和 RocksDB 狀態
+
+清理內容:
+- Kafka Topics: 所有 event-id-* topics
+- Consumer Groups: 所有 consumer groups
+- RocksDB State: seat_reservation 和 event_ticketing 的狀態目錄
 """
 
 import subprocess
@@ -46,23 +51,38 @@ class SystemCleaner:
             return False
 
     def stop_all_consumers(self):
-        """停止所有 consumer 進程"""
+        """停止所有 consumer 進程 - 包含已知和未知的所有 consumer"""
         Logger.base.info("🛑 ==================== STOPPING CONSUMERS ====================")
 
-        # 停止所有可能的 consumer 進程
-        consumer_patterns = [
-            "python -m src.booking",
-            "python -m src.seat_reservation",
-            "python -m src.event_ticketing"
-        ]
+        # 方法 1: 停止所有 mq_consumer 進程（廣泛匹配）
+        Logger.base.info("🔍 Stopping all *mq_consumer processes...")
+        self.run_command(
+            ["pkill", "-f", "mq_consumer"],
+            "Stopping all mq_consumer processes"
+        )
 
-        for pattern in consumer_patterns:
-            self.run_command(
-                ["pkill", "-f", pattern],
-                f"Stopping consumers matching: {pattern}"
-            )
+        # 方法 2: 停止 launch_all_consumers 腳本
+        Logger.base.info("🔍 Stopping launch_all_consumers script...")
+        self.run_command(
+            ["pkill", "-f", "launch_all_consumers"],
+            "Stopping launch_all_consumers script"
+        )
 
-        Logger.base.info("🛑 All consumer processes stopped")
+        # 方法 3: 停止 topic_monitor 腳本（重要！會重新創建 consumer groups）
+        Logger.base.info("🔍 Stopping topic_monitor scripts...")
+        self.run_command(
+            ["pkill", "-f", "topic_monitor"],
+            "Stopping topic_monitor scripts"
+        )
+
+        # 方法 4: 額外保險 - 停止任何包含 infra/*consumer 的進程
+        Logger.base.info("🔍 Stopping any infra consumer processes...")
+        self.run_command(
+            ["pkill", "-f", "infra.*consumer"],
+            "Stopping infra consumer processes"
+        )
+
+        Logger.base.info("🛑 All consumer and monitor processes stopped (broad match)")
 
     def clean_kafka_topics(self):
         """清理所有 Kafka topics"""
@@ -95,8 +115,8 @@ class SystemCleaner:
         except Exception as e:
             Logger.base.error(f"❌ Failed to clean topics: {e}")
 
-    def clean_consumer_groups(self):
-        """清理所有 consumer groups"""
+    def clean_consumer_groups(self, retry_count=3):
+        """清理所有 consumer groups - 支援重試和強制重置"""
         Logger.base.info("👥 ==================== CLEANING CONSUMER GROUPS ====================")
 
         try:
@@ -110,14 +130,39 @@ class SystemCleaner:
 
                 Logger.base.info(f"📋 Found {len(groups)} consumer groups to delete")
 
-                for group in groups:
-                    self.run_command([
-                        "docker", "exec", self.kafka_container,
-                        "kafka-consumer-groups", "--bootstrap-server", self.bootstrap_server,
-                        "--delete", "--group", group
-                    ], f"Deleting consumer group: {group}")
+                failed_groups = []
 
-                Logger.base.info(f"✅ Deleted {len(groups)} consumer groups")
+                for group in groups:
+                    deleted = False
+
+                    # 嘗試多次刪除
+                    for attempt in range(retry_count):
+                        if attempt > 0:
+                            Logger.base.info(f"🔄 Retry {attempt}/{retry_count-1} for group: {group}")
+                            import time
+                            time.sleep(2)  # 等待 Kafka 釋放連接
+
+                        # 嘗試直接刪除
+                        success = self.run_command([
+                            "docker", "exec", self.kafka_container,
+                            "kafka-consumer-groups", "--bootstrap-server", self.bootstrap_server,
+                            "--delete", "--group", group
+                        ], f"Deleting consumer group: {group} (attempt {attempt + 1})")
+
+                        if success:
+                            deleted = True
+                            break
+
+                    if not deleted:
+                        Logger.base.warning(f"⚠️ Failed to delete group after {retry_count} attempts: {group}")
+                        failed_groups.append(group)
+
+                if failed_groups:
+                    Logger.base.warning(f"⚠️ {len(failed_groups)} groups could not be deleted: {failed_groups}")
+                    Logger.base.info("💡 Tip: Make sure all consumers are stopped and wait a few seconds")
+                    Logger.base.info("💡 Alternative: Restart Kafka with 'docker restart kafka1' (dev only)")
+                else:
+                    Logger.base.info(f"✅ Deleted all {len(groups)} consumer groups")
             else:
                 Logger.base.error(f"❌ Failed to list consumer groups: {result.stderr}")
 
@@ -125,14 +170,18 @@ class SystemCleaner:
             Logger.base.error(f"❌ Failed to clean consumer groups: {e}")
 
     def clean_rocksdb_state(self):
-        """清理 RocksDB 狀態目錄"""
+        """清理 RocksDB 狀態目錄 (seat_reservation + event_ticketing)"""
         Logger.base.info("💾 ==================== CLEANING ROCKSDB STATE ====================")
 
         try:
             if self.rocksdb_state_dir.exists():
+                # 列出將被清理的服務狀態
+                subdirs = [d.name for d in self.rocksdb_state_dir.iterdir() if d.is_dir()]
+                Logger.base.info(f"📂 Found RocksDB state directories: {subdirs}")
+
                 Logger.base.info(f"🗑️ Removing RocksDB state directory: {self.rocksdb_state_dir}")
                 shutil.rmtree(self.rocksdb_state_dir)
-                Logger.base.info("✅ RocksDB state directory removed")
+                Logger.base.info("✅ RocksDB state directory removed (both seat_reservation and event_ticketing)")
             else:
                 Logger.base.info("ℹ️ RocksDB state directory does not exist")
 
@@ -188,16 +237,22 @@ class SystemCleaner:
 
     def clean_all(self):
         """執行完整清理"""
+        import time
+
         Logger.base.info("🧹 ==================== COMPLETE SYSTEM CLEANUP ====================")
         Logger.base.info("🧹 Starting complete system cleanup...")
 
         # 步驟 1: 停止所有 consumers
         self.stop_all_consumers()
 
+        # 等待進程完全停止和 Kafka 釋放連接
+        Logger.base.info("⏳ Waiting 3 seconds for consumers to fully stop and Kafka to release connections...")
+        time.sleep(3)
+
         # 步驟 2: 清理 Kafka topics
         self.clean_kafka_topics()
 
-        # 步驟 3: 清理 consumer groups
+        # 步驟 3: 清理 consumer groups (支援重試)
         self.clean_consumer_groups()
 
         # 步驟 4: 清理 RocksDB 狀態

@@ -75,26 +75,32 @@ class EventTicketingMqConsumer:
 
         # 座位初始化 topic
         seat_init_topic = self.rocksdb_app.topic(
-            name=KafkaTopicBuilder.seat_initialization_command(event_id=self.event_id),
+            name=KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=self.event_id),
             key_serializer='str',
             value_serializer='json',
         )
 
         # 狀態更新 topics
         reserved_topic = self.rocksdb_app.topic(
-            name=KafkaTopicBuilder.update_ticket_status_to_reserved(event_id=self.event_id),
+            name=KafkaTopicBuilder.update_ticket_status_to_reserved_in_postgresql(
+                event_id=self.event_id
+            ),
             key_serializer='str',
             value_serializer='json',
         )
 
         paid_topic = self.rocksdb_app.topic(
-            name=KafkaTopicBuilder.update_ticket_status_to_paid(event_id=self.event_id),
+            name=KafkaTopicBuilder.update_ticket_status_to_paid_in_postgresql(
+                event_id=self.event_id
+            ),
             key_serializer='str',
             value_serializer='json',
         )
 
         available_topic = self.rocksdb_app.topic(
-            name=KafkaTopicBuilder.update_ticket_status_to_available(event_id=self.event_id),
+            name=KafkaTopicBuilder.update_ticket_status_to_available_in_rocksdb(
+                event_id=self.event_id
+            ),
             key_serializer='str',
             value_serializer='json',
         )

@@ -180,7 +180,7 @@ class RocksDBMonitor:
                 return
 
             # 使用 KafkaTopicBuilder 獲取正確的 topic 名稱
-            topic_name = KafkaTopicBuilder.seat_initialization_command(event_id=event_id)
+            topic_name = KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id)
             Logger.base.info(f'🔍 [MONITOR] Setting up stream debugging for topic: {topic_name}')
 
             try:
@@ -282,7 +282,7 @@ class RocksDBMonitor:
                 state_info['recommendations'].append('🚀 Start the event_ticketing consumer first')
 
             # 檢查 topic 可用性
-            topic_name = KafkaTopicBuilder.seat_initialization_command(event_id=event_id)
+            topic_name = KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id)
             state_info['topic_name'] = topic_name
 
             Logger.base.info(f'🔍 [MONITOR] State Store Inspection for Event {event_id}:')

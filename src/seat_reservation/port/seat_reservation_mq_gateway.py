@@ -259,7 +259,9 @@ class SeatReservationGateway:
 
         await publish_domain_event(
             event=event,
-            topic=KafkaTopicBuilder.update_ticket_status_to_reserved(event_id=event_id),
+            topic=KafkaTopicBuilder.update_ticket_status_to_reserved_in_postgresql(
+                event_id=event_id
+            ),
             partition_key=str(result.booking_id),
         )
 

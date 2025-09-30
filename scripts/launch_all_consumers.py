@@ -116,7 +116,7 @@ class EventServiceLauncher:
         # 定義要殺死的進程名稱模式
         consumer_patterns = [
             "booking_mq_consumer",
-            "seat_reservation_consumer",
+            "seat_reservation_mq_consumer",
             "event_ticketing_mq_consumer",
         ]
 
@@ -240,8 +240,8 @@ class EventServiceLauncher:
         consumers = [
             # 1:2:1 架構 - 開發模式也可以測試真實的負載分配
             ("📚 Booking Service Consumer", "src.booking.infra.booking_mq_consumer", "booking-service"),
-            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_consumer", "seat-reservation-1"),
-            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_consumer", "seat-reservation-2"),
+            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_mq_consumer", "seat-reservation-1"),
+            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_mq_consumer", "seat-reservation-2"),
             ("🎫 Event Ticketing Consumer", "src.event_ticketing.infra.event_ticketing_mq_consumer", "event-ticketing-service")
         ]
 

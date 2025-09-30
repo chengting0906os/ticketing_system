@@ -243,7 +243,7 @@ class CreateEventUseCase:
             # 使用 KafkaTopicBuilder 統一管理 topic 名稱
             from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
-            topic_name = KafkaTopicBuilder.seat_initialization_command(event_id=event_id)
+            topic_name = KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id)
             Logger.base.info(f'📡 Using seat initialization topic: {topic_name}')
 
             seat_init_topic = app.topic(
@@ -385,8 +385,8 @@ class CreateEventUseCase:
                 },
                 # Seat Reservation - 1 consumer
                 {
-                    'name': 'seat_reservation_consumer',
-                    'module': 'src.seat_reservation.infra.seat_reservation_consumer',
+                    'name': 'seat_reservation_mq_consumer',
+                    'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                         event_id=event_id
                     ),

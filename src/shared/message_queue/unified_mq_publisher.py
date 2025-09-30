@@ -385,7 +385,7 @@ async def publish_domain_event(
     範例：
     await publish_domain_event(
         event=BookingCreated(...),
-        topic=KafkaTopicBuilder.ticket_reserve_request(event_id=123),
+        topic=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(event_id=123),
         partition_key=PartitionKeyBuilder.section_based(event_id=123, section="A", partition_number=0)
     )
     """
@@ -410,7 +410,7 @@ async def publish_domain_events_batch(
     範例：
     await publish_domain_events_batch(
         events=[SeatInitializationEvent(...), SeatInitializationEvent(...)],
-        topic=KafkaTopicBuilder.seat_initialization_command(event_id=123),
+        topic=KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=123),
         partition_key=PartitionKeyBuilder.section_based(event_id=123, section="A", partition_number=0)
     )
     """

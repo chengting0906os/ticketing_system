@@ -24,7 +24,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
     def __init__(self):
         # 使用 SeatReservationConsumer 來讀取 RocksDB 狀態
-        from src.seat_reservation.infra.seat_reservation_consumer import SeatReservationConsumer
+        from src.seat_reservation.infra.seat_reservation_mq_consumer import SeatReservationConsumer
 
         self.seat_reader = SeatReservationConsumer()
 
@@ -36,13 +36,15 @@ class SeatStateHandlerImpl(SeatStateHandler):
         """獲取指定座位的狀態 - 從 RocksDB 讀取真實狀態"""
         Logger.base.info(f'🔍 [SEAT-STATE] Getting states for {len(seat_ids)} seats')
 
+        if not self.is_available():
+            raise RuntimeError('Seat state handler not available')
+
         # 使用 SeatReservationConsumer 讀取 RocksDB 狀態
         try:
-            # 確保 seat_reader 已初始化
+            # 確保 seat_reader 已初始化（不使用 asyncio.run）
             if not self.seat_reader.rocksdb_app:
-                import asyncio
-
-                asyncio.run(self.seat_reader.initialize())
+                # 創建 RocksDB app 但不運行異步初始化
+                self.seat_reader.rocksdb_app = self.seat_reader._create_rocksdb_app()
 
             # 讀取座位狀態
             seat_states = self.seat_reader.read_seat_states(seat_ids)

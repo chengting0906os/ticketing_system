@@ -44,8 +44,8 @@ class KafkaConfigService(KafkaConfigServiceInterface):
                 description='📚 訂單服務消費者',
             ),
             ConsumerConfig(
-                name='seat_reservation_consumer',
-                module='src.seat_reservation.infra.seat_reservation_consumer',
+                name='seat_reservation_mq_consumer',
+                module='src.seat_reservation.infra.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
             ),
             ConsumerConfig(

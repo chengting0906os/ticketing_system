@@ -174,7 +174,7 @@ services ss: check-kafka  ## 🚀 智能啟動活動服務 (從資料庫選擇)
 .PHONY: stop-services stop
 stop-services stop:  ## 🛑 停止所有服務
 	@echo "🛑 停止所有服務..."
-	@pkill -f "seat_reservation_consumer" || true
+	@pkill -f "seat_reservation_mq_consumer" || true
 	@pkill -f "booking_mq_consumer" || true
 	@pkill -f "event_ticketing_mq_consumer" || true
 	@pkill -f "launch_all_consumers" || true
@@ -182,17 +182,6 @@ stop-services stop:  ## 🛑 停止所有服務
 
 .PHONY: restart-services restart
 restart-services restart: stop-services services  ## 🔄 重啟所有服務
-
-# Kafka Topic Monitor
-.PHONY: monitor-topics mkt
-monitor-topics mkt:  ## 📊 監控 Kafka Topic 消息流 (需要 EVENT_ID)
-	@if [ -z "$(EVENT_ID)" ]; then \
-		echo "❌ Error: EVENT_ID is required"; \
-		echo "Usage: make mkt EVENT_ID=1"; \
-		exit 1; \
-	fi
-	@echo "📊 啟動 Kafka Topic Monitor for Event $(EVENT_ID)..."
-	@PYTHONPATH=. uv run python scripts/topic_monitor.py $(EVENT_ID)
 
 # Help
 .PHONY: help

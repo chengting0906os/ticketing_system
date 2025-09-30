@@ -40,23 +40,23 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 ## 三微服務架構 + RocksDB 無鎖預訂
 
 ```
-┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│   booking_service   │────▶│   seat_reservation   │────▶│   event_ticketing   │
-│    (PostgreSQL)     │     │   (Algorithm Router) │     │ (PostgreSQL+RocksDB)│
-│                     │◀────│                      │◀────│                     │
-│  📊 Consumer: 1     │     │  📊 Consumer: 1      │     │  📊 Consumer: 2     │
-│ event-id-1__        │     │ event-id-1__         │     │ event-id-1__        │
-│ booking-service-1   │     │ seat-reservation-    │     │ event-ticketing-    │
-│                     │     │ service-1            │     │ service-1           │
-└─────────────────────┘     └──────────────────────┘     └─────────────────────┘
-         │                           │                          │
-         │                           │                          │
-         ▼                           ▼                          ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                             Kafka + Quix Streams                            │
-│                   Event-Driven + Stateful Stream + Lock-Free                │
-│                          🔄 1:1:2 Consumer Architecture                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────┐   ┌────────────────────────────────────────┐   ┌─────────────────────┐
+│   booking_service   │──▶│       seat_reservation_service         │──▶│   event_ticketing   │
+│    (PostgreSQL)     │   │      🎯 Algo + RocksDB (Core)          │   │    (PostgreSQL)     │
+│                     │◀──│                                        │◀──│                     │
+│  📊 Consumer: 1     │   │         📊 Consumer: 1                  │   │  📊 Consumer: 1     │
+│ event-id-1__        │   │ event-id-1__seat-reservation-service-1 │   │ event-id-1__        │
+│ booking-service-1   │   │                                        │   │ event-ticketing-    │
+│                     │   │                                        │   │ service-1           │
+└─────────────────────┘   └────────────────────────────────────────┘   └─────────────────────┘
+         │                                    │                                  │
+         │                                    │                                  │
+         ▼                                    ▼                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  Kafka + Quix Streams                                       │
+│                        Event-Driven + Stateful Stream + Lock-Free                           │
+│                              🔄 1:1:1 Consumer Architecture                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Topic 和 Partition 策略
@@ -64,9 +64,13 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 ### 📡 Topic 命名格式
 ```
 event-id-{event_id}______{action}______{from_service}___to___{to_service}
-例如：event-id-123______ticket-reserve-request______booking-service___to___seat-reservation-service
-例如：event-id-123______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service
+例如：event-id-123______ticket-reserving-request-in-rocksdb______booking-service___to___seat-reservation-service
+例如：event-id-123______update-ticket-status-to-reserved-in-postgresql______seat-reservation-service___to___event-ticketing-service
 ```
+
+**命名規範：**
+- 以 `-in-rocksdb` 結尾：操作 RocksDB 狀態（即時座位選擇）
+- 以 `-in-postgresql` 結尾：操作 PostgreSQL（持久化票務記錄）
 
 ### 🎯 Partition Key 格式
 ```
@@ -75,15 +79,21 @@ event-{event_id}-section-{section}-partition-{partition_number}
 ```
 
 ### 🗂️ 主要 Topics
-- `event-id-{event_id}______ticket-reserve-request______booking-service___to___seat-reservation-service` - 票據預訂請求
-- `event-id-{event_id}______update-ticket-status-to-reserved______seat-reservation-service___to___event-ticketing-service` - 更新票據狀態為預訂
+
+#### To Seat Reservation Service (RocksDB 操作)
+- `event-id-{event_id}______ticket-reserving-request-in-rocksdb______booking-service___to___seat-reservation-service` - 票據預訂請求（RocksDB 座位選擇）
+- `event-id-{event_id}______release-ticket-status-to-available-in-rocksdb______event-ticketing-service___to___seat-reservation-service` - 釋放座位狀態為可用（RocksDB）
+- `event-id-{event_id}______finalize-ticket-status-to-paid-in-rocksdb______event-ticketing-service___to___seat-reservation-service` - 確認座位為已付款（RocksDB）
+- `event-id-{event_id}______seat-initialization-command-in-rocksdb______event-ticketing-service___to___seat-reservation-service` - 座位初始化指令（RocksDB）
+
+#### To Event Ticketing Service (PostgreSQL 操作)
+- `event-id-{event_id}______update-ticket-status-to-reserved-in-postgresql______seat-reservation-service___to___event-ticketing-service` - 更新票據狀態為預訂（PostgreSQL）
+- `event-id-{event_id}______update-ticket-status-to-paid-in-postgresql______booking-service___to___event-ticketing-service` - 更新票據狀態為已付款（PostgreSQL）
+- `event-id-{event_id}______update-ticket-status-to-available-in-rocksdb______booking-service___to___event-ticketing-service` - 更新票據狀態為可用（注：此處雖命名含 rocksdb，但實際目標是 event_ticketing）
+
+#### To Booking Service
 - `event-id-{event_id}______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service` - 更新訂單狀態為待付款
 - `event-id-{event_id}______update-booking-status-to-failed______seat-reservation-service___to___booking-service` - 訂單狀態為失敗
-- `event-id-{event_id}______update-ticket-status-to-paid______booking-service___to___event-ticketing-service` - 更新票據狀態為已付款
-- `event-id-{event_id}______update-ticket-status-to-available______booking-service___to___event-ticketing-service` - 更新票據狀態為可用
-- `event-id-{event_id}______release-ticket-to-available-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 釋放票據到可用狀態
-- `event-id-{event_id}______finalize-ticket-to-paid-by-rocksdb______event-ticketing-service___to___seat-reservation-service` - 確認票據為已付款
-- `event-id-{event_id}______seat-initialization-command______event-ticketing-service___to___event-ticketing-service` - 座位初始化指令
 
 ### ⚡ 區域集中式 Partition 策略
 - **A區所有座位** → 固定 partition (例如 partition-0)
@@ -99,15 +109,15 @@ event-{event_id}-section-{section}-partition-{partition_number}
 **booking_service** 創建訂單:
 ```
 → booking raw create and status: PROCESSING
-→ 發送事件到: event-id-123___:ticket-reserve-request___:seat-reservation-service
+→ 發送事件到: event-id-123______ticket-reserving-request-in-rocksdb______booking-service___to___seat-reservation-service
 → partition_key: event-123-section-A-partition-0 # booking_service 透過 partition_key 分流到不同 consumer/partition
 → 事件: TicketReservedRequest(**booking_data)
 → return booking detail 200
 ```
 
-### 🪑 Step 2: seat_reservation service  2 server 2 consumer
-**seat_reservation** 
-收到 topic event-id-123___:ticket-reserve-request___:seat-reservation-service 
+### 🪑 Step 2: seat_reservation service (RocksDB + Algorithm)
+**seat_reservation**
+收到 topic event-id-123______ticket-reserving-request-in-rocksdb______booking-service___to___seat-reservation-service 
 
 **seat selection service 查詢座位 strategry**
 exactly once sequential processing
@@ -129,13 +139,13 @@ exactly once sequential processing
 publish to **event_ticketing_service**
 ```
 → 事件: SeatUpdatedToReserved
-→ topic: event-id-123___:update-ticket-status-to-reserved___:event-ticketing-service
-→ partition_key: event-123-section-A-partition-0 # 原子更新 RocksDB
+→ topic: event-id-123______update-ticket-status-to-reserved-in-postgresql______seat-reservation-service___to___event-ticketing-service
+→ partition_key: event-123-section-A-partition-0 # 持久化到 PostgreSQL
 ```
 publish to **booking_service:**
 ```
 → 事件: BookingUpdatedToPendingPayment
-→ topic: event-id-123___:update-booking-status-to-pending-payment___:booking-service
+→ topic: event-id-123______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service
 → partition_key: event-123 # 暫不分太細的 partition
 ```
 
@@ -144,7 +154,7 @@ publish to **booking_service:**
 publish to **booking_service:**
 ```
 → 事件: BookingUpdatedToFailed
-→ topic: event-id-123___:booking-status-to-failed___:booking-service
+→ topic: event-id-123______update-booking-status-to-failed______seat-reservation-service___to___booking-service
 → partition_key: event-123 # 暫不分太細的 partition
 ```
 
@@ -169,14 +179,14 @@ subsection 狀況
 ### ✅ Step 4: 後續服務處理
 
 **event_ticketing service** 收到 topic:
-- `event-id-123___:update-ticket-status-to-reserved___:event-ticketing-service`
+- `event-id-123______update-ticket-status-to-reserved-in-postgresql______seat-reservation-service___to___event-ticketing-service`
 ```
 根據 ticket_id 更改 PostgreSQL ticket 狀態: AVAILABLE → RESERVED
 ```
 
 **booking service** 收到 topic:
-- `event-id-123___:update-booking-status-to-pending-payment___:booking-service` (成功情況)
-- `event-id-123___:booking-status-to-failed___:booking-service` (失敗情況)
+- `event-id-123______update-booking-status-to-pending-payment______seat-reservation-service___to___booking-service` (成功情況)
+- `event-id-123______update-booking-status-to-failed______seat-reservation-service___to___booking-service` (失敗情況)
 ```
 根據 booking_id 更改 PostgreSQL booking 狀態:
 - PROCESSING → PENDING_PAYMENT + Redis TTL (15分鐘)
@@ -186,19 +196,24 @@ subsection 狀況
 **SSE 即時通知 buyer:**
 - 通知購票者 booking 狀態變化
 
-### 🔄 Consumer Group 配置 (1:1:2 架構)
+### 🔄 Consumer Group 配置 (1:1:1 架構)
 **統一命名規則:** `event-id-{event_id}__{service_name}-{event_id}`
 
-- **event-id-1__booking-service-1** - 訂單服務 (1個實例)
-- **event-id-1__seat-reservation-service-1** - 座位預訂服務 (1個實例)
-- **event-id-1__event-ticketing-service-1** - 票務狀態管理服務 (2個實例)
+- **event-id-1__booking-service-1** - 訂單服務 (1個實例) - PostgreSQL
+- **event-id-1__seat-reservation-service-1** - 座位預訂服務 (1個實例) - RocksDB + 選座算法
+- **event-id-1__event-ticketing-service-1** - 票務管理服務 (1個實例) - PostgreSQL
 
-**負載分配:**
+**職責分配:**
 ```
-1 booking consumer       : 處理訂單創建和狀態更新
-1 seat-reservation       : 處理座位選擇算法和服務協調
-2 event-ticketing        : 處理RocksDB狀態管理和PostgreSQL同步 (高負載)
+1 booking consumer        : 處理訂單創建和狀態更新 (PostgreSQL)
+1 seat-reservation        : 處理座位選擇算法 + RocksDB 即時狀態管理
+1 event-ticketing         : 處理票務持久化到 PostgreSQL
 ```
+
+**架構變更亮點:**
+- `seat_reservation` 現在擁有自己的 RocksDB，負責座位即時狀態查詢和選座算法
+- `event_ticketing` 簡化為只負責 PostgreSQL 的票務持久化
+- 狀態管理責任清晰分離：RocksDB (即時) vs PostgreSQL (持久化)
 
 每個 consumer group 使用統一命名，無隨機UUID後綴，確保系統可預測性和可維護性。
 
@@ -225,7 +240,7 @@ subsection 狀況
 3. 發送事件到 event_ticketing:
 ```
 → 事件: BookingPaidSuccess
-→ topic: event-id-123___:update-ticket-status-to-paid___:event-ticketing-service
+→ topic: event-id-123______update-ticket-status-to-paid-in-postgresql______booking-service___to___event-ticketing-service
 → partition_key: event-123
 ```
 4. event_ticketing 更新票據狀態 (RESERVED → SOLD)
@@ -239,16 +254,16 @@ subsection 狀況
 **Step 4.1 - 通知 event_ticketing 釋放票據:**
 ```
 → 事件: BookingExpiredReleaseTickets
-→ topic: event-id-123___:update-ticket-status-to-available___:event-ticketing-service
+→ topic: event-id-123______update-ticket-status-to-available-in-rocksdb______booking-service___to___event-ticketing-service
 → partition_key: event-123
 → 消費者: event_ticketing
-→ 動作: 更新票據狀態 RESERVED → AVAILABLE
+→ 動作: 更新票據狀態 RESERVED → AVAILABLE (PostgreSQL)
 ```
 
 **Step 4.2 - event_ticketing 通知 seat_reservation 釋放座位:**
 ```
 → 事件: ReleaseSeat
-→ topic: event-id-123___:release-ticket-to-available-by-rocksdb___:seat-reservation-service
+→ topic: event-id-123______release-ticket-status-to-available-in-rocksdb______event-ticketing-service___to___seat-reservation-service
 → partition_key: event-123-section-A-partition-0
 → 消費者: seat_reservation
 → 動作: 清理 RocksDB 座位狀態 RESERVED → AVAILABLE

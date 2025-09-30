@@ -69,14 +69,16 @@ class CreateBookingUseCase:
         await self.session.commit()
         booking_created_event = BookingCreated.from_booking(created_booking)
         Logger.base.info(
-            f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserve_request(event_id=booking.event_id)}\033[0m'
+            f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(event_id=booking.event_id)}\033[0m'
         )
         Logger.base.info(
             f'\033[93m📦 [BOOKING UseCase] 事件內容: event_id={created_booking.event_id}, buyer_id={created_booking.buyer_id}, seat_mode={created_booking.seat_selection_mode}\033[0m'
         )
         await publish_domain_event(
             event=booking_created_event,
-            topic=KafkaTopicBuilder.ticket_reserve_request(event_id=booking.event_id),
+            topic=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(
+                event_id=booking.event_id
+            ),
             partition_key=str(created_booking.id),
         )
 

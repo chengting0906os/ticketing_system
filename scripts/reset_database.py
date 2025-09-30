@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""
+Database Reset Script
+完整重置 PostgreSQL 資料庫
+
+功能：
+1. Drop & Recreate Database - 完全清空資料庫
+2. Run Alembic Migrations - 建立最新的 schema
+3. Create Initial Users - 創建測試用 seller 和 buyer
+4. Create Initial Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation RocksDB)
+
+注意：
+- 此腳本會觸發座位初始化消息，需要 seat_reservation_mq_consumer 運行中
+- 座位資料會存入 seat_reservation 的 RocksDB (不是 PostgreSQL)
+- 票券資料會存入 event_ticketing 的 PostgreSQL
+"""
 
 import asyncio
 import time
@@ -235,18 +250,21 @@ async def create_init_event_in_session(session, seller_id: int):
                 kafka_service=kafka_config
             )
 
-            # 座位配置
-            
+            # 座位配置選擇
+            # SEATING_CONFIG_30: 開發測試用（30 個座位，快速初始化）
+            # SEATING_CONFIG_50000: 生產環境用（50,000 個座位，完整壓力測試）
+            seating_config = SEATING_CONFIG_30  # 開發模式預設使用小規模配置
 
-            print("🎫 Creating event and tickets using CreateEventUseCase.create_event_and_tickets()...")
+            print(f"🎫 Creating event with {sum(len(section['rows']) * section['rows'][0]['seats_per_row'] for section in seating_config['sections'])} seats...")
 
             # 使用 UseCase 的 create_event_and_tickets 方法
+            # 這會發送座位初始化消息到 Kafka → seat_reservation_mq_consumer → RocksDB
             event_aggregate = await create_event_use_case.create_event_and_tickets(
                 name="Concert Event",
                 description="Amazing live music performance",
                 seller_id=seller_id,
                 venue_name="Taipei Arena",
-                seating_config=SEATING_CONFIG_30,
+                seating_config=seating_config,
                 is_active=True,
             )
 

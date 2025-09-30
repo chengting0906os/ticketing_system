@@ -17,40 +17,48 @@ class BookingMqGateway:
         pass
 
     async def can_handle(self, event_type: str) -> bool:
-        """檢查是否可以處理指定的事件類型"""
-        return event_type in ['TicketsReserved', 'TicketReservationFailed']
+        """基於 topic 路由，所有進來的事件都能處理"""
+        return True
 
     async def handle(self, event_data: Dict[str, Any]) -> bool:
         """
-        處理原始事件數據 (主要入口)
+        處理事件數據 - 基於 topic 路由，不再判斷事件類型
 
         Args:
-            event_data: 原始事件數據
+            event_data: 事件數據
 
         Returns:
             處理結果
         """
         try:
-            event_type = event_data.get('event_type')
-            Logger.base.info(f'📥 [BOOKING Handler] 收到事件: {event_type}')
+            # 直接處理數據，不再判斷事件類型
+            data = event_data.get('data', {})
+            booking_id = data.get('booking_id')
+            buyer_id = data.get('buyer_id')
 
-            # 檢查事件類型
-            if not event_type or not await self.can_handle(event_type):
-                Logger.base.warning(f'⚠️ [BOOKING Handler] 未知事件類型: {event_type}')
-                return False
+            Logger.base.info(
+                f'📥 [BOOKING Handler] 處理事件: booking_id={booking_id}, buyer_id={buyer_id}'
+            )
 
-            if event_type == 'TicketsReserved':
-                Logger.base.info('🎫 [BOOKING Handler] 開始處理 TicketsReserved 事件')
-                return await self._handle_tickets_reserved_event(event_data)
-            elif event_type == 'TicketReservationFailed':
-                Logger.base.info('❌ [BOOKING Handler] 開始處理 TicketReservationFailed 事件')
-                return await self._handle_reservation_failed_event(event_data)
+            # 檢查是否為失敗事件（包含 error_message 或 status='failed'）
+            error_message = data.get('error_message')
+            status = data.get('status')
+
+            if error_message or status in ['failed', 'seat_reservation_failed']:
+                Logger.base.info('❌ [BOOKING Handler] 處理失敗事件')
+                return await self.handle_ticket_reservation_failed(
+                    booking_id=booking_id, buyer_id=buyer_id, error_message=error_message
+                )
             else:
-                Logger.base.warning(f'⚠️ [BOOKING Handler] 未知事件類型: {event_type}')
-                return False
+                # 處理成功事件（有 ticket_ids）
+                ticket_ids = data.get('ticket_ids', [])
+                Logger.base.info('✅ [BOOKING Handler] 處理成功事件')
+                return await self.handle_tickets_reserved(
+                    booking_id=booking_id, buyer_id=buyer_id, ticket_ids=ticket_ids
+                )
 
         except Exception as e:
-            Logger.base.error(f'Error processing event: {e}')
+            Logger.base.error(f'❌ [BOOKING Handler] 處理事件時發生錯誤: {e}')
             return False
 
     @Logger.io
