@@ -44,10 +44,10 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 │   booking_service   │──▶│       seat_reservation_service         │──▶│   event_ticketing   │
 │    (PostgreSQL)     │   │      🎯 Algo + RocksDB (Core)          │   │    (PostgreSQL)     │
 │                     │◀──│                                        │◀──│                     │
-│  📊 Consumer: 1     │   │         📊 Consumer: 1                  │   │  📊 Consumer: 1     │
-│ event-id-1__        │   │ event-id-1__seat-reservation-service-1 │   │ event-id-1__        │
-│ booking-service-1   │   │                                        │   │ event-ticketing-    │
-│                     │   │                                        │   │ service-1           │
+│  📊 Consumer: 1     │   │         📊 Consumer: 2                  │   │  📊 Consumer: 1     │
+│ event-id-1_____     │   │ event-id-1_____seat-reservation-       │   │ event-id-1_____     │
+│ booking-service--1  │   │ service--1                             │   │ event-ticketing-    │
+│                     │   │                                        │   │ service--1          │
 └─────────────────────┘   └────────────────────────────────────────┘   └─────────────────────┘
          │                                    │                                  │
          │                                    │                                  │
@@ -196,17 +196,17 @@ subsection 狀況
 **SSE 即時通知 buyer:**
 - 通知購票者 booking 狀態變化
 
-### 🔄 Consumer Group 配置 (1:1:1 架構)
-**統一命名規則:** `event-id-{event_id}__{service_name}-{event_id}`
+### 🔄 Consumer Group 配置 (1:2:1 架構)
+**統一命名規則:** `event-id-{event_id}_____{service_name}--{event_id}`
 
-- **event-id-1__booking-service-1** - 訂單服務 (1個實例) - PostgreSQL
-- **event-id-1__seat-reservation-service-1** - 座位預訂服務 (1個實例) - RocksDB + 選座算法
-- **event-id-1__event-ticketing-service-1** - 票務管理服務 (1個實例) - PostgreSQL
+- **event-id-1_____booking-service--1** - 訂單服務 (1個實例) - PostgreSQL
+- **event-id-1_____seat-reservation-service--1** - 座位預訂服務 (2個實例) - RocksDB + 選座算法
+- **event-id-1_____event-ticketing-service--1** - 票務管理服務 (1個實例) - PostgreSQL
 
 **職責分配:**
 ```
 1 booking consumer        : 處理訂單創建和狀態更新 (PostgreSQL)
-1 seat-reservation        : 處理座位選擇算法 + RocksDB 即時狀態管理
+2 seat-reservation        : 處理座位選擇算法 + RocksDB 即時狀態管理 (高並發)
 1 event-ticketing         : 處理票務持久化到 PostgreSQL
 ```
 

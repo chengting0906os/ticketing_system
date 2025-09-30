@@ -14,11 +14,12 @@ Database Reset Script
 - 座位資料會存入 seat_reservation 的 RocksDB (不是 PostgreSQL)
 - 票券資料會存入 event_ticketing 的 PostgreSQL
 """
-
+import subprocess
+import os
+from src.shared.constant.path import BASE_DIR
 import asyncio
 import time
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.shared.config.db_setting import Base
 
@@ -36,6 +37,9 @@ from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoI
 from src.shared.config.core_setting import settings
 from src.shared.message_queue.kafka_config_service import KafkaConfigService
 from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
+from contextlib import asynccontextmanager
+
+
 def get_database_url() -> str:
     """取得資料庫連接 URL"""
 
@@ -97,9 +101,7 @@ async def drop_and_recreate_database():
         print("   ⏸️ Ensuring no FastAPI app is running during migration...")
 
         # 運行 Alembic 遷移
-        import subprocess
-        import os
-        from src.shared.constant.path import BASE_DIR
+        
 
         # 設置環境變量防止 SQLAlchemy 自動創建表
         env = os.environ.copy()
@@ -177,7 +179,7 @@ async def create_init_users_in_session(session):
             print("Creating initial users...")
 
             # 創建一個使用當前 session 的 repo
-            from contextlib import asynccontextmanager
+
 
             @asynccontextmanager
             async def get_current_user_session():
@@ -233,9 +235,6 @@ async def create_init_event_in_session(session, seller_id: int):
                 print(f"   ❌ User {seller_id} NOT found in database!")
                 return None
 
-            # 創建依賴服務 - 使用當前 session 而不是新的 session factory
-            from contextlib import asynccontextmanager
-
             @asynccontextmanager
             async def get_current_session():
                 yield session
@@ -255,7 +254,13 @@ async def create_init_event_in_session(session, seller_id: int):
             # SEATING_CONFIG_50000: 生產環境用（50,000 個座位，完整壓力測試）
             seating_config = SEATING_CONFIG_30  # 開發模式預設使用小規模配置
 
-            print(f"🎫 Creating event with {sum(len(section['rows']) * section['rows'][0]['seats_per_row'] for section in seating_config['sections'])} seats...")
+            # Calculate total seats from nested structure: sections → subsections → rows × seats_per_row
+            total_seats = sum(
+                subsection['rows'] * subsection['seats_per_row']
+                for section in seating_config['sections']
+                for subsection in section['subsections']
+            )
+            print(f"🎫 Creating event with {total_seats} seats...")
 
             # 使用 UseCase 的 create_event_and_tickets 方法
             # 這會發送座位初始化消息到 Kafka → seat_reservation_mq_consumer → RocksDB

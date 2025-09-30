@@ -142,7 +142,7 @@ class SeatReservationConsumer:
 
         try:
             # 讀取 seat_reservation 服務自己的 RocksDB
-            state_dir = f'./rocksdb_state/seat_reservation_{self.event_id}_instance_{self.instance_id}/seat-reservation-service-{self.instance_id}/default/event-id-{self.event_id}______seat-initialization-command______event-ticketing-service___to___seat-reservation-service/0'
+            state_dir = f'./rocksdb_state/seat_reservation_{self.event_id}_instance_{self.instance_id}/seat-reservation-service-{self.instance_id}/default/event-id-{self.event_id}______seat-initialization-command-in-rocksdb______event-ticketing-service___to___seat-reservation-service/0'
 
             db = rocksdb.DB(state_dir, rocksdb.Options(create_if_missing=False), read_only=True)
 

@@ -26,6 +26,7 @@ from src.shared.constant.path import BASE_DIR
 from src.shared.logging.loguru_io import Logger
 from src.shared.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
+    KafkaTopicBuilder,
     PartitionKeyBuilder,
 )
 from src.shared_kernel.domain.event_status import EventStatus
@@ -121,8 +122,8 @@ class CreateEventUseCase:
             event_id=final_aggregate.event.id, seating_config=seating_config
         )
 
-        # 6. 啟動 RocksDB consumer 並初始化座位
-        await self._start_rocksdb_consumer_and_initialize_seats(
+        # 6. 啟動 seat_reservation consumer 並初始化座位
+        await self._start_seat_reservation_consumer_and_initialize_seats(
             event_id=final_aggregate.event.id, ticket_tuples=ticket_tuples
         )
 
@@ -166,44 +167,54 @@ class CreateEventUseCase:
             # 不拋出異常，因為活動已經創建成功
 
     @Logger.io
-    async def _start_rocksdb_consumer_and_initialize_seats(
+    async def _start_seat_reservation_consumer_and_initialize_seats(
         self, *, event_id: int, ticket_tuples: list
     ) -> None:
-        """啟動 RocksDB consumer 並透過 Kafka 初始化座位"""
+        """確保 seat_reservation consumer 運行並初始化座位"""
         try:
-            # 1. 啟動 RocksDB consumer
-            Logger.base.info(f'🚀 Starting RocksDB consumer for event {event_id}')
-            await self._start_rocksdb_consumer(event_id=event_id)
+            # 1. 檢查 consumers 是否已經啟動
+            consumers_available = await self._check_consumer_availability(event_id=event_id)
 
-            # 2. 等待 consumer 準備就緒
-            await asyncio.sleep(3)
+            if not consumers_available:
+                Logger.base.info(
+                    f'🚀 Consumers not running, starting seat_reservation consumer for event {event_id}'
+                )
+                await self._start_seat_reservation_consumer(event_id=event_id)
+                # 等待 consumer 準備就緒
+                await asyncio.sleep(3)
+            else:
+                Logger.base.info(f'✅ Consumers already running for event {event_id}')
 
-            # 3. 發送座位初始化事件
+            # 2. 發送座位初始化事件
             await self._send_seat_initialization_events(
                 event_id=event_id, ticket_tuples=ticket_tuples
             )
 
-            # 4. 等待處理完成
+            # 3. 等待處理完成
             await asyncio.sleep(8)
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to start consumer and initialize seats: {e}')
+            Logger.base.error(f'❌ Failed to initialize seats: {e}')
 
     @Logger.io
-    async def _start_rocksdb_consumer(self, *, event_id: int) -> None:
-        """啟動特定事件的 RocksDB consumer"""
+    async def _start_seat_reservation_consumer(self, *, event_id: int) -> None:
+        """啟動特定事件的 seat_reservation consumer"""
         try:
             project_root = BASE_DIR
             env = os.environ.copy()
             env['EVENT_ID'] = str(event_id)
             env['PYTHONPATH'] = str(project_root)
+            env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.seat_reservation_service(
+                event_id=event_id
+            )
+            env['CONSUMER_INSTANCE_ID'] = '1'
 
             cmd = [
                 'uv',
                 'run',
                 'python',
                 '-m',
-                'src.event_ticketing.infra.event_ticketing_mq_consumer',
+                'src.seat_reservation.infra.seat_reservation_mq_consumer',
             ]
 
             process = await asyncio.create_subprocess_exec(
@@ -216,11 +227,11 @@ class CreateEventUseCase:
             )
 
             Logger.base.info(
-                f'✅ Started RocksDB consumer (PID: {process.pid}) for event {event_id}'
+                f'✅ Started seat_reservation_mq_consumer (PID: {process.pid}) for event {event_id}'
             )
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to start RocksDB consumer: {e}')
+            Logger.base.error(f'❌ Failed to start seat_reservation consumer: {e}')
             raise
 
     @Logger.io
@@ -241,7 +252,6 @@ class CreateEventUseCase:
             )
 
             # 使用 KafkaTopicBuilder 統一管理 topic 名稱
-            from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
             topic_name = KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id)
             Logger.base.info(f'📡 Using seat initialization topic: {topic_name}')
@@ -364,50 +374,50 @@ class CreateEventUseCase:
 
     async def _auto_start_consumers(self, event_id: int) -> bool:
         """
-        自動啟動 consumers - 1-1-2 配置
+        自動啟動 consumers - 1-2-1 配置
 
         架構配置：
         - booking: 1 consumer (輕量級訂單處理)
-        - seat_reservation: 1 consumer (座位選擇算法)
-        - event_ticketing: 2 consumers (狀態管理高負載)
+        - seat_reservation: 2 consumers (座位選擇算法 + RocksDB 讀寫)
+        - event_ticketing: 1 consumer (狀態管理)
         """
         try:
             project_root = BASE_DIR
 
-            # 1-1-2 Consumer 配置
+            # 1-2-1 Consumer 配置
             consumers = [
                 # Booking Service - 1 consumer
                 {
-                    'name': 'booking_consumer',
+                    'name': 'booking_mq_consumer',
                     'module': 'src.booking.infra.booking_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
                     'instance_id': 1,
                 },
-                # Seat Reservation - 1 consumer
+                # Seat Reservation - 2 consumers (高負載座位選擇 + RocksDB 操作)
                 {
-                    'name': 'seat_reservation_mq_consumer',
+                    'name': 'seat_reservation_mq_consumer_1',
                     'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                         event_id=event_id
                     ),
                     'instance_id': 1,
                 },
-                # Event Ticketing - 2 consumers (高負載狀態管理)
                 {
-                    'name': 'event_ticketing_consumer_1',
+                    'name': 'seat_reservation_mq_consumer_2',
+                    'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
+                        event_id=event_id
+                    ),
+                    'instance_id': 2,
+                },
+                # Event Ticketing - 1 consumer
+                {
+                    'name': 'event_ticketing_mq_consumer',
                     'module': 'src.event_ticketing.infra.event_ticketing_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
                         event_id=event_id
                     ),
                     'instance_id': 1,
-                },
-                {
-                    'name': 'event_ticketing_consumer_2',
-                    'module': 'src.event_ticketing.infra.event_ticketing_mq_consumer',
-                    'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
-                        event_id=event_id
-                    ),
-                    'instance_id': 2,
                 },
             ]
 
@@ -444,8 +454,8 @@ class CreateEventUseCase:
             # 等待 consumers 初始化
             await asyncio.sleep(5)  # 增加等待時間確保所有 consumer 啟動
 
-            Logger.base.info(f'📊 [1-1-2 CONFIG] Total consumers started: {len(processes)}')
-            Logger.base.info('🔄 [1-1-2 CONFIG] booking:1, seat_reservation:1, event_ticketing:2')
+            Logger.base.info(f'📊 [1-2-1 CONFIG] Total consumers started: {len(processes)}')
+            Logger.base.info('🔄 [1-2-1 CONFIG] booking:1, seat_reservation:2, event_ticketing:1')
 
             # 驗證 consumers 是否真的啟動了
             return await self._check_consumer_availability(event_id=event_id)

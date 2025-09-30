@@ -20,6 +20,7 @@ class ConsumerConfig:
     name: str
     module: str
     description: str
+    instance_count: int = 1  # 預設啟動 1 個實例
 
 
 class KafkaConfigService(KafkaConfigServiceInterface):
@@ -36,22 +37,28 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         self.total_partitions = total_partitions
         self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
 
-        # Consumer 配置定義
+        # Consumer 配置定義 - 1-2-1 架構
+        # booking: 1 consumer (輕量級訂單處理)
+        # seat_reservation: 2 consumers (高負載座位選擇 + RocksDB 操作)
+        # event_ticketing: 1 consumer (狀態管理)
         self.consumer_configs = [
             ConsumerConfig(
                 name='booking_mq_consumer',
                 module='src.booking.infra.booking_mq_consumer',
                 description='📚 訂單服務消費者',
+                instance_count=1,
             ),
             ConsumerConfig(
                 name='seat_reservation_mq_consumer',
                 module='src.seat_reservation.infra.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
+                instance_count=2,
             ),
             ConsumerConfig(
                 name='event_ticketing_mq_consumer',
                 module='src.event_ticketing.infra.event_ticketing_mq_consumer',
                 description='🎫 票務同步消費者',
+                instance_count=1,
             ),
         ]
 
@@ -179,7 +186,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         Logger.base.info(f'📈 [KAFKA_CONFIG] Total seats: {total_seats:,}')
 
     async def _start_event_consumers(self, event_id: int) -> None:
-        """啟動 event-specific consumers"""
+        """啟動 event-specific consumers (支援多實例)"""
         Logger.base.info(
             f'🚀 [KAFKA_CONFIG] Starting event-specific consumers for EVENT_ID={event_id}'
         )
@@ -187,11 +194,13 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         # 獲取項目根目錄
         project_root = self._get_project_root()
 
-        # 並行啟動所有 consumers
-        tasks = [
-            self._start_single_consumer(consumer, event_id, project_root)
-            for consumer in self.consumer_configs
-        ]
+        # 為每個 consumer 配置創建多個實例的啟動任務
+        tasks = []
+        for consumer in self.consumer_configs:
+            for instance_id in range(1, consumer.instance_count + 1):
+                tasks.append(
+                    self._start_single_consumer(consumer, event_id, project_root, instance_id)
+                )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -199,21 +208,45 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         success_count = sum(
             1 for result in results if isinstance(result, int)
         )  # PID is returned on success
+        total_instances = sum(c.instance_count for c in self.consumer_configs)
         Logger.base.info(
-            f'📊 [KAFKA_CONFIG] Started {success_count}/{len(self.consumer_configs)} consumers successfully'
+            f'📊 [KAFKA_CONFIG] Started {success_count}/{total_instances} consumer instances successfully'
+        )
+        Logger.base.info(
+            f'🔄 [KAFKA_CONFIG] Configuration: '
+            f'booking:{self.consumer_configs[0].instance_count}, '
+            f'seat_reservation:{self.consumer_configs[1].instance_count}, '
+            f'event_ticketing:{self.consumer_configs[2].instance_count}'
         )
 
     async def _start_single_consumer(
-        self, consumer: ConsumerConfig, event_id: int, project_root: str
+        self, consumer: ConsumerConfig, event_id: int, project_root: str, instance_id: int
     ) -> int:
-        """啟動單個 consumer，返回 PID"""
+        """啟動單個 consumer 實例，返回 PID"""
         try:
+            from .kafka_constant_builder import KafkaConsumerGroupBuilder
+
             cmd = ['uv', 'run', 'python', '-m', consumer.module]
 
             # 設置環境變數
             env = os.environ.copy()
             env['EVENT_ID'] = str(event_id)
             env['PYTHONPATH'] = project_root
+            env['CONSUMER_INSTANCE_ID'] = str(instance_id)
+
+            # 根據不同的 consumer 設置不同的 consumer group
+            if 'booking' in consumer.name:
+                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.booking_service(
+                    event_id=event_id
+                )
+            elif 'seat_reservation' in consumer.name:
+                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.seat_reservation_service(
+                    event_id=event_id
+                )
+            elif 'event_ticketing' in consumer.name:
+                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.event_ticketing_service(
+                    event_id=event_id
+                )
 
             # 在背景啟動程序
             process = await asyncio.create_subprocess_exec(
@@ -226,7 +259,8 @@ class KafkaConfigService(KafkaConfigServiceInterface):
             )
 
             Logger.base.info(
-                f'✅ [KAFKA_CONFIG] Started {consumer.description} for EVENT_ID={event_id}, PID={process.pid}'
+                f'✅ [KAFKA_CONFIG] Started {consumer.description} '
+                f'instance {instance_id} for EVENT_ID={event_id}, PID={process.pid}'
             )
 
             return process.pid

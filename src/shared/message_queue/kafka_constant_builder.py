@@ -72,24 +72,24 @@ class KafkaConsumerGroupBuilder:
     """
     Kafka Consumer Group 命名統一建構器
 
-    使用格式: event-id-{event_id}__{service_name}-{event_id}
+    使用格式: event-id-{event_id}_____{service_name}-{event_id}
     """
 
     @staticmethod
     def booking_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}__{ServiceNames.BOOKING_SERVICE}-{event_id}'
+        return f'event-id-{event_id}_____{ServiceNames.BOOKING_SERVICE}--{event_id}'
 
     @staticmethod
     def seat_reservation_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}__{ServiceNames.SEAT_RESERVATION_SERVICE}-{event_id}'
+        return f'event-id-{event_id}_____{ServiceNames.SEAT_RESERVATION_SERVICE}--{event_id}'
 
     @staticmethod
     def event_ticketing_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}__{ServiceNames.EVENT_TICKETING_SERVICE}-{event_id}'
+        return f'event-id-{event_id}_____{ServiceNames.EVENT_TICKETING_SERVICE}--{event_id}'
 
     @staticmethod
     def get_all_consumer_groups(*, event_id: int) -> list[str]:
-        """獲取 1-1-2 架構的所有 consumer groups"""
+        """獲取 1-2-1 架構的所有 consumer groups"""
         return [
             KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
