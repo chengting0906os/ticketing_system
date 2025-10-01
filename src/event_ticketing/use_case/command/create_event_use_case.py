@@ -5,7 +5,7 @@ Create Event Use Case - 使用新的 EventTicketingAggregate
 - 使用 EventTicketingAggregate 作為聚合根
 - 整合活動和票務創建邏輯
 - 負責 Kafka 基礎設施初始化
-- 處理 RocksDB 座位初始化
+- 處理 Kvrocks 座位初始化
 """
 
 import asyncio
@@ -24,7 +24,7 @@ from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.constant.path import BASE_DIR
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.kafka_constant_builder import (
+from src.shared_infra.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
     PartitionKeyBuilder,
@@ -242,6 +242,22 @@ class CreateEventUseCase:
                 f'💺 Sending seat initialization events for event {event_id} with {len(ticket_tuples)} tickets'
             )
 
+            # 1. 先寫入 subsection_total metadata 到 Kvrocks
+            from src.shared.redis.redis_client import kvrocks_client_sync
+
+            subsection_counts = {}
+            for ticket_tuple in ticket_tuples:
+                _, section, subsection, _, _, _, _ = ticket_tuple
+                section_id = f'{section}-{subsection}'
+                subsection_counts[section_id] = subsection_counts.get(section_id, 0) + 1
+
+            client = kvrocks_client_sync.connect()
+            for section_id, count in subsection_counts.items():
+                key = f'subsection_total:{event_id}:{section_id}'
+                client.set(key, count)
+                Logger.base.info(f'📊 Set {key} = {count}')
+
+            # 2. 發送座位初始化事件到 Kafka
             app = Application(
                 broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
                 producer_extra_config={
@@ -251,9 +267,7 @@ class CreateEventUseCase:
                 },
             )
 
-            # 使用 KafkaTopicBuilder 統一管理 topic 名稱
-
-            topic_name = KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id)
+            topic_name = KafkaTopicBuilder.seat_initialization_command_in_kvrocks(event_id=event_id)
             Logger.base.info(f'📡 Using seat initialization topic: {topic_name}')
 
             seat_init_topic = app.topic(
@@ -283,9 +297,11 @@ class CreateEventUseCase:
                             'seat': seat,
                         }
 
-                        # 使用 section-based partition key (按照 README.md)
+                        # 使用 section-based partition key，按字母順序分配：A→0, B→1, C→2...
+                        # 這樣可以將不同 section 的負載分散到不同的 consumer instances
+                        partition_number = ord(section[0]) - ord('A')
                         partition_key = PartitionKeyBuilder.section_based(
-                            event_id=event_id, section=section, partition_number=0
+                            event_id=event_id, section=section, partition_number=partition_number
                         )
 
                         # 發送到 Kafka
@@ -378,7 +394,7 @@ class CreateEventUseCase:
 
         架構配置：
         - booking: 1 consumer (輕量級訂單處理)
-        - seat_reservation: 2 consumers (座位選擇算法 + RocksDB 讀寫)
+        - seat_reservation: 2 consumers (座位選擇算法 + Kvrocks 讀寫)
         - event_ticketing: 1 consumer (狀態管理)
         """
         try:
@@ -393,7 +409,7 @@ class CreateEventUseCase:
                     'group_id': KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
                     'instance_id': 1,
                 },
-                # Seat Reservation - 2 consumers (高負載座位選擇 + RocksDB 操作)
+                # Seat Reservation - 2 consumers (高負載座位選擇 + Kvrocks 操作)
                 {
                     'name': 'seat_reservation_mq_consumer_1',
                     'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
@@ -402,14 +418,14 @@ class CreateEventUseCase:
                     ),
                     'instance_id': 1,
                 },
-                {
-                    'name': 'seat_reservation_mq_consumer_2',
-                    'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
-                    'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
-                        event_id=event_id
-                    ),
-                    'instance_id': 2,
-                },
+                # {
+                #     'name': 'seat_reservation_mq_consumer_2',
+                #     'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
+                #     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
+                #         event_id=event_id
+                #     ),
+                #     'instance_id': 2,
+                # },
                 # Event Ticketing - 1 consumer
                 {
                     'name': 'event_ticketing_mq_consumer',

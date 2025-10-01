@@ -19,8 +19,8 @@ from src.seat_reservation.use_case.reserve_seats_use_case import (
     ReserveSeatsUseCase,
 )
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
-from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+from src.shared_infra.message_queue.event_publisher import publish_domain_event
+from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 @dataclass
@@ -129,7 +129,7 @@ class SeatReservationGateway:
         """檢查是否可以處理指定的事件類型"""
         return event_type == 'BookingCreated'
 
-    async def handle(self, event_data: Any) -> bool:
+    async def handle_event(self, event_data: Any) -> bool:
         """
         處理原始事件數據 (主要入口)
 
@@ -148,11 +148,6 @@ class SeatReservationGateway:
 
             event_type = parsed_event_data.get('event_type')
             Logger.base.info(f'📨 [SEAT-GATEWAY] 收到事件: {event_type}')
-
-            # 2. 檢查事件類型
-            if not event_type or not await self.can_handle(event_type):
-                Logger.base.warning(f'Unknown event type: {event_type}')
-                return False
 
             # 3. 轉換為業務命令
             command = TicketReserveCommand.from_event_data(parsed_event_data)

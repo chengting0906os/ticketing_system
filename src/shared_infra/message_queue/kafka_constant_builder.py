@@ -15,20 +15,30 @@ class KafkaTopicBuilder:
 
     # ====== To Seat Reservation Service =======
     @staticmethod
-    def ticket_reserving_request_to_reserved_in_rocksdb(*, event_id: int) -> str:
-        return f'event-id-{event_id}______ticket-reserving-request-in-rocksdb______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+    def ticket_reserving_request_to_reserved_in_kvrocks(*, event_id: int) -> str:
+        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
-    def release_ticket_status_to_available_in_rocksdb(*, event_id: int) -> str:
-        return f'event-id-{event_id}______release-ticket-status-to-available-in-rocksdb______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+    def release_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
+        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
-    def finalize_ticket_status_to_paid_in_rocksdb(*, event_id: int) -> str:
-        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-rocksdb______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+    def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
+        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
-    def seat_initialization_command_in_rocksdb(*, event_id: int) -> str:
-        return f'event-id-{event_id}______seat-initialization-command-in-rocksdb______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+    def seat_initialization_command_in_kvrocks(*, event_id: int) -> str:
+        return f'event-id-{event_id}______seat-initialization-command-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+
+    @staticmethod
+    def section_stats_query_in_kvrocks(*, event_id: int) -> str:
+        """Section 統計查詢請求（API → Seat Reservation Service）"""
+        return f'event-id-{event_id}______section-stats-query-in-kvrocks______api___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+
+    @staticmethod
+    def section_stats_response_from_kvrocks(*, event_id: int) -> str:
+        """Section 統計查詢響應（Seat Reservation Service → API）"""
+        return f'event-id-{event_id}______section-stats-response-from-kvrocks______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___api'
 
     # ====== To Event Ticketing Service =======
 
@@ -41,7 +51,7 @@ class KafkaTopicBuilder:
         return f'event-id-{event_id}______update-ticket-status-to-paid-in-postgresql______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.EVENT_TICKETING_SERVICE}'
 
     @staticmethod
-    def update_ticket_status_to_available_in_rocksdb(*, event_id: int) -> str:
+    def update_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
         return f'event-id-{event_id}______update-ticket-status-to-available-in-postgresql______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.EVENT_TICKETING_SERVICE}'
 
     # ====== To Booking Service =======
@@ -56,15 +66,15 @@ class KafkaTopicBuilder:
     @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
         return [
-            KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(event_id=event_id),
+            KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.update_ticket_status_to_reserved_in_postgresql(event_id=event_id),
             KafkaTopicBuilder.update_booking_status_to_pending_payment(event_id=event_id),
             KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
             KafkaTopicBuilder.update_ticket_status_to_paid_in_postgresql(event_id=event_id),
-            KafkaTopicBuilder.update_ticket_status_to_available_in_rocksdb(event_id=event_id),
-            KafkaTopicBuilder.release_ticket_status_to_available_in_rocksdb(event_id=event_id),
-            KafkaTopicBuilder.finalize_ticket_status_to_paid_in_rocksdb(event_id=event_id),
-            KafkaTopicBuilder.seat_initialization_command_in_rocksdb(event_id=event_id),
+            KafkaTopicBuilder.update_ticket_status_to_available_in_kvrocks(event_id=event_id),
+            KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(event_id=event_id),
+            KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event_id),
+            KafkaTopicBuilder.seat_initialization_command_in_kvrocks(event_id=event_id),
         ]
 
 

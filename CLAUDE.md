@@ -24,7 +24,7 @@ Avoid building functionality on speculation. Implement features only when they a
 - All imports must be placed at the top of the file, never inside functions or methods
 - Follow PEP 8 import ordering: standard library, third-party packages, local modules
 
-## RocksDB Key-Value Structure
+## Kvrocks Key-Value Structure
 ### Seat State Storage
 **Key Pattern:** `seat:{seat_id}` (e.g., `seat:A-1-1-1`)
 

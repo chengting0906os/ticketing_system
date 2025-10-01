@@ -9,10 +9,10 @@ from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_events import BookingCreated
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
-from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.shared.exception.exceptions import DomainError
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.unified_mq_publisher import publish_domain_event
+from src.shared_infra.message_queue.event_publisher import publish_domain_event
+from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 if TYPE_CHECKING:
@@ -69,14 +69,14 @@ class CreateBookingUseCase:
         await self.session.commit()
         booking_created_event = BookingCreated.from_booking(created_booking)
         Logger.base.info(
-            f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(event_id=booking.event_id)}\033[0m'
+            f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=booking.event_id)}\033[0m'
         )
         Logger.base.info(
             f'\033[93m📦 [BOOKING UseCase] 事件內容: event_id={created_booking.event_id}, buyer_id={created_booking.buyer_id}, seat_mode={created_booking.seat_selection_mode}\033[0m'
         )
         await publish_domain_event(
             event=booking_created_event,
-            topic=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_rocksdb(
+            topic=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
                 event_id=booking.event_id
             ),
             partition_key=str(created_booking.id),

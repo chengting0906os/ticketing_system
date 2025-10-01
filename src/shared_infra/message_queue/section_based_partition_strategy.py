@@ -23,7 +23,7 @@ class SectionBasedPartitionStrategy:
 
     優勢：
     1. 同區域座位在同一 partition，查詢效率極高
-    2. RocksDB State 局部性好，cache hit rate 高
+    2. Kvrocks State 局部性好，cache hit rate 高
     3. 座位選擇邏輯簡單，無需跨 partition 協調
     4. 區域內座位預訂的原子性保證
     """

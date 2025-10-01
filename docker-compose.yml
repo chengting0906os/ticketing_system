@@ -120,11 +120,29 @@ services:
     networks:
       - ticketing-network
 
+  # Kvrocks - Redis-compatible cache with RocksDB backend
+  kvrocks:
+    image: apache/kvrocks:latest
+    container_name: kvrocks
+    ports:
+      - "6666:6666"
+    command: ["--bind", "0.0.0.0"]
+    volumes:
+      - kvrocks_data:/var/lib/kvrocks
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6666", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ticketing-network
+
 volumes:
   postgres_data:
   kafka1_data:
   kafka2_data:
   kafka3_data:
+  kvrocks_data:
 
 networks:
   ticketing-network:

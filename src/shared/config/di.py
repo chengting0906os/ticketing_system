@@ -15,13 +15,15 @@ from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMq
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
 from src.seat_reservation.infra.seat_state_handler_impl import SeatStateHandlerImpl
+from src.seat_reservation.infra.seat_state_store import SeatStateStore
 from src.seat_reservation.port.seat_reservation_mq_gateway import SeatReservationGateway
 from src.seat_reservation.use_case.reserve_seats_use_case import ReserveSeatsUseCase
 from src.shared.config.core_setting import Settings
 from src.shared.config.db_setting import Database
-from src.shared.message_queue.kafka_config_service import KafkaConfigService
-from src.shared.message_queue.section_based_partition_strategy import SectionBasedPartitionStrategy
-from src.shared.message_queue.unified_mq_publisher import QuixStreamMqPublisher
+from src.shared_infra.message_queue.kafka_config_service import KafkaConfigService
+from src.shared_infra.message_queue.section_based_partition_strategy import (
+    SectionBasedPartitionStrategy,
+)
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared_kernel.user.infra.user_query_repo_impl import UserQueryRepoImpl
 from src.shared_kernel.user.infra.user_repo_impl import UserRepoImpl
@@ -37,7 +39,6 @@ class Container(containers.DeclarativeContainer):
 
     # Infrastructure services
     kafka_service = providers.Singleton(KafkaConfigService)
-    mq_publisher = providers.Singleton(QuixStreamMqPublisher)
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
     # Repositories - now properly managed with session factory
@@ -64,9 +65,15 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     auth_service = providers.Singleton(AuthService)
 
+    # Seat Reservation Infrastructure
+    seat_state_store = providers.Singleton(SeatStateStore)
+
     # Seat Reservation Domain and Use Cases
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
-    seat_state_handler = providers.Factory(SeatStateHandlerImpl)
+    seat_state_handler = providers.Factory(
+        SeatStateHandlerImpl,
+        seat_state_store=seat_state_store,
+    )
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_selection_domain=seat_selection_domain,
@@ -96,8 +103,8 @@ container = Container()
 def setup():
     container.kafka_service()
     container.config_service()
-    container.mq_publisher()
     container.partition_strategy()
+    container.seat_state_store()
 
 
 def cleanup():

@@ -7,15 +7,15 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.domain.booking_domain_events import BookingPaidEvent
 from src.booking.domain.booking_entity import BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
-from src.booking.domain.booking_domain_events import BookingPaidEvent
 from src.shared.config.db_setting import get_async_session
 from src.shared.config.di import Container
 from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.unified_mq_publisher import publish_domain_event
-from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.shared_infra.message_queue.event_publisher import publish_domain_event
+from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 if TYPE_CHECKING:

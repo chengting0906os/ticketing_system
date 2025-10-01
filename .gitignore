@@ -47,3 +47,4 @@ cookies.txt
 rocksdb_state/
 rocksdb_state_*/
 knowledge_base/
+kvrocks_state/

@@ -5,97 +5,179 @@ Booking MQ Consumer - Order Status Manager
 職責：
 - 監聽來自 seat_reservation 的狀態更新事件
 - 處理 pending_payment 和 failed 狀態更新
-- 管理訂單生命週期和 Redis TTL
+- 管理訂單生命週期
+
+架構：
+- 使用 Quix Streams 無狀態 consumer
+- 直接處理 2 個 topics (pending_payment, failed)
+- 透過 BookingMqGateway 處理業務邏輯
 """
 
-import asyncio
 import os
 from typing import Optional
 
 import anyio
+from quixstreams import Application
 
 from src.booking.port.booking_mq_gateway import BookingMqGateway
+from src.shared.config.core_setting import settings
 from src.shared.logging.loguru_io import Logger
-from src.shared.message_queue.kafka_constant_builder import (
+from src.shared_infra.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
-from src.shared.message_queue.unified_mq_consumer import UnifiedEventConsumer
+
+# Kafka 配置
+KAFKA_COMMIT_INTERVAL = 0.5
+KAFKA_RETRIES = 3
 
 
 class BookingMqConsumer:
-    """處理訂單狀態更新的 MQ 消費者"""
+    """
+    處理訂單狀態更新的 MQ 消費者
+
+    與其他 consumer 一樣使用 Quix Streams，保持架構一致性
+    """
 
     def __init__(self):
-        self.consumer: Optional[UnifiedEventConsumer] = None
+        self.kafka_app: Optional[Application] = None
+        self.gateway: Optional[BookingMqGateway] = None
         self.running = False
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        # 使用統一的 KafkaConsumerGroupBuilder 而非舊的命名方式
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID', KafkaConsumerGroupBuilder.booking_service(event_id=self.event_id)
         )
         self.instance_id = os.getenv('CONSUMER_INSTANCE_ID', '1')
 
+    def _create_kafka_app(self) -> Application:
+        """
+        創建 Kafka 應用 (無狀態)
+
+        與 SeatReservation 類似，不需要 stateful processing
+        """
+        app = Application(
+            broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
+            consumer_group=self.consumer_group_id,
+            commit_interval=KAFKA_COMMIT_INTERVAL,
+            producer_extra_config={
+                'enable.idempotence': True,
+                'acks': 'all',
+                'retries': KAFKA_RETRIES,
+            },
+            consumer_extra_config={
+                'enable.auto.commit': False,
+                'auto.offset.reset': 'earliest',
+            },
+        )
+
+        Logger.base.info('📚 [BOOKING] Created Kafka app (stateless)')
+        Logger.base.info(f'👥 Consumer group: {self.consumer_group_id}')
+        return app
+
+    def _setup_kafka_processing(self):
+        """設置 Kafka processing - 處理 2 個 status update topics"""
+        if not self.kafka_app:
+            self.kafka_app = self._create_kafka_app()
+
+        # Topic 1: Pending Payment 狀態更新 (from seat_reservation)
+        pending_payment_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.update_booking_status_to_pending_payment(event_id=self.event_id),
+            key_serializer='str',
+            value_serializer='json',
+        )
+
+        # Topic 2: Failed 狀態更新 (from seat_reservation)
+        failed_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
+            key_serializer='str',
+            value_serializer='json',
+        )
+
+        # 設置無狀態處理
+        self.kafka_app.dataframe(topic=pending_payment_topic).apply(
+            self._process_pending_payment, stateful=False
+        )
+
+        self.kafka_app.dataframe(topic=failed_topic).apply(self._process_failed, stateful=False)
+
+        Logger.base.info('✅ [BOOKING] All 2 status update streams configured')
+
+    @Logger.io
+    def _process_pending_payment(self, message):
+        """
+        處理 pending_payment 狀態更新
+
+        透過 gateway 處理業務邏輯
+        """
+        try:
+            Logger.base.info(f'💰 [BOOKING] Processing pending_payment: {message}')
+
+            # 使用 anyio 執行 async gateway
+            result = anyio.from_thread.run(self.gateway.handle_event, event_data=message)
+
+            Logger.base.info(f'✅ [BOOKING] Pending payment processed: {result}')
+            return {'success': True, 'result': result}
+
+        except Exception as e:
+            Logger.base.error(f'❌ [BOOKING] Failed to process pending_payment: {e}')
+            return {'success': False, 'error': str(e)}
+
+    @Logger.io
+    def _process_failed(self, message):
+        """
+        處理 failed 狀態更新
+
+        透過 gateway 處理業務邏輯
+        """
+        try:
+            Logger.base.info(f'❌ [BOOKING] Processing failed status: {message}')
+
+            # 使用 anyio 執行 async gateway
+            result = anyio.from_thread.run(self.gateway.handle_event, event_data=message)
+
+            Logger.base.info(f'✅ [BOOKING] Failed status processed: {result}')
+            return {'success': True, 'result': result}
+
+        except Exception as e:
+            Logger.base.error(f'❌ [BOOKING] Failed to process failed status: {e}')
+            return {'success': False, 'error': str(e)}
+
     async def start(self):
         """啟動訂單狀態管理消費者"""
         try:
-            # 創建訂單狀態處理器
-            booking_gateway = BookingMqGateway()
+            # 創建 Gateway
+            self.gateway = BookingMqGateway()
 
-            # 監聽來自 seat_reservation 的狀態更新 topics
-            topics = [
-                KafkaTopicBuilder.update_booking_status_to_pending_payment(event_id=self.event_id),
-                KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
-            ]
+            # 設置 Kafka processing
+            self._setup_kafka_processing()
 
-            # 創建消費者標籤
             consumer_tag = f'[BOOKING-{self.instance_id}]'
 
             Logger.base.info(f'📚 {consumer_tag} Starting booking status manager')
             Logger.base.info(f'📊 Event ID: {self.event_id}, Group: {self.consumer_group_id}')
-            Logger.base.info(f'📡 {consumer_tag} Listening topics: {topics}')
-
-            # 創建統一消費者
-            self.consumer = UnifiedEventConsumer(
-                topics=topics,
-                consumer_group_id=self.consumer_group_id,
-                consumer_tag=consumer_tag,
-            )
-
-            # 註冊狀態更新處理器
-            self.consumer.register_handler(booking_gateway)
 
             self.running = True
 
-            Logger.base.info(f'🚀 {consumer_tag} Attempting to connect to Kafka...')
-            Logger.base.info(f'🔍 {consumer_tag} Consumer state: {self.consumer is not None}')
-            Logger.base.info(f'🔍 {consumer_tag} Topics: {topics}')
-            Logger.base.info(f'🔍 {consumer_tag} Group ID: {self.consumer_group_id}')
-
-            # 等待一下確保 Kafka 準備好
-            await asyncio.sleep(1)
-
-            try:
-                Logger.base.info(f'🔗 {consumer_tag} Starting UnifiedEventConsumer...')
-                await self.consumer.start()
-                Logger.base.info(f'✅ {consumer_tag} Successfully connected to Kafka!')
-            except Exception as kafka_error:
-                Logger.base.error(f'💥 {consumer_tag} Kafka connection failed: {kafka_error}')
-                Logger.base.error(f'💥 {consumer_tag} Error type: {type(kafka_error).__name__}')
-                raise
+            # 啟動 Kafka processing
+            if self.kafka_app:
+                self.kafka_app.run()
 
         except Exception as e:
             Logger.base.error(f'❌ Booking consumer failed: {e}')
-            # 記錄詳細錯誤但不拋出異常，讓系統繼續運行
-            Logger.base.info('📋 Booking consumer will retry when topics become available')
-            self.running = False
-            # 不拋出異常，允許系統繼續運行其他消費者
+            raise
 
     async def stop(self):
         """停止訂單狀態管理消費者"""
-        if self.consumer and self.running:
-            await self.consumer.stop()
+        if self.running:
             self.running = False
+
+            if self.kafka_app:
+                try:
+                    Logger.base.info('🛑 Stopping Kafka application...')
+                    self.kafka_app = None
+                except Exception as e:
+                    Logger.base.warning(f'⚠️ Error stopping Kafka app: {e}')
+
             Logger.base.info('🛑 Booking consumer stopped')
 
 

@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     RESET_PASSWORD_TOKEN_SECRET: SecretStr
     VERIFICATION_TOKEN_SECRET: SecretStr
 
+    # Kvrocks Configuration (Redis protocol + Kvrocks storage)
+    KVROCKS_HOST: str = 'localhost'
+    KVROCKS_PORT: int = 6666
+    KVROCKS_DB: int = 0
+    KVROCKS_PASSWORD: str = ''
+    REDIS_DECODE_RESPONSES: bool = True  # Kvrocks 也用 Redis 協議
+
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
     KAFKA_SECURITY_PROTOCOL: str = 'PLAINTEXT'

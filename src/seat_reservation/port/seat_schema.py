@@ -15,6 +15,19 @@ class SeatResponse(BaseModel):
     seat_identifier: str
 
 
+class SectionStatsResponse(BaseModel):
+    """Section 統計響應"""
+
+    section_id: str
+    total: int
+    available: int
+    reserved: int
+    sold: int
+    event_id: int
+    section: str
+    subsection: int
+
+
 class ListSeatsBySectionResponse(BaseModel):
     seats: List[SeatResponse]
     total_count: int

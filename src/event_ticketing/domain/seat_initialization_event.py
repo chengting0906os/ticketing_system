@@ -1,11 +1,11 @@
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class SeatInitializationEvent:
     """
     座位初始化事件
-    用於向 RocksDB 發送座位初始化指令
+    用於向 Kvrocks 發送座位初始化指令
     """
 
     def __init__(

@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """
 Complete System Cleanup Script
-完整系統清理腳本 - 清除所有 Kafka topics, consumer groups 和 RocksDB 狀態
+完整系統清理腳本 - 清除所有 Kafka topics, consumer groups 和 Kvrocks 狀態
 
 清理內容:
 - Kafka Topics: 所有 event-id-* topics
 - Consumer Groups: 所有 consumer groups
-- RocksDB State: seat_reservation 和 event_ticketing 的狀態目錄
+- Kvrocks State: seat_reservation 和 event_ticketing 的狀態目錄
 """
 
 import subprocess
@@ -23,7 +23,7 @@ class SystemCleaner:
         self.kafka_container = "kafka1"
         self.bootstrap_server = "kafka1:29092"
         self.project_root = Path(__file__).parent.parent
-        self.rocksdb_state_dir = self.project_root / 'rocksdb_state'
+        self.kvrocks_state_dir = self.project_root / 'kvrocks_state'
 
     def run_command(self, command: list, description: str = "") -> bool:
         """執行命令"""
@@ -169,24 +169,24 @@ class SystemCleaner:
         except Exception as e:
             Logger.base.error(f"❌ Failed to clean consumer groups: {e}")
 
-    def clean_rocksdb_state(self):
-        """清理 RocksDB 狀態目錄 (seat_reservation + event_ticketing)"""
-        Logger.base.info("💾 ==================== CLEANING ROCKSDB STATE ====================")
+    def clean_kvrocks_state(self):
+        """清理 Kvrocks 狀態目錄 (seat_reservation + event_ticketing)"""
+        Logger.base.info("💾 ==================== CLEANING KVROCKS STATE ====================")
 
         try:
-            if self.rocksdb_state_dir.exists():
+            if self.kvrocks_state_dir.exists():
                 # 列出將被清理的服務狀態
-                subdirs = [d.name for d in self.rocksdb_state_dir.iterdir() if d.is_dir()]
-                Logger.base.info(f"📂 Found RocksDB state directories: {subdirs}")
+                subdirs = [d.name for d in self.kvrocks_state_dir.iterdir() if d.is_dir()]
+                Logger.base.info(f"📂 Found Kvrocks state directories: {subdirs}")
 
-                Logger.base.info(f"🗑️ Removing RocksDB state directory: {self.rocksdb_state_dir}")
-                shutil.rmtree(self.rocksdb_state_dir)
-                Logger.base.info("✅ RocksDB state directory removed (both seat_reservation and event_ticketing)")
+                Logger.base.info(f"🗑️ Removing Kvrocks state directory: {self.kvrocks_state_dir}")
+                shutil.rmtree(self.kvrocks_state_dir)
+                Logger.base.info("✅ Kvrocks state directory removed (both seat_reservation and event_ticketing)")
             else:
-                Logger.base.info("ℹ️ RocksDB state directory does not exist")
+                Logger.base.info("ℹ️ Kvrocks state directory does not exist")
 
         except Exception as e:
-            Logger.base.error(f"❌ Failed to clean RocksDB state: {e}")
+            Logger.base.error(f"❌ Failed to clean Kvrocks state: {e}")
 
     def verify_cleanup(self):
         """驗證清理結果"""
@@ -229,11 +229,11 @@ class SystemCleaner:
         except Exception as e:
             Logger.base.error(f"❌ Failed to verify consumer groups: {e}")
 
-        # 檢查 RocksDB 狀態
-        if self.rocksdb_state_dir.exists():
-            Logger.base.warning(f"⚠️ RocksDB state directory still exists: {self.rocksdb_state_dir}")
+        # 檢查 Kvrocks 狀態
+        if self.kvrocks_state_dir.exists():
+            Logger.base.warning(f"⚠️ Kvrocks state directory still exists: {self.kvrocks_state_dir}")
         else:
-            Logger.base.info("✅ RocksDB state directory removed")
+            Logger.base.info("✅ Kvrocks state directory removed")
 
     def clean_all(self):
         """執行完整清理"""
@@ -255,8 +255,8 @@ class SystemCleaner:
         # 步驟 3: 清理 consumer groups (支援重試)
         self.clean_consumer_groups()
 
-        # 步驟 4: 清理 RocksDB 狀態
-        self.clean_rocksdb_state()
+        # 步驟 4: 清理 Kvrocks 狀態
+        self.clean_kvrocks_state()
 
         # 步驟 5: 驗證清理結果
         self.verify_cleanup()

@@ -7,11 +7,11 @@ Database Reset Script
 1. Drop & Recreate Database - 完全清空資料庫
 2. Run Alembic Migrations - 建立最新的 schema
 3. Create Initial Users - 創建測試用 seller 和 buyer
-4. Create Initial Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation RocksDB)
+4. Create Initial Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation Kvrocks)
 
 注意：
 - 此腳本會觸發座位初始化消息，需要 seat_reservation_mq_consumer 運行中
-- 座位資料會存入 seat_reservation 的 RocksDB (不是 PostgreSQL)
+- 座位資料會存入 seat_reservation 的 Kvrocks (不是 PostgreSQL)
 - 票券資料會存入 event_ticketing 的 PostgreSQL
 """
 import subprocess
@@ -35,7 +35,7 @@ from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared.config.core_setting import settings
-from src.shared.message_queue.kafka_config_service import KafkaConfigService
+from src.shared_infra.message_queue.kafka_config_service import KafkaConfigService
 from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
 from contextlib import asynccontextmanager
 
@@ -223,8 +223,6 @@ async def create_init_users_in_session(session):
 
 async def create_init_event_in_session(session, seller_id: int):
         try:
-            print("💫 Creating initial event through CreateEventUseCase...")
-
             # 調試：確認用戶是否存在於數據庫中
             from sqlalchemy import text
             result = await session.execute(text(f'SELECT id, email FROM "user" WHERE id = {seller_id}'))
@@ -252,7 +250,7 @@ async def create_init_event_in_session(session, seller_id: int):
             # 座位配置選擇
             # SEATING_CONFIG_30: 開發測試用（30 個座位，快速初始化）
             # SEATING_CONFIG_50000: 生產環境用（50,000 個座位，完整壓力測試）
-            seating_config = SEATING_CONFIG_30  # 開發模式預設使用小規模配置
+            seating_config = SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
 
             # Calculate total seats from nested structure: sections → subsections → rows × seats_per_row
             total_seats = sum(
@@ -260,10 +258,9 @@ async def create_init_event_in_session(session, seller_id: int):
                 for section in seating_config['sections']
                 for subsection in section['subsections']
             )
-            print(f"🎫 Creating event with {total_seats} seats...")
 
             # 使用 UseCase 的 create_event_and_tickets 方法
-            # 這會發送座位初始化消息到 Kafka → seat_reservation_mq_consumer → RocksDB
+            # 這會發送座位初始化消息到 Kafka → seat_reservation_mq_consumer → Kvrocks
             event_aggregate = await create_event_use_case.create_event_and_tickets(
                 name="Concert Event",
                 description="Amazing live music performance",
@@ -321,12 +318,38 @@ async def verify_data():
             print(f"Failed to verify data: {e}")
 
 
+async def flush_kvrocks():
+    """清空 Kvrocks 所有資料"""
+    try:
+        import redis.asyncio as aioredis
+
+        print("🗑️  Flushing Kvrocks...")
+        client = await aioredis.from_url(
+            f"redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}",
+            password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
+            decode_responses=True,
+        )
+
+        # 清空所有資料
+        await client.flushdb()
+        await client.close()
+
+        print("✅ Kvrocks flushed successfully!")
+
+    except Exception as e:
+        print(f"⚠️  Failed to flush Kvrocks (non-critical): {e}")
+        print("    Kvrocks may not be running, continuing anyway...")
+
+
 async def main():
     print("Starting database reset...")
     print("=" * 50)
 
     try:
         await drop_and_recreate_database()
+        print()
+
+        await flush_kvrocks()
         print()
 
         # 使用單一 session 來處理所有數據操作

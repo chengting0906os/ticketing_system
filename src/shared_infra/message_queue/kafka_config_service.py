@@ -39,7 +39,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
 
         # Consumer 配置定義 - 1-2-1 架構
         # booking: 1 consumer (輕量級訂單處理)
-        # seat_reservation: 2 consumers (高負載座位選擇 + RocksDB 操作)
+        # seat_reservation: 2 consumers (高負載座位選擇 + Kvrocks 操作)
         # event_ticketing: 1 consumer (狀態管理)
         self.consumer_configs = [
             ConsumerConfig(
@@ -52,7 +52,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
                 name='seat_reservation_mq_consumer',
                 module='src.seat_reservation.infra.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
-                instance_count=2,
+                instance_count=1,
             ),
             ConsumerConfig(
                 name='event_ticketing_mq_consumer',

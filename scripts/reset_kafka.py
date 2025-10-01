@@ -8,7 +8,7 @@ Kafka Reset Script
 - 刪除非 event-id-1 的 consumer groups
 - 保護 event-id-1 相關資源（用於開發環境）
 
-注意：此腳本不會影響 RocksDB 狀態（seat_reservation 和 event_ticketing）
+注意：此腳本不會影響 Kvrocks 狀態（seat_reservation 和 event_ticketing）
 """
 
 import subprocess

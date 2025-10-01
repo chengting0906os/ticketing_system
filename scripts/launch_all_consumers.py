@@ -13,8 +13,8 @@ from sqlalchemy import select
 import signal
 from src.shared.config.db_setting import get_async_session
 from src.event_ticketing.infra.event_model import EventModel
-from src.shared.message_queue.kafka_config_service import KafkaConfigService
-from src.shared.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
+from src.shared_infra.message_queue.kafka_config_service import KafkaConfigService
+from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
 from src.shared.logging.loguru_io import Logger
 
 
@@ -238,10 +238,9 @@ class EventServiceLauncher:
     async def _start_consumers(self, event: EventModel) -> None:
         """啟動所有 consumers 並創建 log 串流任務"""
         consumers = [
-            # 1:2:1 架構 - 開發模式也可以測試真實的負載分配
+            # 1:1:1 架構 - 單個 Seat Reservation instance 處理所有 partitions
             ("📚 Booking Service Consumer", "src.booking.infra.booking_mq_consumer", "booking-service"),
-            ("🪑 Seat Reservation Consumer #1", "src.seat_reservation.infra.seat_reservation_mq_consumer", "seat-reservation-1"),
-            ("🪑 Seat Reservation Consumer #2", "src.seat_reservation.infra.seat_reservation_mq_consumer", "seat-reservation-2"),
+            ("🪑 Seat Reservation Consumer", "src.seat_reservation.infra.seat_reservation_mq_consumer", "seat-reservation-1"),
             ("🎫 Event Ticketing Consumer", "src.event_ticketing.infra.event_ticketing_mq_consumer", "event-ticketing-service")
         ]
 

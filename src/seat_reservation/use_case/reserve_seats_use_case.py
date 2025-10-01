@@ -1,6 +1,6 @@
 """
 Reserve Seats Use Case
-座位預訂用例 - 基於 RocksDB 狀態管理的無鎖實現
+座位預訂用例 - 基於 Kvrocks 狀態管理的無鎖實現
 """
 
 from dataclasses import dataclass
@@ -85,10 +85,10 @@ class ReserveSeatsUseCase:
 
     這個 Use Case 負責：
     1. 使用領域服務選擇座位
-    2. 直接操作 RocksDB 狀態進行預訂
+    2. 直接操作 Kvrocks 狀態進行預訂
     3. 處理預訂結果並回傳
 
-    注意：直接使用 RocksDB 狀態，不通過 Kafka 命令！
+    注意：直接使用 Kvrocks 狀態，不通過 Kafka 命令！
     """
 
     def __init__(
@@ -106,7 +106,7 @@ class ReserveSeatsUseCase:
         1. 驗證請求
         2. 獲取可用座位（從某處...待實現）
         3. 使用領域服務選擇座位
-        4. 發送預訂命令到 RocksDB（通過 Kafka）
+        4. 發送預訂命令到 Kvrocks（通過 Kafka）
         5. 等待並處理結果
 
         Args:
@@ -127,7 +127,7 @@ class ReserveSeatsUseCase:
             # 2. 轉換為領域請求
             selection_request = self._to_domain_request(request)
 
-            # 3. 獲取可用座位（TODO: 這裡需要從 RocksDB 或 PostgreSQL 獲取）
+            # 3. 獲取可用座位（TODO: 這裡需要從 Kvrocks 或 PostgreSQL 獲取）
             available_seats = await self._get_available_seats(request.event_id, request)
 
             if not available_seats:
@@ -149,7 +149,7 @@ class ReserveSeatsUseCase:
                     event_id=request.event_id,
                 )
 
-            # 5. 直接預訂座位到 RocksDB
+            # 5. 直接預訂座位到 Kvrocks
             reservation_success = await self._reserve_seats_directly(
                 booking_id=request.booking_id,
                 buyer_id=request.buyer_id,
@@ -174,7 +174,7 @@ class ReserveSeatsUseCase:
                 return ReservationResult(
                     success=False,
                     booking_id=request.booking_id,
-                    error_message='Failed to reserve seats directly in RocksDB',
+                    error_message='Failed to reserve seats directly in Kvrocks',
                     event_id=request.event_id,
                 )
 
@@ -232,7 +232,7 @@ class ReserveSeatsUseCase:
         self, event_id: int, request: ReservationRequest
     ) -> List[AvailableSeat]:
         """
-        獲取可用座位 - 從 RocksDB 狀態查詢
+        獲取可用座位 - 從 Kvrocks 狀態查詢
         """
         # 使用 SeatStateHandler 獲取可用座位
         if request.section_filter and request.subsection_filter:
@@ -305,7 +305,7 @@ class ReserveSeatsUseCase:
         self, booking_id: int, buyer_id: int, selected_seats: List[str], event_id: int
     ) -> bool:
         """
-        直接預訂座位 - 使用 RocksDB 狀態處理器
+        直接預訂座位 - 使用 Kvrocks 狀態處理器
         """
         Logger.base.info(f'📤 [RESERVE] Directly reserving seats: {selected_seats}')
 
@@ -336,7 +336,7 @@ class ReserveSeatsUseCase:
                 return False
 
             Logger.base.info(
-                f'✅ [RESERVE] Successfully reserved {len(successful_reservations)} seats directly in RocksDB'
+                f'✅ [RESERVE] Successfully reserved {len(successful_reservations)} seats directly in Kvrocks'
             )
             return True
 
