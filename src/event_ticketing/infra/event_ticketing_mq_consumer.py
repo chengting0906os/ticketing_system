@@ -25,13 +25,14 @@ import anyio
 from quixstreams import Application
 from quixstreams.state.rocksdb import RocksDBOptions
 
-from src.shared.config.core_setting import settings
-from src.shared.config.db_setting import get_async_session
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.kafka_constant_builder import (
+from src.platform.config.core_setting import settings
+from src.platform.config.db_setting import get_async_session
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+
 
 # 狀態轉換配置
 STATE_TRANSITION_RULES = {

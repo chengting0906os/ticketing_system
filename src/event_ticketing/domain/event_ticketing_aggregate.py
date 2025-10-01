@@ -19,7 +19,7 @@ from typing import Dict, List, Optional
 
 import attrs
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.enum.ticket_status import TicketStatus
 from src.shared_kernel.domain.event_status import EventStatus
 

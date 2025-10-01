@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_events import BookingCreated
-from src.shared.config.db_setting import get_async_session
-from src.shared.config.di import Container
-from src.shared.exception.exceptions import DomainError
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.event_publisher import publish_domain_event
-from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.platform.config.db_setting import get_async_session
+from src.platform.config.di import Container
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.event_publisher import publish_domain_event
+from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 if TYPE_CHECKING:

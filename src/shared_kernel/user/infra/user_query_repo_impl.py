@@ -1,10 +1,10 @@
-from typing import Optional, Callable, AsyncContextManager
+from typing import AsyncContextManager, Callable, Optional
 
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.domain.user_query_repo import UserQueryRepo
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher

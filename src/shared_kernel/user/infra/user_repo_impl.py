@@ -4,7 +4,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher

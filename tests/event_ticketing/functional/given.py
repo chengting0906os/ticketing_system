@@ -3,7 +3,7 @@ import json
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import (
+from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
 from tests.shared.utils import create_user, extract_table_data, login_user

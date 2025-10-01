@@ -14,13 +14,13 @@ from datetime import datetime, timezone
 import json
 from typing import Any, Dict, List, Optional
 
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.event_publisher import publish_domain_event
+from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.seat_reservation.use_case.reserve_seats_use_case import (
     ReservationRequest,
     ReserveSeatsUseCase,
 )
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.event_publisher import publish_domain_event
-from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 @dataclass

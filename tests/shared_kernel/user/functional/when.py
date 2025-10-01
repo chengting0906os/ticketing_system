@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 
-from src.shared.constant.route_constant import USER_LOGIN, USER_CREATE
+from src.platform.constant.route_constant import USER_CREATE, USER_LOGIN
 from tests.shared.utils import extract_table_data
 
 

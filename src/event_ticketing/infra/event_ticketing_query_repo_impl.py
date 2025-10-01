@@ -5,21 +5,22 @@ Event Ticketing Query Repository Implementation - CQRS Read Side
 提供豐富的查詢接口，支持多種查詢視角和性能優化
 """
 
-from typing import List, Optional, Callable, AsyncContextManager
+from typing import AsyncContextManager, Callable, List, Optional
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from src.event_ticketing.domain.event_ticketing_aggregate import (
-    EventTicketingAggregate,
     Event,
+    EventTicketingAggregate,
     Ticket,
     TicketStatus,
 )
-from src.shared_kernel.domain.event_status import EventStatus
 from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
 from src.event_ticketing.infra.event_model import EventModel
 from src.event_ticketing.infra.ticket_model import TicketModel
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
+from src.shared_kernel.domain.event_status import EventStatus
 
 
 class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):

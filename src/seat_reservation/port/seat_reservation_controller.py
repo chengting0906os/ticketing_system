@@ -10,15 +10,15 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from src.platform.config.core_setting import settings
+from src.platform.config.db_setting import get_async_session
+from src.platform.logging.loguru_io import Logger
+from src.platform.redis.redis_client import kvrocks_stats_client
 from src.seat_reservation.port.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )
 from src.seat_reservation.use_case.get_seat_availability_use_case import GetSeatAvailabilityUseCase
-from src.shared.config.core_setting import settings
-from src.shared.config.db_setting import get_async_session
-from src.shared.logging.loguru_io import Logger
-from src.shared.redis.redis_client import kvrocks_stats_client
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import require_buyer_or_seller
 
@@ -281,7 +281,7 @@ async def list_seats_by_section_subsection(
     3. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
     4. 高併發友好（50,000+ QPS）
     """
-    from src.shared.redis.redis_client import kvrocks_client
+    from src.platform.redis.redis_client import kvrocks_client
 
     section_id = f'{section}-{subsection}'
     client = await kvrocks_client.connect()

@@ -23,14 +23,15 @@ import anyio
 from quixstreams import Application
 import redis
 
-from src.seat_reservation.infra.seat_state_store import seat_state_store
-from src.shared.config.core_setting import settings
-from src.shared.config.di import container
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.kafka_constant_builder import (
+from src.platform.config.core_setting import settings
+from src.platform.config.di import container
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+from src.seat_reservation.infra.seat_state_store import seat_state_store
+
 
 # Kafka 配置
 KAFKA_COMMIT_INTERVAL = 0.5

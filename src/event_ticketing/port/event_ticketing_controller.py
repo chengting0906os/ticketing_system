@@ -9,8 +9,8 @@ from src.event_ticketing.port.event_schema import (
 from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
 from src.event_ticketing.use_case.query.get_event_use_case import GetEventUseCase
 from src.event_ticketing.use_case.query.list_events_use_case import ListEventsUseCase
-from src.shared.exception.exceptions import NotFoundError
-from src.shared.logging.loguru_io import Logger
+from src.platform.exception.exceptions import NotFoundError
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import require_seller
 

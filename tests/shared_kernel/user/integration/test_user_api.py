@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from src.shared.constant.route_constant import USER_CREATE
+from src.platform.constant.route_constant import USER_CREATE
 from tests.util_constant import DEFAULT_PASSWORD, TEST_EMAIL
 
 

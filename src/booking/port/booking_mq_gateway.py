@@ -8,8 +8,8 @@ from typing import Any, Dict, List
 from src.booking.use_case.command.update_booking_status_to_pending_payment_use_case import (
     UpdateBookingToPendingPaymentUseCase,
 )
-from src.shared.config.di import container
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.di import container
+from src.platform.logging.loguru_io import Logger
 
 
 class BookingMqGateway:

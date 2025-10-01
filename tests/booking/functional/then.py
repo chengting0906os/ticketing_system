@@ -3,11 +3,11 @@ from typing import Any, Dict, List
 from fastapi.testclient import TestClient
 from pytest_bdd import then
 
-from src.shared.constant.route_constant import (
-    USER_LOGIN,
+from src.platform.constant.route_constant import (
     BOOKING_GET,
     EVENT_GET,
     EVENT_TICKETS_BY_SUBSECTION,
+    USER_LOGIN,
 )
 from tests.shared.then import get_state_with_response
 from tests.shared.utils import (

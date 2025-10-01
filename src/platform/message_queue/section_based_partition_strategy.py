@@ -12,7 +12,7 @@ Section-Based Partition Strategy
 import hashlib
 from typing import Dict
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 
 from .kafka_constant_builder import PartitionKeyBuilder
 

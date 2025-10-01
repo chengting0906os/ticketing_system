@@ -5,8 +5,7 @@ import bcrypt
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import (
-    USER_LOGIN,
+from src.platform.constant.route_constant import (
     BOOKING_BASE,
     BOOKING_CANCEL,
     BOOKING_GET,
@@ -14,6 +13,7 @@ from src.shared.constant.route_constant import (
     EVENT_BASE,
     EVENT_TICKETS_BY_SUBSECTION,
     EVENT_TICKETS_CREATE,
+    USER_LOGIN,
 )
 from tests.event_test_constants import (
     DEFAULT_SEATING_CONFIG,

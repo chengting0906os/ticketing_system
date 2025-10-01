@@ -20,12 +20,13 @@ import anyio
 from quixstreams import Application
 
 from src.booking.port.booking_mq_gateway import BookingMqGateway
-from src.shared.config.core_setting import settings
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.kafka_constant_builder import (
+from src.platform.config.core_setting import settings
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+
 
 # Kafka 配置
 KAFKA_COMMIT_INTERVAL = 0.5

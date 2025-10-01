@@ -1,7 +1,7 @@
 import bcrypt
 from pydantic import SecretStr
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.services.password_hasher import PasswordHasher
 
 

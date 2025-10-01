@@ -11,11 +11,11 @@ from typing import List, Optional, Dict
 
 from sqlalchemy import select
 import signal
-from src.shared.config.db_setting import get_async_session
+from src.platform.config.db_setting import get_async_session
 from src.event_ticketing.infra.event_model import EventModel
-from src.shared_infra.message_queue.kafka_config_service import KafkaConfigService
-from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
-from src.shared.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_config_service import KafkaConfigService
+from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
+from src.platform.logging.loguru_io import Logger
 
 
 class EventServiceLauncher:

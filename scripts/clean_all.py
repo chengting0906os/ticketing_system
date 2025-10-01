@@ -13,7 +13,7 @@ import subprocess
 import os
 import shutil
 from pathlib import Path
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 
 
 class SystemCleaner:

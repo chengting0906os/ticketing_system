@@ -4,7 +4,7 @@ from re import sub
 from time import time
 from typing import Any, Callable, Optional
 
-from src.shared.logging.loguru_io_config import (
+from src.platform.logging.loguru_io_config import (
     DEPTH_LINE,
     SENSITIVE_KEYWORDS,
     GeneratorMethod,

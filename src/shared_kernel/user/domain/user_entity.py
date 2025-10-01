@@ -5,7 +5,7 @@ from typing import Optional
 import attrs
 from pydantic import SecretStr
 
-from src.shared.exception.exceptions import (
+from src.platform.exception.exceptions import (
     AuthenticationError,
     DomainError,
     ForbiddenError,
@@ -43,7 +43,7 @@ class UserEntity:
             raise AuthenticationError('User not found')
 
     def validate_active(self) -> None:
-        from src.shared.exception.exceptions import ForbiddenError
+        from src.platform.exception.exceptions import ForbiddenError
 
         if not self.is_active:
             raise ForbiddenError('User is inactive')

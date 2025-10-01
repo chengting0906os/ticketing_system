@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, AsyncContextManager
+from typing import TYPE_CHECKING, AsyncContextManager, Callable
 
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.infra.booking_model import BookingModel
-from src.shared.exception.exceptions import DomainError, ForbiddenError, NotFoundError
-from src.shared.logging.loguru_io import Logger
+from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
+from src.platform.logging.loguru_io import Logger
 
 
 if TYPE_CHECKING:

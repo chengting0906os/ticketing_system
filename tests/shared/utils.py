@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
-from src.shared.constant.route_constant import USER_LOGIN, EVENT_BASE, USER_CREATE
+from src.platform.constant.route_constant import EVENT_BASE, USER_CREATE, USER_LOGIN
 from tests.event_test_constants import (
     DEFAULT_SEATING_CONFIG,
     DEFAULT_SEATING_CONFIG_JSON,

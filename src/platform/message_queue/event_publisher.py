@@ -9,8 +9,8 @@ from typing import Literal
 
 from quixstreams import Application
 
-from src.shared.config.core_setting import settings
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.core_setting import settings
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain import MqDomainEvent
 
 

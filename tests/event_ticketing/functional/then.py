@@ -112,7 +112,7 @@ def verify_specific_events(step, event_state):
 @then('tickets should be auto-created with:')
 def verify_tickets_auto_created(step, client, context):
     """Verify that tickets were automatically created after event creation."""
-    from src.shared.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
+    from src.platform.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
 
     expected_data = extract_table_data(step)
 

@@ -6,8 +6,8 @@ Seat State Repository
 
 from typing import Dict, List, Optional, Tuple
 
-from src.shared.logging.loguru_io import Logger
-from src.shared.redis.redis_client import kvrocks_client
+from src.platform.logging.loguru_io import Logger
+from src.platform.redis.redis_client import kvrocks_client
 
 
 # 座位狀態編碼 (2 bits)
@@ -294,7 +294,7 @@ class SeatStateStore:
             是否成功
         """
         try:
-            from src.shared.redis.redis_client import kvrocks_client_sync
+            from src.platform.redis.redis_client import kvrocks_client_sync
 
             client = kvrocks_client_sync.connect()
 

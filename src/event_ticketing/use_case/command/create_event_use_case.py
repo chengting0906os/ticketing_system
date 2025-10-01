@@ -19,12 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
-from src.shared.config.core_setting import settings
-from src.shared.config.db_setting import get_async_session
-from src.shared.config.di import Container
-from src.shared.constant.path import BASE_DIR
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.kafka_constant_builder import (
+from src.platform.config.core_setting import settings
+from src.platform.config.db_setting import get_async_session
+from src.platform.config.di import Container
+from src.platform.constant.path import BASE_DIR
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
     PartitionKeyBuilder,
@@ -243,7 +243,7 @@ class CreateEventUseCase:
             )
 
             # 1. 先寫入 subsection_total metadata 到 Kvrocks
-            from src.shared.redis.redis_client import kvrocks_client_sync
+            from src.platform.redis.redis_client import kvrocks_client_sync
 
             subsection_counts = {}
             for ticket_tuple in ticket_tuples:

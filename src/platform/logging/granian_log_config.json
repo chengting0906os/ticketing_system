@@ -3,7 +3,7 @@
   "disable_existing_loggers": false,
   "handlers": {
     "intercept": {
-      "class": "src.shared.logging.loguru_io_config.InterceptHandler"
+      "class": "src.platform.logging.loguru_io_config.InterceptHandler"
     }
   },
   "root": {

@@ -5,7 +5,7 @@ import sys
 
 from loguru import logger as loguru_logger
 
-from src.shared.constant.path import LOG_DIR
+from src.platform.constant.path import LOG_DIR
 
 
 # Constants and shared variables for LoguruIO

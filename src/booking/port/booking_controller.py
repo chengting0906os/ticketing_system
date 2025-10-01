@@ -18,7 +18,7 @@ from src.booking.use_case.command.update_booking_status_to_cancelled_use_case im
 )
 from src.booking.use_case.query.get_booking_use_case import GetBookingUseCase
 from src.booking.use_case.query.list_bookings_use_case import ListBookingsUseCase
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.use_case.role_auth_service import (
     RoleAuthStrategy,

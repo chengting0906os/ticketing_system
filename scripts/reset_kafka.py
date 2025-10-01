@@ -15,7 +15,7 @@ import subprocess
 import time
 from typing import List
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 
 
 class KafkaReset:

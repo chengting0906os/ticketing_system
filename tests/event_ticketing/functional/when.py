@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 
-from src.shared.constant.route_constant import (
+from src.platform.constant.route_constant import (
     EVENT_BASE,
     EVENT_LIST,
     EVENT_TICKETS_BY_SUBSECTION,

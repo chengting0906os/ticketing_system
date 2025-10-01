@@ -3,13 +3,13 @@ Seat Selection Domain
 純粹的座位選擇領域邏輯 - 不碰任何基礎設施（PostgreSQL, Kafka 等）
 """
 
-from typing import List, Optional, Dict
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
+from typing import Dict, List, Optional
 
-from src.shared.logging.loguru_io import Logger
-from src.shared.exception.exceptions import DomainError
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
 
 
 class SelectionMode(Enum):

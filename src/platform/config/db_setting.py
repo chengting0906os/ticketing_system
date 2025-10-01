@@ -1,12 +1,13 @@
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 import logging
+from typing import AsyncGenerator
 
 import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from src.shared.config.core_setting import settings
+from src.platform.config.core_setting import settings
+
 
 logger = logging.getLogger(__name__)
 

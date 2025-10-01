@@ -6,8 +6,8 @@ from inspect import (
 import types
 from typing import Any, Callable, Optional, TypeVar, cast
 
-from src.shared.logging.generator_wrapper import GeneratorWrapper
-from src.shared.logging.loguru_io_config import (
+from src.platform.logging.generator_wrapper import GeneratorWrapper
+from src.platform.logging.loguru_io_config import (
     ENTRY_ARROW,
     EXIT_ARROW,
     ExtraField,
@@ -15,7 +15,7 @@ from src.shared.logging.loguru_io_config import (
     call_depth_var,
     custom_logger,
 )
-from src.shared.logging.loguru_io_utils import (
+from src.platform.logging.loguru_io_utils import (
     build_call_target_func_path,
     fetch_layer_depth,
     get_chain_start_time,

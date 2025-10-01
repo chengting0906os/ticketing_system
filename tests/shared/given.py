@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
-from src.shared.constant.route_constant import EVENT_CREATE, USER_CREATE
+from src.platform.constant.route_constant import EVENT_CREATE, USER_CREATE
 from tests.event_test_constants import (
     DEFAULT_SEATING_CONFIG_JSON,
     DEFAULT_VENUE_NAME,

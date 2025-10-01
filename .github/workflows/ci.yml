@@ -116,7 +116,7 @@ jobs:
           
       - name: Run database migrations
         run: |
-          cd src/shared/alembic && uv run alembic upgrade head
+          cd src/platform/alembic && uv run alembic upgrade head
           
       - name: Run tests
         run: |

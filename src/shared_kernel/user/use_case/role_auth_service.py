@@ -1,7 +1,7 @@
 from fastapi import Depends
 
-from src.shared.exception.exceptions import ForbiddenError
-from src.shared.logging.loguru_io import Logger
+from src.platform.exception.exceptions import ForbiddenError
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.port.user_controller import get_current_user as get_user_from_controller
 

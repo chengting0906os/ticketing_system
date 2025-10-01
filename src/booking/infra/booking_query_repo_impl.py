@@ -1,4 +1,4 @@
-from typing import List, Callable, AsyncContextManager
+from typing import AsyncContextManager, Callable, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
 from src.booking.infra.booking_model import BookingModel
 from src.event_ticketing.infra.ticket_model import TicketModel
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.enum.ticket_status import TicketStatus
 from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 

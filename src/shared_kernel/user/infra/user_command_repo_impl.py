@@ -1,7 +1,8 @@
-from typing import Callable, AsyncContextManager
+from typing import AsyncContextManager, Callable
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_command_repo import UserCommandRepo
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.user_model import UserModel

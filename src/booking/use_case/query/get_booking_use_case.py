@@ -4,10 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_query_repo import BookingQueryRepo
-from src.shared.config.db_setting import get_async_session
-from src.shared.config.di import Container
-from src.shared.exception.exceptions import NotFoundError
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.db_setting import get_async_session
+from src.platform.config.di import Container
+from src.platform.exception.exceptions import NotFoundError
+from src.platform.logging.loguru_io import Logger
 
 
 class GetBookingUseCase:

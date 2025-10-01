@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import os
 from typing import Dict, List
 
-from src.shared.logging.loguru_io import Logger
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
 
 from .kafka_constant_builder import KafkaTopicBuilder
@@ -275,7 +275,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         """獲取項目根目錄"""
         # 從當前文件位置推算項目根目錄
         current_file = os.path.abspath(__file__)
-        # 從 src/shared/event_bus/kafka_config_service.py 回到根目錄
+        # 從 src/platform/event_bus/kafka_config_service.py 回到根目錄
         return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
 
     def get_partition_key_for_seat(

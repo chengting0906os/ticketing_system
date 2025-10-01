@@ -5,8 +5,8 @@ from fastapi import Depends
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
-from src.shared.config.di import Container
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.di import Container
+from src.platform.logging.loguru_io import Logger
 
 
 class GetEventUseCase:

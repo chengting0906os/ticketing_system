@@ -7,12 +7,12 @@ Kvrocks = Redis 協議 + Kvrocks 存儲引擎（持久化、零丟失）
 from typing import Optional
 
 import redis
-import redis.asyncio as aioredis
 from redis import Redis as SyncRedis
+import redis.asyncio as aioredis
 from redis.asyncio import Redis
 
-from src.shared.config.core_setting import settings
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.core_setting import settings
+from src.platform.logging.loguru_io import Logger
 
 
 class KvrocksClient:
@@ -124,7 +124,7 @@ class KvrocksStatsClient:
             }
 
         except Exception as e:
-            from src.shared.logging.loguru_io import Logger
+            from src.platform.logging.loguru_io import Logger
 
             Logger.base.error(f'❌ [KVROCKS-STATS] Failed to get section {section_id}: {e}')
             return None
@@ -166,7 +166,7 @@ class KvrocksStatsClient:
             return all_stats
 
         except Exception as e:
-            from src.shared.logging.loguru_io import Logger
+            from src.platform.logging.loguru_io import Logger
 
             Logger.base.error(f'❌ [KVROCKS-STATS] Failed to get all sections: {e}')
             return {}

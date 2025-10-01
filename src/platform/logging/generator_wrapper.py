@@ -1,11 +1,11 @@
 from typing import TYPE_CHECKING
 
-from src.shared.logging.loguru_io_config import GeneratorMethod
-from src.shared.logging.loguru_io_utils import reset_call_depth
+from src.platform.logging.loguru_io_config import GeneratorMethod
+from src.platform.logging.loguru_io_utils import reset_call_depth
 
 
 if TYPE_CHECKING:
-    from src.shared.logging.loguru_io import LoguruIO
+    from src.platform.logging.loguru_io import LoguruIO
 
 
 class GeneratorWrapper:

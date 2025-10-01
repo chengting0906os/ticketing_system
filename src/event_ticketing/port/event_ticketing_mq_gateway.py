@@ -15,9 +15,9 @@ import json
 from typing import Any, Dict, List, Optional
 
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
-from src.shared.logging.loguru_io import Logger
-from src.shared_infra.message_queue.event_publisher import publish_domain_event
-from src.shared_infra.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.event_publisher import publish_domain_event
+from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 @dataclass

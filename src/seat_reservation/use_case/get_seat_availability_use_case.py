@@ -9,8 +9,8 @@ from typing import Dict, List
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.shared.config.db_setting import get_async_session
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.db_setting import get_async_session
+from src.platform.logging.loguru_io import Logger
 
 
 @dataclass

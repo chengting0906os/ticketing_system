@@ -7,13 +7,13 @@ from typing import Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Cookie, Depends, Response, status
 
-from src.shared.config.di import Container
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.di import Container
+from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.port.user_schema import CreateUserRequest, LoginRequest, UserResponse
-from src.shared_kernel.user.use_case.user_use_case import UserUseCase
 from src.shared_kernel.user.use_case.auth_service import AuthService
+from src.shared_kernel.user.use_case.user_use_case import UserUseCase
 
 
 # === API Router ===

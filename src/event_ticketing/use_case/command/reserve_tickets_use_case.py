@@ -13,8 +13,8 @@ from typing import Any, Dict, List
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
 from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
-from src.shared.exception.exceptions import DomainError, NotFoundError
-from src.shared.logging.loguru_io import Logger
+from src.platform.exception.exceptions import DomainError, NotFoundError
+from src.platform.logging.loguru_io import Logger
 
 
 class ReserveTicketsUseCase:

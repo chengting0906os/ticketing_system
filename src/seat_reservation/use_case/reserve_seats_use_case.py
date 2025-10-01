@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
 from src.seat_reservation.domain.seat_selection_domain import (
     AvailableSeat,
     SeatPosition,
@@ -15,8 +17,6 @@ from src.seat_reservation.domain.seat_selection_domain import (
     SelectionMode,
 )
 from src.seat_reservation.domain.seat_state_handler import SeatStateHandler
-from src.shared.exception.exceptions import DomainError
-from src.shared.logging.loguru_io import Logger
 
 
 @dataclass

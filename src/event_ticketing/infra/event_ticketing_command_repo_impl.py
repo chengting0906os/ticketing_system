@@ -7,7 +7,7 @@ Event Ticketing Command Repository Implementation - CQRS Write Side
 
 from datetime import datetime, timezone
 import time
-from typing import Any, Dict, List, Optional, Callable, AsyncContextManager
+from typing import Any, AsyncContextManager, Callable, Dict, List, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,8 +20,8 @@ from src.event_ticketing.domain.event_ticketing_aggregate import (
 from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
 from src.event_ticketing.infra.event_model import EventModel
 from src.event_ticketing.infra.ticket_model import TicketModel
-from src.shared.config.db_setting import get_asyncpg_pool
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.db_setting import get_asyncpg_pool
+from src.platform.logging.loguru_io import Logger
 
 
 class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):

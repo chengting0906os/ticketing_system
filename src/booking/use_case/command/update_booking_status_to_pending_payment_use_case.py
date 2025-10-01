@@ -5,8 +5,8 @@ from fastapi import Depends
 
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking
-from src.shared.config.di import Container
-from src.shared.logging.loguru_io import Logger
+from src.platform.config.di import Container
+from src.platform.logging.loguru_io import Logger
 
 
 if TYPE_CHECKING:

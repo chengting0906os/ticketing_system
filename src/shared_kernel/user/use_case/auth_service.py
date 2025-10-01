@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from fastapi import HTTPException, status
 import jwt
 
-from src.shared.config.core_setting import settings
+from src.platform.config.core_setting import settings
 from src.shared_kernel.user.domain.user_entity import UserEntity
 from src.shared_kernel.user.domain.user_repo import UserRepo
 from src.shared_kernel.user.use_case.user_use_case import UserUseCase
