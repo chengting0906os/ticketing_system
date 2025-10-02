@@ -23,17 +23,17 @@ from sqlalchemy import create_engine, text
 
 from src.platform.config.db_setting import Base
 
-from src.booking.driven.booking_model import BookingModel, BookingTicketModel  # noqa: F401
-from src.event_ticketing.driven.event_model import EventModel  # noqa: F401
-from src.event_ticketing.driven.ticket_model import TicketModel  # noqa: F401
-from src.shared_kernel.user.infra.user_model import UserModel  # noqa: F401
+from src.booking.driven_adapter.booking_model import BookingModel, BookingTicketModel  # noqa: F401
+from src.event_ticketing.driven_adapter.event_model import EventModel  # noqa: F401
+from src.event_ticketing.driven_adapter.ticket_model import TicketModel  # noqa: F401
+from src.shared_kernel.user.driven_adapter.user_model import UserModel  # noqa: F401
 
-from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
-from src.event_ticketing.driven.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
+from src.event_ticketing.app.command.create_event_use_case import CreateEventUseCase
+from src.event_ticketing.driven_adapter.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.platform.config.db_setting import async_session_maker
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
-from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher
-from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
+from src.shared_kernel.user.driven_adapter.bcrypt_password_hasher import BcryptPasswordHasher
+from src.shared_kernel.user.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
 from src.platform.config.core_setting import settings
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
