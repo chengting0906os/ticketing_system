@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, status
 
-from src.event_ticketing.port.event_schema import (
+from src.event_ticketing.driving.event_schema import (
     EventCreateWithTicketConfigRequest,
     EventResponse,
 )

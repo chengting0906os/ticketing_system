@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking, BookingStatus
-from src.booking.infra.booking_model import BookingModel
+from src.booking.driven.booking_model import BookingModel
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 

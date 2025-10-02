@@ -17,8 +17,8 @@ from src.event_ticketing.domain.event_ticketing_aggregate import (
     TicketStatus,
 )
 from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
-from src.event_ticketing.infra.event_model import EventModel
-from src.event_ticketing.infra.ticket_model import TicketModel
+from src.event_ticketing.driven.event_model import EventModel
+from src.event_ticketing.driven.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.event_status import EventStatus
 

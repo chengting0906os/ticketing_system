@@ -19,7 +19,7 @@ from typing import Optional
 import anyio
 from quixstreams import Application
 
-from src.booking.port.booking_mq_gateway import BookingMqGateway
+from src.booking.driving.booking_mq_gateway import BookingMqGateway
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (

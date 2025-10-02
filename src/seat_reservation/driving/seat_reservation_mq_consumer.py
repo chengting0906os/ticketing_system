@@ -30,7 +30,7 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
-from src.seat_reservation.infra.seat_state_store import seat_state_store
+from src.seat_reservation.driven.seat_state_store import seat_state_store
 
 
 # Kafka 配置

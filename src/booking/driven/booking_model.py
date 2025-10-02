@@ -9,8 +9,8 @@ from src.platform.config.db_setting import Base
 
 
 if TYPE_CHECKING:
-    from src.event_ticketing.infra.event_model import EventModel
-    from src.event_ticketing.infra.ticket_model import TicketModel
+    from src.event_ticketing.driven.event_model import EventModel
+    from src.event_ticketing.driven.ticket_model import TicketModel
     from src.shared_kernel.user.infra.user_model import UserModel
 
 

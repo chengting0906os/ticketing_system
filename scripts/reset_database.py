@@ -23,13 +23,13 @@ from sqlalchemy import create_engine, text
 
 from src.platform.config.db_setting import Base
 
-from src.booking.infra.booking_model import BookingModel, BookingTicketModel  # noqa: F401
-from src.event_ticketing.infra.event_model import EventModel  # noqa: F401
-from src.event_ticketing.infra.ticket_model import TicketModel  # noqa: F401
+from src.booking.driven.booking_model import BookingModel, BookingTicketModel  # noqa: F401
+from src.event_ticketing.driven.event_model import EventModel  # noqa: F401
+from src.event_ticketing.driven.ticket_model import TicketModel  # noqa: F401
 from src.shared_kernel.user.infra.user_model import UserModel  # noqa: F401
 
 from src.event_ticketing.use_case.command.create_event_use_case import CreateEventUseCase
-from src.event_ticketing.infra.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
+from src.event_ticketing.driven.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.platform.config.db_setting import async_session_maker
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
 from src.shared_kernel.user.infra.bcrypt_password_hasher import BcryptPasswordHasher

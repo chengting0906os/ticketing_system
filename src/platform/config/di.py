@@ -5,13 +5,13 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 
 from dependency_injector import containers, providers
 
-from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
-from src.booking.infra.booking_query_repo_impl import BookingQueryRepoImpl
-from src.event_ticketing.infra.event_ticketing_command_repo_impl import (
+from src.booking.driven.booking_command_repo_impl import BookingCommandRepoImpl
+from src.booking.driven.booking_query_repo_impl import BookingQueryRepoImpl
+from src.event_ticketing.driven.event_ticketing_command_repo_impl import (
     EventTicketingCommandRepoImpl,
 )
-from src.event_ticketing.infra.event_ticketing_query_repo_impl import EventTicketingQueryRepoImpl
-from src.event_ticketing.port.event_ticketing_mq_gateway import EventTicketingMqGateway
+from src.event_ticketing.driven.event_ticketing_query_repo_impl import EventTicketingQueryRepoImpl
+from src.event_ticketing.driving.event_ticketing_mq_gateway import EventTicketingMqGateway
 from src.event_ticketing.use_case.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.platform.config.core_setting import Settings
 from src.platform.config.db_setting import Database
@@ -20,9 +20,9 @@ from src.platform.message_queue.section_based_partition_strategy import (
     SectionBasedPartitionStrategy,
 )
 from src.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
-from src.seat_reservation.infra.seat_state_handler_impl import SeatStateHandlerImpl
-from src.seat_reservation.infra.seat_state_store import SeatStateStore
-from src.seat_reservation.port.seat_reservation_mq_gateway import SeatReservationGateway
+from src.seat_reservation.driven.seat_state_handler_impl import SeatStateHandlerImpl
+from src.seat_reservation.driven.seat_state_store import SeatStateStore
+from src.seat_reservation.driving.seat_reservation_mq_gateway import SeatReservationGateway
 from src.seat_reservation.use_case.reserve_seats_use_case import ReserveSeatsUseCase
 from src.shared_kernel.user.infra.user_command_repo_impl import UserCommandRepoImpl
 from src.shared_kernel.user.infra.user_query_repo_impl import UserQueryRepoImpl

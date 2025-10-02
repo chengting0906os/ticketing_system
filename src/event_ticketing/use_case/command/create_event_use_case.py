@@ -214,7 +214,7 @@ class CreateEventUseCase:
                 'run',
                 'python',
                 '-m',
-                'src.seat_reservation.infra.seat_reservation_mq_consumer',
+                'src.seat_reservation.driving.seat_reservation_mq_consumer',
             ]
 
             process = await asyncio.create_subprocess_exec(
@@ -405,14 +405,14 @@ class CreateEventUseCase:
                 # Booking Service - 1 consumer
                 {
                     'name': 'booking_mq_consumer',
-                    'module': 'src.booking.infra.booking_mq_consumer',
+                    'module': 'src.booking.driving.booking_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
                     'instance_id': 1,
                 },
                 # Seat Reservation - 2 consumers (高負載座位選擇 + Kvrocks 操作)
                 {
                     'name': 'seat_reservation_mq_consumer_1',
-                    'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
+                    'module': 'src.seat_reservation.driving.seat_reservation_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                         event_id=event_id
                     ),
@@ -420,7 +420,7 @@ class CreateEventUseCase:
                 },
                 # {
                 #     'name': 'seat_reservation_mq_consumer_2',
-                #     'module': 'src.seat_reservation.infra.seat_reservation_mq_consumer',
+                #     'module': 'src.seat_reservation.driving.seat_reservation_mq_consumer',
                 #     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                 #         event_id=event_id
                 #     ),
@@ -429,7 +429,7 @@ class CreateEventUseCase:
                 # Event Ticketing - 1 consumer
                 {
                     'name': 'event_ticketing_mq_consumer',
-                    'module': 'src.event_ticketing.infra.event_ticketing_mq_consumer',
+                    'module': 'src.event_ticketing.driven.event_ticketing_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
                         event_id=event_id
                     ),

@@ -9,7 +9,7 @@ from src.platform.config.db_setting import Base
 
 
 if TYPE_CHECKING:
-    from src.booking.infra.booking_model import BookingModel
+    from src.booking.driven.booking_model import BookingModel
 
 
 class TicketModel(Base):

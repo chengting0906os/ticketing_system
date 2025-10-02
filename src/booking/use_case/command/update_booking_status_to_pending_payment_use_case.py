@@ -10,7 +10,7 @@ from src.platform.logging.loguru_io import Logger
 
 
 if TYPE_CHECKING:
-    from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
+    from src.booking.driven.booking_command_repo_impl import BookingCommandRepoImpl
 
 
 class UpdateBookingToPendingPaymentUseCase:

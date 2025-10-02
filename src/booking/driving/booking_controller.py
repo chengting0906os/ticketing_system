@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, status
 
-from src.booking.port.booking_schema import (
+from src.booking.driving.booking_schema import (
     BookingCreateRequest,
     BookingResponse,
     CancelReservationResponse,

@@ -16,7 +16,7 @@ from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 if TYPE_CHECKING:
-    from src.booking.infra.booking_command_repo_impl import BookingCommandRepoImpl
+    from src.booking.driven.booking_command_repo_impl import BookingCommandRepoImpl
 
 
 class CreateBookingUseCase:

@@ -6,8 +6,8 @@ from sqlalchemy.orm import selectinload
 
 from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.domain.booking_query_repo import BookingQueryRepo
-from src.booking.infra.booking_model import BookingModel
-from src.event_ticketing.infra.ticket_model import TicketModel
+from src.booking.driven.booking_model import BookingModel
+from src.event_ticketing.driven.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.enum.ticket_status import TicketStatus
 from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
@@ -105,7 +105,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
     @Logger.io(truncate_content=True)
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
-        from src.event_ticketing.infra.event_model import EventModel
+        from src.event_ticketing.driven.event_model import EventModel
 
         async with self.session_factory() as session:
             query = (

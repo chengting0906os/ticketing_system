@@ -14,7 +14,7 @@ from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
 from src.platform.logging.loguru_io import Logger
 from src.platform.redis.redis_client import kvrocks_stats_client
-from src.seat_reservation.port.seat_schema import (
+from src.seat_reservation.driving.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )
@@ -371,7 +371,7 @@ async def list_seats_by_section_subsection_from_db(
     此 API 用於與 Kvrocks 版本比較性能差異
     直接從 ticket 表聚合統計數據
     """
-    from src.event_ticketing.infra.ticket_model import TicketModel
+    from src.event_ticketing.driven.ticket_model import TicketModel
 
     section_id = f'{section}-{subsection}'
 

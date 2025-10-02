@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.seat_reservation.domain.seat_state_handler import SeatStateHandler
-from src.seat_reservation.infra.seat_state_store import SeatStateStore
+from src.seat_reservation.driven.seat_state_store import SeatStateStore
 
 
 class SeatStateHandlerImpl(SeatStateHandler):

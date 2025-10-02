@@ -4,14 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.booking.port.booking_controller import router as booking_router
-from src.event_ticketing.port.event_ticketing_controller import router as event_router
+from src.booking.driving.booking_controller import router as booking_router
+from src.event_ticketing.driving.event_ticketing_controller import router as event_router
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import create_db_and_tables
 from src.platform.config.di import cleanup, container, setup
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
-from src.seat_reservation.port.seat_reservation_controller import router as seat_reservation_router
+from src.seat_reservation.driving.seat_reservation_controller import (
+    router as seat_reservation_router,
+)
 from src.shared_kernel.user.port.user_controller import router as auth_router
 
 

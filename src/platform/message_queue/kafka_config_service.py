@@ -44,19 +44,19 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         self.consumer_configs = [
             ConsumerConfig(
                 name='booking_mq_consumer',
-                module='src.booking.infra.booking_mq_consumer',
+                module='src.booking.driving.booking_mq_consumer',
                 description='📚 訂單服務消費者',
                 instance_count=1,
             ),
             ConsumerConfig(
                 name='seat_reservation_mq_consumer',
-                module='src.seat_reservation.infra.seat_reservation_mq_consumer',
+                module='src.seat_reservation.driving.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
                 instance_count=1,
             ),
             ConsumerConfig(
                 name='event_ticketing_mq_consumer',
-                module='src.event_ticketing.infra.event_ticketing_mq_consumer',
+                module='src.event_ticketing.driven.event_ticketing_mq_consumer',
                 description='🎫 票務同步消費者',
                 instance_count=1,
             ),
