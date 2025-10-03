@@ -4,7 +4,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.app.interface.i_booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking
 from src.booking.domain.booking_events import BookingCreated
 from src.platform.config.db_setting import get_async_session

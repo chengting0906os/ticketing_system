@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, AsyncContextManager, Callable
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.app.interface.i_booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.driven_adapter.booking_model import BookingModel
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError

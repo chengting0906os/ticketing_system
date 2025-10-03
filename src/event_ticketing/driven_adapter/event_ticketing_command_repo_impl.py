@@ -17,7 +17,9 @@ from src.event_ticketing.domain.event_ticketing_aggregate import (
     Ticket,
     TicketStatus,
 )
-from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
+from src.event_ticketing.app.interface.i_event_ticketing_command_repo import (
+    EventTicketingCommandRepo,
+)
 from src.event_ticketing.driven_adapter.event_model import EventModel
 from src.event_ticketing.driven_adapter.ticket_model import TicketModel
 from src.platform.config.db_setting import get_asyncpg_pool

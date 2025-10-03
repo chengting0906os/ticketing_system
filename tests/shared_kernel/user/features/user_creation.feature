@@ -1,3 +1,4 @@
+@integration
 Feature: User Creation
   As a system administrator
   I want to create new users

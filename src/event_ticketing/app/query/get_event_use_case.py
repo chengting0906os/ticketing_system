@@ -4,7 +4,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
-from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
+from src.event_ticketing.app.interface.i_event_ticketing_query_repo import EventTicketingQueryRepo
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 

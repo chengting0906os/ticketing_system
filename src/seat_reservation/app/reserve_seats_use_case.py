@@ -16,7 +16,7 @@ from src.seat_reservation.domain.seat_selection_domain import (
     SeatSelectionRequest,
     SelectionMode,
 )
-from src.seat_reservation.domain.seat_state_handler import SeatStateHandler
+from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
 
 
 @dataclass

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.booking.domain.booking_entity import Booking, BookingStatus
-from src.booking.domain.booking_query_repo import BookingQueryRepo
+from src.booking.app.interface.i_booking_query_repo import BookingQueryRepo
 from src.booking.driven_adapter.booking_model import BookingModel
 from src.event_ticketing.driven_adapter.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger

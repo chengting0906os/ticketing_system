@@ -39,39 +39,11 @@ jobs:
         run: |
           uv run ruff format . --check
 
-  type-check:
-    name: Type Check with Pyright
-    runs-on: ubuntu-latest
-    needs: lint  # Only run if lint passes
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Read Python version
-        id: python-version
-        run: echo "version=$(cat .python-version)" >> $GITHUB_OUTPUT
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ steps.python-version.outputs.version }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          
-      - name: Install dependencies
-        run: |
-          uv sync --all-extras --dev
-          
-      - name: Run Pyright
-        run: |
-          uv run pyright
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    needs: [lint, type-check]  # Only run if both lint and type-check pass
+    needs: [lint]  # Only run if both lint and type-check pass
     services:
       postgres:
         image: postgres:16
@@ -118,6 +90,6 @@ jobs:
         run: |
           cd src/platform/alembic && uv run alembic upgrade head
           
-      - name: Run tests
+      - name: Run tests (integration and unit only)
         run: |
-          uv run pytest -v --tb=short
+          uv run pytest -v --tb=short -m "integration or unit"

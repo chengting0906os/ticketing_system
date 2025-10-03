@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
-from src.shared_kernel.user.domain.user_query_repo import UserQueryRepo
+from src.shared_kernel.user.app.interface.i_user_query_repo import UserQueryRepo
 from src.shared_kernel.user.driven_adapter.bcrypt_password_hasher import BcryptPasswordHasher
 from src.shared_kernel.user.driven_adapter.user_model import UserModel
 

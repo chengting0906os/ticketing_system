@@ -1,3 +1,4 @@
+@integration
 Feature: User Login
   As a registered user
   I want to login to the system

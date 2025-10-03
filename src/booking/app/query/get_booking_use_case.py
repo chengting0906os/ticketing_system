@@ -3,7 +3,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.domain.booking_entity import Booking
-from src.booking.domain.booking_query_repo import BookingQueryRepo
+from src.booking.app.interface.i_booking_query_repo import BookingQueryRepo
 from src.platform.config.db_setting import get_async_session
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import NotFoundError

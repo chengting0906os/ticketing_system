@@ -97,6 +97,8 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
+    "unit: unit",
+    "integration: integration",
     "asyncio: mark test as async",
     "bdd: BDD scenario tests",
     "api: API tests",

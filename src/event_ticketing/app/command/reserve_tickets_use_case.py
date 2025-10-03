@@ -11,8 +11,10 @@ Reserve Tickets Use Case - 使用新的 EventTicketingAggregate
 from typing import Any, Dict, List
 
 from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
-from src.event_ticketing.domain.event_ticketing_command_repo import EventTicketingCommandRepo
-from src.event_ticketing.domain.event_ticketing_query_repo import EventTicketingQueryRepo
+from src.event_ticketing.app.interface.i_event_ticketing_command_repo import (
+    EventTicketingCommandRepo,
+)
+from src.event_ticketing.app.interface.i_event_ticketing_query_repo import EventTicketingQueryRepo
 from src.platform.exception.exceptions import DomainError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 

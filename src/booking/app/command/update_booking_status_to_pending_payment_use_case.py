@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
-from src.booking.domain.booking_command_repo import BookingCommandRepo
+from src.booking.app.interface.i_booking_command_repo import BookingCommandRepo
 from src.booking.domain.booking_entity import Booking
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger

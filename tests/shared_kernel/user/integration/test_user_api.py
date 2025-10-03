@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from src.platform.constant.route_constant import USER_CREATE
 from tests.util_constant import DEFAULT_PASSWORD, TEST_EMAIL
 
 
+@pytest.mark.integration
 class TestUserAPI:
     def test_create_user(self, client: TestClient):
         email = TEST_EMAIL
