@@ -60,6 +60,16 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+
+      kvrocks:
+        image: apache/kvrocks:latest
+        options: >-
+          --health-cmd "redis-cli -p 6666 ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6666:6666
     
     steps:
       - uses: actions/checkout@v4
