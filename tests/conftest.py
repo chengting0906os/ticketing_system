@@ -30,10 +30,10 @@ from tests.booking.functional.fixtures import *  # noqa: F403
 from tests.booking.functional.given import *  # noqa: F403
 from tests.booking.functional.then import *  # noqa: F403
 from tests.booking.functional.when import *  # noqa: F403
-from tests.event_ticketing.functional.fixtures import *  # noqa: F403
-from tests.event_ticketing.functional.given import *  # noqa: F403
-from tests.event_ticketing.functional.then import *  # noqa: F403
-from tests.event_ticketing.functional.when import *  # noqa: F403
+from tests.event_ticketing.integration.fixtures import *  # noqa: F403
+from tests.event_ticketing.integration.steps.given import *  # noqa: F403
+from tests.event_ticketing.integration.steps.then import *  # noqa: F403
+from tests.event_ticketing.integration.steps.when import *  # noqa: F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: F403
@@ -190,6 +190,14 @@ async def clean_database():
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def clear_client_cookies(client):
+    """每個測試前清除 client 的 cookies，避免登入狀態殘留"""
+    client.cookies.clear()
+    yield
+    client.cookies.clear()
 
 
 @pytest.fixture(scope='session')

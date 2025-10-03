@@ -26,6 +26,8 @@ class SectionStatsResponse(BaseModel):
     event_id: int
     section: str
     subsection: int
+    tickets: List[SeatResponse] = []
+    total_count: int = 0
 
 
 class ListSeatsBySectionResponse(BaseModel):

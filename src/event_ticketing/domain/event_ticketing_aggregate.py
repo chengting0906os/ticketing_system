@@ -91,6 +91,12 @@ class Ticket:
         self.release()
 
 
+def _validate_non_empty_string(instance, attribute, value):
+    """驗證字串不能為空"""
+    if not value or not value.strip():
+        raise ValueError(f'Event {attribute.name} cannot be empty')
+
+
 @attrs.define
 class Event:
     """
@@ -99,10 +105,10 @@ class Event:
     活動實體現在是 EventTicketingAggregate 的一部分
     """
 
-    name: str
-    description: str
+    name: str = attrs.field(validator=_validate_non_empty_string)
+    description: str = attrs.field(validator=_validate_non_empty_string)
     seller_id: int
-    venue_name: str
+    venue_name: str = attrs.field(validator=_validate_non_empty_string)
     seating_config: Dict
     is_active: bool = True
     status: EventStatus = EventStatus.AVAILABLE

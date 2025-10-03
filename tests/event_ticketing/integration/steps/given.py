@@ -6,7 +6,8 @@ from pytest_bdd import given
 from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
-from tests.shared.utils import create_user, extract_table_data, login_user
+from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+from tests.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from tests.util_constant import (
     DEFAULT_PASSWORD,
     EMPTY_LIST_SELLER_EMAIL,
@@ -29,8 +30,6 @@ def _(step, client: TestClient, event_state):
         'description': row_data['description'],
         'is_active': row_data['is_active'].lower() == 'true',
     }
-    from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-    from tests.shared.utils import parse_seating_config
 
     if 'venue_name' in row_data:
         request_data['venue_name'] = row_data['venue_name']
@@ -51,8 +50,6 @@ def _(step, client: TestClient, event_state):
 
 @given('a seller with events:')
 def create_seller_with_events(step, client: TestClient, event_state, execute_sql_statement):
-    import json
-
     created_user = create_user(
         client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD, LIST_TEST_SELLER_NAME, 'seller'
     )
@@ -90,8 +87,6 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
 
 @given('no available events exist')
 def create_no_available_events(step, client: TestClient, event_state, execute_sql_statement):
-    import json
-
     created_user = create_user(
         client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
     )

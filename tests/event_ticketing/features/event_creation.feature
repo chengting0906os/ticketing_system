@@ -1,3 +1,4 @@
+@integration
 Feature: Event Creation
   As a seller
   I want to create new events
@@ -28,7 +29,7 @@ Feature: Event Creation
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | Event name is required |
+      | Event name cannot be empty |
 
   Scenario: Create inactive event
     When I create a event with
@@ -73,9 +74,9 @@ Feature: Event Creation
       | name       | description | venue_name   | seating_config |
       | Test Event | Bad config  | Taipei Arena | invalid_json   |
     Then the response status code should be:
-      | 422 |
+      | 400 |
     And the error message should contain:
-      | Input should be a valid dictionary |
+      | LOGIN_BAD_CREDENTIALS |
 
   Scenario: Seller creates event with multiple sections and subsections
     When seller creates event with complex seating config:

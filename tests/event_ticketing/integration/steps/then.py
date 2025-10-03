@@ -47,7 +47,9 @@ def _verify_error_contains(event_state, expected_text):
 
 def _verify_event_count(event_state, count):
     response = event_state['response']
-    assert response.status_code == 200
+    assert response.status_code == 200, (
+        f'Expected status 200, got {response.status_code}: {response.text}'
+    )
     events = response.json()
     assert len(events) == count, f'Expected {count} events, got {len(events)}'
     return events
@@ -76,7 +78,7 @@ def verify_events_include_all_statuses(event_state):
     response = event_state['response']
     events = response.json()
     statuses = {event['status'] for event in events}
-    expected_statuses = {'available', 'sold_out'}
+    expected_statuses = {'available', 'sold_out', 'completed'}
     assert expected_statuses.issubset(statuses), (
         f'Expected statuses {expected_statuses}, got {statuses}'
     )
@@ -139,9 +141,14 @@ def verify_tickets_auto_created(step, client, context):
                         event_id=event_id, section=section_name, subsection=subsection_number
                     )
                 )
+                print(f'\n[DEBUG] API response status: {response.status_code}')
+                print(f'[DEBUG] API response: {response.text[:500]}')
                 if response.status_code == 200:
                     tickets_data = response.json()
                     section_tickets = tickets_data.get('tickets', [])
+                    print(
+                        f'[DEBUG] Found {len(section_tickets)} tickets for section {section_name}-{subsection_number}'
+                    )
                     all_tickets.extend(section_tickets)
     else:
         # Fallback: try default section 'A' if seating config not available

@@ -48,7 +48,7 @@ def calculate_partition_for_section(section_id: str, num_partitions: int = 3) ->
     return partition
 
 
-router = APIRouter(prefix='/api/seat_reservation', tags=['seat-reservation'])
+router = APIRouter(prefix='/api/event', tags=['seat-reservation'])
 
 
 def _seat_to_response(seat) -> SeatResponse:
@@ -271,17 +271,31 @@ async def list_seats_by_section_subsection(
     event_id: int,
     section: str,
     subsection: int,
+    session: AsyncSession = Depends(get_async_session),
 ) -> SectionStatsResponse:
     """
-    獲取指定區域的統計資訊（從 Kvrocks Bitfield + Counter 直接計算）
+    獲取指定區域的統計資訊（從 Kvrocks Bitfield + Counter 直接計算）+ tickets list
 
     優化重點：
     1. 使用 Bitfield 存儲座位狀態（2 bits per seat）
     2. 使用 Counter 快速查詢可用數（O(1)）
-    3. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
-    4. 高併發友好（50,000+ QPS）
+    3. 從資料庫查詢 tickets list
+    4. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
+    5. 高併發友好（50,000+ QPS）
     """
     from src.platform.redis.redis_client import kvrocks_client
+    from sqlalchemy import select, and_
+    from src.event_ticketing.driven_adapter.ticket_model import TicketModel
+    from src.event_ticketing.driven_adapter.event_model import EventModel
+    from fastapi import HTTPException
+
+    # 先檢查 event 是否存在
+    stmt_event = select(EventModel).where(EventModel.id == event_id)
+    result_event = await session.execute(stmt_event)
+    event = result_event.scalar_one_or_none()
+
+    if not event:
+        raise HTTPException(status_code=404, detail='Event not found')
 
     section_id = f'{section}-{subsection}'
     client = await kvrocks_client.connect()
@@ -307,10 +321,10 @@ async def list_seats_by_section_subsection(
                 event_id=event_id,
                 section=section,
                 subsection=subsection,
+                tickets=[],
             )
 
         # 從 Kvrocks metadata 取得 total（或從 DB 查詢）
-        # 方案1: 使用 Hash 記錄的 total（需要在初始化時寫入）
         meta_total_key = f'subsection_total:{event_id}:{section_id}'
         total_str = await client.get(meta_total_key)
 
@@ -329,6 +343,33 @@ async def list_seats_by_section_subsection(
             f'unavailable={unavailable_count}'
         )
 
+        # 3. 從資料庫查詢 tickets
+        tickets = []
+        stmt = select(TicketModel).where(
+            and_(
+                TicketModel.event_id == event_id,
+                TicketModel.section == section,
+                TicketModel.subsection == subsection,
+            )
+        )
+        result = await session.execute(stmt)
+        ticket_models = result.scalars().all()
+
+        for ticket in ticket_models:
+            tickets.append(
+                SeatResponse(
+                    id=ticket.id,
+                    event_id=ticket.event_id,
+                    section=ticket.section,
+                    subsection=ticket.subsection,
+                    row=ticket.row_number,
+                    seat=ticket.seat_number,
+                    price=ticket.price,
+                    status=ticket.status,
+                    seat_identifier=f'{ticket.section}-{ticket.subsection}-{ticket.row_number}-{ticket.seat_number}',
+                )
+            )
+
         return SectionStatsResponse(
             section_id=section_id,
             total=total_count,
@@ -338,6 +379,8 @@ async def list_seats_by_section_subsection(
             event_id=event_id,
             section=section,
             subsection=subsection,
+            tickets=tickets,
+            total_count=len(tickets),
         )
 
     except Exception as e:
@@ -351,6 +394,7 @@ async def list_seats_by_section_subsection(
             event_id=event_id,
             section=section,
             subsection=subsection,
+            tickets=[],
         )
 
 

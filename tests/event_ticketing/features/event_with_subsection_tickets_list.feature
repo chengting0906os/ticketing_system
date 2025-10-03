@@ -1,3 +1,4 @@
+@integration
 Feature: Event Ticket Management
   As a user (seller or buyer)
   I want to manage and view tickets for events
