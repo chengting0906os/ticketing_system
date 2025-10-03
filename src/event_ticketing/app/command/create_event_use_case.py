@@ -17,10 +17,10 @@ from fastapi import Depends
 from quixstreams import Application
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.event_ticketing.app.interface.i_event_ticketing_command_repo import (
     EventTicketingCommandRepo,
 )
+from src.event_ticketing.domain.event_ticketing_aggregate import EventTicketingAggregate
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
 from src.platform.config.di import Container
@@ -245,7 +245,7 @@ class CreateEventUseCase:
             )
 
             # 1. 先寫入 subsection_total metadata 到 Kvrocks
-            from src.platform.redis.redis_client import kvrocks_client_sync
+            from src.platform.state.redis_client import kvrocks_client_sync
 
             subsection_counts = {}
             for ticket_tuple in ticket_tuples:

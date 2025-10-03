@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
 from src.platform.logging.loguru_io import Logger
-from src.platform.redis.redis_client import kvrocks_stats_client
+from src.platform.state.redis_client import kvrocks_stats_client
 from src.seat_reservation.app.get_seat_availability_use_case import GetSeatAvailabilityUseCase
 from src.seat_reservation.driving_adapter.seat_schema import (
     SeatResponse,
@@ -283,11 +283,12 @@ async def list_seats_by_section_subsection(
     4. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
     5. 高併發友好（50,000+ QPS）
     """
-    from src.platform.redis.redis_client import kvrocks_client
-    from sqlalchemy import select, and_
-    from src.event_ticketing.driven_adapter.ticket_model import TicketModel
-    from src.event_ticketing.driven_adapter.event_model import EventModel
     from fastapi import HTTPException
+    from sqlalchemy import and_, select
+
+    from src.event_ticketing.driven_adapter.event_model import EventModel
+    from src.event_ticketing.driven_adapter.ticket_model import TicketModel
+    from src.platform.state.redis_client import kvrocks_client
 
     # 先檢查 event 是否存在
     stmt_event = select(EventModel).where(EventModel.id == event_id)

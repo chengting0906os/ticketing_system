@@ -31,7 +31,7 @@ def mock_kafka_infrastructure():
 
     async def mock_seat_initialization(self, *, event_id: int, ticket_tuples: list) -> None:
         """測試環境下的座位初始化：直接同步寫入 Kvrocks + 更新 event status"""
-        from src.platform.redis.redis_client import kvrocks_client_sync
+        from src.platform.state.redis_client import kvrocks_client_sync
 
         # 1. 寫入 subsection_total metadata
         subsection_counts = {}
@@ -64,9 +64,10 @@ def mock_kafka_infrastructure():
             client.set(key, json.dumps(seat_state))
 
         # 3. 更新 event status 從 DRAFT 到 AVAILABLE (模擬真實流程)
+        import os
+
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
-        import os
 
         DB_CONFIG = {
             'user': os.getenv('POSTGRES_USER'),
