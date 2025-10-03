@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -72,7 +73,10 @@ app.add_middleware(
 # Register exception handlers
 register_exception_handlers(app)
 
-# Static files
+# Static files (optional, create if not exists)
+static_dir = Path('static')
+if not static_dir.exists():
+    static_dir.mkdir(exist_ok=True)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 
 # endpoints

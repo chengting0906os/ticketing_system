@@ -85,7 +85,11 @@ jobs:
       - name: Setup environment variables for database migration
         run: |
           cp .env.example .env
-          
+
+      - name: Create static directory
+        run: |
+          mkdir -p static
+
       - name: Run database migrations
         run: |
           uv run alembic upgrade head
