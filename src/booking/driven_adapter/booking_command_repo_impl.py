@@ -106,6 +106,7 @@ class BookingCommandRepoImpl(BookingCommandRepo):
             if not db_booking:
                 raise ValueError(f'Booking with id {booking.id} not found')
 
+            await session.commit()  # Commit the transaction
             return BookingCommandRepoImpl._to_entity(db_booking)
 
     @Logger.io
@@ -127,6 +128,7 @@ class BookingCommandRepoImpl(BookingCommandRepo):
             if not db_booking:
                 raise ValueError(f'Booking with id {booking.id} not found')
 
+            await session.commit()  # Commit the transaction
             return BookingCommandRepoImpl._to_entity(db_booking)
 
     @Logger.io

@@ -35,6 +35,7 @@ class BookingResponse(BaseModel):
     total_price: int
     status: str
     created_at: datetime
+    paid_at: Optional[datetime] = None
 
     class Config:
         json_schema_extra = {
@@ -45,6 +46,7 @@ class BookingResponse(BaseModel):
                 'total_price': 2000,
                 'status': 'pending_payment',
                 'created_at': '2025-01-10T10:30:00',
+                'paid_at': None,
             }
         }
 

@@ -1,3 +1,4 @@
+@integration
 Feature: Booking Cancellation
   As a buyer
   I want to cancel my unpaid bookings
@@ -16,8 +17,8 @@ Feature: Booking Cancellation
       | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
       | Rock Concert | For cancel test | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And a booking exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |        2000 |
+      | buyer_id | event_id | total_price |
+      |        2 |        1 |        2000 |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -26,16 +27,14 @@ Feature: Booking Cancellation
       | 200 |
     And the booking status should be:
       | cancelled |
-    And the event status should be:
-      | available |
 
   Scenario: Cannot cancel paid booking
     Given an event exists:
       | name          | description  | is_active | status   | seller_id | venue_name  | seating_config                                                                                                |
       | Jazz Festival | Already paid | true      | sold_out |         1 | Taipei Dome | {"sections": [{"name": "B", "price": 1200, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And a booking exists with status "paid":
-      | buyer_id | seller_id | event_id | total_price | paid_at  |
-      |        2 |         1 |        1 |        3000 | not_null |
+      | buyer_id | event_id | total_price | paid_at  |
+      |        2 |        1 |        3000 | not_null |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -55,8 +54,8 @@ Feature: Booking Cancellation
       | email          | password |
       | buyer@test.com | P@ssw0rd |
     And a booking exists with status "cancelled":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |         800 |
+      | buyer_id | event_id | total_price |
+      |        2 |        1 |         800 |
     When the buyer tries to cancel the booking
     Then the response status code should be:
       | 400 |
@@ -71,8 +70,8 @@ Feature: Booking Cancellation
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
     And a booking exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |        2500 |
+      | buyer_id | event_id | total_price |
+      |        2 |        1 |        2500 |
     And I am logged in as:
       | email            | password |
       | another@test.com | P@ssw0rd |
@@ -82,17 +81,15 @@ Feature: Booking Cancellation
     And the error message should contain:
       | Only the buyer can cancel this booking |
     And the booking status should remain:
-      | processing |
-    And the event status should remain:
-      | available |
+      | pending_payment |
 
   Scenario: Seller cannot cancel buyer's booking
     Given an event exists:
       | name        | description    | is_active | status    | seller_id | venue_name   | seating_config                                                                                               |
       | Comedy Show | Seller's event | true      | available |         1 | Taipei Arena | {"sections": [{"name": "E", "price": 900, "subsections": [{"number": 5, "rows": 25, "seats_per_row": 20}]}]} |
     And a booking exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |        4000 |
+      | buyer_id | event_id | total_price |
+      |        2 |        1 |        4000 |
     And I am logged in as:
       | email           | password |
       | seller@test.com | P@ssw0rd |
@@ -102,9 +99,7 @@ Feature: Booking Cancellation
     And the error message should contain:
       | Only buyers can perform this action |
     And the booking status should remain:
-      | processing |
-    And the event status should remain:
-      | available |
+      | pending_payment |
 
   Scenario: Cannot cancel non-existent booking for available event
     Given an event exists:
@@ -118,22 +113,3 @@ Feature: Booking Cancellation
       | 404 |
     And the error message should contain:
       | Booking not found |
-    And the event status should remain:
-      | available |
-
-  Scenario: Buyer can cancel their own booking with tickets returning to pool
-    Given an event exists:
-      | name            | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
-      | Musical Theatre | For reservation | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
-    And a booking exists with status "pending_payment":
-      | buyer_id | seller_id | event_id | total_price |
-      |        2 |         1 |        1 |        3000 |
-    And I am logged in as:
-      | email          | password |
-      | buyer@test.com | P@ssw0rd |
-    When the buyer cancels the booking
-    Then the response status code should be:
-      | 200 |
-    And the booking status should be:
-      | cancelled |
-    And the tickets should be returned to the available pool

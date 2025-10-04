@@ -26,10 +26,10 @@ from tests.util_constant import (
 os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
 
 from src.main import app
-from tests.booking.functional.fixtures import *  # noqa: F403
-from tests.booking.functional.given import *  # noqa: F403
-from tests.booking.functional.then import *  # noqa: F403
-from tests.booking.functional.when import *  # noqa: F403
+from tests.booking.integration.fixtures import *  # noqa: F403
+from tests.booking.integration.steps.given import *  # noqa: F403
+from tests.booking.integration.steps.then import *  # noqa: F403
+from tests.booking.integration.steps.when import *  # noqa: F403
 from tests.event_ticketing.integration.fixtures import *  # noqa: F403
 from tests.event_ticketing.integration.steps.given import *  # noqa: F403
 from tests.event_ticketing.integration.steps.then import *  # noqa: F403
