@@ -64,10 +64,10 @@ jobs:
       kvrocks:
         image: apache/kvrocks:latest
         options: >-
-          --health-cmd "redis-cli -p 6666 ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "redis-cli -p 6666 ping || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
         ports:
           - 6666:6666
     
@@ -99,6 +99,11 @@ jobs:
       - name: Create static directory
         run: |
           mkdir -p static
+
+      - name: Wait for Kvrocks to be ready
+        run: |
+          timeout 30 bash -c 'until printf "" 2>>/dev/null >>/dev/tcp/localhost/6666; do sleep 1; done'
+          echo "Kvrocks is ready"
 
       - name: Run database migrations
         run: |
