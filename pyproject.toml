@@ -30,6 +30,7 @@ dependencies = [
     "attrs>=24.0.0",
     "dependency-injector>=4.48.2",
     "redis>=6.4.0",
+    "async-lru>=2.0.5",
 ]
 
 [dependency-groups]

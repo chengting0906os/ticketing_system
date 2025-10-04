@@ -283,7 +283,7 @@ class ReserveSeatsUseCase:
         # 使用 SeatStateHandler 獲取可用座位
         if request.section_filter and request.subsection_filter:
             # 如果有特定區域篩選，直接查詢該區域
-            seat_data_list = self.seat_state_handler.get_available_seats_by_section(
+            seat_data_list = await self.seat_state_handler.get_available_seats_by_section(
                 event_id=event_id,
                 section=request.section_filter,
                 subsection=request.subsection_filter,
@@ -294,7 +294,7 @@ class ReserveSeatsUseCase:
             all_seats = []
             for section in ['A', 'B']:
                 for subsection in [1, 2]:
-                    section_seats = self.seat_state_handler.get_available_seats_by_section(
+                    section_seats = await self.seat_state_handler.get_available_seats_by_section(
                         event_id=event_id,
                         section=section,
                         subsection=subsection,
@@ -357,7 +357,7 @@ class ReserveSeatsUseCase:
 
         try:
             # 使用 SeatStateHandler 直接預訂座位
-            reservation_results = self.seat_state_handler.reserve_seats(
+            reservation_results = await self.seat_state_handler.reserve_seats(
                 seat_ids=selected_seats, booking_id=booking_id, buyer_id=buyer_id, event_id=event_id
             )
 
@@ -377,7 +377,7 @@ class ReserveSeatsUseCase:
                     Logger.base.info(
                         f'🔄 [RESERVE] Rolling back successful reservations: {successful_reservations}'
                     )
-                    self.seat_state_handler.release_seats(successful_reservations, event_id)
+                    await self.seat_state_handler.release_seats(successful_reservations, event_id)
 
                 return False
 

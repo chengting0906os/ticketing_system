@@ -148,6 +148,8 @@ class SeatReservationConsumer:
                 event_id=message['event_id'],
                 price=message['price'],
                 timestamp=message.get('timestamp', ''),
+                rows=message['rows'],  # 配置信息（必填）
+                seats_per_row=message['seats_per_row'],  # 配置信息（必填）
             )
 
             result = from_thread.run(self.initialize_seat_use_case.execute, request)

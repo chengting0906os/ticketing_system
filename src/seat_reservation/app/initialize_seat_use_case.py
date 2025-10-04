@@ -17,6 +17,8 @@ class InitializeSeatRequest:
     event_id: int
     price: int
     timestamp: str
+    rows: int  # 總行數
+    seats_per_row: int  # 每行座位數
 
 
 @dataclass
@@ -39,7 +41,7 @@ class InitializeSeatUseCase:
         try:
             Logger.base.info(f'🎫 [INIT-SEAT] Initializing seat {request.seat_id}')
 
-            success = self.seat_state_handler.initialize_seat(
+            success = await self.seat_state_handler.initialize_seat(
                 seat_id=request.seat_id,
                 event_id=request.event_id,
                 price=request.price,

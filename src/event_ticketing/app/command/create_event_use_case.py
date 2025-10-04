@@ -133,7 +133,9 @@ class CreateEventUseCase:
 
         # 6. 啟動 seat_reservation consumer 並初始化座位
         await self._start_seat_reservation_consumer_and_initialize_seats(
-            event_id=final_aggregate.event.id, ticket_tuples=ticket_tuples
+            event_id=final_aggregate.event.id,
+            ticket_tuples=ticket_tuples,
+            seating_config=seating_config,
         )
 
         await self.session.commit()
@@ -180,7 +182,7 @@ class CreateEventUseCase:
 
     @Logger.io
     async def _start_seat_reservation_consumer_and_initialize_seats(
-        self, *, event_id: int, ticket_tuples: list
+        self, *, event_id: int, ticket_tuples: list, seating_config: Dict
     ) -> None:
         """確保 seat_reservation consumer 運行並初始化座位"""
         try:
@@ -199,7 +201,7 @@ class CreateEventUseCase:
 
             # 2. 發送座位初始化事件
             await self._send_seat_initialization_events(
-                event_id=event_id, ticket_tuples=ticket_tuples
+                event_id=event_id, ticket_tuples=ticket_tuples, seating_config=seating_config
             )
 
             # 3. 等待處理完成
@@ -247,14 +249,27 @@ class CreateEventUseCase:
             raise
 
     @Logger.io
-    async def _send_seat_initialization_events(self, *, event_id: int, ticket_tuples: list) -> None:
+    async def _send_seat_initialization_events(
+        self, *, event_id: int, ticket_tuples: list, seating_config: Dict
+    ) -> None:
         """發送座位初始化事件到 Kafka"""
         try:
             Logger.base.info(
                 f'💺 Sending seat initialization events for event {event_id} with {len(ticket_tuples)} tickets'
             )
 
-            # 1. 先寫入 subsection_total metadata 到 Kvrocks
+            # 1. 建立 section 配置映射 (section-subsection -> {rows, seats_per_row})
+            section_config_map = {}
+            for section in seating_config.get('sections', []):
+                section_name = section['name']
+                for subsection in section.get('subsections', []):
+                    subsection_num = subsection['number']
+                    rows = subsection['rows']
+                    seats_per_row = subsection['seats_per_row']
+                    section_id = f'{section_name}-{subsection_num}'
+                    section_config_map[section_id] = {'rows': rows, 'seats_per_row': seats_per_row}
+
+            # 2. 先寫入 subsection_total metadata 到 Kvrocks
             from src.platform.state.redis_client import kvrocks_client_sync
 
             subsection_counts = {}
@@ -269,7 +284,7 @@ class CreateEventUseCase:
                 client.set(key, count)
                 Logger.base.info(f'📊 Set {key} = {count}')
 
-            # 2. 發送座位初始化事件到 Kafka
+            # 3. 發送座位初始化事件到 Kafka
             app = Application(
                 broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
                 producer_extra_config={
@@ -296,8 +311,12 @@ class CreateEventUseCase:
                         # ticket_tuple: (event_id, section, subsection, row, seat, price, status)
                         _, section, subsection, row, seat, price, _ = ticket_tuple
                         seat_id = f'{section}-{subsection}-{row}-{seat}'
+                        section_id = f'{section}-{subsection}'
 
-                        # 創建座位初始化事件
+                        # 從配置映射中獲取 rows 和 seats_per_row
+                        config = section_config_map.get(section_id, {})
+
+                        # 創建座位初始化事件 (包含配置信息)
                         init_message = {
                             'action': 'INITIALIZE',
                             'seat_id': seat_id,
@@ -307,6 +326,8 @@ class CreateEventUseCase:
                             'subsection': subsection,
                             'row': row,
                             'seat': seat,
+                            'rows': config.get('rows'),  # 新增：總行數
+                            'seats_per_row': config.get('seats_per_row'),  # 新增：每行座位數
                         }
 
                         # 使用 section-based partition key，按字母順序分配：A→0, B→1, C→2...

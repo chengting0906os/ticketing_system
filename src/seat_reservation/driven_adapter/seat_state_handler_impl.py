@@ -1,36 +1,210 @@
 """
 Seat State Handler Implementation
-座位狀態處理器實現 - 使用 Bitfield + Counter 優化查詢
+座位狀態處理器實現 - 直接使用 Kvrocks Bitfield + Counter
 """
 
-import asyncio
 from typing import Dict, List, Optional
 
+from async_lru import alru_cache
+
 from src.platform.logging.loguru_io import Logger
+from src.platform.state.redis_client import kvrocks_client
 from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
-from src.seat_reservation.driven_adapter.seat_state_store import SeatStateStore
+
+
+# 座位狀態編碼 (2 bits)
+SEAT_STATUS_AVAILABLE = 0  # 0b00
+SEAT_STATUS_RESERVED = 1  # 0b01
+SEAT_STATUS_SOLD = 2  # 0b10
+
+STATUS_TO_BITFIELD = {
+    'AVAILABLE': SEAT_STATUS_AVAILABLE,
+    'RESERVED': SEAT_STATUS_RESERVED,
+    'SOLD': SEAT_STATUS_SOLD,
+}
+
+BITFIELD_TO_STATUS = {
+    SEAT_STATUS_AVAILABLE: 'AVAILABLE',
+    SEAT_STATUS_RESERVED: 'RESERVED',
+    SEAT_STATUS_SOLD: 'SOLD',
+}
 
 
 class SeatStateHandlerImpl(SeatStateHandler):
     """
-    座位狀態處理器實現 - 使用 Kvrocks Bitfield + Counter
+    座位狀態處理器實現 - 直接操作 Kvrocks
 
-    職責:
-    1. 查詢座位可用性 (從 Bitfield 讀取狀態, Counter 快速檢查)
-    2. 預訂座位 (更新 Bitfield 狀態 + Counter)
-    3. 釋放座位 (更新 Bitfield 狀態 + Counter)
-    4. 確認付款 (更新 Bitfield 狀態)
+    資料結構：
+    1. Bitfield: seats_bf:{event_id}:{section}-{subsection}
+       - 每個座位 2 bits (500 seats = 1000 bits = 125 bytes)
+    2. Row Counters: row_avail:{event_id}:{section}-{subsection}:{row}
+    3. Seat Metadata: seat_meta:{event_id}:{section}-{subsection}:{row}
+       - Hash {seat_num: price}
     """
 
-    def __init__(self, seat_state_store: SeatStateStore):
-        self.repository = seat_state_store
+    @staticmethod
+    def _calculate_seat_index(row: int, seat_num: int) -> int:
+        """計算座位在 Bitfield 中的 index"""
+        return (row - 1) * 20 + (seat_num - 1)
+
+    @alru_cache(maxsize=1000)
+    async def _get_section_config(self, event_id: int, section: str, subsection: int) -> Dict:
+        """
+        從 Redis 獲取 section 配置信息（帶 LRU cache）
+
+        Returns:
+            {'rows': 25, 'seats_per_row': 20}
+
+        Raises:
+            ValueError: 配置不存在時
+        """
+        try:
+            client = await kvrocks_client.connect()
+            section_id = f'{section}-{subsection}'
+            config_key = f'section_config:{event_id}:{section_id}'
+
+            # 從 Redis 讀取配置
+            config = await client.hgetall(config_key)  # pyright: ignore
+
+            if not config:
+                raise ValueError(
+                    f'Section config not found: event_id={event_id}, section={section}, subsection={subsection}'
+                )
+
+            return {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
+
+        except KeyError as e:
+            raise ValueError(f'Invalid config format, missing field: {e}')
+        except ValueError:
+            raise
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to get section config: {e}')
+            raise
+
+    async def _save_section_config(
+        self, event_id: int, section: str, subsection: int, rows: int, seats_per_row: int
+    ) -> bool:
+        """保存 section 配置到 Redis"""
+        try:
+            client = await kvrocks_client.connect()
+            section_id = f'{section}-{subsection}'
+            config_key = f'section_config:{event_id}:{section_id}'
+
+            # 保存配置到 Redis Hash
+            client.hset(
+                config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
+            )
+
+            Logger.base.info(
+                f'✅ [SEAT-STATE] Saved section config: {section_id}, rows={rows}, seats_per_row={seats_per_row}'
+            )
+            return True
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to save section config: {e}')
+            return False
 
     def is_available(self) -> bool:
         """檢查服務是否可用"""
-        return True  # 簡化：總是可用
+        return True
 
-    def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
-        """獲取指定座位的狀態 - 從 Bitfield 讀取"""
+    async def _get_seat_status_from_bitfield(
+        self, event_id: int, section: str, subsection: int, row: int, seat_num: int
+    ) -> Optional[str]:
+        """從 Bitfield 讀取單個座位狀態"""
+        try:
+            client = await kvrocks_client.connect()
+            section_id = f'{section}-{subsection}'
+            bf_key = f'seats_bf:{event_id}:{section_id}'
+
+            seat_index = self._calculate_seat_index(row, seat_num)
+            offset = seat_index * 2
+
+            value = await client.getbit(bf_key, offset) * 2 + await client.getbit(
+                bf_key, offset + 1
+            )
+            return BITFIELD_TO_STATUS.get(value, 'AVAILABLE')
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to get seat status: {e}')
+            return None
+
+    async def _set_seat_status_to_bitfield(
+        self,
+        event_id: int,
+        section: str,
+        subsection: int,
+        row: int,
+        seat_num: int,
+        status: str,
+        price: int,
+    ) -> bool:
+        """設置座位狀態到 Bitfield"""
+        try:
+            client = await kvrocks_client.connect()
+            section_id = f'{section}-{subsection}'
+            bf_key = f'seats_bf:{event_id}:{section_id}'
+            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
+
+            seat_index = self._calculate_seat_index(row, seat_num)
+            offset = seat_index * 2
+            bitfield_value = STATUS_TO_BITFIELD.get(status, SEAT_STATUS_AVAILABLE)
+
+            # 設置 bitfield (2 bits)
+            await client.setbit(bf_key, offset, (bitfield_value >> 1) & 1)
+            await client.setbit(bf_key, offset + 1, bitfield_value & 1)
+
+            # 設置價格 metadata (hset 在此配置下不是 awaitable)
+            client.hset(meta_key, str(seat_num), str(price))  # pyright: ignore
+
+            return True
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to set seat status: {e}')
+            return False
+
+    async def _get_row_seats(
+        self, event_id: int, section: str, subsection: int, row: int
+    ) -> List[Dict]:
+        """獲取一排的所有座位狀態"""
+        try:
+            # 獲取配置信息（帶 LRU cache）
+            config = await self._get_section_config(event_id, section, subsection)
+            seats_per_row = config['seats_per_row']
+
+            client = await kvrocks_client.connect()
+            section_id = f'{section}-{subsection}'
+            bf_key = f'seats_bf:{event_id}:{section_id}'
+            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
+
+            # 讀取該排座位的狀態
+            seats = []
+            prices = await client.hgetall(meta_key)  # pyright: ignore
+
+            for seat_num in range(1, seats_per_row + 1):
+                seat_index = self._calculate_seat_index(row, seat_num)
+                offset = seat_index * 2
+
+                bit1 = await client.getbit(bf_key, offset)
+                bit2 = await client.getbit(bf_key, offset + 1)
+                value = bit1 * 2 + bit2
+
+                seats.append(
+                    {
+                        'seat_num': seat_num,
+                        'status': BITFIELD_TO_STATUS.get(value, 'AVAILABLE'),
+                        'price': int(prices.get(str(seat_num), 0)) if prices else 0,
+                    }
+                )
+
+            return seats
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to get row seats: {e}')
+            return []
+
+    async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
+        """獲取指定座位的狀態"""
         Logger.base.info(f'🔍 [SEAT-STATE] Getting states for {len(seat_ids)} seats')
 
         if not self.is_available():
@@ -40,7 +214,6 @@ class SeatStateHandlerImpl(SeatStateHandler):
             seat_states = {}
 
             for seat_id in seat_ids:
-                # 解析座位 ID
                 parts = seat_id.split('-')
                 if len(parts) < 4:
                     Logger.base.warning(f'⚠️ [SEAT-STATE] Invalid seat_id: {seat_id}')
@@ -53,16 +226,12 @@ class SeatStateHandlerImpl(SeatStateHandler):
                     int(parts[3]),
                 )
 
-                # 從 Bitfield 讀取狀態
-                status = asyncio.run(
-                    self.repository.get_seat_status(event_id, section, subsection, row, seat_num)
+                status = await self._get_seat_status_from_bitfield(
+                    event_id, section, subsection, row, seat_num
                 )
 
                 if status:
-                    # 讀取價格 (從 metadata)
-                    row_seats = asyncio.run(
-                        self.repository.get_row_seats(event_id, section, subsection, row)
-                    )
+                    row_seats = await self._get_row_seats(event_id, section, subsection, row)
                     price = next((s['price'] for s in row_seats if s['seat_num'] == seat_num), 0)
 
                     seat_states[seat_id] = {
@@ -81,10 +250,10 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to read seat states: {e}')
             return {}
 
-    def get_available_seats_by_section(
+    async def get_available_seats_by_section(
         self, event_id: int, section: str, subsection: int, limit: Optional[int] = None
     ) -> List[Dict]:
-        """按區域獲取可用座位 - 使用 Counter 優化查詢"""
+        """按區域獲取可用座位"""
         Logger.base.info(f'🔍 [SEAT-STATE] Getting available seats for {section}-{subsection}')
 
         if not self.is_available():
@@ -93,26 +262,12 @@ class SeatStateHandlerImpl(SeatStateHandler):
         available_seats = []
 
         try:
-            # 優化策略：先查 Counter，再讀 Bitfield
-            for row in range(1, 26):  # 25 排
+            for row in range(1, 26):
                 if limit and len(available_seats) >= limit:
                     break
 
-                # 1. 查詢該排可售數 (O(1))
-                row_count = asyncio.run(
-                    self.repository.get_row_available_count(event_id, section, subsection, row)
-                )
+                row_seats = await self._get_row_seats(event_id, section, subsection, row)
 
-                if row_count == 0:
-                    # 該排無可售座位，跳過
-                    continue
-
-                # 2. 讀取該排座位詳細狀態 (Bitfield 批量讀取)
-                row_seats = asyncio.run(
-                    self.repository.get_row_seats(event_id, section, subsection, row)
-                )
-
-                # 3. 篩選 AVAILABLE 座位
                 for seat in row_seats:
                     if seat['status'] == 'AVAILABLE':
                         available_seats.append(
@@ -135,7 +290,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
         )
         return available_seats
 
-    def reserve_seats(
+    async def reserve_seats(
         self, seat_ids: List[str], booking_id: int, buyer_id: int, event_id: int
     ) -> Dict[str, bool]:
         """預訂座位 (AVAILABLE -> RESERVED)"""
@@ -146,12 +301,9 @@ class SeatStateHandlerImpl(SeatStateHandler):
         if not self.is_available():
             raise RuntimeError('Seat state handler not available')
 
-        # 獲取當前座位狀態
-        current_states = self.get_seat_states(seat_ids, event_id)
-
+        current_states = await self.get_seat_states(seat_ids, event_id)
         results = {}
 
-        # 原子性預訂：先檢查所有座位是否可用
         unavailable_seats = []
         for seat_id in seat_ids:
             current_state = current_states.get(seat_id)
@@ -167,18 +319,14 @@ class SeatStateHandlerImpl(SeatStateHandler):
                     f'⚠️ [SEAT-STATE] Seat {seat_id} not available (status: {current_state.get("status")})'
                 )
 
-        # 如果任何座位不可用，全部失敗
         if unavailable_seats:
             Logger.base.error(
                 f'❌ [SEAT-STATE] Cannot reserve seats, {len(unavailable_seats)} unavailable: {unavailable_seats}'
             )
             return {seat_id: False for seat_id in seat_ids}
 
-        # TODO: 執行原子性預訂 - 這裡需要發送到 EventTicketingMqConsumer
-        # 目前先返回成功，實際應該發送 Kafka 消息
         try:
             for seat_id in seat_ids:
-                # 這裡應該發送 Kafka 消息到 EventTicketingMqConsumer 來執行狀態更新
                 results[seat_id] = True
                 Logger.base.info(f'✅ [SEAT-STATE] Requested reservation for seat {seat_id}')
 
@@ -193,15 +341,14 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
         return results
 
-    def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """釋放座位 (RESERVED -> AVAILABLE)"""
         Logger.base.info(f'🔓 [SEAT-STATE] Releasing {len(seat_ids)} seats')
 
         if not self.is_available():
             raise RuntimeError('Seat state handler not available')
 
-        # 獲取當前座位狀態
-        current_states = self.get_seat_states(seat_ids, event_id)
+        current_states = await self.get_seat_states(seat_ids, event_id)
 
         results = {}
         for seat_id in seat_ids:
@@ -213,8 +360,6 @@ class SeatStateHandlerImpl(SeatStateHandler):
                 continue
 
             try:
-                # TODO: 發送 Kafka 消息到 EventTicketingMqConsumer 來釋放座位
-                # 這裡應該發送到 update_ticket_status_to_available topic
                 results[seat_id] = True
                 Logger.base.info(f'✅ [SEAT-STATE] Requested release for seat {seat_id}')
 
@@ -229,18 +374,17 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
         return results
 
-    def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
+    async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """獲取座位價格"""
-        seat_states = self.get_seat_states([seat_id], event_id)
+        seat_states = await self.get_seat_states([seat_id], event_id)
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
 
-    def initialize_seat(
+    async def initialize_seat(
         self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
     ) -> bool:
         """初始化座位狀態為 AVAILABLE"""
         try:
-            # 解析座位 ID
             parts = seat_id.split('-')
             if len(parts) < 4:
                 Logger.base.error(f'❌ [SEAT-STATE] Invalid seat_id: {seat_id}')
@@ -253,8 +397,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
                 int(parts[3]),
             )
 
-            # 使用 repository 設置座位狀態
-            success = self.repository.set_seat_status_sync(
+            success = await self._set_seat_status_to_bitfield(
                 event_id=event_id,
                 section=section,
                 subsection=subsection,
@@ -275,12 +418,11 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Error initializing seat {seat_id}: {e}')
             return False
 
-    def finalize_payment(
+    async def finalize_payment(
         self, seat_id: str, event_id: int, timestamp: Optional[str] = None
     ) -> bool:
         """完成支付，將座位從 RESERVED 轉為 SOLD"""
         try:
-            # 解析座位 ID
             parts = seat_id.split('-')
             if len(parts) < 4:
                 Logger.base.error(f'❌ [SEAT-STATE] Invalid seat_id: {seat_id}')
@@ -293,14 +435,12 @@ class SeatStateHandlerImpl(SeatStateHandler):
                 int(parts[3]),
             )
 
-            # 先獲取當前價格
-            current_price = self.get_seat_price(seat_id, event_id)
+            current_price = await self.get_seat_price(seat_id, event_id)
             if current_price is None:
                 Logger.base.error(f'❌ [SEAT-STATE] Seat {seat_id} not found or no price')
                 return False
 
-            # 使用 repository 更新狀態為 SOLD
-            success = self.repository.set_seat_status_sync(
+            success = await self._set_seat_status_to_bitfield(
                 event_id=event_id,
                 section=section,
                 subsection=subsection,
@@ -321,13 +461,13 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Error finalizing payment for seat {seat_id}: {e}')
             return False
 
-    def _rollback_reservations(self, reserved_seat_ids: List[str], event_id: int) -> None:
+    async def _rollback_reservations(self, reserved_seat_ids: List[str], event_id: int) -> None:
         """回滾已預訂的座位"""
         if not reserved_seat_ids:
             return
 
         Logger.base.warning(f'🔄 [SEAT-STATE] Rolling back {len(reserved_seat_ids)} reservations')
         try:
-            self.release_seats(reserved_seat_ids, event_id)
+            await self.release_seats(reserved_seat_ids, event_id)
         except Exception as e:
             Logger.base.error(f'❌ [SEAT-STATE] Failed to rollback reservations: {e}')

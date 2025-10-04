@@ -32,7 +32,6 @@ from src.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
 from src.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
-from src.seat_reservation.driven_adapter.seat_state_store import SeatStateStore
 from src.shared_kernel.user.app.auth_service import AuthService
 from src.shared_kernel.user.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
 from src.shared_kernel.user.driven_adapter.user_query_repo_impl import UserQueryRepoImpl
@@ -75,15 +74,11 @@ class Container(containers.DeclarativeContainer):
     auth_service = providers.Singleton(AuthService)
 
     # Seat Reservation Infrastructure
-    seat_state_store = providers.Singleton(SeatStateStore)
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
 
     # Seat Reservation Domain and Use Cases
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
-    seat_state_handler = providers.Factory(
-        SeatStateHandlerImpl,
-        seat_state_store=seat_state_store,
-    )
+    seat_state_handler = providers.Factory(SeatStateHandlerImpl)
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_selection_domain=seat_selection_domain,
@@ -122,7 +117,6 @@ def setup():
     container.kafka_service()
     container.config_service()
     container.partition_strategy()
-    container.seat_state_store()
 
 
 def cleanup():

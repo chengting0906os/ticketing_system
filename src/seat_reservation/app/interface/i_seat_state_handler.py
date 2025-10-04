@@ -12,41 +12,42 @@ class SeatStateHandler(ABC):
     座位狀態處理器接口
 
     定義座位狀態管理的核心操作
+    注意：所有方法都是異步的，因為底層需要訪問 Redis/數據庫
     """
 
     @abstractmethod
-    def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
+    async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
         pass
 
     @abstractmethod
-    def get_available_seats_by_section(
+    async def get_available_seats_by_section(
         self, event_id: int, section: str, subsection: int, limit: Optional[int] = None
     ) -> List[Dict]:
         pass
 
     @abstractmethod
-    def reserve_seats(
+    async def reserve_seats(
         self, seat_ids: List[str], booking_id: int, buyer_id: int, event_id: int
     ) -> Dict[str, bool]:
         pass
 
     @abstractmethod
-    def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         pass
 
     @abstractmethod
-    def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
+    async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         pass
 
     @abstractmethod
-    def initialize_seat(
+    async def initialize_seat(
         self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
     ) -> bool:
         """初始化座位狀態"""
         pass
 
     @abstractmethod
-    def finalize_payment(
+    async def finalize_payment(
         self, seat_id: str, event_id: int, timestamp: Optional[str] = None
     ) -> bool:
         """完成支付，將座位從 RESERVED 轉為 SOLD"""

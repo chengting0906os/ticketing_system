@@ -37,7 +37,7 @@ class ReleaseSeatUseCase:
         try:
             Logger.base.info(f'🔓 [RELEASE-SEAT] Releasing seat {request.seat_id}')
 
-            results = self.seat_state_handler.release_seats(
+            results = await self.seat_state_handler.release_seats(
                 seat_ids=[request.seat_id], event_id=request.event_id
             )
 

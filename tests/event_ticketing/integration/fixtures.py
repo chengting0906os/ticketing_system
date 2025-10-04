@@ -33,10 +33,27 @@ def mock_kafka_infrastructure():
     同時提供測試環境下的座位初始化邏輯（直接寫入 Kvrocks，跳過 Kafka 異步處理）
     """
 
-    async def mock_seat_initialization(self, *, event_id: int, ticket_tuples: list) -> None:
+    async def mock_seat_initialization(
+        self, *, event_id: int, ticket_tuples: list, seating_config: dict
+    ) -> None:
         """測試環境下的座位初始化：直接同步寫入 Kvrocks + 更新 event status"""
 
-        # 1. 寫入 subsection_total metadata
+        # 1. 保存 section 配置到 Redis (新增)
+        for section in seating_config.get('sections', []):
+            section_name = section['name']
+            for subsection in section.get('subsections', []):
+                subsection_num = subsection['number']
+                rows = subsection['rows']
+                seats_per_row = subsection['seats_per_row']
+                section_id = f'{section_name}-{subsection_num}'
+                config_key = f'section_config:{event_id}:{section_id}'
+
+                client = kvrocks_client_sync.connect()
+                client.hset(
+                    config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
+                )
+
+        # 2. 寫入 subsection_total metadata
         subsection_counts = {}
         for ticket_tuple in ticket_tuples:
             _, section, subsection, _, _, _, _ = ticket_tuple
@@ -45,7 +62,7 @@ def mock_kafka_infrastructure():
 
         client = kvrocks_client_sync.connect()
         for section_id, count in subsection_counts.items():
-            # 寫入 total 和 available counter
+            # 寫入 total 和available counter
             total_key = f'subsection_total:{event_id}:{section_id}'
             avail_key = f'subsection_avail:{event_id}:{section_id}'
             client.set(total_key, count)
@@ -55,7 +72,7 @@ def mock_kafka_infrastructure():
             bf_key = f'seats_bf:{event_id}:{section_id}'
             client.set(bf_key, b'\x00')  # 設置一個初始byte表示已初始化
 
-        # 2. 直接初始化座位狀態到 Kvrocks（跳過 Kafka）
+        # 3. 直接初始化座位狀態到 Kvrocks（跳過 Kafka）
 
         # 收集每個 row 的價格資訊
         seat_meta_data = {}  # {(event_id, section_id, row): {seat_num: price}}
