@@ -64,7 +64,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             config_key = f'section_config:{event_id}:{section_id}'
 
             # 從 Redis 讀取配置
-            config = await client.hgetall(config_key)  # pyright: ignore
+            config = await client.hgetall(config_key)  # type: ignore
 
             if not config:
                 raise ValueError(
@@ -179,7 +179,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
             # 讀取該排座位的狀態
             seats = []
-            prices = await client.hgetall(meta_key)  # pyright: ignore
+            prices = await client.hgetall(meta_key)  # type: ignore
 
             for seat_num in range(1, seats_per_row + 1):
                 seat_index = self._calculate_seat_index(row, seat_num)

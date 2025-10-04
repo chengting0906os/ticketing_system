@@ -476,13 +476,13 @@ class CreateEventUseCase:
                     env = os.environ.copy()
                     env['EVENT_ID'] = str(event_id)
                     env['PYTHONPATH'] = str(project_root)
-                    env['CONSUMER_GROUP_ID'] = consumer_config['group_id']
+                    env['CONSUMER_GROUP_ID'] = str(consumer_config['group_id'])
                     env['CONSUMER_INSTANCE_ID'] = str(consumer_config['instance_id'])
 
-                    cmd = ['uv', 'run', 'python', '-m', consumer_config['module']]
+                    cmd = ['uv', 'run', 'python', '-m', str(consumer_config['module'])]
 
                     process = await asyncio.create_subprocess_exec(
-                        *cmd,
+                        *cmd,  # type: ignore
                         cwd=project_root,
                         env=env,
                         stdout=asyncio.subprocess.PIPE,

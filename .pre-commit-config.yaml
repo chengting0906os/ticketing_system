@@ -10,10 +10,10 @@ repos:
 
   - repo: local
     hooks:
-      - id: pyright
-        name: pyright
-        entry: bash -c 'uv run pyright'
+      - id: pyrefly
+        name: Pyrefly (type checking)
+        entry: bash -c 'uv run pyrefly check'
         language: system
         pass_filenames: false
         always_run: true
-        stages: [pre-push]
+        stages: [pre-commit]

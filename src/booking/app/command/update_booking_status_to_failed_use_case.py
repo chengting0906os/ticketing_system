@@ -1,5 +1,3 @@
-from typing import TYPE_CHECKING
-
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,10 +9,6 @@ from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 
 
-if TYPE_CHECKING:
-    from src.booking.driven_adapter.booking_command_repo_impl import BookingCommandRepoImpl
-
-
 class UpdateBookingToFailedUseCase:
     def __init__(
         self,
@@ -22,7 +16,7 @@ class UpdateBookingToFailedUseCase:
         booking_command_repo: BookingCommandRepo,
     ):
         self.session = session
-        self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.booking_command_repo: BookingCommandRepo = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     @inject

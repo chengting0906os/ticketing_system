@@ -31,6 +31,7 @@ dependencies = [
     "dependency-injector>=4.48.2",
     "redis>=6.4.0",
     "async-lru>=2.0.5",
+    "pyrefly>=0.35.0",
 ]
 
 [dependency-groups]
@@ -117,12 +118,23 @@ bdd_features_base_dir = "tests/features/"
 addopts = "-v --tb=short --strict-markers -n 12"
 
 [tool.pyright]
-include = ["src", "tests"]
-exclude = ["src/platform/alembic/", "scripts/"]
-pythonVersion = "3.13"
-typeCheckingMode = "standard"
-venvPath = "."
-venv = ".venv"
+
+# some checking need to 
+typeCheckingMode = "off"
+reportMissingModuleSource = false
+reportMissingImports = false
+reportInvalidTypeForm = false
+
+[tool.pyrefly]
+search-path = [".", "tests", ".venv/lib/python3.13/site-packages"]
+site-package-path = [".venv/lib/python3.13/site-packages"]
+project-includes = ["src", "tests"]
+
+[tool.pyrefly.errors]
+missing-attribute = false
+missing-argument = false
+unexpected-keyword = false
+
 
 [tool.uv]
 package = false

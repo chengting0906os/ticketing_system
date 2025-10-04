@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.app.interface.i_booking_query_repo import BookingQueryRepo
+from src.booking.domain.booking_entity import Booking, BookingStatus
 from src.booking.driven_adapter.booking_model import BookingModel
 from src.event_ticketing.driven_adapter.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger
@@ -84,7 +84,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
             return BookingQueryRepoImpl._to_entity(db_booking)
 
-    @Logger.io(truncate_content=True)
+    @Logger.io
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         from src.event_ticketing.driven_adapter.event_model import EventModel
 
@@ -106,7 +106,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
             return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
 
-    @Logger.io(truncate_content=True)
+    @Logger.io(truncate_content=True)  # type: ignore
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
         from src.event_ticketing.driven_adapter.event_model import EventModel
 

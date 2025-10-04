@@ -251,7 +251,7 @@ class SeatReservationConsumer:
             if isinstance(event_data, str):
                 return json.loads(event_data)
             if hasattr(event_data, '__dict__'):
-                return vars(event_data)
+                return dict(vars(event_data))
 
             Logger.base.error(f'❌ Unknown event data type: {type(event_data)}')
             return None
@@ -269,7 +269,7 @@ class SeatReservationConsumer:
             raise ValueError('Missing required fields in event data')
 
         return {
-            'booking_id': int(aggregate_id),  # pyright: ignore[reportArgumentType]
+            'booking_id': int(str(aggregate_id)),
             'buyer_id': data['buyer_id'],
             'event_id': data['event_id'],
             'section': data.get('section', ''),

@@ -189,15 +189,16 @@ def event_exists(step, execute_sql_statement):
 
     # Create tickets manually since we're bypassing the CreateEventUseCase
     # Generate all tickets based on seating configuration
-    for section in seating_config['sections']:
-        section_name = section['name']
-        section_price = section['price']
-        subsections = section['subsections']
+    sections_list: list[dict] = seating_config['sections']
+    for section in sections_list:
+        section_name: str = section['name']
+        section_price: int = section['price']
+        subsections: list[dict] = section['subsections']
 
         for subsection in subsections:
-            subsection_number = subsection['number']
-            rows = subsection['rows']
-            seats_per_row = subsection['seats_per_row']
+            subsection_number: int = subsection['number']
+            rows: int = subsection['rows']
+            seats_per_row: int = subsection['seats_per_row']
 
             # Generate tickets for each seat
             for row in range(1, rows + 1):
@@ -225,13 +226,15 @@ def event_exists(step, execute_sql_statement):
     # Create section index for SSE queries
     index_key = f'event_sections:{event_id}'
 
-    for section in seating_config['sections']:
-        section_name = section['name']
-        section_price = section['price']
-        for subsection in section['subsections']:
-            subsection_number = subsection['number']
-            rows = subsection['rows']
-            seats_per_row = subsection['seats_per_row']
+    sections_list2: list[dict] = seating_config['sections']  # type: ignore
+    for section in sections_list2:
+        section_name: str = section['name']
+        section_price: int = section['price']
+        subsections_list: list[dict] = section['subsections']  # type: ignore
+        for subsection in subsections_list:
+            subsection_number: int = subsection['number']
+            rows: int = subsection['rows']
+            seats_per_row: int = subsection['seats_per_row']
             section_id = f'{section_name}-{subsection_number}'
 
             # Add to section index (sorted set)

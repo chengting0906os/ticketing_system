@@ -24,14 +24,14 @@ class ListBookingsUseCase:
     ):
         return cls(session=session, booking_query_repo=booking_query_repo)
 
-    @Logger.io(truncate_content=True)
+    @Logger.io
     async def list_buyer_bookings(self, buyer_id: int, status: str) -> List[Dict[str, Any]]:
         bookings = await self.booking_query_repo.get_buyer_bookings_with_details(
             buyer_id=buyer_id, status=status
         )
         return bookings
 
-    @Logger.io(truncate_content=True)
+    @Logger.io
     async def list_seller_bookings(self, seller_id: int, status: str) -> List[Dict[str, Any]]:
         bookings = await self.booking_query_repo.get_seller_bookings_with_details(
             seller_id=seller_id, status=status

@@ -19,11 +19,12 @@ Event Ticketing MQ Consumer - Kvrocks State Manager
 """
 
 import os
-from typing import Dict, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 import anyio
 from quixstreams import Application
 from quixstreams.state.rocksdb import RocksDBOptions
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
@@ -52,8 +53,8 @@ class EventTicketingMqConsumer:
 
     def __init__(self):
         self.kvrocks_app: Optional[Application] = None
-        self.session = None
-        self.session_gen = None
+        self.session: Optional[AsyncSession] = None
+        self.session_gen: Optional[AsyncGenerator[AsyncSession, None]] = None
         self.running = False
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # 使用統一的 KafkaConsumerGroupBuilder 而非舊的命名方式
@@ -298,7 +299,7 @@ def main():
     """主函數"""
     consumer = EventTicketingMqConsumer()
     try:
-        anyio.run(consumer.start)
+        anyio.run(consumer.start)  # type: ignore
     except KeyboardInterrupt:
         Logger.base.info('⚠️ Received interrupt signal')
     except Exception as e:

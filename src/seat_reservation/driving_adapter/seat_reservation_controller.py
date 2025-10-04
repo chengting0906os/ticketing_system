@@ -67,7 +67,7 @@ def _seat_to_response(seat) -> SeatResponse:
 
 
 @router.get('/{event_id}/sse/status')
-@Logger.io(truncate_content=True)
+@Logger.io
 async def sse_event_seat_status(
     request: Request,
     event_id: int,
@@ -231,7 +231,7 @@ async def sse_event_seat_status(
 
 
 @router.get('/{event_id}/sse/all_section_stat')
-@Logger.io(truncate_content=True)
+@Logger.io(truncate_content=True)  # type: ignore
 async def sse_all_section_stats(
     request: Request,
     event_id: int,
@@ -365,7 +365,7 @@ async def sse_all_section_stats(
 
 
 @router.get('/{event_id}/sections/stats', status_code=status.HTTP_200_OK)
-@Logger.io(truncate_content=True)
+@Logger.io(truncate_content=True)  # type: ignore
 async def get_all_section_stats(event_id: int) -> dict:
     """
     獲取活動所有 section 的統計資訊（從 Kvrocks 讀取）
@@ -400,7 +400,7 @@ async def get_all_section_stats(event_id: int) -> dict:
     '/{event_id}/tickets/section/{section}/subsection/{subsection}',
     status_code=status.HTTP_200_OK,
 )
-@Logger.io(truncate_content=True)
+@Logger.io(truncate_content=True)  # type: ignore
 async def list_seats_by_section_subsection(
     event_id: int,
     section: str,
@@ -537,7 +537,7 @@ async def list_seats_by_section_subsection(
     '/{event_id}/tickets/section/{section}/subsection/{subsection}/db',
     status_code=status.HTTP_200_OK,
 )
-@Logger.io(truncate_content=True)
+@Logger.io(truncate_content=True)  # type: ignore
 async def list_seats_by_section_subsection_from_db(
     event_id: int,
     section: str,

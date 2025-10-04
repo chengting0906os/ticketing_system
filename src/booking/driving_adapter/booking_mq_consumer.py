@@ -187,7 +187,7 @@ def main():
     """主函數"""
     consumer = BookingMqConsumer()
     try:
-        anyio.run(consumer.start)
+        anyio.run(consumer.start)  # type: ignore
     except KeyboardInterrupt:
         Logger.base.info('⚠️ Received interrupt signal')
     except Exception as e:

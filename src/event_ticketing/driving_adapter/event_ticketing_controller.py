@@ -78,7 +78,7 @@ async def get_event(
 
 
 @router.get('', status_code=status.HTTP_200_OK)
-@Logger.io(truncate_content=True)
+@Logger.io
 async def list_events(
     seller_id: Optional[int] = None,
     use_case: ListEventsUseCase = Depends(ListEventsUseCase.depends),

@@ -58,8 +58,7 @@ class UserEntity:
     @staticmethod
     def validate_role(role: UserRole) -> None:
         """驗證角色是否有效"""
-
-        valid_roles = [r.value for r in UserRole]
+        valid_roles = [r.value for r in UserRole.__members__.values()]
         if role not in valid_roles:
             raise DomainError(f'Invalid role: {role}. Must be one of: {", ".join(valid_roles)}')
 

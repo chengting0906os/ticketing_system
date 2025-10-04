@@ -4,7 +4,7 @@ from inspect import (
     isgeneratorfunction,
 )
 import types
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, Callable, Optional, TypeVar, cast, overload, ParamSpec
 
 from src.platform.logging.generator_wrapper import GeneratorWrapper
 from src.platform.logging.loguru_io_config import (
@@ -135,8 +135,22 @@ class LoguruIO:
             return self._hide_from_traceback(sync_wrapper)
 
 
+_P = ParamSpec('_P')
+_T = TypeVar('_T')
+
+
 class Logger:
     base = custom_logger
+
+    @overload
+    @staticmethod
+    def io(func: Callable[_P, _T]) -> Callable[_P, _T]: ...
+
+    @overload
+    @staticmethod
+    def io(
+        func: None = ..., *, reraise: bool = ..., truncate_content: bool = ...
+    ) -> Callable[[Callable[_P, _T]], Callable[_P, _T]]: ...
 
     @staticmethod
     def io(func=None, *, reraise=True, truncate_content=True):

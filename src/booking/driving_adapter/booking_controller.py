@@ -32,7 +32,7 @@ router = APIRouter()
 
 
 @router.get('/my-bookings', response_model=List[BookingWithDetailsResponse])
-@Logger.io(truncate_content=True)
+@Logger.io
 async def list_my_bookings(
     booking_status: str,
     current_user: UserEntity = Depends(get_current_user),
@@ -73,7 +73,7 @@ async def create_booking(
         event_id=booking.event_id,
         total_price=booking.total_price,
         status=booking.status.value,  # Should be 'pending_payment' now
-        created_at=booking.created_at,  # pyright: ignore[reportArgumentType]
+        created_at=booking.created_at,
     )
 
 

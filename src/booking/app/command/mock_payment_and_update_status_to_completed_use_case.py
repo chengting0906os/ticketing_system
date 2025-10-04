@@ -1,26 +1,21 @@
 import random
 import string
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.booking.app.interface.i_booking_command_repo import BookingCommandRepo
+from src.booking.app.interface.i_booking_query_repo import BookingQueryRepo
 from src.booking.domain.booking_domain_events import BookingPaidEvent
 from src.booking.domain.booking_entity import BookingStatus
-from src.booking.app.interface.i_booking_query_repo import BookingQueryRepo
 from src.platform.config.db_setting import get_async_session
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
-
-
-if TYPE_CHECKING:
-    from src.booking.driven_adapter.booking_command_repo_impl import BookingCommandRepoImpl
-    from src.booking.driven_adapter.booking_query_repo_impl import BookingQueryRepoImpl
 
 
 class MockPaymentUseCase:
@@ -31,8 +26,8 @@ class MockPaymentUseCase:
         booking_query_repo: BookingQueryRepo,
     ):
         self.session = session
-        self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
-        self.booking_query_repo: 'BookingQueryRepoImpl' = booking_query_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.booking_command_repo: BookingCommandRepo = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.booking_query_repo: BookingQueryRepo = booking_query_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     @inject

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import List
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -15,10 +15,6 @@ from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
-if TYPE_CHECKING:
-    from src.booking.driven_adapter.booking_command_repo_impl import BookingCommandRepoImpl
-
-
 class CreateBookingUseCase:
     def __init__(
         self,
@@ -26,7 +22,7 @@ class CreateBookingUseCase:
         booking_command_repo: BookingCommandRepo,
     ):
         self.session = session
-        self.booking_command_repo: 'BookingCommandRepoImpl' = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.booking_command_repo: BookingCommandRepo = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     @inject
