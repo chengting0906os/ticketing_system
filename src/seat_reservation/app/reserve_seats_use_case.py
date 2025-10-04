@@ -17,6 +17,9 @@ from src.seat_reservation.domain.seat_selection_domain import (
     SelectionMode,
 )
 from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
+    ISeatReservationEventPublisher,
+)
 
 
 @dataclass
@@ -92,10 +95,14 @@ class ReserveSeatsUseCase:
     """
 
     def __init__(
-        self, seat_selection_domain: SeatSelectionDomain, seat_state_handler: SeatStateHandler
+        self,
+        seat_selection_domain: SeatSelectionDomain,
+        seat_state_handler: SeatStateHandler,
+        mq_publisher: ISeatReservationEventPublisher,
     ):
         self.seat_domain = seat_selection_domain
         self.seat_state_handler = seat_state_handler
+        self.mq_publisher = mq_publisher
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
@@ -163,6 +170,15 @@ class ReserveSeatsUseCase:
                     f'for booking {request.booking_id}'
                 )
 
+                # 發送座位預訂成功事件
+                await self.mq_publisher.publish_seats_reserved(
+                    booking_id=request.booking_id,
+                    buyer_id=request.buyer_id,
+                    reserved_seats=selection_result.selected_seats,
+                    total_price=selection_result.total_price or 0,
+                    event_id=request.event_id,
+                )
+
                 return ReservationResult(
                     success=True,
                     booking_id=request.booking_id,
@@ -171,27 +187,57 @@ class ReserveSeatsUseCase:
                     event_id=request.event_id,
                 )
             else:
+                error_msg = 'Failed to reserve seats directly in Kvrocks'
+
+                # 發送座位預訂失敗事件
+                await self.mq_publisher.publish_reservation_failed(
+                    booking_id=request.booking_id,
+                    buyer_id=request.buyer_id,
+                    error_message=error_msg,
+                    event_id=request.event_id,
+                )
+
                 return ReservationResult(
                     success=False,
                     booking_id=request.booking_id,
-                    error_message='Failed to reserve seats directly in Kvrocks',
+                    error_message=error_msg,
                     event_id=request.event_id,
                 )
 
         except DomainError as e:
             Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
+            error_msg = str(e)
+
+            # 發送座位預訂失敗事件
+            await self.mq_publisher.publish_reservation_failed(
+                booking_id=request.booking_id,
+                buyer_id=request.buyer_id,
+                error_message=error_msg,
+                event_id=request.event_id,
+            )
+
             return ReservationResult(
                 success=False,
                 booking_id=request.booking_id,
-                error_message=str(e),
+                error_message=error_msg,
                 event_id=request.event_id,
             )
         except Exception as e:
             Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
+            error_msg = 'Internal server error'
+
+            # 發送座位預訂失敗事件
+            await self.mq_publisher.publish_reservation_failed(
+                booking_id=request.booking_id,
+                buyer_id=request.buyer_id,
+                error_message=error_msg,
+                event_id=request.event_id,
+            )
+
             return ReservationResult(
                 success=False,
                 booking_id=request.booking_id,
-                error_message='Internal server error',
+                error_message=error_msg,
                 event_id=request.event_id,
             )
 

@@ -14,18 +14,25 @@ from src.event_ticketing.driven_adapter.event_ticketing_command_repo_impl import
 from src.event_ticketing.driven_adapter.event_ticketing_query_repo_impl import (
     EventTicketingQueryRepoImpl,
 )
-from src.event_ticketing.driving_adapter.event_ticketing_mq_gateway import EventTicketingMqGateway
 from src.platform.config.core_setting import Settings
 from src.platform.config.db_setting import Database
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.section_based_partition_strategy import (
     SectionBasedPartitionStrategy,
 )
+from src.seat_reservation.app.finalize_seat_payment_use_case import FinalizeSeatPaymentUseCase
+from src.seat_reservation.app.get_section_seats_detail_use_case import (
+    GetSectionSeatsDetailUseCase,
+)
+from src.seat_reservation.app.initialize_seat_use_case import InitializeSeatUseCase
+from src.seat_reservation.app.release_seat_use_case import ReleaseSeatUseCase
 from src.seat_reservation.app.reserve_seats_use_case import ReserveSeatsUseCase
 from src.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
+from src.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
+    SeatReservationEventPublisher,
+)
 from src.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
 from src.seat_reservation.driven_adapter.seat_state_store import SeatStateStore
-from src.seat_reservation.driving_adapter.seat_reservation_mq_gateway import SeatReservationGateway
 from src.shared_kernel.user.app.auth_service import AuthService
 from src.shared_kernel.user.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
 from src.shared_kernel.user.driven_adapter.user_query_repo_impl import UserQueryRepoImpl
@@ -69,6 +76,7 @@ class Container(containers.DeclarativeContainer):
 
     # Seat Reservation Infrastructure
     seat_state_store = providers.Singleton(SeatStateStore)
+    seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
 
     # Seat Reservation Domain and Use Cases
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
@@ -80,6 +88,23 @@ class Container(containers.DeclarativeContainer):
         ReserveSeatsUseCase,
         seat_selection_domain=seat_selection_domain,
         seat_state_handler=seat_state_handler,
+        mq_publisher=seat_reservation_mq_publisher,
+    )
+    initialize_seat_use_case = providers.Factory(
+        InitializeSeatUseCase,
+        seat_state_handler=seat_state_handler,
+    )
+    release_seat_use_case = providers.Factory(
+        ReleaseSeatUseCase,
+        seat_state_handler=seat_state_handler,
+    )
+    finalize_seat_payment_use_case = providers.Factory(
+        FinalizeSeatPaymentUseCase,
+        seat_state_handler=seat_state_handler,
+    )
+    get_section_seats_detail_use_case = providers.Factory(
+        GetSectionSeatsDetailUseCase,
+        session=providers.Dependency(),
     )
 
     # Event Ticketing Use Cases
@@ -87,15 +112,6 @@ class Container(containers.DeclarativeContainer):
         ReserveTicketsUseCase,
         event_ticketing_command_repo=event_ticketing_command_repo,
         event_ticketing_query_repo=event_ticketing_query_repo,
-    )
-
-    # Gateways
-    seat_reservation_gateway = providers.Factory(
-        SeatReservationGateway, reserve_seats_use_case=reserve_seats_use_case
-    )
-
-    event_ticketing_mq_gateway = providers.Factory(
-        EventTicketingMqGateway, reserve_tickets_use_case=reserve_tickets_use_case
     )
 
 

@@ -113,8 +113,7 @@ filterwarnings = [
 testpaths = ["tests"]
 # pytest-bdd configuration
 bdd_features_base_dir = "tests/features/"
-# Use pytest-xdist for parallel testing with 6 workers
-addopts = "-v --tb=short --strict-markers -n 8"
+addopts = "-v --tb=short --strict-markers -n 12"
 
 [tool.pyright]
 include = ["src", "tests"]

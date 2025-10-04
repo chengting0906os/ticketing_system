@@ -37,3 +37,17 @@ class SeatStateHandler(ABC):
     @abstractmethod
     def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         pass
+
+    @abstractmethod
+    def initialize_seat(
+        self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
+    ) -> bool:
+        """初始化座位狀態"""
+        pass
+
+    @abstractmethod
+    def finalize_payment(
+        self, seat_id: str, event_id: int, timestamp: Optional[str] = None
+    ) -> bool:
+        """完成支付，將座位從 RESERVED 轉為 SOLD"""
+        pass

@@ -17,6 +17,7 @@ import os
 from typing import Optional
 
 import anyio
+from anyio import from_thread
 from quixstreams import Application
 
 from src.booking.driving_adapter.booking_mq_gateway import BookingMqGateway
@@ -114,7 +115,7 @@ class BookingMqConsumer:
             Logger.base.info(f'💰 [BOOKING] Processing pending_payment: {message}')
 
             # 使用 anyio 執行 async gateway
-            result = anyio.from_thread.run(self.gateway.handle_event, event_data=message)
+            result = from_thread.run(self.gateway.handle_event, event_data=message)  # type: ignore
 
             Logger.base.info(f'✅ [BOOKING] Pending payment processed: {result}')
             return {'success': True, 'result': result}
@@ -134,7 +135,7 @@ class BookingMqConsumer:
             Logger.base.info(f'❌ [BOOKING] Processing failed status: {message}')
 
             # 使用 anyio 執行 async gateway
-            result = anyio.from_thread.run(self.gateway.handle_event, event_data=message)
+            result = from_thread.run(self.gateway.handle_event, event_data=message)  # type: ignore
 
             Logger.base.info(f'✅ [BOOKING] Failed status processed: {result}')
             return {'success': True, 'result': result}

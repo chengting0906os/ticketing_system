@@ -92,7 +92,7 @@ async def get_booking(
         event_id=booking.event_id,
         total_price=booking.total_price,
         status=booking.status.value,
-        created_at=booking.created_at,
+        created_at=booking.created_at,  # pyright: ignore[reportArgumentType]
         paid_at=booking.paid_at,  # pyright: ignore[reportCallIssue]
     )
 

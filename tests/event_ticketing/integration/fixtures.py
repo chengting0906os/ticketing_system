@@ -1,11 +1,8 @@
 import json
-import os
 import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.platform.state.redis_client import kvrocks_client_sync
 
@@ -54,15 +51,19 @@ def mock_kafka_infrastructure():
             client.set(total_key, count)
             client.set(avail_key, count)  # 初始時全部可用
 
-            # 初始化 bitfield (用於檢查 section 是否已初始化)
+            # 創建空的 bitfield (表示已初始化，所有座位預設為 available=0b00)
             bf_key = f'seats_bf:{event_id}:{section_id}'
-            client.set(bf_key, '0')  # 設置一個初始值表示已初始化
+            client.set(bf_key, b'\x00')  # 設置一個初始byte表示已初始化
 
         # 2. 直接初始化座位狀態到 Kvrocks（跳過 Kafka）
+
+        # 收集每個 row 的價格資訊
+        seat_meta_data = {}  # {(event_id, section_id, row): {seat_num: price}}
 
         for ticket_tuple in ticket_tuples:
             _, section, subsection, row, seat, price, status = ticket_tuple
             seat_id = f'{section}-{subsection}-{row}-{seat}'
+            section_id = f'{section}-{subsection}'
             key = f'seat:{seat_id}'
 
             seat_state = {
@@ -74,26 +75,18 @@ def mock_kafka_infrastructure():
 
             client.set(key, json.dumps(seat_state))
 
-        # 3. 更新 event status 從 DRAFT 到 AVAILABLE (模擬真實流程)
+            # 收集 seat_meta 資料
+            meta_key = (event_id, section_id, row)
+            if meta_key not in seat_meta_data:
+                seat_meta_data[meta_key] = {}
+            seat_meta_data[meta_key][str(seat)] = price
 
-        DB_CONFIG = {
-            'user': os.getenv('POSTGRES_USER'),
-            'password': os.getenv('POSTGRES_PASSWORD'),
-            'host': os.getenv('POSTGRES_SERVER'),
-            'port': os.getenv('POSTGRES_PORT'),
-            'test_db': os.environ.get(
-                'POSTGRES_DB', 'ticketing_system_test_db'
-            ),  # Use worker-specific DB
-        }
-        TEST_DATABASE_URL = f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'
+        # 寫入 seat_meta Hash
+        for (event_id, section_id, row), prices in seat_meta_data.items():
+            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
+            client.hset(meta_key, mapping=prices)
 
-        engine = create_async_engine(TEST_DATABASE_URL)
-        async with engine.begin() as conn:
-            await conn.execute(
-                text("UPDATE event SET status = 'available' WHERE id = :event_id"),
-                {'event_id': event_id},
-            )
-        await engine.dispose()
+        # Note: Event status update is handled by the use case, not here
 
     with (
         patch(

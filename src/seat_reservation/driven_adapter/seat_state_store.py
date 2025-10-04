@@ -14,20 +14,17 @@ from src.platform.state.redis_client import kvrocks_client
 SEAT_STATUS_AVAILABLE = 0  # 0b00
 SEAT_STATUS_RESERVED = 1  # 0b01
 SEAT_STATUS_SOLD = 2  # 0b10
-SEAT_STATUS_UNAVAILABLE = 3  # 0b11
 
 STATUS_TO_BITFIELD = {
     'AVAILABLE': SEAT_STATUS_AVAILABLE,
     'RESERVED': SEAT_STATUS_RESERVED,
     'SOLD': SEAT_STATUS_SOLD,
-    'UNAVAILABLE': SEAT_STATUS_UNAVAILABLE,
 }
 
 BITFIELD_TO_STATUS = {
     SEAT_STATUS_AVAILABLE: 'AVAILABLE',
     SEAT_STATUS_RESERVED: 'RESERVED',
     SEAT_STATUS_SOLD: 'SOLD',
-    SEAT_STATUS_UNAVAILABLE: 'UNAVAILABLE',
 }
 
 
@@ -105,13 +102,12 @@ class SeatStateStore:
 
             # 2. 取得舊狀態（用於計數器更新）
             bf_key = f'seats_bf:{event_id}:{section}-{subsection}'
-            old_status_values = await client.bitfield(
-                bf_key, operations=[('GET', 'u2', f'#{index}')]
-            )
+            bit_offset = index * 2
+            old_status_values = await client.bitfield(bf_key).get('u2', bit_offset).execute()
             old_status_value = old_status_values[0] if old_status_values else None
 
             # 3. 更新 Bitfield
-            await client.bitfield(bf_key, operations=[('SET', 'u2', f'#{index}', status_value)])
+            await client.bitfield(bf_key).set('u2', bit_offset, status_value).execute()
 
             # 4. 更新 Counter (只追蹤 AVAILABLE 狀態)
             row_counter_key = f'row_avail:{event_id}:{section}-{subsection}:{row}'
@@ -139,7 +135,7 @@ class SeatStateStore:
 
             # 5. 存儲價格 Metadata
             meta_key = f'seat_meta:{event_id}:{section}-{subsection}:{row}'
-            await client.hset(meta_key, seat_num, price)
+            client.hset(meta_key, str(seat_num), str(price))
 
             return True
 
@@ -155,19 +151,14 @@ class SeatStateStore:
         row: int,
         seat_num: int,
     ) -> Optional[str]:
-        """
-        查詢座位狀態
-
-        Returns:
-            座位狀態 ('AVAILABLE', 'RESERVED', 'SOLD', 'UNAVAILABLE') 或 None
-        """
         try:
             client = await kvrocks_client.connect()
 
             index = self._calculate_seat_index(row, seat_num)
             bf_key = f'seats_bf:{event_id}:{section}-{subsection}'
+            bit_offset = index * 2
 
-            results = await client.bitfield(bf_key, operations=[('GET', 'u2', f'#{index}')])
+            results = await client.bitfield(bf_key).get('u2', bit_offset).execute()
 
             if results and results[0] is not None:
                 return BITFIELD_TO_STATUS.get(results[0])
@@ -184,12 +175,6 @@ class SeatStateStore:
         subsection: int,
         row: int,
     ) -> int:
-        """
-        查詢排可售數（O(1)）
-
-        Returns:
-            該排剩餘可售座位數 (0-20)
-        """
         try:
             client = await kvrocks_client.connect()
             counter_key = f'row_avail:{event_id}:{section}-{subsection}:{row}'
@@ -206,12 +191,6 @@ class SeatStateStore:
         section: str,
         subsection: int,
     ) -> int:
-        """
-        查詢 subsection 可售數（O(1)）
-
-        Returns:
-            該 subsection 剩餘可售座位數 (0-500)
-        """
         try:
             client = await kvrocks_client.connect()
             counter_key = f'subsection_avail:{event_id}:{section}-{subsection}'
@@ -229,12 +208,6 @@ class SeatStateStore:
         subsection: int,
         row: int,
     ) -> List[Dict]:
-        """
-        查詢整排座位狀態（批量）
-
-        Returns:
-            座位列表 [{'seat_num': 1, 'status': 'AVAILABLE', 'price': 3000}, ...]
-        """
         try:
             client = await kvrocks_client.connect()
 
@@ -242,12 +215,15 @@ class SeatStateStore:
             bf_key = f'seats_bf:{event_id}:{section}-{subsection}'
             start_index = self._calculate_seat_index(row, 1)
 
-            operations = [('GET', 'u2', f'#{start_index + i}') for i in range(20)]
-            status_values = await client.bitfield(bf_key, operations=operations)
+            bf_command = client.bitfield(bf_key)
+            for i in range(20):
+                bit_offset = (start_index + i) * 2
+                bf_command = bf_command.get('u2', bit_offset)
+            status_values = await bf_command.execute()
 
             # 2. 讀取價格
             meta_key = f'seat_meta:{event_id}:{section}-{subsection}:{row}'
-            prices = await client.hgetall(meta_key)
+            prices = client.hgetall(meta_key)
 
             # 3. 組合結果
             seats = []
@@ -258,7 +234,7 @@ class SeatStateStore:
                         {
                             'seat_num': seat_num,
                             'status': BITFIELD_TO_STATUS.get(status_value, 'UNAVAILABLE'),
-                            'price': int(prices.get(str(seat_num), 0)),
+                            'price': int(prices.get(str(seat_num), 0)),  # type: ignore
                         }
                     )
 
@@ -309,12 +285,12 @@ class SeatStateStore:
             meta_key = f'seat_meta:{event_id}:{section}-{subsection}:{row}'
 
             # 如果該座位的價格已存在於 Hash 中，表示已初始化過
-            is_new_seat = not client.hexists(meta_key, seat_num)
+            is_new_seat = not client.hexists(meta_key, str(seat_num))
 
             # 3. 取得舊狀態（用於計數器更新）
             if not is_new_seat:
                 old_status_values = client.bitfield(bf_key).get('u2', bit_offset).execute()
-                old_status_value = old_status_values[0] if old_status_values else None
+                old_status_value = old_status_values[0] if old_status_values else None  # type: ignore
             else:
                 old_status_value = None
 
@@ -348,7 +324,7 @@ class SeatStateStore:
 
             # 5. 存儲價格 Metadata
             meta_key = f'seat_meta:{event_id}:{section}-{subsection}:{row}'
-            client.hset(meta_key, seat_num, price)
+            client.hset(meta_key, str(seat_num), str(price))
 
             return True
 

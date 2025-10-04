@@ -235,6 +235,92 @@ class SeatStateHandlerImpl(SeatStateHandler):
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
 
+    def initialize_seat(
+        self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
+    ) -> bool:
+        """初始化座位狀態為 AVAILABLE"""
+        try:
+            # 解析座位 ID
+            parts = seat_id.split('-')
+            if len(parts) < 4:
+                Logger.base.error(f'❌ [SEAT-STATE] Invalid seat_id: {seat_id}')
+                return False
+
+            section, subsection, row, seat_num = (
+                parts[0],
+                int(parts[1]),
+                int(parts[2]),
+                int(parts[3]),
+            )
+
+            # 使用 repository 設置座位狀態
+            success = self.repository.set_seat_status_sync(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                row=row,
+                seat_num=seat_num,
+                status='AVAILABLE',
+                price=price,
+            )
+
+            if success:
+                Logger.base.info(f'✅ [SEAT-STATE] Initialized seat {seat_id}')
+            else:
+                Logger.base.error(f'❌ [SEAT-STATE] Failed to initialize seat {seat_id}')
+
+            return success
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Error initializing seat {seat_id}: {e}')
+            return False
+
+    def finalize_payment(
+        self, seat_id: str, event_id: int, timestamp: Optional[str] = None
+    ) -> bool:
+        """完成支付，將座位從 RESERVED 轉為 SOLD"""
+        try:
+            # 解析座位 ID
+            parts = seat_id.split('-')
+            if len(parts) < 4:
+                Logger.base.error(f'❌ [SEAT-STATE] Invalid seat_id: {seat_id}')
+                return False
+
+            section, subsection, row, seat_num = (
+                parts[0],
+                int(parts[1]),
+                int(parts[2]),
+                int(parts[3]),
+            )
+
+            # 先獲取當前價格
+            current_price = self.get_seat_price(seat_id, event_id)
+            if current_price is None:
+                Logger.base.error(f'❌ [SEAT-STATE] Seat {seat_id} not found or no price')
+                return False
+
+            # 使用 repository 更新狀態為 SOLD
+            success = self.repository.set_seat_status_sync(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                row=row,
+                seat_num=seat_num,
+                status='SOLD',
+                price=current_price,
+            )
+
+            if success:
+                Logger.base.info(f'✅ [SEAT-STATE] Finalized payment for seat {seat_id}')
+            else:
+                Logger.base.error(f'❌ [SEAT-STATE] Failed to finalize payment for seat {seat_id}')
+
+            return success
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Error finalizing payment for seat {seat_id}: {e}')
+            return False
+
     def _rollback_reservations(self, reserved_seat_ids: List[str], event_id: int) -> None:
         """回滾已預訂的座位"""
         if not reserved_seat_ids:

@@ -172,7 +172,7 @@ class EventTicketingMqConsumer:
 
         根據目標狀態更新不同的欄位
         """
-        updates = {'status': target_status}
+        updates: Dict = {'status': target_status}
 
         if target_status == 'RESERVED':
             updates.update(

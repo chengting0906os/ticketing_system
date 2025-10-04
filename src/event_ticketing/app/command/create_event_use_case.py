@@ -116,7 +116,14 @@ class CreateEventUseCase:
         )
 
         # 5. 啟用活動 (DRAFT → AVAILABLE)
-        final_aggregate.event.status = EventStatus.AVAILABLE
+        # 需要從資料庫重新讀取 event 以確保它在 session 中被追蹤
+        from sqlalchemy import select
+        from src.event_ticketing.driven_adapter.event_model import EventModel
+
+        stmt = select(EventModel).where(EventModel.id == final_aggregate.event.id)
+        result = await self.session.execute(stmt)
+        event_model = result.scalar_one()
+        event_model.status = EventStatus.AVAILABLE.value
 
         if not final_aggregate.event.id:
             raise Exception('Event ID is missing after creation')
@@ -130,6 +137,9 @@ class CreateEventUseCase:
         )
 
         await self.session.commit()
+
+        # 更新 aggregate 中的 status
+        final_aggregate.event.status = EventStatus.AVAILABLE
 
         Logger.base.info(
             f'✅ Created event {final_aggregate.event.id} with {len(final_aggregate.tickets)} tickets'

@@ -53,6 +53,23 @@ class GetSeatAvailabilityUseCase:
     def depends(cls, session: AsyncSession = Depends(get_async_session)):
         return cls(session=session)
 
+    async def event_exists(self, *, event_id: int) -> None:
+        """
+        驗證活動是否存在，如果不存在則拋出 NotFoundError
+
+        Raises:
+            NotFoundError: 當活動不存在時
+        """
+        from sqlalchemy import select
+        from src.event_ticketing.driven_adapter.event_model import EventModel
+        from src.platform.exception.exceptions import NotFoundError
+
+        stmt = select(EventModel.id).where(EventModel.id == event_id)
+        result = await self.session.execute(stmt)
+
+        if result.scalar_one_or_none() is None:
+            raise NotFoundError('Event not found')
+
     @Logger.io
     async def get_event_status_with_all_subsections_tickets_count(
         self, *, event_id: int

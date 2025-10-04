@@ -35,6 +35,10 @@ from tests.event_ticketing.integration.steps.given import *  # noqa: E402, F403
 from tests.event_ticketing.integration.steps.then import *  # noqa: E402, F403
 from tests.event_ticketing.integration.steps.when import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
+from tests.seat_reservation.integration.fixtures import *  # noqa: E402, F403
+from tests.seat_reservation.integration.steps.given import *  # noqa: E402, F403
+from tests.seat_reservation.integration.steps.then import *  # noqa: E402, F403
+from tests.seat_reservation.integration.steps.when import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.when import *  # noqa: E402, F403
