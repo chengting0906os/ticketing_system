@@ -31,12 +31,13 @@ def http_server():
     # Get a free port
     port = get_free_port()
 
-    # Start server in separate process
-    server_process = multiprocessing.Process(target=run_server, args=(port,), daemon=True)
+    # Use spawn instead of fork to avoid issues in multi-threaded environments (CI)
+    ctx = multiprocessing.get_context('spawn')
+    server_process = ctx.Process(target=run_server, args=(port,), daemon=True)
     server_process.start()
 
     # Wait for server to be ready
-    time.sleep(2)
+    time.sleep(3)  # Increased wait time for CI environment
 
     yield f'http://127.0.0.1:{port}'
 
