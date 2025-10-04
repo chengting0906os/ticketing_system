@@ -20,6 +20,11 @@ else:
     # Each worker gets its own database
     os.environ['POSTGRES_DB'] = f'ticketing_system_test_db_{worker_id}'
 
+# Override LOG_DIR to use test log directory
+test_log_dir = Path(__file__).parent / 'test_log'
+test_log_dir.mkdir(exist_ok=True)
+os.environ['TEST_LOG_DIR'] = str(test_log_dir)
+
 from src.main import app  # noqa: E402
 from tests.booking.integration.fixtures import *  # noqa: E402, F403
 from tests.booking.integration.steps.given import *  # noqa: E402, F403

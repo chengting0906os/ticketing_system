@@ -1,11 +1,15 @@
 from contextvars import ContextVar
 from enum import StrEnum
 import logging
+import os
 import sys
 
 from loguru import logger as loguru_logger
 
 from src.platform.constant.path import LOG_DIR
+
+# Use test log directory if in test environment
+LOG_DIR = os.environ.get('TEST_LOG_DIR', LOG_DIR)
 
 
 # Constants and shared variables for LoguruIO
@@ -42,9 +46,12 @@ class InterceptHandler(logging.Handler):
 
         # Filter out formatting debug logs
         if record.levelno <= logging.DEBUG:
-            # Block format template debug messages
-            if "format '" in message and "' -> '" in message:
-                return  # Ignore formatting debug messages
+            # Block format template debug messages (gherkin pattern matching)
+            if 'format ' in message and ' -> ' in message:
+                return  # Ignore gherkin formatting messages
+            # Block asyncio selector debug messages
+            if 'Using selector:' in message and 'Selector' in message:
+                return  # Ignore asyncio selector messages
 
         # Also block logs from Kafka loggers regardless of level
         if record.name.startswith(('kafka', 'aiokafka')):
@@ -140,8 +147,14 @@ custom_logger = loguru_logger.bind(
 custom_logger.add(sys.stdout, format=io_log_format)
 
 # Add file output with daily rotation and compression
+# Use test_ prefix if in test environment
+log_filename = (
+    'test_{time:YYYY-MM-DD_HH}.log'
+    if os.environ.get('TEST_LOG_DIR')
+    else '{time:YYYY-MM-DD_HH}.log'
+)
 custom_logger.add(
-    f'{LOG_DIR}/{{time:YYYY-MM-DD_HH}}.log',
+    f'{LOG_DIR}/{log_filename}',
     format=io_log_format,
     rotation='1 day',
     retention='14 days',
