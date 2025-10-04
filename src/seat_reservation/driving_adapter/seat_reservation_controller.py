@@ -14,7 +14,7 @@ from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.redis_client import kvrocks_stats_client
-from src.seat_reservation.app.get_seat_availability_use_case import GetSeatAvailabilityUseCase
+from src.seat_reservation.app.query.get_seat_availability_use_case import GetSeatAvailabilityUseCase
 from src.seat_reservation.driving_adapter.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
