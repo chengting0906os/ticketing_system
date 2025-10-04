@@ -6,6 +6,7 @@ from pytest_bdd import given
 from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
+from src.platform.state.redis_client import kvrocks_client_sync
 from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from tests.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from tests.util_constant import (
@@ -217,3 +218,43 @@ def event_exists(step, execute_sql_statement):
                             'status': 'available',
                         },
                     )
+
+    # Initialize Redis configuration for each subsection (critical for SSE tests)
+    client = kvrocks_client_sync.connect()
+
+    # Create section index for SSE queries
+    index_key = f'event_sections:{event_id}'
+
+    for section in seating_config['sections']:
+        section_name = section['name']
+        section_price = section['price']
+        for subsection in section['subsections']:
+            subsection_number = subsection['number']
+            rows = subsection['rows']
+            seats_per_row = subsection['seats_per_row']
+            section_id = f'{section_name}-{subsection_number}'
+
+            # Add to section index (sorted set)
+            client.zadd(index_key, {section_id: 0})
+
+            # Save configuration to Redis
+            config_key = f'section_config:{event_id}:{section_id}'
+            client.hset(
+                config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
+            )
+
+            # Initialize section stats
+            stats_key = f'section_stats:{event_id}:{section_id}'
+            total_seats = rows * seats_per_row
+            client.hset(
+                stats_key,
+                mapping={
+                    'section_id': section_id,
+                    'event_id': str(event_id),
+                    'available': str(total_seats),
+                    'reserved': '0',
+                    'sold': '0',
+                    'total': str(total_seats),
+                    'updated_at': str(int(1759562700)),  # Fixed timestamp for tests
+                },
+            )

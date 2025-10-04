@@ -1,4 +1,4 @@
-@integration
+@api
 Feature: Seat Status SSE Stream
   As a user
   I want to receive real-time seat status updates via SSE
@@ -17,10 +17,10 @@ Feature: Seat Status SSE Stream
     Then SSE connection should be established
     And initial status event should be received with:
       | event_type     | sections_count |
-      | initial_status |            100 |
+      | initial_status |             10 |
     And section stats should include:
       | section_id | total | available |
-      | A-1        |   500 |       500 |
+      | A-1        |    50 |        50 |
 
   Scenario: User receives status updates when seats are reserved
     Given a seller exists:
@@ -32,13 +32,13 @@ Feature: Seat Status SSE Stream
     And user is connected to SSE stream for event 1
     When section stats are updated with:
       | section_id | available | reserved | sold |
-      | A-1        |       495 |        5 |    0 |
+      | A-1        |        45 |        5 |    0 |
     Then status update event should be received with:
       | event_type    |
       | status_update |
     And updated section stats should show:
       | section_id | total | available | reserved |
-      | A-1        |   500 |       495 |        5 |
+      | A-1        |    50 |        45 |        5 |
 
   Scenario: User receives error when connecting to non-existent event
     Given a seller exists:
@@ -63,4 +63,4 @@ Feature: Seat Status SSE Stream
     Then all 3 users should receive status update event
     And all users should see same section stats:
       | section_id | available | reserved |
-      | A-1        |       500 |        0 |
+      | A-1        |        50 |        0 |

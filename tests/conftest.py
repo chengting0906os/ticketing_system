@@ -58,7 +58,6 @@ from tests.util_constant import (  # noqa: E402, F403
     TEST_SELLER_NAME,
 )
 
-
 # Load environment variables from .env or .env.example
 env_file = '.env' if Path('.env').exists() else '.env.example'
 load_dotenv(env_file)
@@ -189,9 +188,26 @@ async def clean_all_tables():
     finally:
         await engine.dispose()
 
+    # Note: Redis cleanup removed to support parallel testing
+    # PostgreSQL TRUNCATE CASCADE ensures referential integrity, and Redis data
+    # is overwritten by each test's event_exists fixture, so explicit cleanup
+    # is not needed and would interfere with parallel tests
+
 
 def pytest_sessionstart(session):
-    asyncio.run(setup_test_database())
+    """Called only in master process before workers spawn"""
+    # Setup database for master process (used when running with -n 0)
+    worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    if worker_id == 'master':
+        asyncio.run(setup_test_database())
+
+
+def pytest_configure(config):
+    """Called in each worker process - setup database for this worker"""
+    worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    # Only setup for worker processes, not master (master uses pytest_sessionstart)
+    if worker_id != 'master':
+        asyncio.run(setup_test_database())
 
 
 @pytest.fixture(autouse=True)
