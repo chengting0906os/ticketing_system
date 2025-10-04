@@ -83,3 +83,18 @@ class PaymentResponse(BaseModel):
 class CancelReservationResponse(BaseModel):
     status: str
     cancelled_tickets: int
+
+
+class BookingWithDetailsResponse(BaseModel):
+    """Booking response with event and user details"""
+
+    id: int
+    buyer_id: int
+    event_id: int
+    total_price: int
+    status: str
+    created_at: datetime
+    paid_at: datetime | None = None
+    event_name: str
+    buyer_name: str
+    seller_name: str

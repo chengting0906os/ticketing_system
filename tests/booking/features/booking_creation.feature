@@ -1,42 +1,64 @@
-# Feature: Booking Creation
-#     As a seller, I cannot create booking.
-#     As a Buyer, I want to buy tickets by BEST AVAILAIBLE with 1 ticket.
-#     As a Buyer, I want to buy tickets by BEST AVAILAIBLE with 4 tickets.
-#     As a Buyer, I want to buy tickets by PICK YOUR OWN with 1 ticket.
-#     As a Buyer, I want to buy tickets by PICK YOUR OWN with 4 ticket.
-#   Background:
-#     Given a seller exists:
-#       | email           | password | name        | role   |
-#       | seller@test.com | P@ssw0rd | Test Seller | seller |
-#     Given a event exists:
-#       | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
-#       | Rock Concert | For cancel test | true      | available |         1 | Taipei Arena | {"sections": [{"name": "A", "price": 1200, "subsections": [{"number": 1, "rows": 10, "seats_per_row": 10}]}]} |
-#     And a buyer exists:
-#       | email          | password | name       | role  |
-#       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
-#   Scenario: buy tickets by BEST AVAILAIBLE with 1 ticket when available
-#     When a buyer try to buy tickets with:
-#       | method         | numbers of seats | seats |
-#       | bese_available |                1 | []    |
-#     Then a buyer got a booking with:
-#       | buyer_id       | numbers of seats | seats | seller_name |
-#       | bese_available |                1 | []    | Test Seller |
-#     And a buyer got ticket with:
-#   Scenario: buy tickets by BEST AVAILAIBLE with 4 ticket when available
-#     When a buyer try to buy tickets with:
-#       | method         | numbers of seats | seats |
-#       | bese_available |                4 | []    |
-#     Then a buyer got a booking with:
-#     And a buyer got ticket with:
-#   Scenario: buy tickets by PICK YOUR OWN with 1 ticket when available
-#     When a buyer try to buy tickets with:
-#       | method         | numbers of seats | seats     |
-#       | bese_available |                1 | [A-1-1-1] |
-#     Then a buyer got a booking with:
-#     And a buyer got ticket with:
-#   Scenario: buy tickets by PICK YOUR OWN with 4 tickets when available
-#     When a buyer try to buy tickets with:
-#       | method         | numbers of seats | seats     |
-#       | bese_available |                1 | [A-1-1-1] |
-#     Then a buyer got a a booking with:
-#     And a buyer got ticket with:
+@integration
+Feature: Booking with Seat Selection
+  As a buyer
+  I want to select specific seats or get best available seats when creating a booking
+  So that I can choose my preferred seating arrangements
+
+  Background:
+    Given a seller exists:
+      | email           | password | name        | role   |
+      | seller@test.com | P@ssw0rd | Test Seller | seller |
+    And a buyer exists:
+      | email          | password | name       | role  |
+      | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
+    And I am logged in as:
+      | email          | password |
+      | buyer@test.com | P@ssw0rd |
+    And an event exists with seating configuration:
+      | name         | venue_name   | seating_config                                                                                               |
+      | Test Concert | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 5, "seats_per_row": 10}]}]} |
+
+  Scenario: Manual seat selection - happy path
+    When buyer creates booking with manual seat selection:
+      | seat_selection_mode | seat_positions  |
+      | manual              | A-1-1-1,A-1-1-2 |
+    Then the response status code should be:
+      | 201 |
+    And the booking status should be:
+      | processing |
+
+  Scenario: Best available seat selection - happy path
+    When buyer creates booking with best available seat selection:
+      | seat_selection_mode | quantity |
+      | best_available      |        3 |
+    Then the response status code should be:
+      | 201 |
+    And the booking status should be:
+      | processing |
+
+  Scenario: Best available seat selection - single seat
+    When buyer creates booking with best available seat selection:
+      | seat_selection_mode | quantity |
+      | best_available      |        1 |
+    Then the response status code should be:
+      | 201 |
+    And the booking status should be:
+      | processing |
+
+  Scenario: Cannot select more than 4 tickets
+    When buyer creates booking with manual seat selection:
+      | seat_selection_mode | seat_positions                          |
+      | manual              | A-1-1-1,A-1-1-2,A-1-1-3,A-1-1-4,A-1-2-1 |
+    Then the response status code should be:
+      | 400 |
+    And the error message should contain:
+      | Maximum 4 tickets per booking |
+
+  Scenario: Manual seat selection - single seat
+    When buyer creates booking with manual seat selection:
+      | seat_selection_mode | seat_positions |
+      | manual              | A-1-2-3        |
+    Then the response status code should be:
+      | 201 |
+    And the booking status should be:
+      | processing |

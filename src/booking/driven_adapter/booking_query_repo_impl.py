@@ -49,8 +49,9 @@ class BookingQueryRepoImpl(BookingQueryRepo):
         seller_name = 'Unknown Seller'
         if hasattr(db_booking, '__dict__') and 'event' in db_booking.__dict__ and db_booking.event:
             event_name = db_booking.event.name  # pyright: ignore[reportAttributeAccessIssue]
-            if hasattr(db_booking.event, 'seller_id'):
-                seller_name = f'Seller {db_booking.event.seller_id}'
+            # Get seller name from event's seller relationship
+            if hasattr(db_booking.event, 'seller') and db_booking.event.seller:  # pyright: ignore[reportAttributeAccessIssue]
+                seller_name = db_booking.event.seller.name  # pyright: ignore[reportAttributeAccessIssue]
 
         # Safely access buyer relationship if loaded
         buyer_name = 'Unknown Buyer'
@@ -85,11 +86,13 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
     @Logger.io(truncate_content=True)
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
+        from src.event_ticketing.driven_adapter.event_model import EventModel
+
         async with self.session_factory() as session:
             query = (
                 select(BookingModel)
                 .options(
-                    selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.event).selectinload(EventModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
                     selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
                 )
                 .where(BookingModel.buyer_id == buyer_id)
@@ -112,7 +115,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
                 select(BookingModel)
                 .join(EventModel, BookingModel.event_id == EventModel.id)
                 .options(
-                    selectinload(BookingModel.event),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.event).selectinload(EventModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
                     selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
                 )
                 .where(EventModel.seller_id == seller_id)

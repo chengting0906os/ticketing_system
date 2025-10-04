@@ -14,6 +14,7 @@ from src.booking.app.query.list_bookings_use_case import ListBookingsUseCase
 from src.booking.driving_adapter.booking_schema import (
     BookingCreateRequest,
     BookingResponse,
+    BookingWithDetailsResponse,
     CancelReservationResponse,
     PaymentRequest,
     PaymentResponse,
@@ -30,7 +31,7 @@ from src.shared_kernel.user.domain.user_entity import UserEntity
 router = APIRouter()
 
 
-@router.get('/my-bookings', response_model=List[BookingResponse])
+@router.get('/my-bookings', response_model=List[BookingWithDetailsResponse])
 @Logger.io(truncate_content=True)
 async def list_my_bookings(
     booking_status: str,

@@ -259,14 +259,28 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
                 )  # Get all tickets, not just available ones
                 for ticket in all_tickets:
                     if ticket['row'] == int(row) and ticket['seat'] == int(seat):
-                        seat_positions.append({ticket['id']: seat_location})
+                        # Only append row-seat format (not full section-subsection-row-seat)
+                        seat_positions.append(f'{row}-{seat}')
                         break
 
     # Create booking with manual seat selection
+    # Extract section and subsection from first seat position (format: section-subsection-row-seat)
+    if seat_positions:
+        first_seat = selected_seat_locations[0].strip()
+        parts = first_seat.split('-')
+        section = parts[0]
+        subsection = int(parts[1])
+    else:
+        section = 'A'
+        subsection = 1
+
     booking_request = {
         'event_id': booking_state['event_id'],
+        'section': section,
+        'subsection': subsection,
         'seat_selection_mode': 'manual',
         'seat_positions': seat_positions,
+        'quantity': len(seat_positions),
     }
 
     response = client.post(BOOKING_BASE, json=booking_request)
@@ -289,7 +303,10 @@ def buyer_creates_booking_with_best_available_seat_selection(
     # Create booking with best available seat selection
     booking_request = {
         'event_id': booking_state['event_id'],
+        'section': 'A',  # Default section
+        'subsection': 1,  # Default subsection
         'seat_selection_mode': 'best_available',
+        'seat_positions': [],
         'quantity': quantity,
     }
 

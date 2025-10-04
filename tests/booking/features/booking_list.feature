@@ -1,3 +1,4 @@
+@integration
 Feature: Booking List
   As a buyer
   I want to list my bookings with details
@@ -22,11 +23,11 @@ Feature: Booking List
       | Event C |         5 | sold_out  |  3 | Taipei Arena | {"sections": [{"name": "C", "subsections": [{"number": 3, "rows": 25, "seats_per_row": 20}]}]} |
       | Event D |         4 | available |  4 | Taipei Dome  | {"sections": [{"name": "D", "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
     And bookings exist:
-      | buyer_id | seller_id | event_id | total_price | status          | paid_at  | id |
-      |        6 |         4 |        1 |        1000 | paid            | not_null |  1 |
-      |        6 |         4 |        2 |        2000 | paid            | not_null |  2 |
-      |        6 |         5 |        3 |        3000 | pending_payment | null     |  3 |
-      |        7 |         4 |        4 |        4000 | cancelled       | null     |  4 |
+      | buyer_id | event_id | total_price | status          | paid_at  | id |
+      |        6 |        1 |        1000 | paid            | not_null |  1 |
+      |        6 |        2 |        2000 | paid            | not_null |  2 |
+      |        6 |        3 |        3000 | pending_payment | null     |  3 |
+      |        7 |        4 |        4000 | cancelled       | null     |  4 |
 
   Scenario: Buyer lists their bookings
     When buyer with id 6 requests their bookings:
