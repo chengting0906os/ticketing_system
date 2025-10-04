@@ -10,8 +10,36 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from tests.shared.utils import create_user
-from tests.util_constant import (
+
+# Override POSTGRES_DB environment variable to use a dedicated test database
+# Support pytest-xdist parallel testing with different database per worker
+worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+if worker_id == 'master':
+    os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
+else:
+    # Each worker gets its own database
+    os.environ['POSTGRES_DB'] = f'ticketing_system_test_db_{worker_id}'
+
+from src.main import app  # noqa: E402
+from tests.booking.integration.fixtures import *  # noqa: E402, F403
+from tests.booking.integration.steps.given import *  # noqa: E402, F403
+from tests.booking.integration.steps.then import *  # noqa: E402, F403
+from tests.booking.integration.steps.when import *  # noqa: E402, F403
+from tests.event_ticketing.integration.fixtures import *  # noqa: E402, F403
+from tests.event_ticketing.integration.steps.given import *  # noqa: E402, F403
+from tests.event_ticketing.integration.steps.then import *  # noqa: E402, F403
+from tests.event_ticketing.integration.steps.when import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.given import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.then import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.when import *  # noqa: E402, F403
+from tests.shared.given import *  # noqa: E402, F403
+from tests.shared.then import *  # noqa: E402, F403
+from tests.shared.utils import create_user  # noqa: E402, F403
+from tests.shared_kernel.user.functional.fixtures import *  # noqa: E402, F403
+from tests.shared_kernel.user.functional.then import *  # noqa: E402, F403
+from tests.shared_kernel.user.functional.when import *  # noqa: E402, F403
+from tests.util_constant import (  # noqa: E402, F403
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
     DEFAULT_PASSWORD,
@@ -20,29 +48,6 @@ from tests.util_constant import (
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
-
-
-# Override POSTGRES_DB environment variable to use a dedicated test database
-os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
-
-from src.main import app
-from tests.booking.integration.fixtures import *  # noqa: F403
-from tests.booking.integration.steps.given import *  # noqa: F403
-from tests.booking.integration.steps.then import *  # noqa: F403
-from tests.booking.integration.steps.when import *  # noqa: F403
-from tests.event_ticketing.integration.fixtures import *  # noqa: F403
-from tests.event_ticketing.integration.steps.given import *  # noqa: F403
-from tests.event_ticketing.integration.steps.then import *  # noqa: F403
-from tests.event_ticketing.integration.steps.when import *  # noqa: F403
-from tests.pytest_bdd_ng_example.fixtures import *  # noqa: F403
-from tests.pytest_bdd_ng_example.given import *  # noqa: F403
-from tests.pytest_bdd_ng_example.then import *  # noqa: F403
-from tests.pytest_bdd_ng_example.when import *  # noqa: F403
-from tests.shared.given import *  # noqa: F403
-from tests.shared.then import *  # noqa: F403
-from tests.shared_kernel.user.functional.fixtures import *  # noqa: F403
-from tests.shared_kernel.user.functional.then import *  # noqa: F403
-from tests.shared_kernel.user.functional.when import *  # noqa: F403
 
 
 # Load environment variables from .env or .env.example
@@ -54,7 +59,7 @@ DB_CONFIG = {
     'password': os.getenv('POSTGRES_PASSWORD'),
     'host': os.getenv('POSTGRES_SERVER'),
     'port': os.getenv('POSTGRES_PORT'),
-    'test_db': 'ticketing_system_test_db',
+    'test_db': os.environ['POSTGRES_DB'],  # Use the worker-specific database
 }
 TEST_DATABASE_URL = f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'
 
@@ -262,47 +267,11 @@ def sample_event():
 
 
 @pytest.fixture
-def sample_tickets():
-    """Sample tickets for testing."""
-    from datetime import datetime
-
-    from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
-
-    now = datetime.now()
-    return [
-        Ticket(
-            id=1,
-            event_id=1,
-            section='A',
-            subsection=1,
-            row=1,
-            seat=1,
-            price=1000,
-            status=TicketStatus.AVAILABLE,
-            created_at=now,
-            updated_at=now,
-        ),
-        Ticket(
-            id=2,
-            event_id=1,
-            section='A',
-            subsection=1,
-            row=1,
-            seat=2,
-            price=1000,
-            status=TicketStatus.SOLD,
-            created_at=now,
-            updated_at=now,
-        ),
-    ]
-
-
-@pytest.fixture
 def available_tickets():
     """Sample available tickets for testing."""
     from datetime import datetime
 
-    from src.event_ticketing.domain.ticket_entity import Ticket, TicketStatus
+    from src.event_ticketing.domain.event_ticketing_aggregate import Ticket, TicketStatus
 
     now = datetime.now()
     return [

@@ -81,7 +81,9 @@ def mock_kafka_infrastructure():
             'password': os.getenv('POSTGRES_PASSWORD'),
             'host': os.getenv('POSTGRES_SERVER'),
             'port': os.getenv('POSTGRES_PORT'),
-            'test_db': 'ticketing_system_test_db',
+            'test_db': os.environ.get(
+                'POSTGRES_DB', 'ticketing_system_test_db'
+            ),  # Use worker-specific DB
         }
         TEST_DATABASE_URL = f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'
 

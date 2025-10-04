@@ -43,6 +43,7 @@ dev = [
     "pytest-postgresql>=7.0.2",
     "psycopg-binary>=3.2.9",
     "pre-commit>=4.3.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.ruff]
@@ -112,7 +113,8 @@ filterwarnings = [
 testpaths = ["tests"]
 # pytest-bdd configuration
 bdd_features_base_dir = "tests/features/"
-addopts = "-v --tb=short --strict-markers"
+# Use pytest-xdist for parallel testing with 6 workers
+addopts = "-v --tb=short --strict-markers -n 8"
 
 [tool.pyright]
 include = ["src", "tests"]
