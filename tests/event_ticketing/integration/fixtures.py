@@ -1,6 +1,13 @@
+import json
+import os
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from src.platform.state.redis_client import kvrocks_client_sync
 
 
 @pytest.fixture
@@ -31,7 +38,6 @@ def mock_kafka_infrastructure():
 
     async def mock_seat_initialization(self, *, event_id: int, ticket_tuples: list) -> None:
         """測試環境下的座位初始化：直接同步寫入 Kvrocks + 更新 event status"""
-        from src.platform.state.redis_client import kvrocks_client_sync
 
         # 1. 寫入 subsection_total metadata
         subsection_counts = {}
@@ -42,12 +48,17 @@ def mock_kafka_infrastructure():
 
         client = kvrocks_client_sync.connect()
         for section_id, count in subsection_counts.items():
-            key = f'subsection_total:{event_id}:{section_id}'
-            client.set(key, count)
+            # 寫入 total 和 available counter
+            total_key = f'subsection_total:{event_id}:{section_id}'
+            avail_key = f'subsection_avail:{event_id}:{section_id}'
+            client.set(total_key, count)
+            client.set(avail_key, count)  # 初始時全部可用
+
+            # 初始化 bitfield (用於檢查 section 是否已初始化)
+            bf_key = f'seats_bf:{event_id}:{section_id}'
+            client.set(bf_key, '0')  # 設置一個初始值表示已初始化
 
         # 2. 直接初始化座位狀態到 Kvrocks（跳過 Kafka）
-        import json
-        import time
 
         for ticket_tuple in ticket_tuples:
             _, section, subsection, row, seat, price, status = ticket_tuple
@@ -64,10 +75,6 @@ def mock_kafka_infrastructure():
             client.set(key, json.dumps(seat_state))
 
         # 3. 更新 event status 從 DRAFT 到 AVAILABLE (模擬真實流程)
-        import os
-
-        from sqlalchemy import text
-        from sqlalchemy.ext.asyncio import create_async_engine
 
         DB_CONFIG = {
             'user': os.getenv('POSTGRES_USER'),
