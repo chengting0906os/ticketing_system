@@ -10,7 +10,7 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.event_ticketing.driven_adapter.event_model import EventModel
+from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.platform.state.redis_client import kvrocks_stats_client
 
 

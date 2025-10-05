@@ -5,8 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.booking.driving_adapter.booking_controller import router as booking_router
-from src.event_ticketing.driving_adapter.event_ticketing_controller import router as event_router
+from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
+    router as booking_router,
+)
+from src.service.ticketing.driving_adapter.http_controller.event_ticketing_controller import (
+    router as event_router,
+)
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import create_db_and_tables
 from src.platform.config.di import cleanup, container, setup
@@ -15,7 +19,9 @@ from src.platform.logging.loguru_io import Logger
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
 )
-from src.service.ticketing.driving_adapter.user_controller import router as auth_router
+from src.service.ticketing.driving_adapter.http_controller.user_controller import (
+    router as auth_router,
+)
 
 
 @asynccontextmanager
@@ -30,19 +36,19 @@ async def lifespan(app: FastAPI):
     # Wire the container for dependency injection
     container.wire(
         modules=[
-            'src.booking.app.command.create_booking_use_case',
-            'src.booking.app.command.update_booking_status_to_cancelled_use_case',
-            'src.booking.app.command.update_booking_status_to_paid_use_case',
-            'src.booking.app.command.update_booking_status_to_pending_payment_use_case',
-            'src.booking.app.command.update_booking_status_to_failed_use_case',
-            'src.booking.app.command.mock_payment_and_update_status_to_completed_use_case',
-            'src.booking.app.query.list_bookings_use_case',
-            'src.booking.app.query.get_booking_use_case',
-            'src.event_ticketing.app.command.create_event_use_case',
-            'src.event_ticketing.app.command.reserve_tickets_use_case',
-            'src.event_ticketing.app.query.list_events_use_case',
-            'src.event_ticketing.app.query.get_event_use_case',
-            'src.service.ticketing.driving_adapter.user_controller',
+            'src.service.ticketing.app.command.create_booking_use_case',
+            'src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case',
+            'src.service.ticketing.app.command.update_booking_status_to_paid_use_case',
+            'src.service.ticketing.app.command.update_booking_status_to_pending_payment_use_case',
+            'src.service.ticketing.app.command.update_booking_status_to_failed_use_case',
+            'src.service.ticketing.app.command.mock_payment_and_update_status_to_completed_use_case',
+            'src.service.ticketing.app.query.list_bookings_use_case',
+            'src.service.ticketing.app.query.get_booking_use_case',
+            'src.service.ticketing.app.command.create_event_use_case',
+            'src.service.ticketing.app.command.reserve_tickets_use_case',
+            'src.service.ticketing.app.query.list_events_use_case',
+            'src.service.ticketing.app.query.get_event_use_case',
+            'src.service.ticketing.driving_adapter.http_controller.user_controller',
         ]
     )
 

@@ -308,7 +308,10 @@ def available_tickets():
     """Sample available tickets for testing."""
     from datetime import datetime
 
-    from src.event_ticketing.domain.event_ticketing_aggregate import Ticket, TicketStatus
+    from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
+        Ticket,
+        TicketStatus,
+    )
 
     now = datetime.now()
     return [

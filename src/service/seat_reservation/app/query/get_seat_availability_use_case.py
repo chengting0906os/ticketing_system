@@ -61,7 +61,7 @@ class GetSeatAvailabilityUseCase:
             NotFoundError: 當活動不存在時
         """
         from sqlalchemy import select
-        from src.event_ticketing.driven_adapter.event_model import EventModel
+        from src.service.ticketing.driven_adapter.model.event_model import EventModel
         from src.platform.exception.exceptions import NotFoundError
 
         stmt = select(EventModel.id).where(EventModel.id == event_id)

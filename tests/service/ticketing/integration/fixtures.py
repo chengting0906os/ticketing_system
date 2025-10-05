@@ -117,11 +117,11 @@ def mock_kafka_infrastructure():
 
     with (
         patch(
-            'src.event_ticketing.app.command.create_event_use_case'
+            'src.service.ticketing.app.command.create_event_use_case'
             '.CreateEventUseCase._setup_kafka_infrastructure'
         ) as mock_setup,
         patch(
-            'src.event_ticketing.app.command.create_event_use_case'
+            'src.service.ticketing.app.command.create_event_use_case'
             '.CreateEventUseCase._start_seat_reservation_consumer_and_initialize_seats',
             new=mock_seat_initialization,
         ),

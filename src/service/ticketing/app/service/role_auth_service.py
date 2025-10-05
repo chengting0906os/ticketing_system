@@ -2,8 +2,8 @@ from fastapi import Depends
 
 from src.platform.exception.exceptions import ForbiddenError
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.domain.user_entity import UserEntity, UserRole
-from src.service.ticketing.driving_adapter.user_controller import (
+from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
+from src.service.ticketing.driving_adapter.http_controller.user_controller import (
     get_current_user as get_user_from_controller,
 )
 

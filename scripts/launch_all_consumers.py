@@ -12,7 +12,7 @@ from typing import List, Optional, Dict
 from sqlalchemy import select
 import signal
 from src.platform.config.db_setting import get_async_session
-from src.event_ticketing.driven_adapter.event_model import EventModel
+from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder, PartitionKeyBuilder
 from src.platform.logging.loguru_io import Logger
@@ -187,7 +187,7 @@ class EventServiceLauncher:
         if self.consumer_processes:
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*[p.wait() for p in self.consumer_processes.values()], return_exceptions=True),
+                    asyncio.gather(*[p.wait() for p in self.consumer_processes.values()]),
                     timeout=5.0
                 )
             except asyncio.TimeoutError:
@@ -239,9 +239,9 @@ class EventServiceLauncher:
         """啟動所有 consumers 並創建 log 串流任務"""
         consumers = [
             # 1:1:1 架構 - 單個 Seat Reservation instance 處理所有 partitions
-            ("📚 Booking Service Consumer", "src.booking.driving_adapter.booking_mq_consumer", "booking-service"),
+            ("📚 Booking Service Consumer", "src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer", "booking-service"),
             ("🪑 Seat Reservation Consumer", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer", "seat-reservation-1"),
-            ("🎫 Event Ticketing Consumer", "src.event_ticketing.driven_adapter.event_ticketing_mq_consumer", "event-ticketing-service")
+            ("🎫 Event Ticketing Consumer", "src.service.ticketing.driving_adapter.mq_consumer.event_ticketing_mq_consumer", "event-ticketing-service")
         ]
 
         # 獲取項目根目錄
@@ -328,7 +328,7 @@ class EventServiceLauncher:
                     # 等待中斷信號
                     stop_event = asyncio.Event()
 
-                    def signal_handler():
+                    def signal_handler(*args):
                         stop_event.set()
 
                     # 設置信號處理器

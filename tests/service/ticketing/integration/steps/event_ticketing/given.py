@@ -132,7 +132,7 @@ def event_exists(step, execute_sql_statement):
     # The BDD steps should ensure the seller exists before the event is created
     actual_seller_id = expected_seller_id
 
-    # Default config for all events (A-E sections with 2 subsections each, 250 per subsection)
+    # Default config for all events (A-C sections = 4 subsections total)
     # Now includes price information for automatic ticket creation
     seating_config = {
         'sections': [

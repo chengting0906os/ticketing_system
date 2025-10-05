@@ -5,13 +5,15 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 
 from dependency_injector import containers, providers
 
-from src.booking.driven_adapter.booking_command_repo_impl import BookingCommandRepoImpl
-from src.booking.driven_adapter.booking_query_repo_impl import BookingQueryRepoImpl
-from src.event_ticketing.app.command.reserve_tickets_use_case import ReserveTicketsUseCase
-from src.event_ticketing.driven_adapter.event_ticketing_command_repo_impl import (
+from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
+    BookingCommandRepoImpl,
+)
+from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import BookingQueryRepoImpl
+from src.service.ticketing.app.command.reserve_tickets_use_case import ReserveTicketsUseCase
+from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
     EventTicketingCommandRepoImpl,
 )
-from src.event_ticketing.driven_adapter.event_ticketing_query_repo_impl import (
+from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl import (
     EventTicketingQueryRepoImpl,
 )
 from src.platform.config.core_setting import Settings
@@ -35,9 +37,9 @@ from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher i
 )
 from src.service.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
 from src.service.ticketing.app.service.auth_service import AuthService
-from src.service.ticketing.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
-from src.service.ticketing.driven_adapter.user_query_repo_impl import UserQueryRepoImpl
-from src.service.ticketing.driven_adapter.user_repo_impl import UserRepoImpl
+from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
+from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
+from src.service.ticketing.driven_adapter.repo.user_repo_impl import UserRepoImpl
 
 
 class Container(containers.DeclarativeContainer):

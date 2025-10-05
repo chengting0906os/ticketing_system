@@ -4,8 +4,8 @@ from typing import Optional
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
-class UserQueryRepo(ABC):
-    """用戶查詢倉庫抽象介面 (Domain Layer) - 處理讀取操作"""
+class UserRepo(ABC):
+    """用戶倉庫抽象介面 (Domain Layer) - 統一 Command 和 Query 操作"""
 
     @abstractmethod
     async def get_by_email(self, email: str) -> Optional[UserEntity]:
@@ -13,6 +13,10 @@ class UserQueryRepo(ABC):
 
     @abstractmethod
     async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
+        pass
+
+    @abstractmethod
+    async def create(self, user_entity: UserEntity) -> UserEntity:
         pass
 
     @abstractmethod

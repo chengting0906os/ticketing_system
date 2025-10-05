@@ -9,7 +9,7 @@ import os
 from typing import Dict, List
 
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.domain.kafka_config_service import KafkaConfigServiceInterface
+from src.shared_kernel.app.interface.i_kafka_config_service import KafkaConfigServiceInterface
 
 from .kafka_constant_builder import KafkaTopicBuilder
 from .section_based_partition_strategy import SectionBasedPartitionStrategy
@@ -44,7 +44,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         self.consumer_configs = [
             ConsumerConfig(
                 name='booking_mq_consumer',
-                module='src.booking.driving_adapter.booking_mq_consumer',
+                module='src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer',
                 description='📚 訂單服務消費者',
                 instance_count=1,
             ),
@@ -56,7 +56,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
             ),
             ConsumerConfig(
                 name='event_ticketing_mq_consumer',
-                module='src.event_ticketing.driven_adapter.event_ticketing_mq_consumer',
+                module='src.service.ticketing.driving_adapter.mq_consumer.event_ticketing_mq_consumer',
                 description='🎫 票務同步消費者',
                 instance_count=1,
             ),

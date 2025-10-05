@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.service.ticketing.domain.user_entity import UserEntity
+from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
 class UserCommandRepo(ABC):

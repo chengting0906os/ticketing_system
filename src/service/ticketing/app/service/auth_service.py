@@ -9,9 +9,9 @@ from fastapi import HTTPException, status
 import jwt
 
 from src.platform.config.core_setting import settings
-from src.service.ticketing.app.command.user.user_command_use_case import UserUseCase
-from src.service.ticketing.domain.user_entity import UserEntity
-from src.service.ticketing.domain.user_repo import UserRepo
+from src.service.ticketing.app.query.user_query_use_case import UserUseCase
+from src.service.ticketing.domain.entity.user_entity import UserEntity
+from src.service.ticketing.app.interface.i_user_repo import UserRepo
 
 
 class AuthService:

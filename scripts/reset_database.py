@@ -23,17 +23,17 @@ from sqlalchemy import create_engine, text
 
 from src.platform.config.db_setting import Base
 
-from src.booking.driven_adapter.booking_model import BookingModel, BookingTicketModel  # noqa: F401
-from src.event_ticketing.driven_adapter.event_model import EventModel  # noqa: F401
-from src.event_ticketing.driven_adapter.ticket_model import TicketModel  # noqa: F401
-from src.shared_kernel.user.driven_adapter.user_model import UserModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.booking_model import BookingModel, BookingTicketModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.event_model import EventModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.user_model import UserModel  # noqa: F401
 
-from src.event_ticketing.app.command.create_event_use_case import CreateEventUseCase
-from src.event_ticketing.driven_adapter.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
+from src.service.ticketing.app.command.create_event_use_case import CreateEventUseCase
+from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.platform.config.db_setting import async_session_maker
-from src.shared_kernel.user.domain.user_entity import UserEntity, UserRole
-from src.shared_kernel.user.driven_adapter.bcrypt_password_hasher import BcryptPasswordHasher
-from src.shared_kernel.user.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
+from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
+from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import BcryptPasswordHasher
+from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.platform.config.core_setting import settings
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
@@ -253,11 +253,17 @@ async def create_init_event_in_session(session, seller_id: int):
             seating_config = SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
 
             # Calculate total seats from nested structure: sections → subsections → rows × seats_per_row
-            total_seats = sum(
-                subsection['rows'] * subsection['seats_per_row']
-                for section in seating_config['sections']
-                for subsection in section['subsections']
-            )
+            total_seats = 0
+            for section in seating_config['sections']:
+                subsections = section.get('subsections', [])
+                if not isinstance(subsections, (list, tuple)):
+                    print(f"Warning: subsections is not iterable: {type(subsections)} - {subsections}")
+                    continue
+                for subsection in subsections:
+                    if isinstance(subsection, dict):
+                        total_seats += subsection['rows'] * subsection['seats_per_row']
+                    else:
+                        print(f"Warning: subsection is not a dict: {type(subsection)} - {subsection}")
 
             # 使用 UseCase 的 create_event_and_tickets 方法
             # 這會發送座位初始化消息到 Kafka → seat_reservation_mq_consumer → Kvrocks

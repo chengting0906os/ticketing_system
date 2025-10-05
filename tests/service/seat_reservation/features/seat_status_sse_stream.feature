@@ -17,7 +17,7 @@ Feature: Seat Status SSE Stream
     Then SSE connection should be established
     And initial status event should be received with:
       | event_type     | sections_count |
-      | initial_status |             92 |
+      | initial_status |              4 |
     And section stats should include:
       | section_id | total | available |
       | A-1        |    50 |        50 |

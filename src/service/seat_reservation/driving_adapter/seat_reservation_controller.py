@@ -22,7 +22,7 @@ from src.service.seat_reservation.driving_adapter.seat_schema import (
     SectionStatsResponse,
 )
 from src.service.ticketing.app.service.role_auth_service import require_buyer_or_seller
-from src.service.ticketing.domain.user_entity import UserEntity
+from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
 def calculate_partition_for_section(section_id: str, num_partitions: int = 3) -> int:
@@ -422,8 +422,8 @@ async def list_seats_by_section_subsection(
     from fastapi import HTTPException
     from sqlalchemy import and_, select
 
-    from src.event_ticketing.driven_adapter.event_model import EventModel
-    from src.event_ticketing.driven_adapter.ticket_model import TicketModel
+    from src.service.ticketing.driven_adapter.model.event_model import EventModel
+    from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
     from src.platform.state.redis_client import kvrocks_client
 
     # 先檢查 event 是否存在
@@ -552,7 +552,7 @@ async def list_seats_by_section_subsection_from_db(
     此 API 用於與 Kvrocks 版本比較性能差異
     直接從 ticket 表聚合統計數據
     """
-    from src.event_ticketing.driven_adapter.ticket_model import TicketModel
+    from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
 
     section_id = f'{section}-{subsection}'
 
