@@ -11,7 +11,7 @@ from src.platform.config.db_setting import Base
 if TYPE_CHECKING:
     from src.event_ticketing.driven_adapter.event_model import EventModel
     from src.event_ticketing.driven_adapter.ticket_model import TicketModel
-    from src.shared_kernel.user.driven_adapter.user_model import UserModel
+    from src.service.ticketing.driven_adapter.user_model import UserModel
 
 
 class BookingModel(Base):

@@ -34,10 +34,10 @@ from src.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
 from src.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
-from src.shared_kernel.user.app.auth_service import AuthService
-from src.shared_kernel.user.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
-from src.shared_kernel.user.driven_adapter.user_query_repo_impl import UserQueryRepoImpl
-from src.shared_kernel.user.driven_adapter.user_repo_impl import UserRepoImpl
+from src.service.ticketing.app.service.auth_service import AuthService
+from src.service.ticketing.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
+from src.service.ticketing.driven_adapter.user_query_repo_impl import UserQueryRepoImpl
+from src.service.ticketing.driven_adapter.user_repo_impl import UserRepoImpl
 
 
 class Container(containers.DeclarativeContainer):
@@ -64,13 +64,13 @@ class Container(containers.DeclarativeContainer):
     event_ticketing_query_repo = providers.Factory(
         EventTicketingQueryRepoImpl, session_factory=database.provided.session
     )
-    user_repo = providers.Factory(UserRepoImpl, session_factory=database.provided.session)
     user_command_repo = providers.Factory(
         UserCommandRepoImpl, session_factory=database.provided.session
     )
     user_query_repo = providers.Factory(
         UserQueryRepoImpl, session_factory=database.provided.session
     )
+    user_repo = providers.Factory(UserRepoImpl, session_factory=database.provided.session)
 
     # Auth service
     auth_service = providers.Singleton(AuthService)

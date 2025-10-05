@@ -20,12 +20,12 @@ from src.booking.driving_adapter.booking_schema import (
     PaymentResponse,
 )
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.user.app.role_auth_service import (
+from src.service.ticketing.app.service.role_auth_service import (
     RoleAuthStrategy,
     get_current_user,
     require_buyer,
 )
-from src.shared_kernel.user.domain.user_entity import UserEntity
+from src.service.ticketing.domain.user_entity import UserEntity
 
 
 router = APIRouter()

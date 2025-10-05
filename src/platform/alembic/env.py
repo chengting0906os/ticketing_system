@@ -15,7 +15,7 @@ from src.event_ticketing.driven_adapter.event_model import EventModel  # noqa: F
 from src.event_ticketing.driven_adapter.ticket_model import TicketModel  # noqa: F401
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import Base
-from src.shared_kernel.user.driven_adapter.user_model import UserModel  # noqa: F401
+from src.service.ticketing.driven_adapter.user_model import UserModel  # noqa: F401
 
 
 # this is the Alembic Config object, which provides

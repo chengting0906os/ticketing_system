@@ -1,3 +1,4 @@
+# noqa: ruff
 import asyncio
 import os
 from pathlib import Path
@@ -26,28 +27,39 @@ test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 from src.main import app  # noqa: E402
-from tests.booking.integration.fixtures import *  # noqa: E402, F403
-from tests.booking.integration.steps.given import *  # noqa: E402, F403
-from tests.booking.integration.steps.then import *  # noqa: E402, F403
-from tests.booking.integration.steps.when import *  # noqa: E402, F403
-from tests.event_ticketing.integration.fixtures import *  # noqa: E402, F403
-from tests.event_ticketing.integration.steps.given import *  # noqa: E402, F403
-from tests.event_ticketing.integration.steps.then import *  # noqa: E402, F403
-from tests.event_ticketing.integration.steps.when import *  # noqa: E402, F403
+
+# Ticketing service fixtures and steps
+from tests.service.ticketing.integration.fixtures import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.booking.given import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.booking.then import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.booking.when import *  # noqa: E402, F403
+
+# Event ticketing steps
+from tests.service.ticketing.integration.steps.event_ticketing.given import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.event_ticketing.then import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.event_ticketing.when import *  # noqa: E402, F403
+
+# User steps
+from tests.service.ticketing.integration.steps.user.given import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.user.then import *  # noqa: E402, F403
+from tests.service.ticketing.integration.steps.user.when import *  # noqa: E402, F403
+
+# Pytest BDD example
 from tests.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
-from tests.seat_reservation.integration.fixtures import *  # noqa: E402, F403
-from tests.seat_reservation.integration.steps.given import *  # noqa: E402, F403
-from tests.seat_reservation.integration.steps.then import *  # noqa: E402, F403
-from tests.seat_reservation.integration.steps.when import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.given import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.then import *  # noqa: E402, F403
 from tests.pytest_bdd_ng_example.when import *  # noqa: E402, F403
+
+# Seat reservation
+from tests.service.seat_reservation.fixtures import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.given import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.then import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.when import *  # noqa: E402, F403
+
+# Shared utilities
 from tests.shared.given import *  # noqa: E402, F403
 from tests.shared.then import *  # noqa: E402, F403
 from tests.shared.utils import create_user  # noqa: E402, F403
-from tests.shared_kernel.user.functional.fixtures import *  # noqa: E402, F403
-from tests.shared_kernel.user.functional.then import *  # noqa: E402, F403
-from tests.shared_kernel.user.functional.when import *  # noqa: E402, F403
 from tests.util_constant import (  # noqa: E402, F403
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,

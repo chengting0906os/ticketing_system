@@ -19,8 +19,8 @@ from src.seat_reservation.driving_adapter.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )
-from src.shared_kernel.user.app.role_auth_service import require_buyer_or_seller
-from src.shared_kernel.user.domain.user_entity import UserEntity
+from src.service.ticketing.app.service.role_auth_service import require_buyer_or_seller
+from src.service.ticketing.domain.user_entity import UserEntity
 
 
 def calculate_partition_for_section(section_id: str, num_partitions: int = 3) -> int:

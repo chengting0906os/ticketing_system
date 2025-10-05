@@ -11,8 +11,8 @@ from src.event_ticketing.driving_adapter.event_schema import (
 )
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.user.app.role_auth_service import require_seller
-from src.shared_kernel.user.domain.user_entity import UserEntity
+from src.service.ticketing.app.service.role_auth_service import require_seller
+from src.service.ticketing.domain.user_entity import UserEntity
 
 
 router = APIRouter()

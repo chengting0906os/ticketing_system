@@ -15,7 +15,7 @@ from src.platform.logging.loguru_io import Logger
 from src.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
 )
-from src.shared_kernel.user.drivng_adapter.user_controller import router as auth_router
+from src.service.ticketing.driving_adapter.user_controller import router as auth_router
 
 
 @asynccontextmanager
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
             'src.event_ticketing.app.command.reserve_tickets_use_case',
             'src.event_ticketing.app.query.list_events_use_case',
             'src.event_ticketing.app.query.get_event_use_case',
-            'src.shared_kernel.user.drivng_adapter.user_controller',
+            'src.service.ticketing.driving_adapter.user_controller',
         ]
     )
 
