@@ -15,14 +15,17 @@ Ticketing MQ Consumer - Unified PostgreSQL State Manager
 - 合併 topic 確保 Booking 和 Ticket 狀態更新的原子性
 """
 
-import asyncio
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 import anyio
 import anyio.to_thread
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 from confluent_kafka import Consumer
+
+if TYPE_CHECKING:
+    from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
@@ -78,10 +81,15 @@ class TicketingMqConsumer:
         )
 
         self.running = False
+        self.portal: Any = None
 
         # Use cases (延遲初始化)
         self.update_booking_to_pending_payment_use_case: Any = None
         self.update_booking_to_failed_use_case: Any = None
+
+    def set_portal(self, portal: 'BlockingPortal') -> None:
+        """設置 BlockingPortal 用於同步調用 async 函數"""
+        self.portal = portal
 
     async def start(self):
         """使用 AnyIO 啟動消費者"""
@@ -222,20 +230,28 @@ def main():
     """主程序入口"""
     consumer = TicketingMqConsumer()
 
-    async def cleanup():
-        try:
-            await consumer.stop()
-        except Exception as e:
-            Logger.base.error(f'Cleanup error: {e}')
-
     try:
-        asyncio.run(consumer.start())
+        # 啟動 BlockingPortal，創建共享的 event loop
+        with start_blocking_portal() as portal:
+            consumer.set_portal(portal)
+
+            # 用 portal 執行 async start() - 直接傳遞方法引用
+            portal.call(consumer.start)  # type: ignore[arg-type]
+
     except KeyboardInterrupt:
         Logger.base.info('⚠️ [TICKETING] Received interrupt signal')
-        asyncio.run(cleanup())
+        try:
+            if consumer.portal:
+                consumer.portal.call(consumer.stop)
+        except Exception:
+            pass
     except Exception as e:
         Logger.base.error(f'💥 [TICKETING] Consumer error: {e}')
-        asyncio.run(cleanup())
+        try:
+            if consumer.portal:
+                consumer.portal.call(consumer.stop)
+        except:
+            pass
     finally:
         Logger.base.info('🧹 Cleanup complete')
 

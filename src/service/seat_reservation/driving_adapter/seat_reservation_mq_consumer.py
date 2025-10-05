@@ -3,15 +3,16 @@ Seat Reservation Consumer - 座位選擇路由器
 職責:管理 Kvrocks 座位狀態並處理預訂請求
 """
 
-import asyncio
 from dataclasses import dataclass
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
-import anyio
-import anyio.from_thread
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 from quixstreams import Application
+
+if TYPE_CHECKING:
+    from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
 from src.platform.config.di import container
@@ -73,12 +74,17 @@ class SeatReservationConsumer:
         self.kafka_config = KafkaConfig()
         self.kafka_app: Optional[Application] = None
         self.running = False
+        self.portal: Optional['BlockingPortal'] = None
 
         # Use cases (延遲初始化)
         self.reserve_seats_use_case: Any = None
         self.initialize_seat_use_case: Any = None
         self.release_seat_use_case: Any = None
         self.finalize_seat_payment_use_case: Any = None
+
+    def set_portal(self, portal: 'BlockingPortal') -> None:
+        """設置 BlockingPortal 用於同步調用 async 函數"""
+        self.portal = portal
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
@@ -151,11 +157,11 @@ class SeatReservationConsumer:
                 event_id=message['event_id'],
                 price=message['price'],
                 timestamp=message.get('timestamp', ''),
-                rows=message['rows'],  # 配置信息（必填）
-                seats_per_row=message['seats_per_row'],  # 配置信息（必填）
+                rows=message['rows'],  # 配置信息(必填)
+                seats_per_row=message['seats_per_row'],  # 配置信息(必填)
             )
 
-            result = anyio.from_thread.run(self.initialize_seat_use_case.execute, request)
+            result = self.portal.call(self.initialize_seat_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'✅ [INIT] {message["seat_id"]}')
@@ -173,7 +179,7 @@ class SeatReservationConsumer:
         """處理預訂請求"""
         try:
             Logger.base.info(f'🎫 [RESERVATION] Processing: {message.get("aggregate_id")}')
-            result = anyio.from_thread.run(self._handle_reservation, message)  # type: ignore
+            result = self.portal.call(self._handle_reservation, message)
             return {'success': True, 'result': result}
         except Exception as e:
             Logger.base.error(f'❌ [RESERVATION] Failed: {e}')
@@ -188,7 +194,7 @@ class SeatReservationConsumer:
 
         try:
             request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
-            result = anyio.from_thread.run(self.release_seat_use_case.execute, request)
+            result = self.portal.call(self.release_seat_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'🔓 [RELEASE] {seat_id}')
@@ -214,7 +220,7 @@ class SeatReservationConsumer:
                 timestamp=message.get('timestamp', ''),
             )
 
-            result = anyio.from_thread.run(self.finalize_seat_payment_use_case.execute, request)
+            result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'💰 [FINALIZE] {seat_id}')
@@ -312,7 +318,7 @@ class SeatReservationConsumer:
 
     # ========== Lifecycle ==========
 
-    async def start(self):
+    def start(self):
         """啟動服務"""
         try:
             # 初始化 use cases
@@ -338,7 +344,7 @@ class SeatReservationConsumer:
             Logger.base.error(f'❌ Start failed: {e}')
             raise
 
-    async def stop(self):
+    def stop(self):
         """停止服務"""
         if not self.running:
             return
@@ -358,14 +364,21 @@ class SeatReservationConsumer:
 def main():
     consumer = SeatReservationConsumer()
     try:
-        asyncio.run(consumer.start())
+        # 啟動 BlockingPortal，創建共享的 event loop
+        with start_blocking_portal() as portal:
+            consumer.set_portal(portal)
+            consumer.start()
+
     except KeyboardInterrupt:
         Logger.base.info('⚠️ Received interrupt signal')
-        asyncio.run(consumer.stop())
+        try:
+            consumer.stop()
+        except Exception:
+            pass
     except Exception as e:
         Logger.base.error(f'💥 Consumer error: {e}')
         try:
-            asyncio.run(consumer.stop())
+            consumer.stop()
         except:
             pass
     finally:
