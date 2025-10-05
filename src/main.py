@@ -12,7 +12,7 @@ from src.platform.config.db_setting import create_db_and_tables
 from src.platform.config.di import cleanup, container, setup
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
-from src.seat_reservation.driving_adapter.seat_reservation_controller import (
+from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
 )
 from src.service.ticketing.driving_adapter.user_controller import router as auth_router

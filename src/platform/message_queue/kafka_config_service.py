@@ -50,7 +50,7 @@ class KafkaConfigService(KafkaConfigServiceInterface):
             ),
             ConsumerConfig(
                 name='seat_reservation_mq_consumer',
-                module='src.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
+                module='src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
                 instance_count=1,
             ),

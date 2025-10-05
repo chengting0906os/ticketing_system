@@ -240,7 +240,7 @@ class EventServiceLauncher:
         consumers = [
             # 1:1:1 架構 - 單個 Seat Reservation instance 處理所有 partitions
             ("📚 Booking Service Consumer", "src.booking.driving_adapter.booking_mq_consumer", "booking-service"),
-            ("🪑 Seat Reservation Consumer", "src.seat_reservation.driving_adapter.seat_reservation_mq_consumer", "seat-reservation-1"),
+            ("🪑 Seat Reservation Consumer", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer", "seat-reservation-1"),
             ("🎫 Event Ticketing Consumer", "src.event_ticketing.driven_adapter.event_ticketing_mq_consumer", "event-ticketing-service")
         ]
 

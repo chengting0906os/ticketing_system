@@ -9,15 +9,15 @@ from typing import List, Optional
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.seat_reservation.domain.seat_selection_domain import (
+from src.service.seat_reservation.domain.seat_selection_domain import (
     AvailableSeat,
     SeatPosition,
     SeatSelectionDomain,
     SeatSelectionRequest,
     SelectionMode,
 )
-from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
-from src.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
+from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
 

@@ -19,12 +19,12 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
-from src.seat_reservation.app.command.finalize_seat_payment_use_case import (
+from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
-from src.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatRequest
-from src.seat_reservation.app.command.release_seat_use_case import ReleaseSeatRequest
-from src.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
+from src.service.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatRequest
+from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatRequest
+from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
 
 
 @dataclass

@@ -20,20 +20,20 @@ from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.section_based_partition_strategy import (
     SectionBasedPartitionStrategy,
 )
-from src.seat_reservation.app.command.finalize_seat_payment_use_case import (
+from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentUseCase,
 )
-from src.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatUseCase
-from src.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
-from src.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.seat_reservation.app.query.get_section_seats_detail_use_case import (
+from src.service.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatUseCase
+from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
+from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.seat_reservation.app.query.get_section_seats_detail_use_case import (
     GetSectionSeatsDetailUseCase,
 )
-from src.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
-from src.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
+from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
+from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
-from src.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
+from src.service.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
 from src.service.ticketing.app.service.auth_service import AuthService
 from src.service.ticketing.driven_adapter.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.user_query_repo_impl import UserQueryRepoImpl

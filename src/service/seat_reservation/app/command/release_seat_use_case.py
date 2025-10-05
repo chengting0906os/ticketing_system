@@ -6,7 +6,7 @@ Release Seat Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
 
 
 @dataclass

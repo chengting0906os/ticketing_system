@@ -228,7 +228,7 @@ class CreateEventUseCase:
                 'run',
                 'python',
                 '-m',
-                'src.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
+                'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
             ]
 
             process = await asyncio.create_subprocess_exec(
@@ -445,7 +445,7 @@ class CreateEventUseCase:
                 # Seat Reservation - 2 consumers (高負載座位選擇 + Kvrocks 操作)
                 {
                     'name': 'seat_reservation_mq_consumer_1',
-                    'module': 'src.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
+                    'module': 'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                         event_id=event_id
                     ),
@@ -453,7 +453,7 @@ class CreateEventUseCase:
                 },
                 # {
                 #     'name': 'seat_reservation_mq_consumer_2',
-                #     'module': 'src.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
+                #     'module': 'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
                 #     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
                 #         event_id=event_id
                 #     ),

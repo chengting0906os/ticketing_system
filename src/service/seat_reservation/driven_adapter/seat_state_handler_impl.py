@@ -9,7 +9,7 @@ from async_lru import alru_cache
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.redis_client import kvrocks_client
-from src.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
 
 
 # 座位狀態編碼 (2 bits)
