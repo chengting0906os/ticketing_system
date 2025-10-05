@@ -433,37 +433,20 @@ class CreateEventUseCase:
         try:
             project_root = BASE_DIR
 
-            # 1-2-1 Consumer 配置
+            # Consumer 配置 (整合架構：PostgreSQL + Kvrocks)
             consumers = [
-                # Booking Service - 1 consumer
+                # Ticketing Service - PostgreSQL 狀態管理 (Booking + Ticket)
                 {
-                    'name': 'booking_mq_consumer',
-                    'module': 'src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer',
-                    'group_id': KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
+                    'name': 'ticketing_mq_consumer',
+                    'module': 'src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer',
+                    'group_id': KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
                     'instance_id': 1,
                 },
-                # Seat Reservation - 2 consumers (高負載座位選擇 + Kvrocks 操作)
+                # Seat Reservation Service - Kvrocks 狀態管理
                 {
-                    'name': 'seat_reservation_mq_consumer_1',
+                    'name': 'seat_reservation_mq_consumer',
                     'module': 'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
                     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
-                        event_id=event_id
-                    ),
-                    'instance_id': 1,
-                },
-                # {
-                #     'name': 'seat_reservation_mq_consumer_2',
-                #     'module': 'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
-                #     'group_id': KafkaConsumerGroupBuilder.seat_reservation_service(
-                #         event_id=event_id
-                #     ),
-                #     'instance_id': 2,
-                # },
-                # Event Ticketing - 1 consumer
-                {
-                    'name': 'event_ticketing_mq_consumer',
-                    'module': 'src.service.ticketing.driving_adapter.mq_consumer.event_ticketing_mq_consumer',
-                    'group_id': KafkaConsumerGroupBuilder.event_ticketing_service(
                         event_id=event_id
                     ),
                     'instance_id': 1,

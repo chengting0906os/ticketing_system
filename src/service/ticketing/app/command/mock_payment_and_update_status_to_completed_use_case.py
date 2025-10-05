@@ -97,8 +97,8 @@ class MockPaymentUseCase:
                     total_amount=float(sum(ticket.price for ticket in reserved_tickets)),
                 )
 
-                # Publish to event_ticketing service according to README pattern
-                topic_name = KafkaTopicBuilder.update_ticket_status_to_paid_in_postgresql(
+                # Publish to seat_reservation service to finalize payment in Kvrocks
+                topic_name = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
                     event_id=booking.event_id
                 )
                 partition_key = f'event-{booking.event_id}'
@@ -107,7 +107,9 @@ class MockPaymentUseCase:
                     event=paid_event, topic=topic_name, partition_key=partition_key
                 )
 
-                Logger.base.info(f'✅ [PAYMENT] Published BookingPaidEvent to topic: {topic_name}')
+                Logger.base.info(
+                    f'✅ [PAYMENT] Published BookingPaidEvent to finalize in Kvrocks: {topic_name}'
+                )
 
         # Generate mock payment ID
         payment_id = (

@@ -85,8 +85,8 @@ class CancelBookingUseCase:
                     cancelled_at=datetime.now(timezone.utc),
                 )
 
-                # Publish to event_ticketing service according to README pattern
-                topic_name = KafkaTopicBuilder.update_ticket_status_to_available_in_kvrocks(
+                # Publish to seat_reservation service to release seats in Kvrocks
+                topic_name = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
                     event_id=booking.event_id
                 )
                 partition_key = f'event-{booking.event_id}'
@@ -96,7 +96,7 @@ class CancelBookingUseCase:
                 )
 
                 Logger.base.info(
-                    f'✅ [CANCEL] Published BookingCancelledEvent to topic: {topic_name}'
+                    f'✅ [CANCEL] Published BookingCancelledEvent to release seats in Kvrocks: {topic_name}'
                 )
 
         await self.session.commit()

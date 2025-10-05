@@ -9,7 +9,8 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-from anyio import from_thread
+import anyio
+import anyio.from_thread
 from quixstreams import Application
 
 from src.platform.config.core_setting import settings
@@ -154,7 +155,7 @@ class SeatReservationConsumer:
                 seats_per_row=message['seats_per_row'],  # 配置信息（必填）
             )
 
-            result = from_thread.run(self.initialize_seat_use_case.execute, request)
+            result = anyio.from_thread.run(self.initialize_seat_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'✅ [INIT] {message["seat_id"]}')
@@ -172,7 +173,7 @@ class SeatReservationConsumer:
         """處理預訂請求"""
         try:
             Logger.base.info(f'🎫 [RESERVATION] Processing: {message.get("aggregate_id")}')
-            result = from_thread.run(self._handle_reservation, message)  # type: ignore
+            result = anyio.from_thread.run(self._handle_reservation, message)  # type: ignore
             return {'success': True, 'result': result}
         except Exception as e:
             Logger.base.error(f'❌ [RESERVATION] Failed: {e}')
@@ -187,7 +188,7 @@ class SeatReservationConsumer:
 
         try:
             request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
-            result = from_thread.run(self.release_seat_use_case.execute, request)
+            result = anyio.from_thread.run(self.release_seat_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'🔓 [RELEASE] {seat_id}')
@@ -213,7 +214,7 @@ class SeatReservationConsumer:
                 timestamp=message.get('timestamp', ''),
             )
 
-            result = from_thread.run(self.finalize_seat_payment_use_case.execute, request)
+            result = anyio.from_thread.run(self.finalize_seat_payment_use_case.execute, request)
 
             if result.success:
                 Logger.base.info(f'💰 [FINALIZE] {seat_id}')
@@ -355,25 +356,20 @@ class SeatReservationConsumer:
 
 
 def main():
-    """主程序入口"""
     consumer = SeatReservationConsumer()
-
-    async def cleanup():
-        try:
-            await consumer.stop()
-        except Exception as e:
-            Logger.base.error(f'Cleanup error: {e}')
-
     try:
         asyncio.run(consumer.start())
     except KeyboardInterrupt:
         Logger.base.info('⚠️ Received interrupt signal')
-        asyncio.run(cleanup())
+        asyncio.run(consumer.stop())
     except Exception as e:
         Logger.base.error(f'💥 Consumer error: {e}')
-        asyncio.run(cleanup())
+        try:
+            asyncio.run(consumer.stop())
+        except:
+            pass
     finally:
-        Logger.base.info('🧹 Cleanup complete')
+        Logger.base.info('🧹 Cleaning up resources...')
 
 
 if __name__ == '__main__':

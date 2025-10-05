@@ -115,9 +115,8 @@ class EventServiceLauncher:
 
         # 定義要殺死的進程名稱模式
         consumer_patterns = [
-            "booking_mq_consumer",
+            "ticketing_mq_consumer",
             "seat_reservation_mq_consumer",
-            "event_ticketing_mq_consumer",
         ]
 
         for pattern in consumer_patterns:
@@ -238,10 +237,9 @@ class EventServiceLauncher:
     async def _start_consumers(self, event: EventModel) -> None:
         """啟動所有 consumers 並創建 log 串流任務"""
         consumers = [
-            # 1:1:1 架構 - 單個 Seat Reservation instance 處理所有 partitions
-            ("📚 Booking Service Consumer", "src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer", "booking-service"),
-            ("🪑 Seat Reservation Consumer", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer", "seat-reservation-1"),
-            ("🎫 Event Ticketing Consumer", "src.service.ticketing.driving_adapter.mq_consumer.event_ticketing_mq_consumer", "event-ticketing-service")
+            # 整合架構 - PostgreSQL 狀態管理 + Kvrocks 狀態管理
+            ("🎫 Ticketing Service Consumer (PostgreSQL)", "src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer", "ticketing-service"),
+            ("🪑 Seat Reservation Consumer (Kvrocks)", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer", "seat-reservation-service"),
         ]
 
         # 獲取項目根目錄
@@ -254,11 +252,7 @@ class EventServiceLauncher:
             env = os.environ.copy()
             env["EVENT_ID"] = str(event.id)
             env["PYTHONPATH"] = project_root
-            # 為 Seat Reservation consumers 設置不同的 consumer group
-            if "seat-reservation" in consumer_id:
-                instance_id = consumer_id.split('-')[-1]
-                env["CONSUMER_GROUP_ID"] = f"seat-reservation-service-{instance_id}"
-                env["CONSUMER_INSTANCE_ID"] = instance_id
+            env["CONSUMER_INSTANCE_ID"] = "1"
 
             # 啟動 consumer
             cmd = ["uv", "run", "python", "-m", module]
@@ -292,7 +286,7 @@ class EventServiceLauncher:
         seat_count = self._calculate_seat_count(event.seating_config)
 
         print(f"""
-📊 服務狀態摘要 (🛠️ 開發模式 - 1:2:1 架構)：
+📊 服務狀態摘要 (🛠️ 開發模式 - 整合架構)：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   活動 ID:     {event.id}
   活動名稱:    {event.name}

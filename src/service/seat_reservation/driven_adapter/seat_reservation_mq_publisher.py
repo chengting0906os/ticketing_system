@@ -73,15 +73,15 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
 
         await publish_domain_event(
             event=event,
-            topic=KafkaTopicBuilder.update_ticket_status_to_reserved_in_postgresql(
+            topic=KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
                 event_id=event_id
             ),
             partition_key=str(booking_id),
         )
 
         Logger.base.info(
-            f'📡 [EVENT-PUBLISHER] 發送座位預訂成功事件: booking_id={booking_id}, '
-            f'seats={len(reserved_seats)}個'
+            f'📡 [EVENT-PUBLISHER] 發送座位預訂成功事件（Booking PENDING_PAYMENT + Ticket RESERVED）: '
+            f'booking_id={booking_id}, seats={len(reserved_seats)}個'
         )
 
     async def publish_reservation_failed(

@@ -175,8 +175,7 @@ services ss: check-kafka  ## 🚀 智能啟動活動服務 (從資料庫選擇)
 stop-services stop:  ## 🛑 停止所有服務
 	@echo "🛑 停止所有服務..."
 	@pkill -f "seat_reservation_mq_consumer" || true
-	@pkill -f "booking_mq_consumer" || true
-	@pkill -f "event_ticketing_mq_consumer" || true
+	@pkill -f "ticketing_mq_consumer" || true
 	@pkill -f "launch_all_consumers" || true
 	@echo "✅ 所有服務已停止"
 

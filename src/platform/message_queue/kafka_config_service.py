@@ -43,21 +43,15 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         # event_ticketing: 1 consumer (狀態管理)
         self.consumer_configs = [
             ConsumerConfig(
-                name='booking_mq_consumer',
-                module='src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer',
-                description='📚 訂單服務消費者',
+                name='ticketing_mq_consumer',
+                module='src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer',
+                description='🎫 票務服務消費者 (Booking + Ticket)',
                 instance_count=1,
             ),
             ConsumerConfig(
                 name='seat_reservation_mq_consumer',
                 module='src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer',
                 description='🪑 座位預訂消費者',
-                instance_count=1,
-            ),
-            ConsumerConfig(
-                name='event_ticketing_mq_consumer',
-                module='src.service.ticketing.driving_adapter.mq_consumer.event_ticketing_mq_consumer',
-                description='🎫 票務同步消費者',
                 instance_count=1,
             ),
         ]
@@ -214,9 +208,8 @@ class KafkaConfigService(KafkaConfigServiceInterface):
         )
         Logger.base.info(
             f'🔄 [KAFKA_CONFIG] Configuration: '
-            f'booking:{self.consumer_configs[0].instance_count}, '
-            f'seat_reservation:{self.consumer_configs[1].instance_count}, '
-            f'event_ticketing:{self.consumer_configs[2].instance_count}'
+            f'ticketing:{self.consumer_configs[0].instance_count}, '
+            f'seat_reservation:{self.consumer_configs[1].instance_count}'
         )
 
     async def _start_single_consumer(
@@ -235,16 +228,12 @@ class KafkaConfigService(KafkaConfigServiceInterface):
             env['CONSUMER_INSTANCE_ID'] = str(instance_id)
 
             # 根據不同的 consumer 設置不同的 consumer group
-            if 'booking' in consumer.name:
-                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.booking_service(
+            if 'ticketing' in consumer.name:
+                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.ticketing_service(
                     event_id=event_id
                 )
             elif 'seat_reservation' in consumer.name:
                 env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.seat_reservation_service(
-                    event_id=event_id
-                )
-            elif 'event_ticketing' in consumer.name:
-                env['CONSUMER_GROUP_ID'] = KafkaConsumerGroupBuilder.event_ticketing_service(
                     event_id=event_id
                 )
 

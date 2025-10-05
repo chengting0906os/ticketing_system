@@ -1,9 +1,8 @@
 class ServiceNames:
     """服務名稱常數"""
 
-    BOOKING_SERVICE = 'booking-service'
+    TICKETING_SERVICE = 'ticketing-service'  # 整合 booking + event_ticketing
     SEAT_RESERVATION_SERVICE = 'seat-reservation-service'
-    EVENT_TICKETING_SERVICE = 'event-ticketing-service'
 
 
 class KafkaTopicBuilder:
@@ -16,65 +15,46 @@ class KafkaTopicBuilder:
     # ====== To Seat Reservation Service =======
     @staticmethod
     def ticket_reserving_request_to_reserved_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
     def release_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
     def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
     @staticmethod
     def seat_initialization_command_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______seat-initialization-command-in-kvrocks______{ServiceNames.EVENT_TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______seat-initialization-command-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+
+    # ====== To Ticketing Service (包含 Booking + Event Ticketing) =======
 
     @staticmethod
-    def section_stats_query_in_kvrocks(*, event_id: int) -> str:
-        """Section 統計查詢請求（API → Seat Reservation Service）"""
-        return f'event-id-{event_id}______section-stats-query-in-kvrocks______api___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
-
-    @staticmethod
-    def section_stats_response_from_kvrocks(*, event_id: int) -> str:
-        """Section 統計查詢響應（Seat Reservation Service → API）"""
-        return f'event-id-{event_id}______section-stats-response-from-kvrocks______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___api'
-
-    # ====== To Event Ticketing Service =======
-
-    @staticmethod
-    def update_ticket_status_to_reserved_in_postgresql(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-ticket-status-to-reserved-in-postgresql______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.EVENT_TICKETING_SERVICE}'
-
-    @staticmethod
-    def update_ticket_status_to_paid_in_postgresql(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-ticket-status-to-paid-in-postgresql______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.EVENT_TICKETING_SERVICE}'
-
-    @staticmethod
-    def update_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-ticket-status-to-available-in-postgresql______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.EVENT_TICKETING_SERVICE}'
-
-    # ====== To Booking Service =======
-    @staticmethod
-    def update_booking_status_to_pending_payment(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-booking-status-to-pending-payment______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.BOOKING_SERVICE}'
+    def update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
+        *, event_id: int
+    ) -> str:
+        """座位預訂成功後，同時更新 Booking 和 Ticket 狀態（原子操作）"""
+        return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
     def update_booking_status_to_failed(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.BOOKING_SERVICE}'
+        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
         return [
+            # To Seat Reservation Service
             KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id),
-            KafkaTopicBuilder.update_ticket_status_to_reserved_in_postgresql(event_id=event_id),
-            KafkaTopicBuilder.update_booking_status_to_pending_payment(event_id=event_id),
-            KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
-            KafkaTopicBuilder.update_ticket_status_to_paid_in_postgresql(event_id=event_id),
-            KafkaTopicBuilder.update_ticket_status_to_available_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.seat_initialization_command_in_kvrocks(event_id=event_id),
+            # To Ticketing Service
+            KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
+                event_id=event_id
+            ),
+            KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
         ]
 
 
@@ -86,24 +66,20 @@ class KafkaConsumerGroupBuilder:
     """
 
     @staticmethod
-    def booking_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}_____{ServiceNames.BOOKING_SERVICE}--{event_id}'
+    def ticketing_service(*, event_id: int) -> str:
+        """Ticketing Service (整合 booking + event_ticketing)"""
+        return f'event-id-{event_id}_____{ServiceNames.TICKETING_SERVICE}--{event_id}'
 
     @staticmethod
     def seat_reservation_service(*, event_id: int) -> str:
         return f'event-id-{event_id}_____{ServiceNames.SEAT_RESERVATION_SERVICE}--{event_id}'
 
     @staticmethod
-    def event_ticketing_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}_____{ServiceNames.EVENT_TICKETING_SERVICE}--{event_id}'
-
-    @staticmethod
     def get_all_consumer_groups(*, event_id: int) -> list[str]:
-        """獲取 1-2-1 架構的所有 consumer groups"""
+        """獲取所有 consumer groups (Ticketing + Seat Reservation)"""
         return [
-            KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
+            KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
-            KafkaConsumerGroupBuilder.event_ticketing_service(event_id=event_id),
         ]
 
 
