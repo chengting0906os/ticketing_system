@@ -53,22 +53,22 @@ SEATING_CONFIG_50000  = {
                 ]
             }
 
-SEATING_CONFIG_30  = {
+SEATING_CONFIG_3000  = {
                 "sections": [
                     {
                         "name": "A",
                         "price": 3000,
-                        "subsections": [{"number": i, "rows": 1, "seats_per_row": 10} for i in range(1, 2)]
+                        "subsections": [{"number": i, "rows": 10, "seats_per_row": 10} for i in range(1, 11)]
                     },
                     {
                         "name": "B",
                         "price": 2800,
-                        "subsections": [{"number": i, "rows": 1, "seats_per_row": 10} for i in range(1, 2)]
+                        "subsections": [{"number": i, "rows": 10, "seats_per_row": 10} for i in range(1, 11)]
                     },
                     {
                         "name": "C",
                         "price": 2500,
-                        "subsections": [{"number": i, "rows": 1, "seats_per_row": 10} for i in range(1, 2)]
+                        "subsections": [{"number": i, "rows": 10, "seats_per_row": 10} for i in range(1, 11)]
                     },
                    
                 ]

@@ -36,7 +36,7 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.platform.config.core_setting import settings
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
-from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_30
+from scripts.seating_config import SEATING_CONFIG_50000, SEATING_CONFIG_3000
 from contextlib import asynccontextmanager
 
 
@@ -250,7 +250,7 @@ async def create_init_event_in_session(session, seller_id: int):
             # 座位配置選擇
             # SEATING_CONFIG_30: 開發測試用（30 個座位，快速初始化）
             # SEATING_CONFIG_50000: 生產環境用（50,000 個座位，完整壓力測試）
-            seating_config = SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
+            seating_config = SEATING_CONFIG_3000  # 開發模式預設使用小規模配置
 
             # Calculate total seats from nested structure: sections → subsections → rows × seats_per_row
             total_seats = 0
