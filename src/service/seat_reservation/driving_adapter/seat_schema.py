@@ -4,7 +4,10 @@ from pydantic import BaseModel
 
 
 class SeatResponse(BaseModel):
-    id: int
+    """
+    座位響應 Schema（從 Kvrocks 查詢，不含 ticket_id）
+    """
+
     event_id: int
     section: str
     subsection: int

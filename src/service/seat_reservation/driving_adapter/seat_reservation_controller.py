@@ -3,376 +3,28 @@ Seat Reservation Controller
 處理座位預訂相關的 API 端點，包括實時狀態更新
 """
 
-import anyio
-import asyncpg
-from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sse_starlette.sse import EventSourceResponse
+# from src.service.ticketing.app.service.role_auth_service import require_buyer_or_seller
+# from src.service.ticketing.domain.entity.user_entity import UserEntity
+from fastapi import APIRouter, HTTPException, status
 
-from src.platform.config.core_setting import settings
-from src.platform.config.db_setting import get_async_session
+# from sse_starlette.sse import EventSourceResponse
+from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
-from src.platform.state.redis_client import kvrocks_stats_client
-from src.service.seat_reservation.app.query.get_seat_availability_use_case import (
-    GetSeatAvailabilityUseCase,
-)
+from src.platform.state.redis_client import kvrocks_client, kvrocks_stats_client
+
+# from src.service.seat_reservation.app.query.get_seat_availability_use_case import (
+#     GetSeatAvailabilityUseCase,
+# )
 from src.service.seat_reservation.driving_adapter.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )
-from src.service.ticketing.app.service.role_auth_service import require_buyer_or_seller
-from src.service.ticketing.domain.entity.user_entity import UserEntity
-from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from fastapi import HTTPException
-from sqlalchemy import and_
-
-from src.service.ticketing.driven_adapter.model.event_model import EventModel
-from src.platform.state.redis_client import kvrocks_client
-
-
-def calculate_partition_for_section(section_id: str, num_partitions: int = 3) -> int:
-    """
-    計算 section 在哪個 Kafka partition（與 Kafka producer 邏輯一致）
-
-    Args:
-        section_id: Section ID（例如 "A-1"）
-        num_partitions: Partition 總數（預設 3）
-
-    Returns:
-        Partition 編號（0-based）
-
-    範例:
-        "A-1" → partition 0 → instance 1
-        "B-1" → partition 1 → instance 2
-        "C-1" → partition 2 → instance 3
-    """
-    # 提取 section 字母（"A-1" → "A"）
-    section_letter = section_id.split('-')[0] if '-' in section_id else section_id
-
-    # 使用與 Kafka producer 相同的 hash 邏輯
-    partition = (ord(section_letter[0]) - ord('A')) % num_partitions
-
-    return partition
 
 
 router = APIRouter(prefix='/api/event', tags=['seat-reservation'])
 
 
-def _seat_to_response(seat) -> SeatResponse:
-    """將座位實體轉換為響應格式"""
-    return SeatResponse(
-        id=seat.id,
-        event_id=seat.event_id,
-        section=seat.section,
-        subsection=seat.subsection,
-        row=seat.row,
-        seat=seat.seat,
-        price=seat.price,
-        status=seat.status.value,
-        seat_identifier=seat.seat_identifier,
-    )
-
-
-@router.get('/{event_id}/sse/status')
-@Logger.io
-async def sse_event_seat_status(
-    request: Request,
-    event_id: int,
-    current_user: UserEntity = Depends(require_buyer_or_seller),
-    availability_use_case: GetSeatAvailabilityUseCase = Depends(GetSeatAvailabilityUseCase.depends),
-):
-    """
-    實時座位狀態 SSE 端點
-    從 Kvrocks 和 PostgreSQL 聚合座位狀態信息
-    """
-
-    async def event_generator():
-        # Send initial connection message
-        yield {
-            'event': 'connected',
-            'data': {
-                'message': 'SSE connection established',
-                'event_id': event_id,
-                'user_id': current_user.id,
-            },
-        }
-
-        # Send initial status
-        try:
-            initial_status = (
-                await availability_use_case.get_event_status_with_all_subsections_tickets_count(
-                    event_id=event_id
-                )
-            )
-
-            yield {
-                'event': 'initial_status',
-                'data': {
-                    'event_id': event_id,
-                    'price_groups': [
-                        {
-                            'price': pg.price,
-                            'subsections': [
-                                {
-                                    'subsection': sub.subsection,
-                                    'total_seats': sub.total_seats,
-                                    'available_seats': sub.available_seats,
-                                    'status': sub.status,
-                                }
-                                for sub in pg.subsections
-                            ],
-                        }
-                        for pg in initial_status.price_groups
-                    ],
-                },
-            }
-        except Exception as e:
-            yield {'event': 'error', 'data': {'message': f'Failed to get initial status: {str(e)}'}}
-            return
-
-        # Set up database listener for real-time notifications
-        listen_conn = None
-        last_status = initial_status
-        last_sent_time = anyio.current_time()
-        notification_received: anyio.Event = anyio.Event()
-
-        def notification_callback(connection, pid, channel, payload):
-            """Called when a notification is received - just signal that we got one"""
-            notification_received.set()
-
-        try:
-            # Create dedicated asyncpg connection for LISTEN/NOTIFY
-            # Convert asyncpg URL format (remove +asyncpg part)
-            database_url = settings.DATABASE_URL_ASYNC.replace(
-                'postgresql+asyncpg://', 'postgresql://'
-            )
-            listen_conn = await asyncpg.connect(database_url)
-
-            # Add listener for ticket status changes for this event
-            channel_name = f'ticket_status_change_{event_id}'
-            await listen_conn.add_listener(channel_name, notification_callback)
-
-            while True:
-                try:
-                    # Check if client disconnected
-                    if await request.is_disconnected():
-                        break
-
-                    # Wait for database notification or timeout after 30 seconds for keepalive
-                    try:
-                        with anyio.fail_after(30.0):
-                            await notification_received.wait()
-                        notification_received.clear()  # pyright: ignore[reportAttributeAccessIssue]
-
-                        # Got a notification - fetch updated status with debouncing
-                        current_time = anyio.current_time()
-                        if (current_time - last_sent_time) >= 0.5:
-                            current_status = await availability_use_case.get_event_status_with_all_subsections_tickets_count(
-                                event_id=event_id
-                            )
-
-                            # Send update if status actually changed
-                            if current_status != last_status:
-                                yield {
-                                    'event': 'status_update',
-                                    'data': {
-                                        'event_id': event_id,
-                                        'timestamp': current_time,
-                                        'price_groups': [
-                                            {
-                                                'price': pg.price,
-                                                'subsections': [
-                                                    {
-                                                        'subsection': sub.subsection,
-                                                        'total_seats': sub.total_seats,
-                                                        'available_seats': sub.available_seats,
-                                                        'status': sub.status,
-                                                    }
-                                                    for sub in pg.subsections
-                                                ],
-                                            }
-                                            for pg in current_status.price_groups
-                                        ],
-                                    },
-                                }
-                                last_status = current_status
-                                last_sent_time = current_time
-
-                    except anyio.get_cancelled_exc_class():
-                        # No notification received - send keepalive ping
-                        yield {
-                            'event': 'ping',
-                            'data': {'timestamp': anyio.current_time()},
-                        }
-
-                except anyio.get_cancelled_exc_class():
-                    break
-
-        except Exception as e:
-            yield {'event': 'error', 'data': {'message': f'Database listener error: {str(e)}'}}
-
-        finally:
-            # Clean up database connection
-            if listen_conn:
-                try:
-                    await listen_conn.remove_listener(channel_name, notification_callback)  # pyright: ignore[reportPossiblyUnboundVariable]
-                    await listen_conn.close()
-                except:
-                    pass
-
-        # Send disconnect message
-        yield {
-            'event': 'disconnected',
-            'data': {'message': 'SSE connection closed', 'event_id': event_id},
-        }
-
-    return EventSourceResponse(
-        event_generator(),
-        headers={
-            'X-Accel-Buffering': 'no',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Cache-Control',
-        },
-        ping=30,
-    )
-
-
-@router.get('/{event_id}/sse/all_section_stat')
-@Logger.io(truncate_content=True)  # type: ignore
-async def sse_all_section_stats(
-    request: Request,
-    event_id: int,
-    current_user: UserEntity = Depends(require_buyer_or_seller),
-    availability_use_case: GetSeatAvailabilityUseCase = Depends(GetSeatAvailabilityUseCase.depends),
-):
-    """
-    實時所有 section 統計 SSE 端點
-    從 Kvrocks 讀取所有 section 的統計資訊並推送更新
-    """
-    # Validate event exists - raises NotFoundError if not found
-    await availability_use_case.event_exists(event_id=event_id)
-
-    async def event_generator():
-        # Send initial connection message
-        yield {
-            'event': 'connected',
-            'data': {
-                'message': 'SSE connection established',
-                'event_id': event_id,
-                'user_id': current_user.id,
-            },
-        }
-
-        # Send initial status from Kvrocks
-        try:
-            all_sections = await kvrocks_stats_client.get_all_section_stats(event_id=event_id)
-
-            yield {
-                'event': 'initial_status',
-                'data': {
-                    'event_id': event_id,
-                    'sections': all_sections,
-                    'timestamp': anyio.current_time(),
-                },
-            }
-        except Exception as e:
-            yield {'event': 'error', 'data': {'message': f'Failed to get initial status: {str(e)}'}}
-            return
-
-        # Set up database listener for real-time notifications
-        listen_conn = None
-        last_sections = all_sections
-        last_sent_time = anyio.current_time()
-        notification_received: anyio.Event = anyio.Event()
-
-        def notification_callback(connection, pid, channel, payload):
-            """Called when a notification is received"""
-            notification_received.set()
-
-        try:
-            # Create dedicated asyncpg connection for LISTEN/NOTIFY
-            database_url = settings.DATABASE_URL_ASYNC.replace(
-                'postgresql+asyncpg://', 'postgresql://'
-            )
-            listen_conn = await asyncpg.connect(database_url)
-
-            # Add listener for ticket status changes for this event
-            channel_name = f'ticket_status_change_{event_id}'
-            await listen_conn.add_listener(channel_name, notification_callback)
-
-            while True:
-                try:
-                    # Check if client disconnected
-                    if await request.is_disconnected():
-                        break
-
-                    # Wait for database notification or timeout after 30 seconds for keepalive
-                    try:
-                        with anyio.fail_after(30.0):
-                            await notification_received.wait()
-                        notification_received.clear()  # pyright: ignore[reportAttributeAccessIssue]
-
-                        # Got a notification - fetch updated status with debouncing
-                        current_time = anyio.current_time()
-                        if (current_time - last_sent_time) >= 0.5:
-                            current_sections = await kvrocks_stats_client.get_all_section_stats(
-                                event_id=event_id
-                            )
-
-                            # Send update if status actually changed
-                            if current_sections != last_sections:
-                                yield {
-                                    'event': 'status_update',
-                                    'data': {
-                                        'event_id': event_id,
-                                        'sections': current_sections,
-                                        'timestamp': current_time,
-                                    },
-                                }
-                                last_sections = current_sections
-                                last_sent_time = current_time
-
-                    except anyio.get_cancelled_exc_class():
-                        # No notification received - send keepalive ping
-                        yield {
-                            'event': 'ping',
-                            'data': {'timestamp': anyio.current_time()},
-                        }
-
-                except anyio.get_cancelled_exc_class():
-                    break
-
-        except Exception as e:
-            yield {'event': 'error', 'data': {'message': f'Database listener error: {str(e)}'}}
-
-        finally:
-            # Clean up database connection
-            if listen_conn:
-                try:
-                    await listen_conn.remove_listener(channel_name, notification_callback)  # pyright: ignore[reportPossiblyUnboundVariable]
-                    await listen_conn.close()
-                except:
-                    pass
-
-        # Send disconnect message
-        yield {
-            'event': 'disconnected',
-            'data': {'message': 'SSE connection closed', 'event_id': event_id},
-        }
-
-    return EventSourceResponse(
-        event_generator(),
-        headers={
-            'X-Accel-Buffering': 'no',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Cache-Control',
-        },
-        ping=30,
-    )
-
-
-@router.get('/{event_id}/sections/stats', status_code=status.HTTP_200_OK)
+@router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)
 @Logger.io(truncate_content=True)  # type: ignore
 async def get_all_section_stats(event_id: int) -> dict:
     """
@@ -394,7 +46,6 @@ async def get_all_section_stats(event_id: int) -> dict:
             "total_sections": 100
         }
     """
-    # 從 Kvrocks 讀取所有 section 統計
     all_sections = await kvrocks_stats_client.get_all_section_stats(event_id=event_id)
 
     Logger.base.info(
@@ -405,126 +56,82 @@ async def get_all_section_stats(event_id: int) -> dict:
 
 
 @router.get(
-    '/{event_id}/tickets/section/{section}/subsection/{subsection}',
+    '/{event_id}/sections/{section}/subsection/{subsection}/seats',
     status_code=status.HTTP_200_OK,
 )
 @Logger.io
-async def list_seats_by_section_subsection(
+async def list_subsection_seats(
     event_id: int,
     section: str,
     subsection: int,
-    session: AsyncSession = Depends(get_async_session),
 ) -> SectionStatsResponse:
     """
-    獲取指定區域的統計資訊（從 Kvrocks Bitfield + Counter 直接計算）+ tickets list
+    列出指定區域的所有座位（僅從 Kvrocks 查詢）
+
+    Seat Reservation Service 邊界：
+    - ✅ 只存取 Kvrocks（座位狀態的 source of truth）
+    - ❌ 不存取 PostgreSQL（Event/Ticket 屬於 Ticketing Service）
+
+    返回資料：
+    - 統計數據：total, available, reserved, sold
+    - 座位列表：每個座位的 section, subsection, row, seat, price, status（500 個座位）
 
     優化重點：
-    1. 使用 Bitfield 存儲座位狀態（2 bits per seat）
-    2. 使用 Counter 快速查詢可用數（O(1)）
-    3. 從資料庫查詢 tickets list
-    4. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
-    5. 高併發友好（50,000+ QPS）
+    1. 從 Bitfield 讀取座位狀態（2 bits per seat）
+    2. 從 Hash 讀取價格 metadata
+    3. 預期性能：~10-20ms（掃描整個 subsection 的所有座位）
     """
-
-    # 先檢查 event 是否存在
-    stmt_event = select(EventModel).where(EventModel.id == event_id)
-    result_event = await session.execute(stmt_event)
-    event = result_event.scalar_one_or_none()
-
-    if not event:
-        raise HTTPException(status_code=404, detail='Event not found')
 
     section_id = f'{section}-{subsection}'
     client = await kvrocks_client.connect()
 
-    try:
-        # 1. 從 Counter 取得 available 數量（O(1)）
-        subsection_counter_key = f'subsection_avail:{event_id}:{section_id}'
-        available = await client.get(subsection_counter_key)
-        available_count = int(available) if available else 0
-
-        # 2. 從 Bitfield 掃描取得 total, reserved, sold
-        bf_key = f'seats_bf:{event_id}:{section_id}'
-
-        # 檢查 bitfield 是否存在
-        if not await client.exists(bf_key):
-            Logger.base.warning(f'⚠️ [KVROCKS-MISS] Section {section_id} not initialized')
-            return SectionStatsResponse(
-                section_id=section_id,
-                total=0,
-                available=0,
-                reserved=0,
-                sold=0,
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                tickets=[],
-            )
-
-        # 從 Kvrocks metadata 取得 total（或從 DB 查詢）
-        meta_total_key = f'subsection_total:{event_id}:{section_id}'
-        total_str = await client.get(meta_total_key)
-        total_count = int(total_str)
-
-        # 計算 unavailable（reserved + sold）
-        unavailable_count = max(0, total_count - available_count)
-
-        Logger.base.info(
-            f'✅ [COUNTER] Section {section_id}: '
-            f'total={total_count}, available={available_count}, '
-            f'unavailable={unavailable_count}'
+    # 1. 檢查 bitfield 是否存在（間接驗證 event/section 是否存在）
+    bf_key = f'seats_bf:{event_id}:{section_id}'
+    if not await client.exists(bf_key):
+        Logger.base.warning(f'⚠️ [KVROCKS-MISS] Section {section_id} not initialized')
+        raise HTTPException(
+            status_code=404,
+            detail=f'Section {section_id} for event {event_id} not found in Kvrocks',
         )
 
-        # 3. 從資料庫查詢 tickets
-        tickets = []
-        stmt = select(TicketModel).where(
-            and_(
-                TicketModel.event_id == event_id,
-                TicketModel.section == section,
-                TicketModel.subsection == subsection,
-            )
-        )
-        result = await session.execute(stmt)
-        ticket_models = result.scalars().all()
+    # 2. 從 State Handler 獲取所有座位資料
+    seat_state_handler = container.seat_state_handler()
+    seats_data = await seat_state_handler.get_all_subsection_seats(event_id, section, subsection)
 
-        for ticket in ticket_models:
-            tickets.append(
-                SeatResponse(
-                    id=ticket.id,
-                    event_id=ticket.event_id,
-                    section=ticket.section,
-                    subsection=ticket.subsection,
-                    row=ticket.row_number,
-                    seat=ticket.seat_number,
-                    price=ticket.price,
-                    status=ticket.status,
-                    seat_identifier=f'{ticket.section}-{ticket.subsection}-{ticket.row_number}-{ticket.seat_number}',
-                )
-            )
-
-        return SectionStatsResponse(
-            section_id=section_id,
-            total=total_count,
-            available=available_count,
-            reserved=unavailable_count,  # 簡化：reserved + sold 合併
-            sold=0,
+    # 3. 轉換為 SeatResponse
+    tickets = [
+        SeatResponse(
             event_id=event_id,
-            section=section,
-            subsection=subsection,
-            tickets=tickets,
-            total_count=len(tickets),
+            section=seat['section'],
+            subsection=seat['subsection'],
+            row=seat['row'],
+            seat=seat['seat_num'],
+            price=seat['price'],
+            status=seat['status'],
+            seat_identifier=seat['seat_identifier'],
         )
+        for seat in seats_data
+    ]
 
-    except Exception as e:
-        Logger.base.error(f'❌ [KVROCKS] Failed to get section stats: {e}')
-        return SectionStatsResponse(
-            section_id=section_id,
-            total=0,
-            available=0,
-            reserved=0,
-            sold=0,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            tickets=[],
-        )
+    # 4. 計算統計數據
+    total_count = len(tickets)
+    available_count = sum(1 for t in tickets if t.status == 'AVAILABLE')
+    unavailable_count = total_count - available_count
+
+    Logger.base.info(
+        f'✅ [KVROCKS-SEATS] Section {section_id}: '
+        f'total={total_count}, available={available_count}, seats={len(tickets)}'
+    )
+
+    return SectionStatsResponse(
+        section_id=section_id,
+        total=total_count,
+        available=available_count,
+        reserved=unavailable_count,
+        sold=0,
+        event_id=event_id,
+        section=section,
+        subsection=subsection,
+        tickets=tickets,
+        total_count=len(tickets),
+    )

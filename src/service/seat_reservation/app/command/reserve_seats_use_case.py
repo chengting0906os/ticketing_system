@@ -16,7 +16,7 @@ from src.service.seat_reservation.domain.seat_selection_domain import (
     SeatSelectionRequest,
     SelectionMode,
 )
-from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
 from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
@@ -97,7 +97,7 @@ class ReserveSeatsUseCase:
     def __init__(
         self,
         seat_selection_domain: SeatSelectionDomain,
-        seat_state_handler: SeatStateHandler,
+        seat_state_handler: ISeatStateHandler,
         mq_publisher: ISeatReservationEventPublisher,
     ):
         self.seat_domain = seat_selection_domain
@@ -274,6 +274,7 @@ class ReserveSeatsUseCase:
             subsection_filter=request.subsection_filter,
         )
 
+    @Logger.io
     async def _get_available_seats(
         self, event_id: int, request: ReservationRequest
     ) -> List[AvailableSeat]:
@@ -347,6 +348,7 @@ class ReserveSeatsUseCase:
 
         return available_seats
 
+    @Logger.io
     async def _reserve_seats_directly(
         self, booking_id: int, buyer_id: int, selected_seats: List[str], event_id: int
     ) -> bool:

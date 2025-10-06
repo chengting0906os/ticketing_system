@@ -5,11 +5,9 @@ Seat State Handler Implementation
 
 from typing import Dict, List, Optional
 
-from async_lru import alru_cache
-
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.redis_client import kvrocks_client
-from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
 
 
 # 座位狀態編碼 (2 bits)
@@ -30,7 +28,7 @@ BITFIELD_TO_STATUS = {
 }
 
 
-class SeatStateHandlerImpl(SeatStateHandler):
+class SeatStateHandlerImpl(ISeatStateHandler):
     """
     座位狀態處理器實現 - 直接操作 Kvrocks
 
@@ -47,7 +45,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
         """計算座位在 Bitfield 中的 index"""
         return (row - 1) * 20 + (seat_num - 1)
 
-    @alru_cache(maxsize=1000)
+    @Logger.io
     async def _get_section_config(self, event_id: int, section: str, subsection: int) -> Dict:
         """
         從 Redis 獲取 section 配置信息（帶 LRU cache）
@@ -81,6 +79,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to get section config: {e}')
             raise
 
+    @Logger.io
     async def _save_section_config(
         self, event_id: int, section: str, subsection: int, rows: int, seats_per_row: int
     ) -> bool:
@@ -102,12 +101,13 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
         except Exception as e:
             Logger.base.error(f'❌ [SEAT-STATE] Failed to save section config: {e}')
-            return False
+            return True
 
     def is_available(self) -> bool:
         """檢查服務是否可用"""
         return True
 
+    @Logger.io
     async def _get_seat_status_from_bitfield(
         self, event_id: int, section: str, subsection: int, row: int, seat_num: int
     ) -> Optional[str]:
@@ -129,6 +129,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to get seat status: {e}')
             return None
 
+    @Logger.io
     async def _set_seat_status_to_bitfield(
         self,
         event_id: int,
@@ -163,6 +164,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to set seat status: {e}')
             return False
 
+    @Logger.io
     async def _get_row_seats(
         self, event_id: int, section: str, subsection: int, row: int
     ) -> List[Dict]:
@@ -203,6 +205,48 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to get row seats: {e}')
             return []
 
+    @Logger.io
+    async def get_all_subsection_seats(
+        self, event_id: int, section: str, subsection: int
+    ) -> List[Dict]:
+        """
+        獲取整個 subsection 的所有座位狀態（從 Kvrocks）
+
+        Returns:
+            List of dicts with keys: section, subsection, row, seat_num, status, price, seat_identifier
+        """
+        try:
+            # 獲取配置信息
+            config = await self._get_section_config(event_id, section, subsection)
+            total_rows = config['rows']
+
+            all_seats = []
+            for row in range(1, total_rows + 1):
+                row_seats = await self._get_row_seats(event_id, section, subsection, row)
+
+                for seat in row_seats:
+                    all_seats.append(
+                        {
+                            'section': section,
+                            'subsection': subsection,
+                            'row': row,
+                            'seat_num': seat['seat_num'],
+                            'status': seat['status'],
+                            'price': seat['price'],
+                            'seat_identifier': f'{section}-{subsection}-{row}-{seat["seat_num"]}',
+                        }
+                    )
+
+            Logger.base.info(
+                f'✅ [SEAT-STATE] Retrieved {len(all_seats)} seats for {section}-{subsection}'
+            )
+            return all_seats
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to get subsection seats: {e}')
+            return []
+
+    @Logger.io
     async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
         """獲取指定座位的狀態"""
         Logger.base.info(f'🔍 [SEAT-STATE] Getting states for {len(seat_ids)} seats')
@@ -250,6 +294,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Failed to read seat states: {e}')
             return {}
 
+    @Logger.io
     async def get_available_seats_by_section(
         self, event_id: int, section: str, subsection: int, limit: Optional[int] = None
     ) -> List[Dict]:
@@ -290,6 +335,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
         )
         return available_seats
 
+    @Logger.io
     async def reserve_seats(
         self, seat_ids: List[str], booking_id: int, buyer_id: int, event_id: int
     ) -> Dict[str, bool]:
@@ -341,6 +387,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
         return results
 
+    @Logger.io
     async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """釋放座位 (RESERVED -> AVAILABLE)"""
         Logger.base.info(f'🔓 [SEAT-STATE] Releasing {len(seat_ids)} seats')
@@ -374,12 +421,14 @@ class SeatStateHandlerImpl(SeatStateHandler):
 
         return results
 
+    @Logger.io
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """獲取座位價格"""
         seat_states = await self.get_seat_states([seat_id], event_id)
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
 
+    @Logger.io
     async def initialize_seat(
         self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
     ) -> bool:
@@ -418,6 +467,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Error initializing seat {seat_id}: {e}')
             return False
 
+    @Logger.io
     async def initialize_seats_batch(self, seats: list[dict]) -> dict[str, bool]:
         """批量初始化座位狀態為 AVAILABLE - 使用 Lua 腳本"""
         results = {}
@@ -524,6 +574,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
                 results[seat_data['seat_id']] = False
             return results
 
+    @Logger.io
     async def finalize_payment(
         self, seat_id: str, event_id: int, timestamp: Optional[str] = None
     ) -> bool:
@@ -567,6 +618,7 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Error finalizing payment for seat {seat_id}: {e}')
             return False
 
+    @Logger.io
     async def _rollback_reservations(self, reserved_seat_ids: List[str], event_id: int) -> None:
         """回滾已預訂的座位"""
         if not reserved_seat_ids:

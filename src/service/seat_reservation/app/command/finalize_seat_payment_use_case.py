@@ -6,7 +6,7 @@ Finalize Seat Payment Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
 
 
 @dataclass
@@ -30,9 +30,10 @@ class FinalizeSeatPaymentResult:
 class FinalizeSeatPaymentUseCase:
     """座位支付完成用例"""
 
-    def __init__(self, seat_state_handler: SeatStateHandler):
+    def __init__(self, seat_state_handler: ISeatStateHandler):
         self.seat_state_handler = seat_state_handler
 
+    @Logger.io
     async def execute(self, request: FinalizeSeatPaymentRequest) -> FinalizeSeatPaymentResult:
         """執行座位支付完成"""
         try:

@@ -6,7 +6,7 @@ Initialize Seat Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_handler import SeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
 import time
 
 
@@ -38,7 +38,7 @@ class InitializeSeatUseCase:
     BATCH_SIZE = 1000
     BATCH_TIMEOUT = 0.5  # 秒
 
-    def __init__(self, seat_state_handler: SeatStateHandler):
+    def __init__(self, seat_state_handler: ISeatStateHandler):
         self.seat_state_handler = seat_state_handler
 
         # 批量處理狀態
@@ -57,6 +57,7 @@ class InitializeSeatUseCase:
             or (current_time - self.last_batch_time) >= self.BATCH_TIMEOUT
         )
 
+    @Logger.io
     async def execute(self, request: InitializeSeatRequest) -> InitializeSeatResult:
         """執行單個座位初始化（內部自動批量處理）"""
 
@@ -77,6 +78,7 @@ class InitializeSeatUseCase:
 
         return InitializeSeatResult(success=True, seat_id=request.seat_id)
 
+    @Logger.io
     async def _flush_batch(self, current_time: float) -> None:
         """刷新批次 - 執行批量初始化"""
         if not self.init_batch:
@@ -124,9 +126,9 @@ class InitializeSeatUseCase:
             self.init_batch.clear()
             self.last_batch_time = current_time
 
+    @Logger.io
     async def force_flush(self) -> None:
         """強制刷新批次（在消費結束時調用）"""
-        import time
 
         if self.init_batch:
             Logger.base.info(f'🔄 [UC-FORCE-FLUSH] Flushing remaining {len(self.init_batch)} seats')

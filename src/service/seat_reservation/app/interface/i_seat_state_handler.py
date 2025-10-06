@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
 
-class SeatStateHandler(ABC):
+class ISeatStateHandler(ABC):
     """
     座位狀態處理器接口
 
