@@ -113,8 +113,6 @@ filterwarnings = [
     "ignore::pytest.PytestReturnNotNoneWarning",
 ]
 testpaths = ["test"]
-# pytest-bdd configuration
-bdd_features_base_dir = "test/features/"
 addopts = "-v --tb=short --strict-markers -n 12"
 
 [tool.pyright]

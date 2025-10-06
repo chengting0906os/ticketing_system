@@ -28,6 +28,7 @@ test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 # Pytest BDD example
+from src.main import app  # noqa: E402
 from test.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
 from test.pytest_bdd_ng_example.given import *  # noqa: E402, F403
 from test.pytest_bdd_ng_example.then import *  # noqa: E402, F403
@@ -35,9 +36,9 @@ from test.pytest_bdd_ng_example.when import *  # noqa: E402, F403
 
 # Seat reservation
 from test.service.seat_reservation.fixtures import *  # noqa: E402, F403
-from test.service.seat_reservation.integration.steps.given import *  # noqa: E402, F403
-from test.service.seat_reservation.integration.steps.then import *  # noqa: E402, F403
-from test.service.seat_reservation.integration.steps.when import *  # noqa: E402, F403
+from test.service.seat_reservation.integration.steps.seat_reservation.given import *  # noqa: E402, F403
+from test.service.seat_reservation.integration.steps.seat_reservation.then import *  # noqa: E402, F403
+from test.service.seat_reservation.integration.steps.seat_reservation.when import *  # noqa: E402, F403
 
 # Ticketing service fixtures and steps
 from test.service.ticketing.fixtures import *  # noqa: E402, F403
@@ -68,8 +69,6 @@ from test.util_constant import (  # noqa: E402, F403
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
-
-from src.main import app  # noqa: E402
 
 
 # Load environment variables from .env or .env.example
