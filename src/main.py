@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse  # type: ignore[attr-defined]
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.config.core_setting import settings
@@ -12,15 +13,6 @@ from src.platform.exception.exception_handlers import register_exception_handler
 from src.platform.logging.loguru_io import Logger
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
-)
-from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
-    router as booking_router,
-)
-from src.service.ticketing.driving_adapter.http_controller.event_ticketing_controller import (
-    router as event_router,
-)
-from src.service.ticketing.driving_adapter.http_controller.user_controller import (
-    router as auth_router,
 )
 
 # Import modules for dependency injection wiring
@@ -41,6 +33,15 @@ from src.service.ticketing.app.query import (
     list_events_use_case,
 )
 from src.service.ticketing.driving_adapter.http_controller import user_controller
+from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
+    router as booking_router,
+)
+from src.service.ticketing.driving_adapter.http_controller.event_ticketing_controller import (
+    router as event_router,
+)
+from src.service.ticketing.driving_adapter.http_controller.user_controller import (
+    router as auth_router,
+)
 
 
 @asynccontextmanager
@@ -113,6 +114,4 @@ app.include_router(seat_reservation_router)
 
 @app.get('/')
 async def root():
-    from fastapi.responses import RedirectResponse
-
     return RedirectResponse(url='/static/index.html')
