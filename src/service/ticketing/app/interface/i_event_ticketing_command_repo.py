@@ -21,7 +21,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 from src.shared_kernel.domain.enum.ticket_status import TicketStatus
 
 
-class EventTicketingCommandRepo(ABC):
+class IEventTicketingCommandRepo(ABC):
     """Event Ticketing 命令倉儲接口 - CQRS Write Side"""
 
     @abstractmethod

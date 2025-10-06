@@ -6,7 +6,7 @@ from pytest_bdd import given
 from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
-from src.platform.state.redis_client import kvrocks_client_sync
+from src.platform.state.kvrocks_client import kvrocks_client_sync
 from tests.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from tests.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from tests.util_constant import (
@@ -187,7 +187,7 @@ def event_exists(step, execute_sql_statement):
         },
     )
 
-    # Create tickets manually since we're bypassing the CreateEventUseCase
+    # Create tickets manually since we're bypassing the CreateEventAndTicketsUseCase
     # Generate all tickets based on seating configuration
     sections_list: list[dict] = seating_config['sections']
     for section in sections_list:

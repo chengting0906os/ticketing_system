@@ -28,7 +28,7 @@ from src.service.ticketing.driven_adapter.model.event_model import EventModel  #
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel  # noqa: F401
 from src.service.ticketing.driven_adapter.model.user_model import UserModel  # noqa: F401
 
-from src.service.ticketing.app.command.create_event_use_case import CreateEventUseCase
+from src.service.ticketing.app.command.create_event_and_tickets_use_case import CreateEventAndTicketsUseCase
 from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import EventTicketingCommandRepoImpl
 from src.platform.config.db_setting import async_session_maker
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
@@ -240,11 +240,16 @@ async def create_init_event_in_session(session, seller_id: int):
             event_ticketing_repo = EventTicketingCommandRepoImpl(lambda: get_current_session())
             kafka_config = KafkaConfigService()
 
+            # 從 DI 容器取得 init_state_handler
+            from src.platform.config.di import container
+            init_state_handler = container.init_event_and_tickets_state_handler()
+
             # 創建 UseCase
-            create_event_use_case = CreateEventUseCase(
+            create_event_use_case = CreateEventAndTicketsUseCase(
                 session=session,
                 event_ticketing_command_repo=event_ticketing_repo,
-                kafka_service=kafka_config
+                kafka_service=kafka_config,
+                init_state_handler=init_state_handler,
             )
 
             # 座位配置選擇

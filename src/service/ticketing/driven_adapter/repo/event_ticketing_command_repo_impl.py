@@ -12,21 +12,21 @@ from typing import Any, AsyncContextManager, Callable, Dict, List, Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.platform.config.db_setting import get_asyncpg_pool
+from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
+    IEventTicketingCommandRepo,
+)
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
     Ticket,
     TicketStatus,
 )
-from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
-    EventTicketingCommandRepo,
-)
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from src.platform.config.db_setting import get_asyncpg_pool
-from src.platform.logging.loguru_io import Logger
 
 
-class EventTicketingCommandRepoImpl(EventTicketingCommandRepo):
+class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     """Event Ticketing Command Repository Implementation"""
 
     def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):

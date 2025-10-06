@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.platform.state.redis_client import kvrocks_client_sync
+from src.platform.state.kvrocks_client import kvrocks_client_sync
 
 
 @pytest.fixture
@@ -86,6 +86,7 @@ def mock_kafka_infrastructure():
 
         # 收集每個 row 的價格資訊
         seat_meta_data = {}  # {(event_id, section_id, row): {seat_num: price}}
+        section_seat_counts = {}  # 統計每個 section 的座位數
 
         for ticket_tuple in ticket_tuples:
             _, section, subsection, row, seat, price, status = ticket_tuple
@@ -108,21 +109,45 @@ def mock_kafka_infrastructure():
                 seat_meta_data[meta_key] = {}
             seat_meta_data[meta_key][str(seat)] = price
 
+            # 統計座位數
+            section_seat_counts[section_id] = section_seat_counts.get(section_id, 0) + 1
+
         # 寫入 seat_meta Hash
         for (event_id, section_id, row), prices in seat_meta_data.items():
             meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
             client.hset(meta_key, mapping=prices)
 
+        # 4. 建立 event_sections 索引和 section_stats 統計
+        timestamp = int(time.time())
+        for section_id, count in section_seat_counts.items():
+            # 建立索引 (使用 sorted set，score 為 0)
+            client.zadd(f'event_sections:{event_id}', {section_id: 0})
+
+            # 設置統計 (初始狀態：所有座位都是 AVAILABLE)
+            stats_key = f'section_stats:{event_id}:{section_id}'
+            client.hset(
+                stats_key,
+                mapping={
+                    'section_id': section_id,
+                    'event_id': str(event_id),
+                    'available': str(count),
+                    'reserved': '0',
+                    'sold': '0',
+                    'total': str(count),
+                    'updated_at': str(timestamp),
+                },
+            )
+
         # Note: Event status update is handled by the use case, not here
 
     with (
         patch(
-            'src.service.ticketing.app.command.create_event_use_case'
-            '.CreateEventUseCase._setup_kafka_infrastructure'
+            'src.service.ticketing.app.command.create_event_and_tickets_use_case'
+            '.CreateEventAndTicketsUseCase._setup_kafka_infrastructure'
         ) as mock_setup,
         patch(
-            'src.service.ticketing.app.command.create_event_use_case'
-            '.CreateEventUseCase._start_seat_reservation_consumer_and_initialize_seats',
+            'src.service.ticketing.app.command.create_event_and_tickets_use_case'
+            '.CreateEventAndTicketsUseCase._start_seat_reservation_consumer_and_initialize_seats',
             new=mock_seat_initialization,
         ),
     ):

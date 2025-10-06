@@ -25,10 +25,6 @@ class KafkaTopicBuilder:
     def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
         return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
-    @staticmethod
-    def seat_initialization_command_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______seat-initialization-command-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
-
     # ====== To Ticketing Service (包含 Booking + Event Ticketing) =======
 
     @staticmethod
@@ -49,7 +45,6 @@ class KafkaTopicBuilder:
             KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event_id),
-            KafkaTopicBuilder.seat_initialization_command_in_kvrocks(event_id=event_id),
             # To Ticketing Service
             KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
                 event_id=event_id

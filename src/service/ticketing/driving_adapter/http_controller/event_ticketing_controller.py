@@ -2,7 +2,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, status
 
-from src.service.ticketing.app.command.create_event_use_case import CreateEventUseCase
+from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
+    CreateEventAndTicketsUseCase,
+)
 from src.service.ticketing.app.query.get_event_use_case import GetEventUseCase
 from src.service.ticketing.app.query.list_events_use_case import ListEventsUseCase
 from src.service.ticketing.driving_adapter.schema.event_schema import (
@@ -23,7 +25,7 @@ router = APIRouter()
 async def create_event(
     request: EventCreateWithTicketConfigRequest,
     current_user: UserEntity = Depends(require_seller),
-    use_case: CreateEventUseCase = Depends(CreateEventUseCase.depends),
+    use_case: CreateEventAndTicketsUseCase = Depends(CreateEventAndTicketsUseCase.depends),
 ) -> EventResponse:
     event_aggregate = await use_case.create_event_and_tickets(
         name=request.name,

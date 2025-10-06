@@ -24,7 +24,6 @@ from src.platform.message_queue.kafka_constant_builder import (
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
-from src.service.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatRequest
 from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatRequest
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
 
@@ -56,11 +55,10 @@ class SeatReservationConsumer:
     """
     座位預訂消費者 - 無狀態路由器
 
-    監聽 4 個 Topics:
-    1. seat_initialization_command_in_kvrocks - 座位初始化
-    2. ticket_reserving_request_to_reserved_in_kvrocks - 預訂請求
-    3. release_ticket_status_to_available_in_kvrocks - 釋放座位
-    4. finalize_ticket_status_to_paid_in_kvrocks - 完成支付
+    監聽 3 個 Topics:
+    1. ticket_reserving_request_to_reserved_in_kvrocks - 預訂請求
+    2. release_ticket_status_to_available_in_kvrocks - 釋放座位
+    3. finalize_ticket_status_to_paid_in_kvrocks - 完成支付
     """
 
     def __init__(self):
@@ -78,7 +76,6 @@ class SeatReservationConsumer:
 
         # Use cases (延遲初始化)
         self.reserve_seats_use_case: Any = None
-        self.initialize_seat_use_case: Any = None
         self.release_seat_use_case: Any = None
         self.finalize_seat_payment_use_case: Any = None
 
@@ -106,16 +103,12 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _setup_topics(self):
-        """設置 4 個 topic 的處理邏輯"""
+        """設置 3 個 topic 的處理邏輯"""
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
         # 定義 topic 配置
         topics = {
-            'initialization': (
-                KafkaTopicBuilder.seat_initialization_command_in_kvrocks(event_id=self.event_id),
-                self._process_seat_initialization,
-            ),
             'reservation': (
                 KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
                     event_id=self.event_id
@@ -147,28 +140,6 @@ class SeatReservationConsumer:
         Logger.base.info('✅ All topics configured (stateless mode)')
 
     # ========== Message Handlers ==========
-
-    @Logger.io
-    def _process_seat_initialization(self, message: Dict) -> Dict:
-        """處理座位初始化 - 轉發給 Use Case"""
-        try:
-            request = InitializeSeatRequest(
-                seat_id=message['seat_id'],
-                event_id=message['event_id'],
-                price=message['price'],
-                timestamp=message.get('timestamp', ''),
-                rows=message['rows'],
-                seats_per_row=message['seats_per_row'],
-            )
-
-            # Use Case 負責批量累積和刷新
-            result = self.portal.call(self.initialize_seat_use_case.execute, request)
-
-            return {'success': result.success, 'seat_id': message['seat_id']}
-
-        except Exception as e:
-            Logger.base.error(f'❌ [INIT] Exception: {e}')
-            return {'success': False, 'error': str(e)}
 
     @Logger.io
     def _process_reservation_request(self, message: Dict) -> Dict:
@@ -319,7 +290,6 @@ class SeatReservationConsumer:
         try:
             # 初始化 use cases
             self.reserve_seats_use_case = container.reserve_seats_use_case()
-            self.initialize_seat_use_case = container.initialize_seat_use_case()
             self.release_seat_use_case = container.release_seat_use_case()
             self.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
 
@@ -346,11 +316,6 @@ class SeatReservationConsumer:
             return
 
         self.running = False
-
-        # 強制刷新 Use Case 中剩餘的批次
-        if self.initialize_seat_use_case:
-            Logger.base.info('🔄 Flushing remaining batches in Use Case...')
-            self.portal.call(self.initialize_seat_use_case.force_flush)
 
         if self.kafka_app:
             try:

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List
 
 
-class KafkaConfigServiceInterface(ABC):
+class IKafkaConfigService(ABC):
     """
     Kafka 配置服務抽象接口
 

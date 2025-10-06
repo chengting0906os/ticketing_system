@@ -9,7 +9,7 @@ import os
 from typing import Dict, List
 
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.app.interface.i_kafka_config_service import KafkaConfigServiceInterface
+from src.shared_kernel.app.interface.i_kafka_config_service import IKafkaConfigService
 
 from .kafka_constant_builder import KafkaTopicBuilder
 from .section_based_partition_strategy import SectionBasedPartitionStrategy
@@ -23,7 +23,7 @@ class ConsumerConfig:
     instance_count: int = 1  # 預設啟動 1 個實例
 
 
-class KafkaConfigService(KafkaConfigServiceInterface):
+class KafkaConfigService(IKafkaConfigService):
     """
     Kafka 配置服務
 

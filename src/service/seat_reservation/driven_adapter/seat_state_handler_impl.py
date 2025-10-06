@@ -6,7 +6,7 @@ Seat State Handler Implementation
 from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
-from src.platform.state.redis_client import kvrocks_client
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
 
 
@@ -206,7 +206,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             return []
 
     @Logger.io
-    async def get_all_subsection_seats(
+    async def list_all_subsection_seats(
         self, event_id: int, section: str, subsection: int
     ) -> List[Dict]:
         """
@@ -468,111 +468,213 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             return False
 
     @Logger.io
-    async def initialize_seats_batch(self, seats: list[dict]) -> dict[str, bool]:
-        """批量初始化座位狀態為 AVAILABLE - 使用 Lua 腳本"""
-        results = {}
-        if not seats:
-            return results
-
-        # Lua 腳本：批量設置 bitfield 和 metadata
-        lua_script = """
-        local event_id = ARGV[1]
-        local available_status = 0  -- AVAILABLE = 00 in binary
-        
-        -- 從 ARGV[2] 開始是座位數據，每個座位 6 個參數
-        local seat_count = (#ARGV - 1) / 6
-        local success_count = 0
-        
-        for i = 0, seat_count - 1 do
-            local base_idx = 2 + i * 6
-            local section = ARGV[base_idx]
-            local subsection = ARGV[base_idx + 1]
-            local row = ARGV[base_idx + 2]
-            local seat_num = ARGV[base_idx + 3]
-            local seat_index = ARGV[base_idx + 4]
-            local price = ARGV[base_idx + 5]
-            
-            local section_id = section .. '-' .. subsection
-            local bf_key = 'seats_bf:' .. event_id .. ':' .. section_id
-            local meta_key = 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
-            
-            -- 計算 offset (每個座位 2 bits)
-            local offset = seat_index * 2
-            
-            -- 設置 bitfield (AVAILABLE = 00)
-            redis.call('SETBIT', bf_key, offset, 0)
-            redis.call('SETBIT', bf_key, offset + 1, 0)
-            
-            -- 設置價格 metadata
-            redis.call('HSET', meta_key, seat_num, price)
-            
-            success_count = success_count + 1
-        end
-        
-        return success_count
+    @staticmethod
+    def _generate_all_seats_from_config(seating_config: dict, event_id: int) -> list[dict]:
         """
+        從 seating_config 生成所有座位數據
 
+        Args:
+            seating_config: 座位配置，格式:
+                {
+                    "sections": [
+                        {
+                            "name": "A",
+                            "price": 3000,
+                            "subsections": [
+                                {"number": 1, "rows": 10, "seats_per_row": 10},
+                                ...
+                            ]
+                        },
+                        ...
+                    ]
+                }
+            event_id: 活動 ID
+
+        Returns:
+            座位列表，格式:
+            [
+                {
+                    'section': 'A',
+                    'subsection': 1,
+                    'row': 1,
+                    'seat_num': 1,
+                    'seat_index': 0,
+                    'price': 3000
+                },
+                ...
+            ]
+        """
+        all_seats = []
+
+        for section_config in seating_config['sections']:
+            section_name = section_config['name']  # 'A', 'B', 'C'...
+            section_price = section_config['price']  # 3000, 2800, 2500...
+
+            for subsection in section_config['subsections']:
+                subsection_num = subsection['number']  # 1, 2, 3...10
+                rows = subsection['rows']  # 10 or 25
+                seats_per_row = subsection['seats_per_row']  # 10 or 20
+
+                # 生成該 subsection 的所有座位
+                for row in range(1, rows + 1):
+                    for seat_num in range(1, seats_per_row + 1):
+                        # 計算 seat_index (從 0 開始)
+                        seat_index = (row - 1) * seats_per_row + (seat_num - 1)
+
+                        all_seats.append(
+                            {
+                                'section': section_name,
+                                'subsection': subsection_num,
+                                'row': row,
+                                'seat_num': seat_num,
+                                'seat_index': seat_index,
+                                'price': section_price,  # 使用 section 層級的價格
+                            }
+                        )
+
+        Logger.base.info(f'📊 [SEAT-GEN] Generated {len(all_seats)} seats from config')
+        return all_seats
+
+    @Logger.io
+    async def initialize_seats_from_config(self, *, event_id: int, seating_config: dict) -> dict:
+        """
+        從 seating_config 直接初始化所有座位（使用單一 Lua 腳本）
+
+        這個方法會：
+        1. 從 seating_config 生成所有座位數據
+        2. 準備 Lua 腳本參數
+        3. 執行 Lua 腳本批量寫入 Kvrocks
+        4. 建立 event_sections 索引
+        5. 建立 section_stats 統計
+
+        Args:
+            event_id: 活動 ID
+            seating_config: 座位配置（格式見 _generate_all_seats_from_config）
+
+        Returns:
+            {
+                'success': True/False,
+                'total_seats': 3000,
+                'sections_count': 30,
+                'error': None or error message
+            }
+        """
         try:
+            # Step 1: 生成所有座位數據
+            all_seats = self._generate_all_seats_from_config(seating_config, event_id)
+
+            if not all_seats:
+                return {
+                    'success': False,
+                    'total_seats': 0,
+                    'sections_count': 0,
+                    'error': 'No seats generated from config',
+                }
+
+            # Step 2: Lua 腳本（與 initialize_seats_batch 相同）
+            lua_script = """
+            local event_id = ARGV[1]
+            local available_status = 0  -- AVAILABLE = 00 in binary
+            local timestamp = redis.call('TIME')[1]  -- 獲取 Redis 時間戳
+
+            -- 從 ARGV[2] 開始是座位數據，每個座位 6 個參數
+            local seat_count = (#ARGV - 1) / 6
+            local success_count = 0
+
+            -- 收集統計資料
+            local section_stats = {}
+
+            for i = 0, seat_count - 1 do
+                local base_idx = 2 + i * 6
+                local section = ARGV[base_idx]
+                local subsection = ARGV[base_idx + 1]
+                local row = ARGV[base_idx + 2]
+                local seat_num = ARGV[base_idx + 3]
+                local seat_index = ARGV[base_idx + 4]
+                local price = ARGV[base_idx + 5]
+
+                local section_id = section .. '-' .. subsection
+                local bf_key = 'seats_bf:' .. event_id .. ':' .. section_id
+                local meta_key = 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
+
+                -- 計算 offset (每個座位 2 bits)
+                local offset = seat_index * 2
+
+                -- 設置 bitfield (AVAILABLE = 00)
+                redis.call('SETBIT', bf_key, offset, 0)
+                redis.call('SETBIT', bf_key, offset + 1, 0)
+
+                -- 設置價格 metadata
+                redis.call('HSET', meta_key, seat_num, price)
+
+                -- 累積統計
+                section_stats[section_id] = (section_stats[section_id] or 0) + 1
+
+                success_count = success_count + 1
+            end
+
+            -- 批量寫入索引和統計
+            for section_id, count in pairs(section_stats) do
+                -- 1. 建立索引 (使用 sorted set，score 為 0)
+                redis.call('ZADD', 'event_sections:' .. event_id, 0, section_id)
+
+                -- 2. 設置統計 (初始狀態：所有座位都是 AVAILABLE)
+                redis.call('HSET', 'section_stats:' .. event_id .. ':' .. section_id,
+                    'section_id', section_id,
+                    'event_id', event_id,
+                    'available', count,
+                    'reserved', 0,
+                    'sold', 0,
+                    'total', count,
+                    'updated_at', timestamp
+                )
+            end
+
+            return success_count
+            """
+
+            # Step 3: 連接 Kvrocks
             client = await kvrocks_client.connect()
 
-            # 準備 Lua 腳本參數
-            args = [str(seats[0]['event_id'])]  # ARGV[1] = event_id
+            # Step 4: 準備 Lua 腳本參數
+            args = [str(event_id)]  # ARGV[1] = event_id
 
-            for seat_data in seats:
-                seat_id = seat_data['seat_id']
-                try:
-                    parts = seat_id.split('-')
-                    if len(parts) < 4:
-                        results[seat_id] = False
-                        continue
-
-                    section, subsection, row, seat_num = (
-                        parts[0],
-                        int(parts[1]),
-                        int(parts[2]),
-                        int(parts[3]),
-                    )
-                    price = seat_data['price']
-
-                    # 計算 seat_index
-                    seat_index = self._calculate_seat_index(row, seat_num)
-
-                    # 添加 6 個參數到 ARGV
-                    args.extend(
-                        [
-                            section,
-                            str(subsection),
-                            str(row),
-                            str(seat_num),
-                            str(seat_index),
-                            str(price),
-                        ]
-                    )
-
-                except Exception as e:
-                    Logger.base.error(f'❌ [LUA-INIT] Error preparing {seat_id}: {e}')
-                    results[seat_id] = False
-
-            # 執行 Lua 腳本
-            success_count = client.eval(lua_script, 0, *args)
-
-            # 標記成功的座位
-            for seat_data in seats:
-                seat_id = seat_data['seat_id']
-                if seat_id not in results:
-                    results[seat_id] = True
+            for seat in all_seats:
+                args.extend(
+                    [
+                        seat['section'],  # 'A'
+                        str(seat['subsection']),  # '1'
+                        str(seat['row']),  # '1'
+                        str(seat['seat_num']),  # '1'
+                        str(seat['seat_index']),  # '0'
+                        str(seat['price']),  # '3000'
+                    ]
+                )
 
             Logger.base.info(
-                f'✅ [LUA-INIT] Lua script initialized {success_count}/{len(seats)} seats'
+                f'⚙️  [LUA-CONFIG] Executing Lua script with {len(all_seats)} seats, '
+                f'{len(args)} total args'
             )
-            return results
+
+            # Step 5: 執行 Lua 腳本
+            success_count: int = await client.eval(lua_script, 0, *args)  # type: ignore[misc]
+
+            Logger.base.info(f'✅ [LUA-CONFIG] Initialized {success_count}/{len(all_seats)} seats')
+
+            # Step 6: 驗證結果
+            sections_count = await client.zcard(f'event_sections:{event_id}')
+            Logger.base.info(f'📋 [LUA-CONFIG] Created {sections_count} sections in index')
+
+            return {
+                'success': True,
+                'total_seats': int(success_count),
+                'sections_count': int(sections_count),
+                'error': None,
+            }
 
         except Exception as e:
-            Logger.base.error(f'❌ [LUA-INIT] Lua execution failed: {e}')
-            # 全部標記失敗
-            for seat_data in seats:
-                results[seat_data['seat_id']] = False
-            return results
+            Logger.base.error(f'❌ [LUA-CONFIG] Failed to initialize from config: {e}')
+            return {'success': False, 'total_seats': 0, 'sections_count': 0, 'error': str(e)}
 
     @Logger.io
     async def finalize_payment(
@@ -629,3 +731,66 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             await self.release_seats(reserved_seat_ids, event_id)
         except Exception as e:
             Logger.base.error(f'❌ [SEAT-STATE] Failed to rollback reservations: {e}')
+
+    @Logger.io
+    async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
+        """
+        獲取活動所有 subsection 的統計資訊（從 Kvrocks 讀取）
+
+        實現策略：
+        1. 從索引獲取所有 section_id
+        2. 使用 Pipeline 批量查詢統計數據
+        3. 組合並返回結果
+
+        Returns:
+            Dict mapping section_id to stats:
+            {
+                "A-1": {"available": 100, "reserved": 20, "sold": 30, "total": 150},
+                ...
+            }
+        """
+        # TODO(human): 實現統計查詢邏輯
+        # 提示：可以參考 kvrocks_stats_client.list_all_subsection_status() 的實現
+        # 或者設計更優化的查詢方式
+
+        try:
+            client = await kvrocks_client.connect()
+
+            # 1. 從索引取得所有 section_id
+            index_key = f'event_sections:{event_id}'
+            section_ids = await client.zrange(index_key, 0, -1)
+
+            if not section_ids:
+                Logger.base.info(f'📊 [SEAT-STATE] No sections found for event {event_id}')
+                return {}
+
+            # 2. 使用 Pipeline 批量查詢統計數據
+            pipe = client.pipeline()
+            for section_id in section_ids:
+                stats_key = f'section_stats:{event_id}:{section_id}'
+                pipe.hgetall(stats_key)
+
+            results = await pipe.execute()
+
+            # 3. 組合結果
+            all_stats = {}
+            for section_id, stats in zip(section_ids, results, strict=False):
+                if stats:
+                    all_stats[section_id] = {
+                        'section_id': stats.get('section_id'),
+                        'event_id': int(stats.get('event_id', 0)),
+                        'available': int(stats.get('available', 0)),
+                        'reserved': int(stats.get('reserved', 0)),
+                        'sold': int(stats.get('sold', 0)),
+                        'total': int(stats.get('total', 0)),
+                        'updated_at': int(stats.get('updated_at', 0)),
+                    }
+
+            Logger.base.info(
+                f'✅ [SEAT-STATE] Retrieved {len(all_stats)} subsection stats for event {event_id}'
+            )
+            return all_stats
+
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-STATE] Failed to get subsection status: {e}')
+            return {}

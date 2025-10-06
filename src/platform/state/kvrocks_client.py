@@ -103,33 +103,8 @@ class KvrocksStatsClient:
     讀取 section_stats Hash (由 consumer 維護)
     """
 
-    async def get_section_stats(self, *, event_id: int, section_id: str):
-        """查詢單個 section 統計"""
-        try:
-            client: Redis = await kvrocks_client.connect()
-            stats_key = f'section_stats:{event_id}:{section_id}'
-            stats = await client.hgetall(stats_key)  # type: ignore
-
-            if not stats:
-                return None
-
-            return {
-                'section_id': stats.get('section_id'),
-                'event_id': int(stats.get('event_id', 0)),
-                'available': int(stats.get('available', 0)),
-                'reserved': int(stats.get('reserved', 0)),
-                'sold': int(stats.get('sold', 0)),
-                'total': int(stats.get('total', 0)),
-                'updated_at': int(stats.get('updated_at', 0)),
-            }
-
-        except Exception as e:
-            from src.platform.logging.loguru_io import Logger
-
-            Logger.base.error(f'❌ [KVROCKS-STATS] Failed to get section {section_id}: {e}')
-            return None
-
-    async def get_all_section_stats(self, *, event_id: int):
+    @Logger.io
+    async def list_all_subsection_status(self, *, event_id: int):
         """查詢活動的所有 section 統計"""
         try:
             client = await kvrocks_client.connect()
@@ -166,12 +141,11 @@ class KvrocksStatsClient:
             return all_stats
 
         except Exception as e:
-            from src.platform.logging.loguru_io import Logger
-
             Logger.base.error(f'❌ [KVROCKS-STATS] Failed to get all sections: {e}')
             return {}
 
-    async def get_section_seats_detail(
+    @Logger.io
+    async def list_subsection_seats_detail(
         self, *, event_id: int, section: str, subsection: int, max_rows: int, seats_per_row: int
     ):
         """

@@ -17,10 +17,6 @@ from fastapi import Depends
 from quixstreams import Application
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
-    EventTicketingCommandRepo,
-)
-from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
 from src.platform.config.di import Container
@@ -31,35 +27,49 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaTopicBuilder,
     PartitionKeyBuilder,
 )
+from src.platform.state.kvrocks_client import kvrocks_client_sync
+from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
+    IEventTicketingCommandRepo,
+)
+from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
+    IInitEventAndTicketsStateHandler,
+)
+from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
+from src.shared_kernel.app.interface.i_kafka_config_service import IKafkaConfigService
 from src.shared_kernel.domain.enum.event_status import EventStatus
-from src.shared_kernel.app.interface.i_kafka_config_service import KafkaConfigServiceInterface
 
 
-class CreateEventUseCase:
+class CreateEventAndTicketsUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        event_ticketing_command_repo: EventTicketingCommandRepo,
-        kafka_service: KafkaConfigServiceInterface,
+        event_ticketing_command_repo: IEventTicketingCommandRepo,
+        kafka_service: IKafkaConfigService,
+        init_state_handler: IInitEventAndTicketsStateHandler,
     ):
         self.session = session
         self.event_ticketing_command_repo = event_ticketing_command_repo
         self.kafka_service = kafka_service
+        self.init_state_handler = init_state_handler
 
     @classmethod
     @inject
     def depends(
         cls,
         session: AsyncSession = Depends(get_async_session),
-        event_ticketing_command_repo: EventTicketingCommandRepo = Depends(
+        event_ticketing_command_repo: IEventTicketingCommandRepo = Depends(
             Provide[Container.event_ticketing_command_repo]
         ),
-        kafka_service: KafkaConfigServiceInterface = Depends(Provide[Container.kafka_service]),
+        kafka_service: IKafkaConfigService = Depends(Provide[Container.kafka_service]),
+        init_state_handler: IInitEventAndTicketsStateHandler = Depends(
+            Provide[Container.init_event_and_tickets_state_handler]
+        ),
     ):
         return cls(
             session=session,
             event_ticketing_command_repo=event_ticketing_command_repo,
             kafka_service=kafka_service,
+            init_state_handler=init_state_handler,
         )
 
     @Logger.io
@@ -118,6 +128,7 @@ class CreateEventUseCase:
         # 5. 啟用活動 (DRAFT → AVAILABLE)
         # 需要從資料庫重新讀取 event 以確保它在 session 中被追蹤
         from sqlalchemy import select
+
         from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
         stmt = select(EventModel).where(EventModel.id == final_aggregate.event.id)
@@ -184,31 +195,26 @@ class CreateEventUseCase:
     async def _start_seat_reservation_consumer_and_initialize_seats(
         self, *, event_id: int, ticket_tuples: list, seating_config: Dict
     ) -> None:
-        """確保 seat_reservation consumer 運行並初始化座位"""
+        """使用 InitEventAndTicketsStateHandler 初始化座位（分層架構）"""
         try:
-            # 1. 檢查 consumers 是否已經啟動
-            consumers_available = await self._check_consumer_availability(event_id=event_id)
+            Logger.base.info(f'🚀 [CREATE-EVENT] Initializing seats for event {event_id}')
 
-            if not consumers_available:
-                Logger.base.info(
-                    f'🚀 Consumers not running, starting seat_reservation consumer for event {event_id}'
-                )
-                await self._start_seat_reservation_consumer(event_id=event_id)
-                # 等待 consumer 準備就緒
-                await asyncio.sleep(3)
-            else:
-                Logger.base.info(f'✅ Consumers already running for event {event_id}')
-
-            # 2. 發送座位初始化事件
-            await self._send_seat_initialization_events(
-                event_id=event_id, ticket_tuples=ticket_tuples, seating_config=seating_config
+            # 調用 ticketing service 的 init_state_handler
+            result = await self.init_state_handler.initialize_seats_from_config(
+                event_id=event_id, seating_config=seating_config
             )
 
-            # 3. 等待處理完成
-            await asyncio.sleep(8)
+            if not result['success']:
+                raise Exception(f'Seat initialization failed: {result["error"]}')
+
+            Logger.base.info(
+                f'✅ [CREATE-EVENT] Seat initialization completed: '
+                f'{result["total_seats"]} seats, {result["sections_count"]} sections'
+            )
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to initialize seats: {e}')
+            Logger.base.error(f'❌ [CREATE-EVENT] Seat initialization error: {e}')
+            raise
 
     @Logger.io
     async def _start_seat_reservation_consumer(self, *, event_id: int) -> None:
@@ -270,7 +276,6 @@ class CreateEventUseCase:
                     section_config_map[section_id] = {'rows': rows, 'seats_per_row': seats_per_row}
 
             # 2. 先寫入 subsection_total metadata 到 Kvrocks
-            from src.platform.state.redis_client import kvrocks_client_sync
 
             subsection_counts = {}
             for ticket_tuple in ticket_tuples:

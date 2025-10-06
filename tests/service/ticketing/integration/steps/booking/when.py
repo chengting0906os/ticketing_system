@@ -7,7 +7,6 @@ from src.platform.constant.route_constant import (
     BOOKING_GET,
     BOOKING_MY_BOOKINGS,
     BOOKING_PAY,
-    EVENT_TICKETS_BY_SUBSECTION,
 )
 from tests.shared.utils import create_user, extract_table_data, login_user
 from tests.util_constant import (
@@ -158,7 +157,6 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
     selected_seat_locations = seat_data['seat_positions'].split(',')
 
     # Convert seat location strings to the new dict format
-    event_id = booking_state['event_id']
     seat_positions = []
 
     for seat_location in selected_seat_locations:
@@ -167,22 +165,8 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
         parts = seat_location.split('-')
         if len(parts) == 4:
             section, subsection, row, seat = parts
-
-            # Query tickets for this section and subsection
-            tickets_response = client.get(
-                EVENT_TICKETS_BY_SUBSECTION.format(
-                    event_id=event_id, section=section, subsection=int(subsection)
-                )
-            )
-
-            if tickets_response.status_code == 200:
-                tickets_data = tickets_response.json()
-                all_tickets = tickets_data.get('tickets', [])
-                for ticket in all_tickets:
-                    if ticket['row'] == int(row) and ticket['seat'] == int(seat):
-                        # Only append row-seat format
-                        seat_positions.append(f'{row}-{seat}')
-                        break
+            # Directly convert to row-seat format
+            seat_positions.append(f'{row}-{seat}')
 
     # Create booking with manual seat selection
     if seat_positions:

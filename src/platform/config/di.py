@@ -5,17 +5,6 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 
 from dependency_injector import containers, providers
 
-from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
-    BookingCommandRepoImpl,
-)
-from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import BookingQueryRepoImpl
-from src.service.ticketing.app.command.reserve_tickets_use_case import ReserveTicketsUseCase
-from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
-    EventTicketingCommandRepoImpl,
-)
-from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl import (
-    EventTicketingQueryRepoImpl,
-)
 from src.platform.config.core_setting import Settings
 from src.platform.config.db_setting import Database
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
@@ -25,21 +14,35 @@ from src.platform.message_queue.section_based_partition_strategy import (
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentUseCase,
 )
-from src.service.seat_reservation.app.command.initialize_seat_use_case import InitializeSeatUseCase
 from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.seat_reservation.app.query.get_section_seats_detail_use_case import (
-    GetSectionSeatsDetailUseCase,
-)
+
+# from src.service.seat_reservation.app.query.list_subsection_seats_detail_use_case import (
+#     GetSectionSeatsDetailUseCase,
+# )
 from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
 from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
 from src.service.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
+from src.service.ticketing.app.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.service.ticketing.app.service.auth_service import AuthService
+from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
+    BookingCommandRepoImpl,
+)
+from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import BookingQueryRepoImpl
+from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
+    EventTicketingCommandRepoImpl,
+)
+from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl import (
+    EventTicketingQueryRepoImpl,
+)
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_repo_impl import UserRepoImpl
+from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
+    InitEventAndTicketsStateHandlerImpl,
+)
 
 
 class Container(containers.DeclarativeContainer):
@@ -83,15 +86,17 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Domain and Use Cases
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
     seat_state_handler = providers.Factory(SeatStateHandlerImpl)
+
+    # Ticketing Service - Init State Handler (depends on seat_state_handler)
+    init_event_and_tickets_state_handler = providers.Factory(
+        InitEventAndTicketsStateHandlerImpl,
+        seat_state_handler=seat_state_handler,
+    )
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_selection_domain=seat_selection_domain,
         seat_state_handler=seat_state_handler,
         mq_publisher=seat_reservation_mq_publisher,
-    )
-    initialize_seat_use_case = providers.Factory(
-        InitializeSeatUseCase,
-        seat_state_handler=seat_state_handler,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,
@@ -101,10 +106,10 @@ class Container(containers.DeclarativeContainer):
         FinalizeSeatPaymentUseCase,
         seat_state_handler=seat_state_handler,
     )
-    get_section_seats_detail_use_case = providers.Factory(
-        GetSectionSeatsDetailUseCase,
-        session=providers.Dependency(),
-    )
+    # list_subsection_seats_detail_use_case = providers.Factory(
+    #     GetSectionSeatsDetailUseCase,
+    #     session=providers.Dependency(),
+    # )
 
     # Event Ticketing Use Cases
     reserve_tickets_use_case = providers.Factory(

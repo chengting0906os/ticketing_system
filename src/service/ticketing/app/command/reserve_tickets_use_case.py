@@ -10,19 +10,19 @@ Reserve Tickets Use Case - 使用新的 EventTicketingAggregate
 
 from typing import Any, Dict, List
 
-from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
-from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
-    EventTicketingCommandRepo,
-)
-from src.service.ticketing.app.interface.i_event_ticketing_query_repo import EventTicketingQueryRepo
 from src.platform.exception.exceptions import DomainError, NotFoundError
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
+    IEventTicketingCommandRepo,
+)
+from src.service.ticketing.app.interface.i_event_ticketing_query_repo import EventTicketingQueryRepo
+from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
 
 
 class ReserveTicketsUseCase:
     def __init__(
         self,
-        event_ticketing_command_repo: EventTicketingCommandRepo,
+        event_ticketing_command_repo: IEventTicketingCommandRepo,
         event_ticketing_query_repo: EventTicketingQueryRepo,
     ):
         self.event_ticketing_command_repo = event_ticketing_command_repo
