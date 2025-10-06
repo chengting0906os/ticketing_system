@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     pass
 
 
-class BookingCommandRepo(ABC):
+class IBookingCommandRepo(ABC):
     """Repository interface for booking write operations"""
 
     @abstractmethod

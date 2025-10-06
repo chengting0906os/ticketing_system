@@ -1,10 +1,11 @@
-from typing import AsyncContextManager, Callable, List
+from contextlib import asynccontextmanager
+from typing import AsyncContextManager, AsyncIterator, Callable, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.service.ticketing.app.interface.i_booking_query_repo import BookingQueryRepo
+from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
@@ -13,9 +14,30 @@ from src.shared_kernel.domain.enum.ticket_status import TicketStatus
 from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
-class BookingQueryRepoImpl(BookingQueryRepo):
-    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+class BookingQueryRepoImpl(IBookingQueryRepo):
+    def __init__(
+        self, session_factory: Callable[..., AsyncContextManager[AsyncSession]] | None = None
+    ):
         self.session_factory = session_factory
+        self.session: AsyncSession | None = None
+
+    @asynccontextmanager
+    async def _get_session(self) -> AsyncIterator[AsyncSession]:
+        """
+        Get session for query execution.
+
+        If session is injected (from UoW), yield it directly without context management.
+        Otherwise, use session_factory context manager.
+        """
+        if self.session is not None:
+            # Session injected by UoW - use directly (no context manager needed)
+            yield self.session
+        elif self.session_factory is not None:
+            # Use session_factory context manager
+            async with self.session_factory() as session:
+                yield session
+        else:
+            raise RuntimeError('No session or session_factory available')
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
@@ -73,7 +95,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
 
     @Logger.io
     async def get_by_id(self, *, booking_id: int) -> Booking | None:
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(BookingModel).where(BookingModel.id == booking_id)
             )
@@ -88,7 +110,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             query = (
                 select(BookingModel)
                 .options(
@@ -110,7 +132,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
         from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             query = (
                 select(BookingModel)
                 .join(EventModel, BookingModel.event_id == EventModel.id)
@@ -132,7 +154,7 @@ class BookingQueryRepoImpl(BookingQueryRepo):
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
         """Get all tickets for a booking using the ticket_ids stored in the booking"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             # First get the booking to get the ticket_ids
             booking = await self.get_by_id(booking_id=booking_id)
             if not booking or not booking.ticket_ids:

@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
-from src.service.ticketing.app.interface.i_user_query_repo import UserQueryRepo
+from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
 from src.service.ticketing.driven_adapter.model.user_model import UserModel
 
 
-class UserQueryRepoImpl(UserQueryRepo):
+class UserQueryRepoImpl(IUserQueryRepo):
     def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
         self.session_factory = session_factory
         self.password_hasher = BcryptPasswordHasher()

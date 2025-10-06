@@ -5,7 +5,8 @@ Event Ticketing Query Repository Implementation - CQRS Read Side
 提供豐富的查詢接口，支持多種查詢視角和性能優化
 """
 
-from typing import AsyncContextManager, Callable, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncContextManager, AsyncIterator, Callable, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,18 +17,41 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     Ticket,
     TicketStatus,
 )
-from src.service.ticketing.app.interface.i_event_ticketing_query_repo import EventTicketingQueryRepo
+from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
+    IEventTicketingQueryRepo,
+)
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger
 from src.shared_kernel.domain.enum.event_status import EventStatus
 
 
-class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
+class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
     """Event Ticketing Query Repository Implementation - CQRS Read Side"""
 
-    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+    def __init__(
+        self, session_factory: Callable[..., AsyncContextManager[AsyncSession]] | None = None
+    ):
         self.session_factory = session_factory
+        self.session: AsyncSession | None = None
+
+    @asynccontextmanager
+    async def _get_session(self) -> AsyncIterator[AsyncSession]:
+        """
+        Get session for query execution.
+
+        If session is injected (from UoW), yield it directly without context management.
+        Otherwise, use session_factory context manager.
+        """
+        if self.session is not None:
+            # Session injected by UoW - use directly (no context manager needed)
+            yield self.session
+        elif self.session_factory is not None:
+            # Use session_factory context manager
+            async with self.session_factory() as session:
+                yield session
+        else:
+            raise RuntimeError('No session or session_factory available')
 
     def _model_to_event(self, event_model: EventModel) -> Event:
         """將 EventModel 轉換為 Event 實體"""
@@ -66,7 +90,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
         """根據 ID 獲取完整的 Event Aggregate"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             # 查詢活動
             event_result = await session.execute(
                 select(EventModel).where(EventModel.id == event_id)
@@ -98,7 +122,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
         """根據 ID 獲取 Event Aggregate (只包含可用票務)"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             # 查詢活動
             event_result = await session.execute(
                 select(EventModel).where(EventModel.id == event_id)
@@ -130,7 +154,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def list_events_by_seller(self, *, seller_id: int) -> List[EventTicketingAggregate]:
         """獲取賣家的所有活動 (不包含 tickets，性能優化)"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(EventModel).where(EventModel.seller_id == seller_id)
             )
@@ -150,7 +174,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def list_available_events(self) -> List[EventTicketingAggregate]:
         """獲取所有可用活動 (不包含 tickets，性能優化)"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(EventModel)
                 .where(EventModel.is_active)
@@ -172,7 +196,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
         self, *, event_id: int, section: str, subsection: int
     ) -> List[Ticket]:
         """獲取特定區域的票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
                 .where(TicketModel.event_id == event_id)
@@ -191,7 +215,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         """獲取活動的所有可用票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
                 .where(TicketModel.event_id == event_id)
@@ -207,7 +231,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def get_reserved_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         """獲取活動的所有已預訂票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
                 .where(TicketModel.event_id == event_id)
@@ -223,7 +247,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
         """獲取購買者的所有票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel).where(TicketModel.buyer_id == buyer_id)
             )
@@ -239,7 +263,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
         """根據 ID 列表獲取票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel).where(TicketModel.id.in_(ticket_ids))
             )
@@ -253,7 +277,7 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
     @Logger.io
     async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
         """檢查活動是否已有票務"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             result = await session.execute(
                 select(func.count(TicketModel.id)).where(TicketModel.event_id == event_id)
             )
@@ -262,78 +286,3 @@ class EventTicketingQueryRepoImpl(EventTicketingQueryRepo):
             exists = (count or 0) > 0
             Logger.base.info(f'❓ [CHECK_TICKETS_EXIST] Event {event_id} has tickets: {exists}')
             return exists
-
-    @Logger.io
-    async def check_all_tickets_available(self, *, ticket_ids: List[int]) -> bool:
-        """檢查票務是否都可用"""
-        async with self.session_factory() as session:
-            result = await session.execute(
-                select(func.count(TicketModel.id))
-                .where(TicketModel.id.in_(ticket_ids))
-                .where(TicketModel.status == TicketStatus.AVAILABLE.value)
-            )
-            available_count = result.scalar()
-
-            all_available = available_count == len(ticket_ids)
-            Logger.base.info(
-                f'✅ [CHECK_ALL_AVAILABLE] {available_count}/{len(ticket_ids)} tickets available: {all_available}'
-            )
-            return all_available
-
-    @Logger.io
-    async def get_event_ticket_statistics(self, *, event_id: int) -> dict:
-        """獲取活動票務統計信息"""
-        async with self.session_factory() as session:
-            # 統計各狀態的票務數量
-            result = await session.execute(
-                select(TicketModel.status, func.count(TicketModel.id))
-                .where(TicketModel.event_id == event_id)
-                .group_by(TicketModel.status)
-            )
-            status_counts = {status: count for status, count in result.all()}
-
-            statistics = {
-                'total': sum(status_counts.values()),
-                'available': status_counts.get(TicketStatus.AVAILABLE.value, 0),
-                'reserved': status_counts.get(TicketStatus.RESERVED.value, 0),
-                'sold': status_counts.get(TicketStatus.SOLD.value, 0),
-            }
-
-            Logger.base.info(f'📊 [TICKET_STATS] Event {event_id}: {statistics}')
-            return statistics
-
-    @Logger.io
-    async def get_event_revenue_statistics(self, *, event_id: int) -> dict:
-        """獲取活動收入統計"""
-        async with self.session_factory() as session:
-            # 總收入統計
-            result = await session.execute(
-                select(
-                    TicketModel.status,
-                    func.sum(TicketModel.price).label('revenue'),
-                    func.count(TicketModel.id).label('count'),
-                )
-                .where(TicketModel.event_id == event_id)
-                .group_by(TicketModel.status)
-            )
-            revenue_data = result.all()
-
-            statistics = {
-                'total_revenue': 0,
-                'potential_revenue': 0,
-                'sold_revenue': 0,
-                'reserved_revenue': 0,
-            }
-
-            for status, revenue, _ in revenue_data:
-                revenue = revenue or 0
-                statistics['potential_revenue'] += revenue
-
-                if status == TicketStatus.SOLD.value:
-                    statistics['sold_revenue'] = revenue
-                    statistics['total_revenue'] += revenue
-                elif status == TicketStatus.RESERVED.value:
-                    statistics['reserved_revenue'] = revenue
-
-            Logger.base.info(f'💰 [REVENUE_STATS] Event {event_id}: {statistics}')
-            return statistics

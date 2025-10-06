@@ -12,7 +12,8 @@ from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.service.auth_service import AuthService
 from src.service.ticketing.app.query.user_query_use_case import UserUseCase
 from src.service.ticketing.domain.entity.user_entity import UserEntity
-from src.service.ticketing.app.interface.i_user_repo import UserRepo
+from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
+from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 from src.service.ticketing.driving_adapter.schema.user_schema import (
     CreateUserRequest,
     LoginRequest,
@@ -27,21 +28,22 @@ router = APIRouter()
 
 @inject
 async def get_current_user(
-    user_repo: UserRepo = Depends(Provide[Container.user_repo]),
+    user_query_repo: IUserQueryRepo = Depends(Provide[Container.user_query_repo]),
     auth_service: AuthService = Depends(Provide[Container.auth_service]),
     token: Optional[str] = Cookie(None, alias='fastapiusersauth'),
 ) -> UserEntity:
-    return await auth_service.get_current_user(user_repo, token)
+    return await auth_service.get_current_user(user_query_repo, token)
 
 
 @router.post('', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @Logger.io
 @inject
 async def create_user(
-    request: CreateUserRequest, user_repo: UserRepo = Depends(Provide[Container.user_repo])
+    request: CreateUserRequest,
+    user_command_repo: IUserCommandRepo = Depends(Provide[Container.user_command_repo]),
 ):
-    # Create UserUseCase with injected repo
-    use_case = UserUseCase(user_repo=user_repo)
+    # Create UserUseCase with injected command repo
+    use_case = UserUseCase(user_command_repo=user_command_repo)
     user_entity = await use_case.create_user(
         email=request.email,
         password=request.password.get_secret_value(),
@@ -64,11 +66,13 @@ async def create_user(
 async def login(
     response: Response,
     request: LoginRequest,
-    user_repo: UserRepo = Depends(Provide[Container.user_repo]),
+    user_query_repo: IUserQueryRepo = Depends(Provide[Container.user_query_repo]),
     auth_service: AuthService = Depends(Provide[Container.auth_service]),
 ):
     user_entity = await auth_service.authenticate_user(
-        user_repo=user_repo, email=request.email, password=request.password.get_secret_value()
+        user_query_repo=user_query_repo,
+        email=request.email,
+        password=request.password.get_secret_value(),
     )
 
     token = auth_service.create_jwt_token(user_entity)

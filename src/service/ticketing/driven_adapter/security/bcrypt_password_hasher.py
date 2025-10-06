@@ -2,10 +2,10 @@ import bcrypt
 from pydantic import SecretStr
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.interface.i_password_hasher import PasswordHasher
+from src.service.ticketing.app.interface.i_password_hasher import IPasswordHasher
 
 
-class BcryptPasswordHasher(PasswordHasher):
+class BcryptPasswordHasher(IPasswordHasher):
     """Concrete bcrypt implementation of PasswordHasher"""
 
     @Logger.io

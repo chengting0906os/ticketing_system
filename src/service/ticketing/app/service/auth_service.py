@@ -11,7 +11,7 @@ import jwt
 from src.platform.config.core_setting import settings
 from src.service.ticketing.app.query.user_query_use_case import UserUseCase
 from src.service.ticketing.domain.entity.user_entity import UserEntity
-from src.service.ticketing.app.interface.i_user_repo import UserRepo
+from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 
 
 class AuthService:
@@ -41,14 +41,18 @@ class AuthService:
         except jwt.PyJWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
-    async def authenticate_user(self, user_repo: UserRepo, email: str, password: str) -> UserEntity:
-        user_entity = await user_repo.verify_password(email=email, plain_password=password)
+    async def authenticate_user(
+        self, user_query_repo: IUserQueryRepo, email: str, password: str
+    ) -> UserEntity:
+        user_entity = await user_query_repo.verify_password(email=email, plain_password=password)
         validated_user = UserEntity.validate_user_exists(user_entity)
         validated_user.validate_active()
 
         return validated_user
 
-    async def get_current_user(self, user_repo: UserRepo, token: Optional[str]) -> UserEntity:
+    async def get_current_user(
+        self, user_query_repo: IUserQueryRepo, token: Optional[str]
+    ) -> UserEntity:
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated'
@@ -61,8 +65,8 @@ class AuthService:
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
-        # 取得用戶 - 創建 UserUseCase 實例並注入 user_repo
-        use_case = UserUseCase(user_repo=user_repo)
+        # 取得用戶 - 創建 UserUseCase 實例並注入 user_query_repo
+        use_case = UserUseCase(user_query_repo=user_query_repo)
         user_entity = await use_case.get_user_by_id(user_id)
 
         # 驗證用戶

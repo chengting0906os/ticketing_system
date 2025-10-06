@@ -3,8 +3,8 @@ from typing import List
 from fastapi import APIRouter, Depends, status
 
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
-from src.service.ticketing.app.command.mock_payment_and_update_status_to_completed_use_case import (
-    MockPaymentUseCase,
+from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
+    MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
 )
 from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case import (
     CancelBookingUseCase,
@@ -117,7 +117,9 @@ async def pay_booking(
     booking_id: int,
     request: PaymentRequest,
     current_user: UserEntity = Depends(require_buyer),
-    use_case: MockPaymentUseCase = Depends(MockPaymentUseCase.depends),
+    use_case: MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase = Depends(
+        MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase.depends
+    ),
 ) -> PaymentResponse:
     result = await use_case.pay_booking(
         booking_id=booking_id, buyer_id=current_user.id or 0, card_number=request.card_number

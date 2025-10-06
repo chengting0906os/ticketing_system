@@ -17,18 +17,19 @@ Ticketing MQ Consumer - Unified PostgreSQL State Manager
 
 import json
 import os
-from typing import Any, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict
 
 import anyio
-import anyio.to_thread
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+import anyio.to_thread
 from confluent_kafka import Consumer
+
 
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
-from src.platform.config.di import container
+from src.platform.config.db_setting import get_async_session
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -37,8 +38,8 @@ from src.platform.message_queue.kafka_constant_builder import (
 from src.service.ticketing.app.command.update_booking_status_to_failed_use_case import (
     UpdateBookingToFailedUseCase,
 )
-from src.service.ticketing.app.command.update_booking_status_to_pending_payment_use_case import (
-    UpdateBookingToPendingPaymentUseCase,
+from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
+    UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
 )
 
 
@@ -94,18 +95,8 @@ class TicketingMqConsumer:
 
     async def start(self):
         """使用 AnyIO 啟動消費者"""
-        # 初始化 use cases - 手動注入依賴
-        booking_command_repo = container.booking_command_repo()
-        booking_query_repo = container.booking_query_repo()
-
-        self.update_booking_to_pending_payment_use_case = UpdateBookingToPendingPaymentUseCase(
-            booking_command_repo=booking_command_repo,
-            booking_query_repo=booking_query_repo,
-        )
-        self.update_booking_to_failed_use_case = UpdateBookingToFailedUseCase(
-            booking_command_repo=booking_command_repo,
-            booking_query_repo=booking_query_repo,
-        )
+        # 注意：MQ consumer 不使用 use cases
+        # 每個消息處理都在獨立的 session 中執行（通過 _process_* 方法創建）
 
         Logger.base.info(
             f'🚀 [TICKETING] Started PostgreSQL state manager\n'
@@ -176,22 +167,32 @@ class TicketingMqConsumer:
             f'booking_id={booking_id}, buyer_id={buyer_id}, seats={len(reserved_seats)}'
         )
 
-        try:
-            # 直接將 reserved_seats 傳遞給 use case 處理
-            # use case 會負責 seat_id → ticket_id 的映射和狀態更新
-            await self.update_booking_to_pending_payment_use_case.execute(
-                booking_id=booking_id or 0,
-                buyer_id=buyer_id or 0,
-                ticket_ids=reserved_seats,  # type: ignore[arg-type]
-            )
+        # Create session for this message processing
+        async for session in get_async_session():
+            try:
+                from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 
-            Logger.base.info(
-                f'✅ [BOOKING+TICKET] Atomic update completed: '
-                f'booking_id={booking_id}, tickets={len(reserved_seats)} reserved'
-            )
+                # Create UoW with session
+                uow = SqlAlchemyUnitOfWork(session)
 
-        except Exception as e:
-            Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
+                # Create use case with UoW
+                use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=uow)
+
+                # Execute use case (use case handles commit)
+                await use_case.execute(
+                    booking_id=booking_id or 0,
+                    buyer_id=buyer_id or 0,
+                    ticket_ids=reserved_seats,  # type: ignore[arg-type]
+                )
+
+                Logger.base.info(
+                    f'✅ [BOOKING+TICKET] Atomic update completed: '
+                    f'booking_id={booking_id}, tickets={len(reserved_seats)} reserved'
+                )
+
+            except Exception as e:
+                Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
+                await session.rollback()
 
     @Logger.io
     async def _process_failed(self, message: Dict[str, Any]):
@@ -202,15 +203,27 @@ class TicketingMqConsumer:
 
         Logger.base.info(f'📥 [BOOKING-FAILED] Processing: {booking_id} | Reason: {reason}')
 
-        try:
-            await self.update_booking_to_failed_use_case.execute(
-                booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
-            )
+        # Create session for this message processing
+        async for session in get_async_session():
+            try:
+                from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 
-            Logger.base.info(f'✅ [BOOKING-FAILED] Updated: {booking_id}')
+                # Create UoW with session
+                uow = SqlAlchemyUnitOfWork(session)
 
-        except Exception as e:
-            Logger.base.error(f'❌ [BOOKING-FAILED] Failed: booking_id={booking_id}, error={e}')
+                # Create use case with UoW
+                use_case = UpdateBookingToFailedUseCase(uow=uow)
+
+                # Execute use case (use case handles commit)
+                await use_case.execute(
+                    booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
+                )
+
+                Logger.base.info(f'✅ [BOOKING-FAILED] Updated: {booking_id}')
+
+            except Exception as e:
+                Logger.base.error(f'❌ [BOOKING-FAILED] Failed: booking_id={booking_id}, error={e}')
+                await session.rollback()
 
     # ============================================================
     # Lifecycle

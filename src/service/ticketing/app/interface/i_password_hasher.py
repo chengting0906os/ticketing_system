@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from pydantic import SecretStr
 
 
-class PasswordHasher(ABC):
+class IPasswordHasher(ABC):
     """Abstract interface for password hashing operations"""
 
     @abstractmethod

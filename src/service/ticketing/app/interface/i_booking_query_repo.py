@@ -5,7 +5,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
-class BookingQueryRepo(ABC):
+class IBookingQueryRepo(ABC):
     """Repository interface for booking read operations"""
 
     @abstractmethod

@@ -4,7 +4,7 @@ from typing import Optional
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
-class UserQueryRepo(ABC):
+class IUserQueryRepo(ABC):
     """用戶查詢倉庫抽象介面 (Domain Layer) - 處理讀取操作"""
 
     @abstractmethod

@@ -3,12 +3,12 @@ from typing import AsyncContextManager, Callable
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.interface.i_user_command_repo import UserCommandRepo
+from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 from src.service.ticketing.driven_adapter.model.user_model import UserModel
 
 
-class UserCommandRepoImpl(UserCommandRepo):
+class UserCommandRepoImpl(IUserCommandRepo):
     def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
         self.session_factory = session_factory
 

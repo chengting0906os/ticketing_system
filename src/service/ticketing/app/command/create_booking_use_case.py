@@ -1,38 +1,23 @@
 from typing import List
 
-from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.platform.config.db_setting import get_async_session
-from src.platform.config.di import Container
+from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
-from src.service.ticketing.app.interface.i_booking_command_repo import BookingCommandRepo
 from src.service.ticketing.domain.domain_event.booking_events import BookingCreated
 from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class CreateBookingUseCase:
-    def __init__(
-        self,
-        session: AsyncSession,
-        booking_command_repo: BookingCommandRepo,
-    ):
-        self.session = session
-        self.booking_command_repo: BookingCommandRepo = booking_command_repo
-        self.booking_command_repo.session = session
+    def __init__(self, uow: AbstractUnitOfWork):
+        self.uow = uow
 
     @classmethod
-    @inject
-    def depends(
-        cls,
-        session: AsyncSession = Depends(get_async_session),
-        booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
-    ):
-        return cls(session=session, booking_command_repo=booking_command_repo)
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow=uow)
 
     @Logger.io
     async def create_booking(
@@ -57,13 +42,16 @@ class CreateBookingUseCase:
             quantity=quantity,
         )
 
-        try:
-            created_booking = await self.booking_command_repo.create(booking=booking)
-        except Exception as e:
-            raise DomainError(f'{e}', 400)
+        async with self.uow:
+            try:
+                created_booking = await self.uow.booking_command_repo.create(booking=booking)
+            except Exception as e:
+                raise DomainError(f'{e}', 400)
 
-        await self.session.commit()
-        #
+            # UoW commits the transaction
+            await self.uow.commit()
+
+        # Publish domain event after successful commit
         booking_created_event = BookingCreated.from_booking(created_booking)
         Logger.base.info(
             f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=booking.event_id)}\033[0m'

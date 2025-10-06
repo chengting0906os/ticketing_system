@@ -16,6 +16,8 @@
 - **Async**: Prefer `anyio` > `asyncio`, prefer `async` > `sync`
 - **Dependency Inversion**: High-level modules depend on abstractions, not low-level modules
 - **Transaction Management**: Use cases commit, repositories only do CRUD
+- **SAGA Pattern**: reserve_ticket uses SAGA - immediate commit with compensating events for failures
+- **Unit of Work Pattern**: Centralizes session and repository management, defines transaction boundaries
 
 # Core Development Philosophy
 

@@ -20,7 +20,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 )
 
 
-class EventTicketingQueryRepo(ABC):
+class IEventTicketingQueryRepo(ABC):
     """Event Ticketing 查詢倉儲接口 - CQRS Read Side"""
 
     @abstractmethod
@@ -155,54 +155,5 @@ class EventTicketingQueryRepo(ABC):
 
         Returns:
             是否存在票務
-        """
-        pass
-
-    @abstractmethod
-    async def check_all_tickets_available(self, *, ticket_ids: List[int]) -> bool:
-        """
-        檢查票務是否都可用
-
-        Args:
-            ticket_ids: 票務 ID 列表
-
-        Returns:
-            是否全部可用
-        """
-        pass
-
-    @abstractmethod
-    async def get_event_ticket_statistics(self, *, event_id: int) -> dict:
-        """
-        獲取活動票務統計信息
-
-        Args:
-            event_id: 活動 ID
-
-        Returns:
-            統計信息字典 {
-                'total': int,
-                'available': int,
-                'reserved': int,
-                'sold': int
-            }
-        """
-        pass
-
-    @abstractmethod
-    async def get_event_revenue_statistics(self, *, event_id: int) -> dict:
-        """
-        獲取活動收入統計
-
-        Args:
-            event_id: 活動 ID
-
-        Returns:
-            收入統計字典 {
-                'total_revenue': float,
-                'potential_revenue': float,
-                'sold_revenue': float,
-                'reserved_revenue': float
-            }
         """
         pass

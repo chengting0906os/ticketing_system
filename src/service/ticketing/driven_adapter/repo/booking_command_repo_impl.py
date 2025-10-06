@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.interface.i_booking_command_repo import BookingCommandRepo
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     pass
 
 
-class BookingCommandRepoImpl(BookingCommandRepo):
+class IBookingCommandRepoImpl(IBookingCommandRepo):
     """
     Booking Command Repository - Data Access Layer
 

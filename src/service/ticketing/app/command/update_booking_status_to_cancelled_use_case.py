@@ -1,15 +1,10 @@
 from typing import Any, Dict
 
-from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.service.ticketing.app.interface.i_booking_command_repo import BookingCommandRepo
+from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.service.ticketing.domain.domain_event.booking_domain_event import BookingCancelledEvent
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
-from src.service.ticketing.app.interface.i_booking_query_repo import BookingQueryRepo
-from src.platform.config.db_setting import get_async_session
-from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
@@ -17,54 +12,41 @@ from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 class CancelBookingUseCase:
-    def __init__(
-        self,
-        session: AsyncSession,
-        booking_command_repo: BookingCommandRepo,
-        booking_query_repo: BookingQueryRepo,
-    ):
-        self.session = session
-        self.booking_command_repo = booking_command_repo
-        self.booking_query_repo = booking_query_repo
+    def __init__(self, uow: AbstractUnitOfWork):
+        self.uow = uow
 
     @classmethod
-    @inject
-    def depends(
-        cls,
-        session: AsyncSession = Depends(get_async_session),
-        booking_command_repo: BookingCommandRepo = Depends(Provide[Container.booking_command_repo]),
-        booking_query_repo: BookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
-    ):
-        return cls(
-            session=session,
-            booking_command_repo=booking_command_repo,
-            booking_query_repo=booking_query_repo,
-        )
+    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
+        return cls(uow=uow)
 
     @Logger.io
     async def cancel_booking(self, *, booking_id: int, buyer_id: int) -> Dict[str, Any]:
-        # Get the booking first to verify ownership and status
-        booking = await self.booking_query_repo.get_by_id(booking_id=booking_id)
-        if not booking:
-            raise NotFoundError('Booking not found')
+        async with self.uow:
+            # Get the booking first to verify ownership and status
+            booking = await self.uow.booking_query_repo.get_by_id(booking_id=booking_id)
+            if not booking:
+                raise NotFoundError('Booking not found')
 
-        # Verify booking belongs to requesting buyer
-        if booking.buyer_id != buyer_id:
-            raise ForbiddenError('Only the buyer can cancel this booking')
+            # Verify booking belongs to requesting buyer
+            if booking.buyer_id != buyer_id:
+                raise ForbiddenError('Only the buyer can cancel this booking')
 
-        # Check if booking can be cancelled
-        if booking.status == BookingStatus.PAID:
-            raise DomainError('Cannot cancel paid booking', 400)
-        elif booking.status == BookingStatus.CANCELLED:
-            raise DomainError('Booking already cancelled', 400)
+            # Check if booking can be cancelled
+            if booking.status == BookingStatus.PAID:
+                raise DomainError('Cannot cancel paid booking', 400)
+            elif booking.status == BookingStatus.CANCELLED:
+                raise DomainError('Booking already cancelled', 400)
 
-        # Cancel the booking
-        cancelled_booking = booking.cancel()
-        updated_booking = await self.booking_command_repo.update_status_to_cancelled(
-            booking=cancelled_booking
-        )
+            # Cancel the booking
+            cancelled_booking = booking.cancel()
+            updated_booking = await self.uow.booking_command_repo.update_status_to_cancelled(
+                booking=cancelled_booking
+            )
 
-        # Publish domain event for event_ticketing service to handle ticket release
+            # UoW commits!
+            await self.uow.commit()
+
+        # Publish domain event after successful commit
         if booking.ticket_ids:
             Logger.base.info(
                 f'🔓 [CANCEL] Publishing cancellation event for {len(booking.ticket_ids)} tickets in booking {booking_id}'
@@ -99,7 +81,6 @@ class CancelBookingUseCase:
                     f'✅ [CANCEL] Published BookingCancelledEvent to release seats in Kvrocks: {topic_name}'
                 )
 
-        await self.session.commit()
         Logger.base.info(f'🎯 [CANCEL] Booking {booking_id} cancelled successfully')
 
         return {

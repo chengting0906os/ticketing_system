@@ -64,9 +64,9 @@ class UserEntity:
 
     def set_password(self, plain_password: str, password_hasher) -> None:
         """Set password using provided password hasher"""
-        from src.service.ticketing.app.interface.i_password_hasher import PasswordHasher
+        from src.service.ticketing.app.interface.i_password_hasher import IPasswordHasher
 
-        if not isinstance(password_hasher, PasswordHasher):
+        if not isinstance(password_hasher, IPasswordHasher):
             raise TypeError('password_hasher must implement PasswordHasher interface')
 
         # 使用 SecretStr 保護敏感密碼資料

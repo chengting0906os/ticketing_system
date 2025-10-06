@@ -25,10 +25,9 @@ from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher i
     SeatReservationEventPublisher,
 )
 from src.service.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
-from src.service.ticketing.app.command.reserve_tickets_use_case import ReserveTicketsUseCase
 from src.service.ticketing.app.service.auth_service import AuthService
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
-    BookingCommandRepoImpl,
+    IBookingCommandRepoImpl,
 )
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import BookingQueryRepoImpl
 from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
@@ -39,7 +38,6 @@ from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl i
 )
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
-from src.service.ticketing.driven_adapter.repo.user_repo_impl import UserRepoImpl
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -57,7 +55,7 @@ class Container(containers.DeclarativeContainer):
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
     # Repositories - session will be injected by use cases
-    booking_command_repo = providers.Factory(BookingCommandRepoImpl)
+    booking_command_repo = providers.Factory(IBookingCommandRepoImpl)
     booking_query_repo = providers.Factory(
         BookingQueryRepoImpl, session_factory=database.provided.session
     )
@@ -73,7 +71,6 @@ class Container(containers.DeclarativeContainer):
     user_query_repo = providers.Factory(
         UserQueryRepoImpl, session_factory=database.provided.session
     )
-    user_repo = providers.Factory(UserRepoImpl, session_factory=database.provided.session)
 
     # Auth service
     auth_service = providers.Singleton(AuthService)
@@ -108,13 +105,6 @@ class Container(containers.DeclarativeContainer):
     #     GetSectionSeatsDetailUseCase,
     #     session=providers.Dependency(),
     # )
-
-    # Event Ticketing Use Cases
-    reserve_tickets_use_case = providers.Factory(
-        ReserveTicketsUseCase,
-        event_ticketing_command_repo=event_ticketing_command_repo,
-        event_ticketing_query_repo=event_ticketing_query_repo,
-    )
 
 
 container = Container()
