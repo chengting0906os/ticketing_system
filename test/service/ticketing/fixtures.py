@@ -43,6 +43,9 @@ def mock_kafka_infrastructure():
     同時提供測試環境下的座位初始化邏輯（直接寫入 Kvrocks，跳過 Kafka 異步處理）
     """
 
+    async def mock_publish_domain_event(event, topic: str, partition_key: str):
+        return True
+
     async def mock_seat_initialization(
         self, *, event_id: int, ticket_tuples: list, seating_config: dict
     ) -> None:
@@ -149,6 +152,10 @@ def mock_kafka_infrastructure():
             'src.service.ticketing.app.command.create_event_and_tickets_use_case'
             '.CreateEventAndTicketsUseCase._start_seat_reservation_consumer_and_initialize_seats',
             new=mock_seat_initialization,
+        ),
+        patch(
+            'src.platform.message_queue.event_publisher.publish_domain_event',
+            side_effect=mock_publish_domain_event,
         ),
     ):
         # 設置 mock 返回值為 AsyncMock
