@@ -68,7 +68,7 @@ def user_connects_to_sse(step, client: TestClient, context, http_server):
 
     # 在 thread 中讀取 SSE 事件
     events_list = []
-    url = f'{http_server}/api/event/{event_id}/sse/all_section_stat'
+    url = f'{http_server}/api/event/{event_id}/all_subsection_status/sse'
     headers = {'Accept': 'text/event-stream'}
 
     # 啟動 thread 讀取 SSE

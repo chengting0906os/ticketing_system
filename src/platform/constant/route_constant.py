@@ -28,6 +28,6 @@ BOOKING_MY_BOOKINGS = f'{BOOKING_BASE}/my-bookings'
 # Event ticket routes (moved from ticket module)
 EVENT_TICKETS_CREATE = f'{EVENT_BASE}/{{event_id}}/tickets'
 EVENT_TICKETS_BY_SUBSECTION = (
-    f'{EVENT_BASE}/{{event_id}}/tickets/section/{{section}}/subsection/{{subsection}}'
+    f'{API_BASE}/reservation/{{event_id}}/sections/{{section}}/subsection/{{subsection}}/seats'
 )
 EVENT_TICKETS_RESERVE = f'{EVENT_BASE}/{{event_id}}/reserve'

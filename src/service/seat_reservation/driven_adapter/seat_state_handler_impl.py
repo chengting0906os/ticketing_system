@@ -3,11 +3,20 @@ Seat State Handler Implementation
 座位狀態處理器實現 - 直接使用 Kvrocks Bitfield + Counter
 """
 
+import os
 from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
+
+# Get key prefix from environment for test isolation
+_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+
+
+def _make_key(key: str) -> str:
+    """Add prefix to key for test isolation in parallel testing"""
+    return f'{_KEY_PREFIX}{key}'
 
 
 # 座位狀態編碼 (2 bits)
@@ -16,15 +25,15 @@ SEAT_STATUS_RESERVED = 1  # 0b01
 SEAT_STATUS_SOLD = 2  # 0b10
 
 STATUS_TO_BITFIELD = {
-    'AVAILABLE': SEAT_STATUS_AVAILABLE,
-    'RESERVED': SEAT_STATUS_RESERVED,
-    'SOLD': SEAT_STATUS_SOLD,
+    'available': SEAT_STATUS_AVAILABLE,
+    'reserved': SEAT_STATUS_RESERVED,
+    'sold': SEAT_STATUS_SOLD,
 }
 
 BITFIELD_TO_STATUS = {
-    SEAT_STATUS_AVAILABLE: 'AVAILABLE',
-    SEAT_STATUS_RESERVED: 'RESERVED',
-    SEAT_STATUS_SOLD: 'SOLD',
+    SEAT_STATUS_AVAILABLE: 'available',
+    SEAT_STATUS_RESERVED: 'reserved',
+    SEAT_STATUS_SOLD: 'sold',
 }
 
 
@@ -115,7 +124,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
         try:
             client = await kvrocks_client.connect()
             section_id = f'{section}-{subsection}'
-            bf_key = f'seats_bf:{event_id}:{section_id}'
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
 
             seat_index = self._calculate_seat_index(row, seat_num)
             offset = seat_index * 2
@@ -123,7 +132,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             value = await client.getbit(bf_key, offset) * 2 + await client.getbit(
                 bf_key, offset + 1
             )
-            return BITFIELD_TO_STATUS.get(value, 'AVAILABLE')
+            return BITFIELD_TO_STATUS.get(value, 'available')
 
         except Exception as e:
             Logger.base.error(f'❌ [SEAT-STATE] Failed to get seat status: {e}')
@@ -144,8 +153,8 @@ class SeatStateHandlerImpl(ISeatStateHandler):
         try:
             client = await kvrocks_client.connect()
             section_id = f'{section}-{subsection}'
-            bf_key = f'seats_bf:{event_id}:{section_id}'
-            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
 
             seat_index = self._calculate_seat_index(row, seat_num)
             offset = seat_index * 2
@@ -176,8 +185,8 @@ class SeatStateHandlerImpl(ISeatStateHandler):
 
             client = await kvrocks_client.connect()
             section_id = f'{section}-{subsection}'
-            bf_key = f'seats_bf:{event_id}:{section_id}'
-            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
 
             # 讀取該排座位的狀態
             seats = []
@@ -194,7 +203,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 seats.append(
                     {
                         'seat_num': seat_num,
-                        'status': BITFIELD_TO_STATUS.get(value, 'AVAILABLE'),
+                        'status': BITFIELD_TO_STATUS.get(value, 'available'),
                         'price': int(prices.get(str(seat_num), 0)) if prices else 0,
                     }
                 )
@@ -314,12 +323,12 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 row_seats = await self._get_row_seats(event_id, section, subsection, row)
 
                 for seat in row_seats:
-                    if seat['status'] == 'AVAILABLE':
+                    if seat['status'] == 'available':
                         available_seats.append(
                             {
                                 'seat_id': f'{section}-{subsection}-{row}-{seat["seat_num"]}',
                                 'event_id': event_id,
-                                'status': 'AVAILABLE',
+                                'status': 'available',
                                 'price': seat['price'],
                             }
                         )
@@ -359,7 +368,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 Logger.base.warning(f'⚠️ [SEAT-STATE] Seat {seat_id} not found')
                 continue
 
-            if current_state.get('status') != 'AVAILABLE':
+            if current_state.get('status') != 'available':
                 unavailable_seats.append(seat_id)
                 Logger.base.warning(
                     f'⚠️ [SEAT-STATE] Seat {seat_id} not available (status: {current_state.get("status")})'
@@ -452,7 +461,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 subsection=subsection,
                 row=row,
                 seat_num=seat_num,
-                status='AVAILABLE',
+                status='available',
                 price=price,
             )
 
@@ -468,8 +477,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             return False
 
     @Logger.io
-    @staticmethod
-    def _generate_all_seats_from_config(seating_config: dict, event_id: int) -> list[dict]:
+    def _generate_all_seats_from_config(self, seating_config: dict, event_id: int) -> list[dict]:
         """
         從 seating_config 生成所有座位數據
 
@@ -573,19 +581,21 @@ class SeatStateHandlerImpl(ISeatStateHandler):
 
             # Step 2: Lua 腳本（與 initialize_seats_batch 相同）
             lua_script = """
-            local event_id = ARGV[1]
+            local key_prefix = ARGV[1]
+            local event_id = ARGV[2]
             local available_status = 0  -- AVAILABLE = 00 in binary
             local timestamp = redis.call('TIME')[1]  -- 獲取 Redis 時間戳
 
-            -- 從 ARGV[2] 開始是座位數據，每個座位 6 個參數
-            local seat_count = (#ARGV - 1) / 6
+            -- 從 ARGV[3] 開始是座位數據，每個座位 6 個參數
+            local seat_count = (#ARGV - 2) / 6
             local success_count = 0
 
-            -- 收集統計資料
+            -- 收集統計資料和配置資訊
             local section_stats = {}
+            local section_configs = {}  -- 儲存每個 section 的 rows 和 seats_per_row
 
             for i = 0, seat_count - 1 do
-                local base_idx = 2 + i * 6
+                local base_idx = 3 + i * 6
                 local section = ARGV[base_idx]
                 local subsection = ARGV[base_idx + 1]
                 local row = ARGV[base_idx + 2]
@@ -594,8 +604,8 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 local price = ARGV[base_idx + 5]
 
                 local section_id = section .. '-' .. subsection
-                local bf_key = 'seats_bf:' .. event_id .. ':' .. section_id
-                local meta_key = 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
+                local bf_key = key_prefix .. 'seats_bf:' .. event_id .. ':' .. section_id
+                local meta_key = key_prefix .. 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
 
                 -- 計算 offset (每個座位 2 bits)
                 local offset = seat_index * 2
@@ -610,16 +620,28 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 -- 累積統計
                 section_stats[section_id] = (section_stats[section_id] or 0) + 1
 
+                -- 記錄配置（追蹤最大 row 和 seats_per_row）
+                if not section_configs[section_id] then
+                    section_configs[section_id] = {max_row = tonumber(row), seats_per_row = tonumber(seat_num)}
+                else
+                    if tonumber(row) > section_configs[section_id].max_row then
+                        section_configs[section_id].max_row = tonumber(row)
+                    end
+                    if tonumber(seat_num) > section_configs[section_id].seats_per_row then
+                        section_configs[section_id].seats_per_row = tonumber(seat_num)
+                    end
+                end
+
                 success_count = success_count + 1
             end
 
-            -- 批量寫入索引和統計
+            -- 批量寫入索引、統計和配置
             for section_id, count in pairs(section_stats) do
                 -- 1. 建立索引 (使用 sorted set，score 為 0)
-                redis.call('ZADD', 'event_sections:' .. event_id, 0, section_id)
+                redis.call('ZADD', key_prefix .. 'event_sections:' .. event_id, 0, section_id)
 
                 -- 2. 設置統計 (初始狀態：所有座位都是 AVAILABLE)
-                redis.call('HSET', 'section_stats:' .. event_id .. ':' .. section_id,
+                redis.call('HSET', key_prefix .. 'section_stats:' .. event_id .. ':' .. section_id,
                     'section_id', section_id,
                     'event_id', event_id,
                     'available', count,
@@ -627,6 +649,13 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                     'sold', 0,
                     'total', count,
                     'updated_at', timestamp
+                )
+
+                -- 3. 儲存 section 配置
+                local config = section_configs[section_id]
+                redis.call('HSET', key_prefix .. 'section_config:' .. event_id .. ':' .. section_id,
+                    'rows', config.max_row,
+                    'seats_per_row', config.seats_per_row
                 )
             end
 
@@ -637,7 +666,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             client = await kvrocks_client.connect()
 
             # Step 4: 準備 Lua 腳本參數
-            args = [str(event_id)]  # ARGV[1] = event_id
+            args = [_KEY_PREFIX, str(event_id)]  # ARGV[1] = key_prefix, ARGV[2] = event_id
 
             for seat in all_seats:
                 args.extend(
@@ -662,7 +691,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             Logger.base.info(f'✅ [LUA-CONFIG] Initialized {success_count}/{len(all_seats)} seats')
 
             # Step 6: 驗證結果
-            sections_count = await client.zcard(f'event_sections:{event_id}')
+            sections_count = await client.zcard(_make_key(f'event_sections:{event_id}'))
             Logger.base.info(f'📋 [LUA-CONFIG] Created {sections_count} sections in index')
 
             return {
@@ -705,7 +734,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
                 subsection=subsection,
                 row=row,
                 seat_num=seat_num,
-                status='SOLD',
+                status='sold',
                 price=current_price,
             )
 
@@ -757,7 +786,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             client = await kvrocks_client.connect()
 
             # 1. 從索引取得所有 section_id
-            index_key = f'event_sections:{event_id}'
+            index_key = _make_key(f'event_sections:{event_id}')
             section_ids = await client.zrange(index_key, 0, -1)
 
             if not section_ids:
@@ -767,7 +796,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
             # 2. 使用 Pipeline 批量查詢統計數據
             pipe = client.pipeline()
             for section_id in section_ids:
-                stats_key = f'section_stats:{event_id}:{section_id}'
+                stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
                 pipe.hgetall(stats_key)
 
             results = await pipe.execute()

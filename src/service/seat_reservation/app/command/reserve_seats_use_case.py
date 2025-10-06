@@ -307,7 +307,7 @@ class ReserveSeatsUseCase:
         # 轉換為 AvailableSeat 領域物件
         available_seats = []
         for seat_data in seat_data_list:
-            if seat_data.get('status') != 'AVAILABLE':
+            if seat_data.get('status') != 'available':
                 continue
 
             # 解析座位位置

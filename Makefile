@@ -1,7 +1,7 @@
 # Database operations
 ALEMBIC_CONFIG = src/platform/alembic/alembic.ini
 
-.PHONY: reset reset-db
+.PHONY: reset reset-db seed
 reset:
 	@echo "🚀 Complete system reset (Kafka + Database)..."
 	@echo "Step 1: Resetting Kafka..."
@@ -9,11 +9,18 @@ reset:
 	@echo ""
 	@echo "Step 2: Resetting Database..."
 	@PYTHONPATH=. uv run python scripts/reset_database.py
+	@echo ""
+	@echo "Step 3: Seeding test data..."
+	@PYTHONPATH=. uv run python scripts/seed_data.py
 	@echo "✅ Complete system reset finished!"
 
 reset-db:
-	@echo "🚀 Resetting database with test data..."
+	@echo "🔄 Resetting database structure..."
 	@PYTHONPATH=. uv run python scripts/reset_database.py
+
+seed:
+	@echo "🌱 Seeding test data..."
+	@PYTHONPATH=. uv run python scripts/seed_data.py
 
 # Database migrations
 

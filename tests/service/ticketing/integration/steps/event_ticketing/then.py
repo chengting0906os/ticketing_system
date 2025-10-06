@@ -112,10 +112,8 @@ def verify_specific_events(step, event_state):
 
 
 @then('tickets should be auto-created with:')
-def verify_tickets_auto_created(step, client, context):
-    """Verify that tickets were automatically created after event creation."""
-    from src.platform.constant.route_constant import EVENT_TICKETS_BY_SUBSECTION
-
+def verify_tickets_auto_created(step, context, execute_sql_statement):
+    """Verify that tickets were automatically created in PostgreSQL after event creation."""
     expected_data = extract_table_data(step)
 
     # Get the created event
@@ -125,63 +123,28 @@ def verify_tickets_auto_created(step, client, context):
 
     event_id = event['id']
 
-    # Get all tickets across all sections and subsections
-    all_tickets = []
-
-    # If the event was created with seating config, iterate through all sections
-    if 'seating_config' in event:
-        seating_config = event['seating_config']
-        for section in seating_config['sections']:
-            section_name = section['name']
-            for subsection in section['subsections']:
-                subsection_number = subsection['number']
-
-                response = client.get(
-                    EVENT_TICKETS_BY_SUBSECTION.format(
-                        event_id=event_id, section=section_name, subsection=subsection_number
-                    )
-                )
-                print(f'\n[DEBUG] API response status: {response.status_code}')
-                print(f'[DEBUG] API response: {response.text[:500]}')
-                if response.status_code == 200:
-                    tickets_data = response.json()
-                    section_tickets = tickets_data.get('tickets', [])
-                    print(
-                        f'[DEBUG] Found {len(section_tickets)} tickets for section {section_name}-{subsection_number}'
-                    )
-                    all_tickets.extend(section_tickets)
-    else:
-        # Fallback: try default section 'A' if seating config not available
-        section_name = expected_data.get('section', 'A')
-        subsection_number = expected_data.get('subsection', 1)
-
-        response = client.get(
-            EVENT_TICKETS_BY_SUBSECTION.format(
-                event_id=event_id, section=section_name, subsection=subsection_number
-            )
-        )
-        assert response.status_code == 200, f'Failed to get tickets: {response.text}'
-
-        tickets_data = response.json()
-        all_tickets = tickets_data.get('tickets', [])
+    # Query tickets directly from PostgreSQL (source of truth for tickets)
+    tickets = execute_sql_statement(
+        'SELECT * FROM ticket WHERE event_id = :event_id', {'event_id': event_id}, fetch=True
+    )
 
     # Verify ticket count
     expected_count = int(expected_data['count'])
-    assert len(all_tickets) == expected_count, (
-        f'Expected {expected_count} tickets, got {len(all_tickets)}'
+    assert len(tickets) == expected_count, (
+        f'Expected {expected_count} tickets in DB, got {len(tickets)}'
     )
 
-    # Verify ticket prices (tickets can have different prices based on section)
+    # Verify ticket prices (if specified)
     if 'price' in expected_data:
         expected_price = int(expected_data['price'])
-        for ticket in all_tickets:
+        for ticket in tickets:
             assert ticket['price'] == expected_price, (
                 f'Expected ticket price {expected_price}, got {ticket["price"]}'
             )
 
     # Verify ticket status
     expected_status = expected_data['status']
-    for ticket in all_tickets:
+    for ticket in tickets:
         assert ticket['status'] == expected_status, (
             f'Expected ticket status {expected_status}, got {ticket["status"]}'
         )

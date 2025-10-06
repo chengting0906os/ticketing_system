@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """
 Complete System Cleanup Script
-完整系統清理腳本 - 清除所有 Kafka topics, consumer groups 和 Kvrocks 狀態
+完整系統清理腳本 - 清除所有 Kafka topics, consumer groups, Kvrocks 資料和 PostgreSQL 資料
 
 清理內容:
 - Kafka Topics: 所有 event-id-* topics
 - Consumer Groups: 所有 consumer groups
+- Kvrocks Data: FLUSHDB 清空所有鍵值資料
 - Kvrocks State: seat_reservation 和 event_ticketing 的狀態目錄
+- PostgreSQL: TRUNCATE 清空所有資料表 (ticket, booking, event, user)
 """
 
 import subprocess
@@ -169,6 +171,25 @@ class SystemCleaner:
         except Exception as e:
             Logger.base.error(f"❌ Failed to clean consumer groups: {e}")
 
+    def clean_kvrocks_data(self):
+        """清空 Kvrocks 資料（使用 FLUSHDB）"""
+        Logger.base.info("🗄️ ==================== FLUSHING KVROCKS DATA ====================")
+
+        try:
+            # 使用 redis-cli 連接 Kvrocks 並執行 FLUSHDB
+            success = self.run_command(
+                ["redis-cli", "-p", "6666", "FLUSHDB"],
+                "Flushing all Kvrocks data"
+            )
+
+            if success:
+                Logger.base.info("✅ Kvrocks data flushed successfully")
+            else:
+                Logger.base.warning("⚠️ Failed to flush Kvrocks data")
+
+        except Exception as e:
+            Logger.base.error(f"❌ Failed to flush Kvrocks: {e}")
+
     def clean_kvrocks_state(self):
         """清理 Kvrocks 狀態目錄 (seat_reservation + event_ticketing)"""
         Logger.base.info("💾 ==================== CLEANING KVROCKS STATE ====================")
@@ -187,6 +208,39 @@ class SystemCleaner:
 
         except Exception as e:
             Logger.base.error(f"❌ Failed to clean Kvrocks state: {e}")
+
+    def clean_postgresql(self):
+        """清空 PostgreSQL 資料庫所有資料表"""
+        Logger.base.info("🐘 ==================== CLEANING POSTGRESQL ====================")
+
+        try:
+            # 從環境變數讀取資料庫設定
+            postgres_container = os.getenv('POSTGRES_CONTAINER', 'ticketing_system_db')
+            db_name = os.getenv('POSTGRES_DB', 'ticketing_system_db')
+            db_user = os.getenv('POSTGRES_USER', 'py_arch_lab')
+
+            # 使用 docker exec 執行 TRUNCATE 清空所有資料表（保留結構）
+            truncate_cmd = [
+                'docker', 'exec', postgres_container,
+                'psql',
+                '-U', db_user,
+                '-d', db_name,
+                '-c',
+                'TRUNCATE TABLE ticket, booking, event, "user" RESTART IDENTITY CASCADE;'
+            ]
+
+            success = self.run_command(
+                truncate_cmd,
+                "Truncating all PostgreSQL tables"
+            )
+
+            if success:
+                Logger.base.info("✅ PostgreSQL tables truncated successfully")
+            else:
+                Logger.base.warning("⚠️ Failed to truncate PostgreSQL tables")
+
+        except Exception as e:
+            Logger.base.error(f"❌ Failed to clean PostgreSQL: {e}")
 
     def verify_cleanup(self):
         """驗證清理結果"""
@@ -255,10 +309,16 @@ class SystemCleaner:
         # 步驟 3: 清理 consumer groups (支援重試)
         self.clean_consumer_groups()
 
-        # 步驟 4: 清理 Kvrocks 狀態
+        # 步驟 4: 清空 Kvrocks 資料
+        self.clean_kvrocks_data()
+
+        # 步驟 5: 清理 Kvrocks 狀態目錄
         self.clean_kvrocks_state()
 
-        # 步驟 5: 驗證清理結果
+        # 步驟 6: 清空 PostgreSQL 資料表
+        self.clean_postgresql()
+
+        # 步驟 7: 驗證清理結果
         self.verify_cleanup()
 
         Logger.base.info("🧹 ==================== CLEANUP COMPLETED ====================")

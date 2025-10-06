@@ -166,16 +166,8 @@ class CreateEventAndTicketsUseCase:
         try:
             Logger.base.info(f'🚀 Setting up Kafka infrastructure for event {event_id}')
 
-            # 檢查 consumer 是否可用
-            consumers_available = await self._check_consumer_availability(event_id=event_id)
-
-            if not consumers_available:
-                Logger.base.info('🔄 Consumers not available, attempting to start them...')
-                startup_success = await self._auto_start_consumers(event_id)
-                if startup_success:
-                    Logger.base.info('✅ Consumers started successfully')
-                else:
-                    Logger.base.warning('⚠️ Failed to auto-start consumers')
+            # 直接啟動 consumers（找不到就直接創）
+            await self._auto_start_consumers(event_id)
 
             # 設置活動基礎設施
             infrastructure_success = await self.kafka_service.setup_event_infrastructure(
@@ -426,7 +418,7 @@ class CreateEventAndTicketsUseCase:
             Logger.base.warning(f'⚠️ Failed to check consumer status: {e}')
             return False
 
-    async def _auto_start_consumers(self, event_id: int) -> bool:
+    async def _auto_start_consumers(self, event_id: int) -> None:
         """
         自動啟動 consumers - 1-2-1 配置
 
@@ -486,17 +478,11 @@ class CreateEventAndTicketsUseCase:
 
                 except Exception as e:
                     Logger.base.error(f'❌ Failed to start {consumer_config["name"]}: {e}')
-                    return False
 
-            # 等待 consumers 初始化
-            await asyncio.sleep(5)  # 增加等待時間確保所有 consumer 啟動
+            # 短暫等待讓 consumers 啟動
+            await asyncio.sleep(1)
 
             Logger.base.info(f'📊 [1-2-1 CONFIG] Total consumers started: {len(processes)}')
-            Logger.base.info('🔄 [1-2-1 CONFIG] booking:1, seat_reservation:2, event_ticketing:1')
-
-            # 驗證 consumers 是否真的啟動了
-            return await self._check_consumer_availability(event_id=event_id)
 
         except Exception as e:
             Logger.base.error(f'❌ Auto-start consumers failed: {e}')
-            return False

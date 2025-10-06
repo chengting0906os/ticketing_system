@@ -12,7 +12,7 @@ from src.platform.state.kvrocks_client import KvrocksStatsClient
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestGetSectionSeatsDetail:
+class TestListSectionSeatsDetail:
     """測試 list_subsection_seats_detail 方法"""
 
     @pytest.fixture

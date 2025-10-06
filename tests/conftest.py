@@ -16,9 +16,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
 if worker_id == 'master':
     os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
+    os.environ['KVROCKS_KEY_PREFIX'] = 'test_'
 else:
-    # Each worker gets its own database
+    # Each worker gets its own database and Kvrocks key prefix
     os.environ['POSTGRES_DB'] = f'ticketing_system_test_db_{worker_id}'
+    os.environ['KVROCKS_KEY_PREFIX'] = f'test_{worker_id}_'
 
 # Override LOG_DIR to use test log directory
 test_log_dir = Path(__file__).parent / 'test_log'
@@ -27,8 +29,20 @@ os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 from src.main import app  # noqa: E402
 
+# Pytest BDD example
+from tests.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.given import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.then import *  # noqa: E402, F403
+from tests.pytest_bdd_ng_example.when import *  # noqa: E402, F403
+
+# Seat reservation
+from tests.service.seat_reservation.fixtures import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.given import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.then import *  # noqa: E402, F403
+from tests.service.seat_reservation.integration.steps.when import *  # noqa: E402, F403
+
 # Ticketing service fixtures and steps
-from tests.service.ticketing.integration.fixtures import *  # noqa: E402, F403
+from tests.service.ticketing.fixtures import *  # noqa: E402, F403
 from tests.service.ticketing.integration.steps.booking.given import *  # noqa: E402, F403
 from tests.service.ticketing.integration.steps.booking.then import *  # noqa: E402, F403
 from tests.service.ticketing.integration.steps.booking.when import *  # noqa: E402, F403
@@ -43,18 +57,6 @@ from tests.service.ticketing.integration.steps.user.given import *  # noqa: E402
 from tests.service.ticketing.integration.steps.user.then import *  # noqa: E402, F403
 from tests.service.ticketing.integration.steps.user.when import *  # noqa: E402, F403
 
-# Pytest BDD example
-from tests.pytest_bdd_ng_example.fixtures import *  # noqa: E402, F403
-from tests.pytest_bdd_ng_example.given import *  # noqa: E402, F403
-from tests.pytest_bdd_ng_example.then import *  # noqa: E402, F403
-from tests.pytest_bdd_ng_example.when import *  # noqa: E402, F403
-
-# Seat reservation
-from tests.service.seat_reservation.fixtures import *  # noqa: E402, F403
-from tests.service.seat_reservation.integration.steps.given import *  # noqa: E402, F403
-from tests.service.seat_reservation.integration.steps.then import *  # noqa: E402, F403
-from tests.service.seat_reservation.integration.steps.when import *  # noqa: E402, F403
-
 # Shared utilities
 from tests.shared.given import *  # noqa: E402, F403
 from tests.shared.then import *  # noqa: E402, F403
@@ -68,6 +70,7 @@ from tests.util_constant import (  # noqa: E402, F403
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
+
 
 # Load environment variables from .env or .env.example
 env_file = '.env' if Path('.env').exists() else '.env.example'
@@ -199,10 +202,9 @@ async def clean_all_tables():
     finally:
         await engine.dispose()
 
-    # Note: Redis cleanup removed to support parallel testing
-    # PostgreSQL TRUNCATE CASCADE ensures referential integrity, and Redis data
-    # is overwritten by each test's event_exists fixture, so explicit cleanup
-    # is not needed and would interfere with parallel tests
+    # Note: Kvrocks cleanup NOT done here to avoid race conditions in parallel testing
+    # Each test worker uses its own key prefix (via KVROCKS_KEY_PREFIX env var set below)
+    # This ensures data isolation without interfering with other workers
 
 
 def pytest_sessionstart(session):
@@ -276,22 +278,6 @@ def another_buyer_user(client):
 
 
 # Common test fixtures for unit tests
-@pytest.fixture
-def mock_uow():
-    """Mock unit of work for testing."""
-    from unittest.mock import AsyncMock, Mock
-
-    uow = Mock()
-    uow.__aenter__ = AsyncMock(return_value=uow)
-    uow.__aexit__ = AsyncMock(return_value=None)
-    uow.events = Mock()
-    uow.events.get_by_id = AsyncMock()
-    uow.tickets = Mock()
-    uow.tickets.get_by_event_id = AsyncMock()
-    uow.tickets.get_available_tickets_by_event = AsyncMock()
-    uow.tickets.get_by_event_and_section = AsyncMock()
-    uow.tickets.list_by_event_section_and_subsection = AsyncMock()
-    return uow
 
 
 @pytest.fixture
