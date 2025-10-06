@@ -1,7 +1,7 @@
 # Database operations
 ALEMBIC_CONFIG = src/platform/alembic/alembic.ini
 
-.PHONY: reset reset-db seed
+.PHONY: reset reset-all reset-db seed
 reset:
 	@echo "🚀 Complete system reset (Kafka + Database)..."
 	@echo "Step 1: Resetting Kafka..."
@@ -13,6 +13,15 @@ reset:
 	@echo "Step 3: Seeding test data..."
 	@PYTHONPATH=. uv run python script/seed_data.py
 	@echo "✅ Complete system reset finished!"
+	@echo ""
+	@echo "💡 Tip: Run 'make services' to start consumers, or use 'make reset-all' next time"
+
+reset-all:  ## 🔄 Reset system and start services (one-stop command)
+	@echo "🚀 Complete system reset + service launch..."
+	@$(MAKE) reset
+	@echo ""
+	@echo "Step 4: Starting consumers..."
+	@$(MAKE) services
 
 reset-db:
 	@echo "🔄 Resetting database structure..."
@@ -228,7 +237,9 @@ help:
 	@echo "    make docker-logs         - View Docker logs"
 	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
 	@echo ""
-	@echo "  Cleanup:"
+	@echo "  Cleanup & Reset:"
+	@echo "    make reset               - 🔄 Reset Kafka + Database + Seed data"
+	@echo "    make reset-all           - 🚀 Reset + Auto-start services (one-stop!)"
 	@echo "    make clean-all (ca)      - 🧹 Complete cleanup (topics, groups, RocksDB)"
 	@echo "    make kafka-clean (kc)    - Clean all Kafka topics"
 	@echo "    make kafka-status (ks)   - Check Kafka cluster status"

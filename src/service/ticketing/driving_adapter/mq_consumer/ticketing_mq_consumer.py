@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
+from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -93,9 +94,18 @@ class TicketingMqConsumer:
 
     async def start(self):
         """使用 AnyIO 啟動消費者"""
-        # 初始化 use cases
-        self.update_booking_to_pending_payment_use_case = UpdateBookingToPendingPaymentUseCase()
-        self.update_booking_to_failed_use_case = UpdateBookingToFailedUseCase()
+        # 初始化 use cases - 手動注入依賴
+        booking_command_repo = container.booking_command_repo()
+        booking_query_repo = container.booking_query_repo()
+
+        self.update_booking_to_pending_payment_use_case = UpdateBookingToPendingPaymentUseCase(
+            booking_command_repo=booking_command_repo,
+            booking_query_repo=booking_query_repo,
+        )
+        self.update_booking_to_failed_use_case = UpdateBookingToFailedUseCase(
+            booking_command_repo=booking_command_repo,
+            booking_query_repo=booking_query_repo,
+        )
 
         Logger.base.info(
             f'🚀 [TICKETING] Started PostgreSQL state manager\n'

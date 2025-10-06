@@ -56,10 +56,8 @@ class Container(containers.DeclarativeContainer):
     kafka_service = providers.Singleton(KafkaConfigService)
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
-    # Repositories - now properly managed with session factory
-    booking_command_repo = providers.Factory(
-        BookingCommandRepoImpl, session_factory=database.provided.session
-    )
+    # Repositories - session will be injected by use cases
+    booking_command_repo = providers.Factory(BookingCommandRepoImpl)
     booking_query_repo = providers.Factory(
         BookingQueryRepoImpl, session_factory=database.provided.session
     )

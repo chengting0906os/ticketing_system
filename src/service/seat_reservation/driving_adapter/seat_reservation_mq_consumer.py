@@ -6,10 +6,11 @@ Seat Reservation Consumer - 座位選擇路由器
 from dataclasses import dataclass
 import json
 import os
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from quixstreams import Application
+
 
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
@@ -201,6 +202,7 @@ class SeatReservationConsumer:
 
     # ========== Reservation Logic ==========
 
+    @Logger.io
     async def _handle_reservation(self, event_data: Any) -> bool:
         """處理座位預訂事件 - 只負責路由到 use case"""
         try:
@@ -219,6 +221,7 @@ class SeatReservationConsumer:
             Logger.base.error(f'💥 [RESERVATION] Exception: {e}')
             return False
 
+    @Logger.io
     def _parse_event_data(self, event_data: Any) -> Optional[Dict]:
         """解析事件數據"""
         try:
@@ -236,25 +239,33 @@ class SeatReservationConsumer:
             Logger.base.error(f'❌ Parse failed: {e}')
             return None
 
+    @Logger.io
     def _create_reservation_command(self, event_data: Dict) -> Dict:
-        """創建預訂命令"""
-        aggregate_id = event_data.get('aggregate_id')
-        data = event_data.get('data', {})
+        """創建預訂命令
 
-        if not all([aggregate_id, data.get('buyer_id'), data.get('event_id')]):
+        Note: publish_domain_event spreads event fields with **event.__dict__
+        and removes 'aggregate_id' to avoid duplication. All fields including
+        booking_id, buyer_id, event_id are at top level.
+        """
+        booking_id = event_data.get('booking_id')
+        buyer_id = event_data.get('buyer_id')
+        event_id = event_data.get('event_id')
+
+        if not all([booking_id, buyer_id, event_id]):
             raise ValueError('Missing required fields in event data')
 
         return {
-            'booking_id': int(str(aggregate_id)),
-            'buyer_id': data['buyer_id'],
-            'event_id': data['event_id'],
-            'section': data.get('section', ''),
-            'subsection': data.get('subsection', 0),
-            'quantity': data.get('quantity', 2),
-            'seat_selection_mode': data.get('seat_selection_mode', 'best_available'),
-            'seat_positions': data.get('seat_positions', []),
+            'booking_id': booking_id,
+            'buyer_id': buyer_id,
+            'event_id': event_id,
+            'section': event_data.get('section', ''),
+            'subsection': event_data.get('subsection', 0),
+            'quantity': event_data.get('quantity', 2),
+            'seat_selection_mode': event_data.get('seat_selection_mode', 'best_available'),
+            'seat_positions': event_data.get('seat_positions', []),
         }
 
+    @Logger.io
     async def _execute_reservation(self, command: Dict) -> bool:
         """執行座位預訂 - 只負責調用 use case"""
         try:

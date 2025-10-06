@@ -4,15 +4,15 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.service.ticketing.app.interface.i_booking_command_repo import BookingCommandRepo
-from src.service.ticketing.domain.entity.booking_entity import Booking
-from src.service.ticketing.domain.domain_event.booking_events import BookingCreated
 from src.platform.config.db_setting import get_async_session
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.service.ticketing.app.interface.i_booking_command_repo import BookingCommandRepo
+from src.service.ticketing.domain.domain_event.booking_events import BookingCreated
+from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class CreateBookingUseCase:
@@ -22,7 +22,8 @@ class CreateBookingUseCase:
         booking_command_repo: BookingCommandRepo,
     ):
         self.session = session
-        self.booking_command_repo: BookingCommandRepo = booking_command_repo  # pyright: ignore[reportAttributeAccessIssue]
+        self.booking_command_repo: BookingCommandRepo = booking_command_repo
+        self.booking_command_repo.session = session
 
     @classmethod
     @inject
@@ -61,8 +62,8 @@ class CreateBookingUseCase:
         except Exception as e:
             raise DomainError(f'{e}', 400)
 
-        # Commit the database transaction
         await self.session.commit()
+        #
         booking_created_event = BookingCreated.from_booking(created_booking)
         Logger.base.info(
             f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=booking.event_id)}\033[0m'

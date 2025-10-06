@@ -15,6 +15,7 @@
 - **Imports**: Always at top of file, never inside functions
 - **Async**: Prefer `anyio` > `asyncio`, prefer `async` > `sync`
 - **Dependency Inversion**: High-level modules depend on abstractions, not low-level modules
+- **Transaction Management**: Use cases commit, repositories only do CRUD
 
 # Core Development Philosophy
 
