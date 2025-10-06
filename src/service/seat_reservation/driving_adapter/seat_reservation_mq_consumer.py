@@ -150,25 +150,21 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _process_seat_initialization(self, message: Dict) -> Dict:
-        """處理座位初始化"""
+        """處理座位初始化 - 轉發給 Use Case"""
         try:
             request = InitializeSeatRequest(
                 seat_id=message['seat_id'],
                 event_id=message['event_id'],
                 price=message['price'],
                 timestamp=message.get('timestamp', ''),
-                rows=message['rows'],  # 配置信息(必填)
-                seats_per_row=message['seats_per_row'],  # 配置信息(必填)
+                rows=message['rows'],
+                seats_per_row=message['seats_per_row'],
             )
 
+            # Use Case 負責批量累積和刷新
             result = self.portal.call(self.initialize_seat_use_case.execute, request)
 
-            if result.success:
-                Logger.base.info(f'✅ [INIT] {message["seat_id"]}')
-                return {'success': True, 'seat_id': message['seat_id']}
-
-            Logger.base.error(f'❌ [INIT] {result.error_message}')
-            return {'success': False, 'error': result.error_message}
+            return {'success': result.success, 'seat_id': message['seat_id']}
 
         except Exception as e:
             Logger.base.error(f'❌ [INIT] Exception: {e}')
@@ -350,6 +346,11 @@ class SeatReservationConsumer:
             return
 
         self.running = False
+
+        # 強制刷新 Use Case 中剩餘的批次
+        if self.initialize_seat_use_case:
+            Logger.base.info('🔄 Flushing remaining batches in Use Case...')
+            self.portal.call(self.initialize_seat_use_case.force_flush)
 
         if self.kafka_app:
             try:

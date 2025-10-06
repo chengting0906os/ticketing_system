@@ -6,7 +6,7 @@ Seat Reservation Controller
 import anyio
 import asyncpg
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import case, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -23,6 +23,12 @@ from src.service.seat_reservation.driving_adapter.seat_schema import (
 )
 from src.service.ticketing.app.service.role_auth_service import require_buyer_or_seller
 from src.service.ticketing.domain.entity.user_entity import UserEntity
+from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
+from fastapi import HTTPException
+from sqlalchemy import and_
+
+from src.service.ticketing.driven_adapter.model.event_model import EventModel
+from src.platform.state.redis_client import kvrocks_client
 
 
 def calculate_partition_for_section(section_id: str, num_partitions: int = 3) -> int:
@@ -402,7 +408,7 @@ async def get_all_section_stats(event_id: int) -> dict:
     '/{event_id}/tickets/section/{section}/subsection/{subsection}',
     status_code=status.HTTP_200_OK,
 )
-@Logger.io(truncate_content=True)  # type: ignore
+@Logger.io
 async def list_seats_by_section_subsection(
     event_id: int,
     section: str,
@@ -419,12 +425,6 @@ async def list_seats_by_section_subsection(
     4. 預期性能：~3-5ms（Bitfield 掃描 + Counter 查詢）
     5. 高併發友好（50,000+ QPS）
     """
-    from fastapi import HTTPException
-    from sqlalchemy import and_, select
-
-    from src.service.ticketing.driven_adapter.model.event_model import EventModel
-    from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-    from src.platform.state.redis_client import kvrocks_client
 
     # 先檢查 event 是否存在
     stmt_event = select(EventModel).where(EventModel.id == event_id)
@@ -464,12 +464,7 @@ async def list_seats_by_section_subsection(
         # 從 Kvrocks metadata 取得 total（或從 DB 查詢）
         meta_total_key = f'subsection_total:{event_id}:{section_id}'
         total_str = await client.get(meta_total_key)
-
-        if total_str:
-            total_count = int(total_str)
-        else:
-            # Fallback: 估算 total（25 rows x 20 seats = 500）
-            total_count = 500
+        total_count = int(total_str)
 
         # 計算 unavailable（reserved + sold）
         unavailable_count = max(0, total_count - available_count)
@@ -533,68 +528,3 @@ async def list_seats_by_section_subsection(
             subsection=subsection,
             tickets=[],
         )
-
-
-@router.get(
-    '/{event_id}/tickets/section/{section}/subsection/{subsection}/db',
-    status_code=status.HTTP_200_OK,
-)
-@Logger.io(truncate_content=True)  # type: ignore
-async def list_seats_by_section_subsection_from_db(
-    event_id: int,
-    section: str,
-    subsection: int,
-    session: AsyncSession = Depends(get_async_session),
-) -> SectionStatsResponse:
-    """
-    獲取指定區域的統計資訊 (直接查詢 PostgreSQL)
-
-    此 API 用於與 Kvrocks 版本比較性能差異
-    直接從 ticket 表聚合統計數據
-    """
-    from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-
-    section_id = f'{section}-{subsection}'
-
-    # 構建查詢：統計指定 section 和 subsection 的座位狀態
-
-    stmt = (
-        select(
-            func.count().label('total'),
-            func.sum(case((TicketModel.status == 'available', 1), else_=0)).label('available'),
-            func.sum(case((TicketModel.status == 'reserved', 1), else_=0)).label('reserved'),
-            func.sum(case((TicketModel.status == 'sold', 1), else_=0)).label('sold'),
-        )
-        .select_from(TicketModel)
-        .where(
-            TicketModel.event_id == event_id,
-            TicketModel.section == section,
-            TicketModel.subsection == subsection,
-        )
-    )
-
-    Logger.base.debug(f'🔍 [DB-QUERY] SQL: {stmt}')
-    Logger.base.debug(
-        f'🔍 [DB-QUERY] Params: event_id={event_id}, section={section}, subsection={subsection}'
-    )
-
-    result = await session.execute(stmt)
-    row = result.one()
-
-    Logger.base.debug(f'🔍 [DB-QUERY] Raw result: {row}')
-
-    Logger.base.info(
-        f'📊 [DB-QUERY] Stats for {section_id}: '
-        f'total={row.total}, available={row.available}, reserved={row.reserved}, sold={row.sold}'
-    )
-
-    return SectionStatsResponse(
-        section_id=section_id,
-        total=row.total or 0,
-        available=row.available or 0,
-        reserved=row.reserved or 0,
-        sold=row.sold or 0,
-        event_id=event_id,
-        section=section,
-        subsection=subsection,
-    )

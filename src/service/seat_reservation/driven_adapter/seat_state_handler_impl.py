@@ -418,6 +418,112 @@ class SeatStateHandlerImpl(SeatStateHandler):
             Logger.base.error(f'❌ [SEAT-STATE] Error initializing seat {seat_id}: {e}')
             return False
 
+    async def initialize_seats_batch(self, seats: list[dict]) -> dict[str, bool]:
+        """批量初始化座位狀態為 AVAILABLE - 使用 Lua 腳本"""
+        results = {}
+        if not seats:
+            return results
+
+        # Lua 腳本：批量設置 bitfield 和 metadata
+        lua_script = """
+        local event_id = ARGV[1]
+        local available_status = 0  -- AVAILABLE = 00 in binary
+        
+        -- 從 ARGV[2] 開始是座位數據，每個座位 6 個參數
+        local seat_count = (#ARGV - 1) / 6
+        local success_count = 0
+        
+        for i = 0, seat_count - 1 do
+            local base_idx = 2 + i * 6
+            local section = ARGV[base_idx]
+            local subsection = ARGV[base_idx + 1]
+            local row = ARGV[base_idx + 2]
+            local seat_num = ARGV[base_idx + 3]
+            local seat_index = ARGV[base_idx + 4]
+            local price = ARGV[base_idx + 5]
+            
+            local section_id = section .. '-' .. subsection
+            local bf_key = 'seats_bf:' .. event_id .. ':' .. section_id
+            local meta_key = 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
+            
+            -- 計算 offset (每個座位 2 bits)
+            local offset = seat_index * 2
+            
+            -- 設置 bitfield (AVAILABLE = 00)
+            redis.call('SETBIT', bf_key, offset, 0)
+            redis.call('SETBIT', bf_key, offset + 1, 0)
+            
+            -- 設置價格 metadata
+            redis.call('HSET', meta_key, seat_num, price)
+            
+            success_count = success_count + 1
+        end
+        
+        return success_count
+        """
+
+        try:
+            client = await kvrocks_client.connect()
+
+            # 準備 Lua 腳本參數
+            args = [str(seats[0]['event_id'])]  # ARGV[1] = event_id
+
+            for seat_data in seats:
+                seat_id = seat_data['seat_id']
+                try:
+                    parts = seat_id.split('-')
+                    if len(parts) < 4:
+                        results[seat_id] = False
+                        continue
+
+                    section, subsection, row, seat_num = (
+                        parts[0],
+                        int(parts[1]),
+                        int(parts[2]),
+                        int(parts[3]),
+                    )
+                    price = seat_data['price']
+
+                    # 計算 seat_index
+                    seat_index = self._calculate_seat_index(row, seat_num)
+
+                    # 添加 6 個參數到 ARGV
+                    args.extend(
+                        [
+                            section,
+                            str(subsection),
+                            str(row),
+                            str(seat_num),
+                            str(seat_index),
+                            str(price),
+                        ]
+                    )
+
+                except Exception as e:
+                    Logger.base.error(f'❌ [LUA-INIT] Error preparing {seat_id}: {e}')
+                    results[seat_id] = False
+
+            # 執行 Lua 腳本
+            success_count = client.eval(lua_script, 0, *args)
+
+            # 標記成功的座位
+            for seat_data in seats:
+                seat_id = seat_data['seat_id']
+                if seat_id not in results:
+                    results[seat_id] = True
+
+            Logger.base.info(
+                f'✅ [LUA-INIT] Lua script initialized {success_count}/{len(seats)} seats'
+            )
+            return results
+
+        except Exception as e:
+            Logger.base.error(f'❌ [LUA-INIT] Lua execution failed: {e}')
+            # 全部標記失敗
+            for seat_data in seats:
+                results[seat_data['seat_id']] = False
+            return results
+
     async def finalize_payment(
         self, seat_id: str, event_id: int, timestamp: Optional[str] = None
     ) -> bool:
