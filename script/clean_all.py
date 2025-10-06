@@ -11,10 +11,11 @@ Complete System Cleanup Script
 - PostgreSQL: TRUNCATE 清空所有資料表 (ticket, booking, event, user)
 """
 
-import subprocess
 import os
-import shutil
 from pathlib import Path
+import shutil
+import subprocess
+
 from src.platform.logging.loguru_io import Logger
 
 
@@ -62,8 +63,8 @@ class SystemCleaner:
         )
 
         # 方法 3: 停止 topic_monitor 腳本（重要！會重新創建 consumer groups）
-        Logger.base.info('🔍 Stopping topic_monitor scripts...')
-        self.run_command(['pkill', '-f', 'topic_monitor'], 'Stopping topic_monitor scripts')
+        Logger.base.info('🔍 Stopping topic_monitor script...')
+        self.run_command(['pkill', '-f', 'topic_monitor'], 'Stopping topic_monitor script')
 
         # 方法 4: 額外保險 - 停止任何包含 infra/*consumer 的進程
         Logger.base.info('🔍 Stopping any infra consumer processes...')

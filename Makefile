@@ -5,22 +5,22 @@ ALEMBIC_CONFIG = src/platform/alembic/alembic.ini
 reset:
 	@echo "🚀 Complete system reset (Kafka + Database)..."
 	@echo "Step 1: Resetting Kafka..."
-	@PYTHONPATH=. uv run python scripts/reset_kafka.py
+	@PYTHONPATH=. uv run python script/reset_kafka.py
 	@echo ""
 	@echo "Step 2: Resetting Database..."
-	@PYTHONPATH=. uv run python scripts/reset_database.py
+	@PYTHONPATH=. uv run python script/reset_database.py
 	@echo ""
 	@echo "Step 3: Seeding test data..."
-	@PYTHONPATH=. uv run python scripts/seed_data.py
+	@PYTHONPATH=. uv run python script/seed_data.py
 	@echo "✅ Complete system reset finished!"
 
 reset-db:
 	@echo "🔄 Resetting database structure..."
-	@PYTHONPATH=. uv run python scripts/reset_database.py
+	@PYTHONPATH=. uv run python script/reset_database.py
 
 seed:
 	@echo "🌱 Seeding test data..."
-	@PYTHONPATH=. uv run python scripts/seed_data.py
+	@PYTHONPATH=. uv run python script/seed_data.py
 
 # Database migrations
 
@@ -150,12 +150,12 @@ db-restart:
 .PHONY: clean-all ca
 clean-all ca:
 	@echo "🧹 Complete system cleanup (ALL topics, consumer groups, RocksDB state)..."
-	@PYTHONPATH=. uv run python scripts/clean_all.py
+	@PYTHONPATH=. uv run python script/clean_all.py
 
 .PHONY: kafka-clean kc
 kafka-clean kc:
 	@echo "🧹 Cleaning ALL Kafka topics and consumer groups..."
-	@PYTHONPATH=. python scripts/reset_kafka.py
+	@PYTHONPATH=. python script/reset_kafka.py
 
 .PHONY: kafka-clean-topics kct
 kafka-clean-topics kct:
@@ -185,7 +185,7 @@ check-kafka:
 .PHONY: services ss
 services ss: check-kafka  ## 🚀 智能啟動活動服務 (從資料庫選擇)
 	@echo "🚀 啟動智能活動服務選擇器..."
-	@PYTHONPATH=. uv run python scripts/launch_all_consumers.py
+	@PYTHONPATH=. uv run python script/launch_all_consumers.py
 
 
 .PHONY: stop-services stop

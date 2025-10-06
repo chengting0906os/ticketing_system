@@ -10,17 +10,18 @@ Database Reset Script
 
 注意：
 - 此腳本只重置資料庫結構，不填充測試資料
-- 如需填充測試資料，請執行 `make seed` 或 `python scripts/seed_data.py`
+- 如需填充測試資料，請執行 `make seed` 或 `python script/seed_data.py`
 """
 
-import subprocess
-import os
-from src.platform.constant.path import BASE_DIR
 import asyncio
+import os
+import subprocess
 import time
+
 from sqlalchemy import create_engine, text
 
 from src.platform.config.core_setting import settings
+from src.platform.constant.path import BASE_DIR
 
 
 def get_database_url() -> str:

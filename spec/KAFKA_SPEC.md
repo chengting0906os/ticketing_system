@@ -1,6 +1,6 @@
 # Kafka Configuration Specification
 
-> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py) | [docker-compose.yml](../docker-compose.yml) | [reset_kafka.py](../scripts/reset_kafka.py)
+> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py) | [docker-compose.yml](../docker-compose.yml) | [reset_kafka.py](../script/reset_kafka.py)
 
 ## Cluster Infrastructure
 
@@ -78,7 +78,7 @@ See [kafka_config_service.py](../src/platform/message_queue/kafka_config_service
 
 ### Cleanup
 
-See [reset_kafka.py](../scripts/reset_kafka.py):
+See [reset_kafka.py](../script/reset_kafka.py):
 - **Protected**: `event-id-1*` topics
 - **Deleted**: All other event topics
 - **Verification**: Lists remaining topics
@@ -86,7 +86,7 @@ See [reset_kafka.py](../scripts/reset_kafka.py):
 Commands:
 ```bash
 # Reset all Kafka topics (except event-id-1)
-uv run python scripts/reset_kafka.py
+uv run python script/reset_kafka.py
 
 # List topics
 docker exec kafka1 kafka-topics --bootstrap-server kafka1:29092 --list

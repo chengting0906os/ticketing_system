@@ -52,7 +52,7 @@ dev = [
 line-length = 100
 indent-width = 4
 target-version = "py313"
-exclude = ["src/platform/alembic/", "scripts/"]
+exclude = ["src/platform/alembic/", "script/"]
 
 [tool.ruff.lint]
 select = [
