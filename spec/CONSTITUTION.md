@@ -19,15 +19,15 @@
 # Core Development Philosophy
 
 ## BDD (Behavior-Driven Development)
-**Before Writing Tests**: Read [tests/conftest.py](../tests/conftest.py) for fixtures and test setup
-- **Integration Tests**: Write in `.feature` files using Gherkin steps (Given/When/Then)
-- **Unit Tests**: Write in `tests/*/unit/` directories
+**Before Writing test**: Read [test/conftest.py](../test/conftest.py) for fixtures and test setup
+- **Integration test**: Write in `.feature` files using Gherkin steps (Given/When/Then)
+- **Unit test**: Write in `test/*/unit/` directories
 
 ## TDD (Test-Driven Development)
 1. **Write the test first** - Define expected behavior
-2. **Watch it fail** - Ensure the test actually tests something
+2. **Watch it fail** - Ensure the test actually test something
 3. **Write minimal code** - Just enough to make it pass
-4. **Refactor** - Improve while keeping tests green
+4. **Refactor** - Improve while keeping test green
 5. **Repeat** - One test at a time
 
 ## KISS (Keep It Simple, Stupid)

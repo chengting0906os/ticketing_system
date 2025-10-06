@@ -55,23 +55,23 @@ migrate-current mc:
 # Testing
 .PHONY: test t
 test t:
-	@uv run pytest tests/ -v $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: ts
 ts:
-	@uv run pytest tests/ -vs $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ -vs $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: txs
 txs:
-	@uv run pytest tests/ -vxs $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ -vxs $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-api
 test-api:
-	@uv run pytest tests/test_user_api_async.py -v $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/test_user_api_async.py -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-bdd tbdd
 test-bdd tbdd:
-	@uv run pytest tests/features/ -v $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/features/ -v $(filter-out $@,$(MAKECMDGOALS))
 
 # Allow arbitrary args to be passed without throwing errors
 %:
@@ -211,9 +211,9 @@ help:
 	@echo "    make migrate-current (mc) - Show current migration"
 	@echo ""
 	@echo "  Testing:"
-	@echo "    make test (t) [args]     - Run all tests (accepts pytest args)"
-	@echo "    make test-api [args]     - Run API tests (accepts pytest args)"
-	@echo "    make test-bdd (tbdd) [args] - Run BDD tests (accepts pytest args)"
+	@echo "    make test (t) [args]     - Run all test (accepts pytest args)"
+	@echo "    make test-api [args]     - Run API test (accepts pytest args)"
+	@echo "    make test-bdd (tbdd) [args] - Run BDD test (accepts pytest args)"
 	@echo ""
 	@echo "  Development:"
 	@echo "    make run                 - Run development server"

@@ -41,7 +41,7 @@ jobs:
 
 
   test:
-    name: Run Tests
+    name: Run test
     runs-on: ubuntu-latest
     needs: [lint]  # Only run if both lint and type-check pass
     services:
@@ -109,6 +109,6 @@ jobs:
         run: |
           uv run alembic upgrade head
           
-      - name: Run tests (integration and unit only)
+      - name: Run test (integration and unit only)
         run: |
           uv run pytest -v --tb=short -m "integration or unit"

@@ -95,7 +95,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false # preserve trailing commas
 
 [tool.pytest.ini_options]
-python_files = ["tests.py", "test_*.py", "*_tests.py"]
+python_files = ["test.py", "test_*.py", "*_test.py"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -103,18 +103,18 @@ markers = [
     "unit: unit",
     "integration: integration",
     "asyncio: mark test as async",
-    "bdd: BDD scenario tests",
-    "api: API tests",
-    "entity: Entity tests",
-    "integration: Integration tests",
+    "bdd: BDD scenario test",
+    "api: API test",
+    "entity: Entity test",
+    "integration: Integration test",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pydantic._internal._config",
     "ignore::pytest.PytestReturnNotNoneWarning",
 ]
-testpaths = ["tests"]
+testpaths = ["test"]
 # pytest-bdd configuration
-bdd_features_base_dir = "tests/features/"
+bdd_features_base_dir = "test/features/"
 addopts = "-v --tb=short --strict-markers -n 12"
 
 [tool.pyright]
@@ -126,9 +126,9 @@ reportMissingImports = false
 reportInvalidTypeForm = false
 
 [tool.pyrefly]
-search-path = [".", "tests", ".venv/lib/python3.13/site-packages"]
+search-path = [".", "test", ".venv/lib/python3.13/site-packages"]
 site-package-path = [".venv/lib/python3.13/site-packages"]
-project-includes = ["src", "tests"]
+project-includes = ["src", "test"]
 
 [tool.pyrefly.errors]
 missing-attribute = false
