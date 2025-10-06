@@ -1,4 +1,5 @@
 import json
+import os
 
 from fastapi.testclient import TestClient
 from pytest_bdd import given
@@ -223,8 +224,26 @@ def event_exists(step, execute_sql_statement):
     # Initialize Redis configuration for each subsection (critical for SSE tests)
     client = kvrocks_client_sync.connect()
 
-    # Create section index for SSE queries
-    index_key = f'event_sections:{event_id}'
+    # Get key prefix for test isolation (same as SeatStateHandlerImpl)
+    key_prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
+
+    # Clean up any existing Kvrocks data for this event to ensure test isolation
+    # This prevents data pollution from previous tests that used the same event_id
+    index_key = f'{key_prefix}event_sections:{event_id}'
+    existing_sections: list = list(client.zrange(index_key, 0, -1))  # type: ignore
+    for section_id in existing_sections:
+        # Delete config, stats, bitfield, and metadata for each existing section
+        config_key = f'{key_prefix}section_config:{event_id}:{section_id}'
+        stats_key = f'{key_prefix}section_stats:{event_id}:{section_id}'
+        bf_key = f'{key_prefix}seats_bf:{event_id}:{section_id}'
+        client.delete(config_key, stats_key, bf_key)
+        # Also delete all seat metadata keys for this section
+        meta_pattern = f'{key_prefix}seat_meta:{event_id}:{section_id}:*'
+        meta_keys: list = list(client.keys(meta_pattern))  # type: ignore
+        if meta_keys:
+            client.delete(*meta_keys)  # type: ignore
+    # Delete the index itself
+    client.delete(index_key)
 
     sections_list2: list[dict] = seating_config['sections']  # type: ignore
     for section in sections_list2:
@@ -241,13 +260,13 @@ def event_exists(step, execute_sql_statement):
             client.zadd(index_key, {section_id: 0})
 
             # Save configuration to Redis
-            config_key = f'section_config:{event_id}:{section_id}'
+            config_key = f'{key_prefix}section_config:{event_id}:{section_id}'
             client.hset(
                 config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
             )
 
             # Initialize section stats
-            stats_key = f'section_stats:{event_id}:{section_id}'
+            stats_key = f'{key_prefix}section_stats:{event_id}:{section_id}'
             total_seats = rows * seats_per_row
             client.hset(
                 stats_key,

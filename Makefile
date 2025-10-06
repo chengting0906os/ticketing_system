@@ -86,9 +86,9 @@ lint:
 format:
 	@uv run ruff format .
 
-.PHONY: pyright
-pyright:
-	@uv run pyright
+.PHONY: pyrefly
+pyrefly:
+	@uv run pyrefly check
 
 # Development
 .PHONY: run

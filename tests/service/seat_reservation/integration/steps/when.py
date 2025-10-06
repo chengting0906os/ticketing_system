@@ -68,7 +68,7 @@ def user_connects_to_sse(step, client: TestClient, context, http_server):
 
     # 在 thread 中讀取 SSE 事件
     events_list = []
-    url = f'{http_server}/api/event/{event_id}/all_subsection_status/sse'
+    url = f'{http_server}/api/reservation/{event_id}/all_subsection_status/sse'
     headers = {'Accept': 'text/event-stream'}
 
     # 啟動 thread 讀取 SSE
@@ -158,7 +158,7 @@ def multiple_users_connect(client: TestClient, context, http_server):
         cookies[cookie.name] = cookie.value
 
     context['user_connections'] = []
-    url = f'{http_server}/api/event/1/sse/all_section_stat'
+    url = f'{http_server}/api/reservation/1/all_subsection_status/sse'
     headers = {'Accept': 'text/event-stream'}
 
     # 啟動3個 thread 模擬3個用戶

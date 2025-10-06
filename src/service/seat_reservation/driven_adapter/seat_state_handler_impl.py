@@ -68,7 +68,7 @@ class SeatStateHandlerImpl(ISeatStateHandler):
         try:
             client = await kvrocks_client.connect()
             section_id = f'{section}-{subsection}'
-            config_key = f'section_config:{event_id}:{section_id}'
+            config_key = _make_key(f'section_config:{event_id}:{section_id}')
 
             # 從 Redis 讀取配置
             config = await client.hgetall(config_key)  # type: ignore

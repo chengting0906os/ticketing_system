@@ -12,7 +12,6 @@ from src.platform.config.di import cleanup, container, setup
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
-    event_sse_router,
     router as seat_reservation_router,
 )
 
@@ -111,9 +110,6 @@ app.include_router(auth_router, prefix='/api/user', tags=['user'])
 app.include_router(event_router, prefix='/api/event', tags=['event'])
 app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
 app.include_router(seat_reservation_router)
-app.include_router(
-    event_sse_router
-)  # SSE endpoints for seat reservation (register before event_router for priority)
 
 
 @app.get('/')

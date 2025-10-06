@@ -8,7 +8,7 @@ Seat Reservation Controller
 import asyncio
 import json
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import container
@@ -26,7 +26,6 @@ from src.service.seat_reservation.driving_adapter.seat_schema import (
 
 
 router = APIRouter(prefix='/api/reservation', tags=['seat-reservation'])
-event_sse_router = APIRouter(prefix='/api/reservation', tags=['seat-sse'])
 
 
 @router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)
@@ -115,14 +114,14 @@ async def list_subsection_seats(
         section=result['section'],
         subsection=result['subsection'],
         tickets=seats,
-        total_count=result['total'],
+        total_count=len(seats),
     )
 
 
 # ============================ SSE Endpoint ============================
 
 
-@event_sse_router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
+@router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
 @Logger.io
 async def stream_all_section_stats(event_id: int):
     """
@@ -158,11 +157,17 @@ async def stream_all_section_stats(event_id: int):
     3. 首次推送標記為 initial_status，後續為 status_update
     """
 
+    # Verify event exists before starting SSE stream
+    seat_state_handler = container.seat_state_handler()
+    use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
+    initial_result = await use_case.execute(event_id=event_id)
+
+    # If event has no sections, it likely doesn't exist
+    if initial_result['total_sections'] == 0:
+        raise HTTPException(status_code=404, detail='Event not found')
+
     async def event_generator():
         """產生 SSE 事件流"""
-        seat_state_handler = container.seat_state_handler()
-        use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
-
         is_first_event = True
 
         try:
@@ -172,15 +177,16 @@ async def stream_all_section_stats(event_id: int):
                     result = await use_case.execute(event_id=event_id)
 
                     # 構建 response data
+                    event_type = 'initial_status' if is_first_event else 'status_update'
                     response_data = {
-                        'event_type': 'initial_status' if is_first_event else 'status_update',
+                        'event_type': event_type,
                         'event_id': result['event_id'],
                         'sections': result['sections'],
                         'total_sections': result['total_sections'],
                     }
 
                     # 發送 SSE 事件
-                    yield {'data': json.dumps(response_data)}
+                    yield {'event': event_type, 'data': json.dumps(response_data)}
 
                     is_first_event = False
 
@@ -200,7 +206,7 @@ async def stream_all_section_stats(event_id: int):
     return EventSourceResponse(event_generator())
 
 
-@event_sse_router.get(
+@router.get(
     '/{event_id}/sections/{section}/subsection/{subsection}/seats/sse',
     status_code=status.HTTP_200_OK,
 )

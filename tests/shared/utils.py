@@ -36,8 +36,9 @@ def login_user(client: TestClient, email: str, password: str) -> Any:
 
 
 def assert_response_status(response, expected_status: int, message: str | None = None):
+    response_text = getattr(response, 'text', getattr(response, 'content', 'N/A'))
     assert response.status_code == expected_status, (
-        message or f'Expected {expected_status}, got {response.status_code}: {response.text}'
+        message or f'Expected {expected_status}, got {response.status_code}: {response_text}'
     )
 
 
