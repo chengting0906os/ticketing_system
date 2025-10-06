@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.platform.config.db_setting import Base
+from src.platform.database.db_setting import Base
 
 
 class UserModel(Base):

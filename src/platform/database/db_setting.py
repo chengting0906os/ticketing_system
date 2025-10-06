@@ -9,7 +9,7 @@ DEPRECATED: Import directly from orm_db_setting or asyncpg_setting instead
 """
 
 # SQLAlchemy (ORM)
-from src.platform.config.orm_db_setting import (
+from src.platform.database.orm_db_setting import (
     Base,
     Database,
     async_session_maker,
@@ -19,7 +19,7 @@ from src.platform.config.orm_db_setting import (
 )
 
 # asyncpg (raw SQL for bulk operations)
-from src.platform.config.asyncpg_setting import close_asyncpg_pool, get_asyncpg_pool
+from src.platform.database.asyncpg_setting import close_asyncpg_pool, get_asyncpg_pool
 
 __all__ = [
     # SQLAlchemy

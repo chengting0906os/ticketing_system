@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import select
 
-from src.platform.config.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_session
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder

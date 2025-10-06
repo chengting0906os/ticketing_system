@@ -6,7 +6,7 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 from dependency_injector import containers, providers
 
 from src.platform.config.core_setting import Settings
-from src.platform.config.db_setting import Database
+from src.platform.database.db_setting import Database
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.section_based_partition_strategy import (
     SectionBasedPartitionStrategy,

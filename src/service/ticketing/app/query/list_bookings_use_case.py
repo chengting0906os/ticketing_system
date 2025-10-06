@@ -5,7 +5,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
-from src.platform.config.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_session
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 

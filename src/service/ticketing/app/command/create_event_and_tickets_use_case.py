@@ -18,7 +18,7 @@ from quixstreams import Application
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.config.core_setting import settings
-from src.platform.config.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_session
 from src.platform.config.di import Container
 from src.platform.constant.path import BASE_DIR
 from src.platform.logging.loguru_io import Logger

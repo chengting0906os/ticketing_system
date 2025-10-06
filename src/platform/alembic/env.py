@@ -14,7 +14,7 @@ from src.service.ticketing.driven_adapter.model.booking_model import BookingMode
 from src.service.ticketing.driven_adapter.model.event_model import EventModel  # noqa: F401
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel  # noqa: F401
 from src.platform.config.core_setting import settings
-from src.platform.config.db_setting import Base
+from src.platform.database.db_setting import Base
 from src.service.ticketing.driven_adapter.model.user_model import UserModel  # noqa: F401
 
 

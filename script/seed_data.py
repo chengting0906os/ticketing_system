@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 
 from script.seating_config import SEATING_CONFIG_3000
-from src.platform.config.db_setting import async_session_maker
+from src.platform.database.db_setting import async_session_maker
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,

@@ -5,7 +5,7 @@ from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from src.platform.config.db_setting import Base
+from src.platform.database.db_setting import Base
 
 
 if TYPE_CHECKING:

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.platform.config.db_setting import Base
+from src.platform.database.db_setting import Base
 
 if TYPE_CHECKING:
     from src.service.ticketing.driven_adapter.model.user_model import UserModel

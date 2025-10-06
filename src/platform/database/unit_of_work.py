@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.platform.config.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_session
 
 
 if TYPE_CHECKING:

@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse  # type: ignore[attr-defined]
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.config.core_setting import settings
-from src.platform.config.db_setting import create_db_and_tables
+from src.platform.database.db_setting import create_db_and_tables
 from src.platform.config.di import cleanup, container, setup
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger

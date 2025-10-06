@@ -13,7 +13,7 @@ from typing import Any, AsyncContextManager, AsyncIterator, Callable, Dict, List
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.platform.config.db_setting import get_asyncpg_pool
+from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
     IEventTicketingCommandRepo,

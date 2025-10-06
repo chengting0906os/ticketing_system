@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
-from src.platform.config.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_session
 from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
