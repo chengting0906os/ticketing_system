@@ -86,9 +86,19 @@ pyright:
 # Development
 .PHONY: run
 run:
-	@echo "Starting server... Press Ctrl+C to stop"
+	@echo "Starting server with auto-reload... Press Ctrl+C to stop"
 	@trap 'pkill -f granian' INT; \
-	set -a && source .env.example && set +a && uv run granian --interface asgi src.main:app --host 0.0.0.0 --port 8000 --http auto --loop uvloop --log-config src/platform/logging/granian_log_config.json --access-log
+	set -a && source .env.example && set +a && \
+	GRANIAN_RELOAD=true \
+	GRANIAN_RELOAD_PATHS=src \
+	GRANIAN_HOST=0.0.0.0 \
+	GRANIAN_PORT=8000 \
+	GRANIAN_INTERFACE=asgi \
+	GRANIAN_HTTP=auto \
+	GRANIAN_LOOP=uvloop \
+	GRANIAN_LOG_CONFIG=src/platform/logging/granian_log_config.json \
+	GRANIAN_ACCESS_LOG=true \
+	uv run granian src.main:app
 
 .PHONY: stop-granian
 stop-granian:
