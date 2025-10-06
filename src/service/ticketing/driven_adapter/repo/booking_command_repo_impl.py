@@ -8,7 +8,10 @@ from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFo
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
-from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
+from src.service.ticketing.driven_adapter.model.booking_model import (
+    BookingModel,
+    BookingTicketModel,
+)
 
 
 if TYPE_CHECKING:
@@ -196,6 +199,23 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
 
         # NO commit - use case handles this!
         return self._to_entity(db_booking)
+
+    @Logger.io
+    async def link_tickets_to_booking(self, *, booking_id: int, ticket_ids: list[int]) -> None:
+        """
+        Write booking-ticket associations to booking_ticket table
+
+        Args:
+            booking_id: Booking ID
+            ticket_ids: List of ticket IDs to link
+        """
+
+        # Insert all associations in one batch
+        for ticket_id in ticket_ids:
+            booking_ticket = BookingTicketModel(booking_id=booking_id, ticket_id=ticket_id)
+            self.session.add(booking_ticket)
+
+        await self.session.flush()
 
     @Logger.io
     async def cancel_booking_atomically(self, *, booking_id: int, buyer_id: int) -> Booking:

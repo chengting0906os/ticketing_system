@@ -14,10 +14,14 @@
 
 - **Imports**: Always at top of file, never inside functions
 - **Async**: Prefer `anyio` > `asyncio`, prefer `async` > `sync`
+- **Function Parameters**: Use keyword-first style for clarity (func(*, key=value)).
 - **Dependency Inversion**: High-level modules depend on abstractions, not low-level modules
 - **Transaction Management**: Use cases commit, repositories only do CRUD
 - **SAGA Pattern**: reserve_ticket uses SAGA - immediate commit with compensating events for failures
 - **Unit of Work Pattern**: Centralizes session and repository management, defines transaction boundaries
+- **Fail Fast**: Check for errors early and raise exceptions immediately
+- **Open/Closed**: Open for extension, closed for modification
+- **Single Responsibility**: Each function, class, and module should have one well-defined responsibility.
 
 # Core Development Philosophy
 
@@ -39,7 +43,4 @@ Choose straightforward solutions over complex ones. Simple code is easier to und
 ## YAGNI (You Aren't Gonna Need It)
 Implement features only when needed, not when you think they might be useful later.
 
-## Design Principles
-- **Open/Closed**: Open for extension, closed for modification
-- **Single Responsibility**: Each function/class/module has one clear purpose
-- **Fail Fast**: Check for errors early and raise exceptions immediately
+

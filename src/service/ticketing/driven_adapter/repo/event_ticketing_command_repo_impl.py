@@ -5,11 +5,12 @@ Event Ticketing Command Repository Implementation - CQRS Write Side
 使用 EventTicketingAggregate 作為操作單位，保證聚合一致性
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import time
-from typing import Any, AsyncContextManager, Callable, Dict, List, Optional
+from typing import Any, AsyncContextManager, AsyncIterator, Callable, Dict, List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.config.db_setting import get_asyncpg_pool
@@ -29,15 +30,33 @@ from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
 class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     """Event Ticketing Command Repository Implementation"""
 
-    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+    def __init__(
+        self, session_factory: Callable[..., AsyncContextManager[AsyncSession]] | None = None
+    ):
         self.session_factory = session_factory
+        self.session: AsyncSession | None = None
+
+    @asynccontextmanager
+    async def _get_session(self) -> AsyncIterator[AsyncSession]:
+        """
+        Get session for command execution.
+        If session is injected (from UoW), yield it directly without context management.
+        Otherwise, use session_factory context manager.
+        """
+        if self.session is not None:
+            yield self.session
+        elif self.session_factory is not None:
+            async with self.session_factory() as session:
+                yield session
+        else:
+            raise RuntimeError('No session or session_factory available')
 
     @Logger.io
     async def create_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """創建 Event Aggregate (包含 Event 和 Tickets)"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             # 1. 保存 Event
             event_model = EventModel(
                 name=event_aggregate.event.name,
@@ -192,7 +211,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """更新 Event Aggregate"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             if not event_aggregate.event.id:
                 raise ValueError('Event must have an ID to be updated')
 
@@ -256,7 +275,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         buyer_id: Optional[int] = None,
     ) -> List[Ticket]:
         """批量更新票務狀態"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             # 更新票務狀態
             update_values: Dict[str, Any] = {
                 'status': status.value,
@@ -271,13 +290,12 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                 update_values['buyer_id'] = None
                 update_values['reserved_at'] = None
 
-            await session.execute(
-                update(TicketModel).where(TicketModel.id.in_(ticket_ids)).values(**update_values)
-            )
-
-            # 查詢更新後的票務
+            # 使用 RETURNING 減少網路來回：從 2 次降為 1 次
             result = await session.execute(
-                select(TicketModel).where(TicketModel.id.in_(ticket_ids))
+                update(TicketModel)
+                .where(TicketModel.id.in_(ticket_ids))
+                .values(**update_values)
+                .returning(TicketModel)
             )
             ticket_models = result.scalars().all()
 
@@ -305,7 +323,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:
         """刪除 Event Aggregate (cascade delete tickets)"""
-        async with self.session_factory() as session:
+        async with self._get_session() as session:
             try:
                 # 先刪除票務
                 await session.execute(update(TicketModel).where(TicketModel.event_id == event_id))

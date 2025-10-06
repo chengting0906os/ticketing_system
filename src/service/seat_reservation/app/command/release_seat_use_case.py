@@ -6,7 +6,9 @@ Release Seat Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
+    ISeatStateCommandHandler,
+)
 
 
 @dataclass
@@ -29,7 +31,7 @@ class ReleaseSeatResult:
 class ReleaseSeatUseCase:
     """座位釋放用例"""
 
-    def __init__(self, seat_state_handler: ISeatStateHandler):
+    def __init__(self, seat_state_handler: ISeatStateCommandHandler):
         self.seat_state_handler = seat_state_handler
 
     @Logger.io

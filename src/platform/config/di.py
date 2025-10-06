@@ -24,7 +24,12 @@ from src.service.seat_reservation.domain.seat_selection_domain import SeatSelect
 from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
-from src.service.seat_reservation.driven_adapter.seat_state_handler_impl import SeatStateHandlerImpl
+from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl import (
+    SeatStateCommandHandlerImpl,
+)
+from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
+    SeatStateQueryHandlerImpl,
+)
 from src.service.ticketing.app.service.auth_service import AuthService
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
     IBookingCommandRepoImpl,
@@ -78,28 +83,30 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Infrastructure
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
 
-    # Seat Reservation Domain and Use Cases
+    # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
-    seat_state_handler = providers.Factory(SeatStateHandlerImpl)
+    seat_state_query_handler = providers.Factory(SeatStateQueryHandlerImpl)
+    seat_state_command_handler = providers.Factory(SeatStateCommandHandlerImpl)
 
-    # Ticketing Service - Init State Handler (depends on seat_state_handler)
+    # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Factory(
         InitEventAndTicketsStateHandlerImpl,
-        seat_state_handler=seat_state_handler,
     )
+
+    # Seat Reservation Use Cases
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_selection_domain=seat_selection_domain,
-        seat_state_handler=seat_state_handler,
+        seat_state_handler=seat_state_command_handler,
         mq_publisher=seat_reservation_mq_publisher,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,
-        seat_state_handler=seat_state_handler,
+        seat_state_handler=seat_state_command_handler,
     )
     finalize_seat_payment_use_case = providers.Factory(
         FinalizeSeatPaymentUseCase,
-        seat_state_handler=seat_state_handler,
+        seat_state_handler=seat_state_command_handler,
     )
     # list_subsection_seats_detail_use_case = providers.Factory(
     #     GetSectionSeatsDetailUseCase,

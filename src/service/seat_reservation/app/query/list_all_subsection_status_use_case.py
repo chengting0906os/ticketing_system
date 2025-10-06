@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import List
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_handler import ISeatStateHandler
+from src.service.seat_reservation.app.interface.i_seat_state_query_handler import (
+    ISeatStateQueryHandler,
+)
 
 
 @dataclass
@@ -43,7 +45,7 @@ class ListAllSubSectionStatusUseCase:
     從 Kvrocks 獲取所有 section 的統計資訊
     """
 
-    def __init__(self, seat_state_handler: ISeatStateHandler):
+    def __init__(self, seat_state_handler: ISeatStateQueryHandler):
         self.seat_state_handler = seat_state_handler
 
     @Logger.io

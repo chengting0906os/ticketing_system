@@ -35,8 +35,10 @@ from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler 
     IInitEventAndTicketsStateHandler,
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
-from src.shared_kernel.app.interface.i_kafka_config_service import IKafkaConfigService
-from src.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.shared_kernel.app.interface.i_kafka_config_service import (
+    IKafkaConfigService,
+)
+from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
 
 
 class CreateEventAndTicketsUseCase:

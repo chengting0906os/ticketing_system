@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 from src.platform.config.core_setting import settings
 from src.platform.config.db_setting import get_async_session
+from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -141,7 +142,7 @@ class TicketingMqConsumer:
             value = json.loads(msg.value().decode('utf-8'))
 
             # 路由表
-            if 'pending_payment_and' in topic:
+            if 'pending-payment-and' in topic:
                 await self._process_pending_payment_and_reserved(value)
             elif 'failed' in topic:
                 await self._process_failed(value)
@@ -170,8 +171,6 @@ class TicketingMqConsumer:
         # Create session for this message processing
         async for session in get_async_session():
             try:
-                from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
-
                 # Create UoW with session
                 uow = SqlAlchemyUnitOfWork(session)
 
@@ -182,7 +181,7 @@ class TicketingMqConsumer:
                 await use_case.execute(
                     booking_id=booking_id or 0,
                     buyer_id=buyer_id or 0,
-                    ticket_ids=reserved_seats,  # type: ignore[arg-type]
+                    seat_identifiers=reserved_seats,  # Seat IDs like ['A-1-1-1', 'A-1-1-2']
                 )
 
                 Logger.base.info(

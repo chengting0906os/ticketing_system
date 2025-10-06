@@ -23,7 +23,7 @@ from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
 
 
 class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
@@ -273,6 +273,72 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
             Logger.base.info(f'🎯 [GET_BY_IDS] Found {len(tickets)} tickets by IDs')
             return tickets
+
+    @Logger.io
+    async def get_ticket_ids_by_seat_identifiers(
+        self, *, event_id: int, seat_identifiers: List[str]
+    ) -> List[int]:
+        """根據座位標識符獲取票券 ID (批次查詢優化)"""
+        async with self._get_session() as session:
+            # Parse seat identifiers into components for batch query
+            # Format: 'A-1-1-1' -> (section='A', subsection=1, row=1, seat=1)
+            seat_tuples = []
+            seat_map = {}  # Map: (section, subsection, row, seat) -> (order_index, seat_id)
+
+            for idx, seat_id in enumerate(seat_identifiers):
+                parts = seat_id.split('-')
+                if len(parts) != 4:
+                    Logger.base.warning(f'⚠️ Invalid seat identifier format: {seat_id}')
+                    continue
+
+                section, subsection, row, seat = parts
+                seat_tuple = (section, int(subsection), int(row), int(seat))
+                seat_tuples.append(seat_tuple)
+                seat_map[seat_tuple] = (idx, seat_id)
+
+            if not seat_tuples:
+                return []
+
+            # Batch query using tuple_() for multi-column IN clause
+            from sqlalchemy import tuple_
+
+            result = await session.execute(
+                select(
+                    TicketModel.id,
+                    TicketModel.section,
+                    TicketModel.subsection,
+                    TicketModel.row_number,
+                    TicketModel.seat_number,
+                ).where(
+                    TicketModel.event_id == event_id,
+                    tuple_(
+                        TicketModel.section,
+                        TicketModel.subsection,
+                        TicketModel.row_number,
+                        TicketModel.seat_number,
+                    ).in_(seat_tuples),
+                )
+            )
+
+            # Build result map: (section, subsection, row, seat) -> ticket_id
+            ticket_lookup = {(sec, sub, r, s): tid for tid, sec, sub, r, s in result.all()}
+
+            # Maintain original order from seat_identifiers
+            ticket_ids = []
+            for seat_tuple in seat_tuples:
+                tid = ticket_lookup.get(seat_tuple)
+                if tid:
+                    ticket_ids.append(tid)
+                else:
+                    idx, seat_id = seat_map[seat_tuple]
+                    Logger.base.warning(
+                        f'⚠️ Ticket not found for seat {seat_id} in event {event_id}'
+                    )
+
+            Logger.base.info(
+                f'🎯 [SEAT-TO-TICKET] Batch converted {len(ticket_ids)}/{len(seat_identifiers)} seats (1 query)'
+            )
+            return ticket_ids
 
     @Logger.io
     async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:

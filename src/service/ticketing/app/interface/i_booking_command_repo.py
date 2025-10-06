@@ -28,6 +28,11 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
+    async def link_tickets_to_booking(self, *, booking_id: int, ticket_ids: list[int]) -> None:
+        """Link tickets to a booking by writing to booking_ticket association table"""
+        pass
+
+    @abstractmethod
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
         pass
 

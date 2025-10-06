@@ -146,6 +146,22 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
+    async def get_ticket_ids_by_seat_identifiers(
+        self, *, event_id: int, seat_identifiers: List[str]
+    ) -> List[int]:
+        """
+        根據座位標識符獲取票券 ID
+
+        Args:
+            event_id: 活動 ID
+            seat_identifiers: 座位標識符列表 (例如: ['A-1-1-1', 'A-1-1-2'])
+
+        Returns:
+            票券 ID 列表
+        """
+        pass
+
+    @abstractmethod
     async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
         """
         檢查活動是否已有票務

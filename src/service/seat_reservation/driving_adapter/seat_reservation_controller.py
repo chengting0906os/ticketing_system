@@ -50,7 +50,7 @@ async def list_event_all_subsection_status(event_id: int) -> dict:
             "total_sections": 100
         }
     """
-    seat_state_handler = container.seat_state_handler()
+    seat_state_handler = container.seat_state_query_handler()
     use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
     return await use_case.execute(event_id=event_id)
 
@@ -84,7 +84,7 @@ async def list_subsection_seats(
     3. 預期性能：~10-20ms（掃描整個 subsection 的所有座位）
     """
     # Controller → UseCase → Handler (正確分層架構)
-    seat_state_handler = container.seat_state_handler()
+    seat_state_handler = container.seat_state_query_handler()
     use_case = ListSectionSeatsDetailUseCase(seat_state_handler=seat_state_handler)
 
     result = await use_case.execute(event_id=event_id, section=section, subsection=subsection)
@@ -158,7 +158,7 @@ async def stream_all_section_stats(event_id: int):
     """
 
     # Verify event exists before starting SSE stream
-    seat_state_handler = container.seat_state_handler()
+    seat_state_handler = container.seat_state_query_handler()
     use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
     initial_result = await use_case.execute(event_id=event_id)
 
@@ -251,7 +251,7 @@ async def stream_subsection_seats(
 
     async def event_generator():
         """產生 SSE 事件流"""
-        seat_state_handler = container.seat_state_handler()
+        seat_state_handler = container.seat_state_query_handler()
         use_case = ListSectionSeatsDetailUseCase(seat_state_handler=seat_state_handler)
 
         try:
