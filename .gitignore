@@ -35,7 +35,7 @@ logs
 .DS_Store
 
 # CLAUDE
-.claude/
+.claude/settings.local.json
 
 # SERENA
 .serena/
