@@ -12,6 +12,7 @@ from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
     ISeatStateCommandHandler,
 )
+from src.service.seat_reservation.driven_adapter.lua_script import RESERVE_SEATS_SCRIPT
 
 
 # Get key prefix from environment for test isolation
@@ -22,66 +23,6 @@ def _make_key(key: str) -> str:
     """Add prefix to key for test isolation in parallel testing"""
     return f'{_KEY_PREFIX}{key}'
 
-
-# Lua script for atomic seat reservation with Check-and-Set pattern
-RESERVE_SEATS_LUA_SCRIPT = """
-local key_prefix = ARGV[1]
-local event_id = ARGV[2]
-local AVAILABLE = 0  -- 00 in binary
-local RESERVED = 1   -- 01 in binary
-
--- Parse seat data: ARGV[3], ARGV[4], ... (section, subsection, row, seat, seat_index)
-local seat_count = (#ARGV - 2) / 5
-local results = {}
-local section_changes = {}  -- Track stat changes per section
-
-for i = 0, seat_count - 1 do
-    local base_idx = 3 + i * 5
-    local section = ARGV[base_idx]
-    local subsection = ARGV[base_idx + 1]
-    local row = ARGV[base_idx + 2]
-    local seat = ARGV[base_idx + 3]
-    local seat_index = tonumber(ARGV[base_idx + 4])
-
-    local section_id = section .. '-' .. subsection
-    local seat_id = section .. '-' .. subsection .. '-' .. row .. '-' .. seat
-    local bf_key = key_prefix .. 'seats_bf:' .. event_id .. ':' .. section_id
-    local offset = seat_index * 2
-
-    -- Check current status (read 2 bits)
-    local bit0 = redis.call('GETBIT', bf_key, offset)
-    local bit1 = redis.call('GETBIT', bf_key, offset + 1)
-    local current_status = bit0 * 2 + bit1
-
-    -- Only reserve if AVAILABLE (00)
-    if current_status == AVAILABLE then
-        -- Set to RESERVED (01)
-        redis.call('SETBIT', bf_key, offset, 1)
-        redis.call('SETBIT', bf_key, offset + 1, 0)
-
-        results[i + 1] = seat_id .. ':1'  -- success
-
-        -- Track stat changes
-        if not section_changes[section_id] then
-            section_changes[section_id] = 0
-        end
-        section_changes[section_id] = section_changes[section_id] + 1
-    else
-        results[i + 1] = seat_id .. ':0'  -- failed (already reserved/sold)
-    end
-end
-
--- Update statistics atomically
-local timestamp = redis.call('TIME')[1]
-for section_id, count in pairs(section_changes) do
-    local stats_key = key_prefix .. 'section_stats:' .. event_id .. ':' .. section_id
-    redis.call('HINCRBY', stats_key, 'available', -count)
-    redis.call('HINCRBY', stats_key, 'reserved', count)
-    redis.call('HSET', stats_key, 'updated_at', timestamp)
-end
-
-return results
-"""
 
 # Status constants
 SEAT_STATUS_AVAILABLE = 0  # 00
@@ -138,7 +79,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         Logger.base.info(f'🔒 [CMD] Reserving {len(seat_ids)} seats for booking {booking_id}')
 
         client = await kvrocks_client.connect()
-        args = [_KEY_PREFIX, str(event_id)]
+        args = [_KEY_PREFIX, str(event_id), 'manual']  # Add mode parameter
 
         # Parse seat_ids and prepare Lua script arguments
         for seat_id in seat_ids:
@@ -159,7 +100,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
 
         # Execute Lua script
         Logger.base.info('⚙️  [CMD] Executing atomic reserve Lua script')
-        raw_results = await client.eval(RESERVE_SEATS_LUA_SCRIPT, 0, *args)  # type: ignore[misc]
+        raw_results = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
 
         # Parse results
         results = {}
@@ -174,6 +115,89 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         Logger.base.info(f'🎯 [CMD] Reserved {success_count}/{len(seat_ids)} seats atomically')
 
         return results
+
+    @Logger.io
+    async def find_and_reserve_consecutive_seats(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        quantity: int,
+        booking_id: int,
+        buyer_id: int,
+    ) -> Dict:
+        """
+        自動找出連續座位並預訂 (best_available mode)
+
+        使用 Lua script 原子性地：
+        1. 掃描 section 的所有排
+        2. 找出第一組連續可用座位
+        3. 立即預訂這些座位
+
+        Returns:
+            Dict with 'success', 'reserved_seats', 'error_message' keys
+        """
+        Logger.base.info(
+            f'🎯 [CMD] Finding {quantity} consecutive seats in {section}-{subsection} '
+            f'for booking {booking_id}'
+        )
+
+        section_id = f'{section}-{subsection}'
+
+        # Get section config for rows and seats_per_row
+        config = await self._get_section_config(event_id, section_id)
+        rows = config['rows']
+        seats_per_row = config['seats_per_row']
+
+        # Call Lua script in best_available mode
+        client = await kvrocks_client.connect()
+        args = [
+            _KEY_PREFIX,
+            str(event_id),
+            'best_available',
+            section_id,
+            str(quantity),
+            str(rows),
+            str(seats_per_row),
+        ]
+
+        Logger.base.info('⚙️  [CMD] Executing find consecutive seats Lua script')
+        raw_result = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
+
+        # Parse result
+        if isinstance(raw_result, bytes):
+            raw_result = raw_result.decode('utf-8')
+
+        if raw_result.startswith('success:'):
+            seat_ids_str = raw_result.split(':', 1)[1]
+            reserved_seats = seat_ids_str.split(',') if seat_ids_str else []
+
+            Logger.base.info(
+                f'✅ [CMD] Found and reserved {len(reserved_seats)} consecutive seats: {reserved_seats}'
+            )
+
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'error_message': None,
+            }
+        elif raw_result.startswith('error:'):
+            error_msg = raw_result.split(':', 1)[1]
+            Logger.base.warning(f'⚠️ [CMD] Failed to find consecutive seats: {error_msg}')
+
+            return {
+                'success': False,
+                'reserved_seats': [],
+                'error_message': error_msg,
+            }
+        else:
+            Logger.base.error(f'❌ [CMD] Unexpected Lua script result: {raw_result}')
+            return {
+                'success': False,
+                'reserved_seats': [],
+                'error_message': 'Unexpected script result',
+            }
 
     @Logger.io
     async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:

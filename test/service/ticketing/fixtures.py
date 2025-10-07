@@ -1,10 +1,10 @@
-import json
-import time
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.platform.state.kvrocks_client import kvrocks_client_sync
+from src.service.ticketing.driven_adapter.state.lua_script import INITIALIZE_SEATS_SCRIPT
 
 
 @pytest.fixture
@@ -35,13 +35,19 @@ def reservation_state():
     return ReservationState()
 
 
-@pytest.fixture(autouse=True)
-def mock_kafka_infrastructure():
+@pytest.fixture(autouse=True, scope='function')
+def mock_kafka_infrastructure(request):
     """
-    自動 mock Kafka infrastructure 以避免在測試中啟動真實的 Kafka consumers
+    Auto-mock Kafka infrastructure to avoid starting real Kafka consumers in tests.
 
-    同時提供測試環境下的座位初始化邏輯（直接寫入 Kvrocks，跳過 Kafka 異步處理）
+    Provides test-specific seat initialization logic (direct Kvrocks writes, bypassing async Kafka processing).
+
+    Only enabled for feature tests and tests using 'client' fixture.
     """
+    # Skip for lua_script tests (they don't need mocking)
+    if 'lua_script_tests' in request.node.nodeid:
+        yield
+        return
 
     async def mock_publish_domain_event(event, topic: str, partition_key: str):
         return True
@@ -49,99 +55,57 @@ def mock_kafka_infrastructure():
     async def mock_seat_initialization(
         self, *, event_id: int, ticket_tuples: list, seating_config: dict
     ) -> None:
-        """測試環境下的座位初始化：直接同步寫入 Kvrocks + 更新 event status"""
+        """測試環境下的座位初始化：直接呼叫 Lua script（sync mode for test）"""
 
-        # 1. 保存 section 配置到 Redis (新增)
+        # 獲取 key prefix
+        _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+
+        # 生成所有座位數據（與 handler 相同邏輯）
+        all_seats = []
         for section in seating_config.get('sections', []):
             section_name = section['name']
+            price = section['price']
             for subsection in section.get('subsections', []):
                 subsection_num = subsection['number']
                 rows = subsection['rows']
                 seats_per_row = subsection['seats_per_row']
-                section_id = f'{section_name}-{subsection_num}'
-                config_key = f'section_config:{event_id}:{section_id}'
 
-                client = kvrocks_client_sync.connect()
-                client.hset(
-                    config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
-                )
+                for row in range(1, rows + 1):
+                    for seat_num in range(1, seats_per_row + 1):
+                        seat_index = (row - 1) * seats_per_row + (seat_num - 1)
+                        all_seats.append(
+                            {
+                                'section': section_name,
+                                'subsection': subsection_num,
+                                'row': row,
+                                'seat_num': seat_num,
+                                'seat_index': seat_index,
+                                'price': price,
+                            }
+                        )
 
-        # 2. 寫入 subsection_total metadata
-        subsection_counts = {}
-        for ticket_tuple in ticket_tuples:
-            _, section, subsection, _, _, _, _ = ticket_tuple
-            section_id = f'{section}-{subsection}'
-            subsection_counts[section_id] = subsection_counts.get(section_id, 0) + 1
-
-        client = kvrocks_client_sync.connect()
-        for section_id, count in subsection_counts.items():
-            # 寫入 total 和available counter
-            total_key = f'subsection_total:{event_id}:{section_id}'
-            avail_key = f'subsection_avail:{event_id}:{section_id}'
-            client.set(total_key, count)
-            client.set(avail_key, count)  # 初始時全部可用
-
-            # 創建空的 bitfield (表示已初始化，所有座位預設為 available=0b00)
-            bf_key = f'seats_bf:{event_id}:{section_id}'
-            client.set(bf_key, b'\x00')  # 設置一個初始byte表示已初始化
-
-        # 3. 直接初始化座位狀態到 Kvrocks（跳過 Kafka）
-
-        # 收集每個 row 的價格資訊
-        seat_meta_data = {}  # {(event_id, section_id, row): {seat_num: price}}
-        section_seat_counts = {}  # 統計每個 section 的座位數
-
-        for ticket_tuple in ticket_tuples:
-            _, section, subsection, row, seat, price, status = ticket_tuple
-            seat_id = f'{section}-{subsection}-{row}-{seat}'
-            section_id = f'{section}-{subsection}'
-            key = f'seat:{seat_id}'
-
-            seat_state = {
-                'status': 'AVAILABLE',
-                'event_id': event_id,
-                'price': price,
-                'initialized_at': int(time.time()),
-            }
-
-            client.set(key, json.dumps(seat_state))
-
-            # 收集 seat_meta 資料
-            meta_key = (event_id, section_id, row)
-            if meta_key not in seat_meta_data:
-                seat_meta_data[meta_key] = {}
-            seat_meta_data[meta_key][str(seat)] = price
-
-            # 統計座位數
-            section_seat_counts[section_id] = section_seat_counts.get(section_id, 0) + 1
-
-        # 寫入 seat_meta Hash
-        for (event_id, section_id, row), prices in seat_meta_data.items():
-            meta_key = f'seat_meta:{event_id}:{section_id}:{row}'
-            client.hset(meta_key, mapping=prices)
-
-        # 4. 建立 event_sections 索引和 section_stats 統計
-        timestamp = int(time.time())
-        for section_id, count in section_seat_counts.items():
-            # 建立索引 (使用 sorted set，score 為 0)
-            client.zadd(f'event_sections:{event_id}', {section_id: 0})
-
-            # 設置統計 (初始狀態：所有座位都是 AVAILABLE)
-            stats_key = f'section_stats:{event_id}:{section_id}'
-            client.hset(
-                stats_key,
-                mapping={
-                    'section_id': section_id,
-                    'event_id': str(event_id),
-                    'available': str(count),
-                    'reserved': '0',
-                    'sold': '0',
-                    'total': str(count),
-                    'updated_at': str(timestamp),
-                },
+        # 準備 Lua script 參數
+        args = [_KEY_PREFIX, str(event_id)]
+        for seat in all_seats:
+            args.extend(
+                [
+                    seat['section'],
+                    str(seat['subsection']),
+                    str(seat['row']),
+                    str(seat['seat_num']),
+                    str(seat['seat_index']),
+                    str(seat['price']),
+                ]
             )
 
-        # Note: Event status update is handled by the use case, not here
+        # 執行 Lua script (sync)
+        client = kvrocks_client_sync.connect()
+        success_count = client.eval(INITIALIZE_SEATS_SCRIPT, 0, *args)
+
+        if not success_count or success_count != len(all_seats):
+            raise Exception(
+                f'Seat initialization failed: expected {len(all_seats)}, got {success_count}'
+            )
 
     with (
         patch(

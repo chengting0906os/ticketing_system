@@ -12,49 +12,8 @@ from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
     IInitEventAndTicketsStateHandler,
 )
+from src.service.ticketing.driven_adapter.state.lua_script import INITIALIZE_SEATS_SCRIPT
 
-# Lua script for atomic seat initialization
-INITIALIZE_SEATS_LUA_SCRIPT = """
-local key_prefix = ARGV[1]
-local event_id = ARGV[2]
-local timestamp = redis.call('TIME')[1]
-
-local seat_count = (#ARGV - 2) / 6
-local success_count = 0
-local section_stats = {}
-local section_configs = {}
-
-for i = 0, seat_count - 1 do
-    local base_idx = 3 + i * 6
-    local section, subsection, row, seat_num, seat_index, price = ARGV[base_idx], ARGV[base_idx + 1], ARGV[base_idx + 2], ARGV[base_idx + 3], ARGV[base_idx + 4], ARGV[base_idx + 5]
-    local section_id = section .. '-' .. subsection
-    local bf_key = key_prefix .. 'seats_bf:' .. event_id .. ':' .. section_id
-    local meta_key = key_prefix .. 'seat_meta:' .. event_id .. ':' .. section_id .. ':' .. row
-    local offset = tonumber(seat_index) * 2
-
-    redis.call('SETBIT', bf_key, offset, 0)
-    redis.call('SETBIT', bf_key, offset + 1, 0)
-    redis.call('HSET', meta_key, seat_num, price)
-
-    section_stats[section_id] = (section_stats[section_id] or 0) + 1
-    if not section_configs[section_id] then
-        section_configs[section_id] = {max_row = tonumber(row), seats_per_row = tonumber(seat_num)}
-    else
-        section_configs[section_id].max_row = math.max(section_configs[section_id].max_row, tonumber(row))
-        section_configs[section_id].seats_per_row = math.max(section_configs[section_id].seats_per_row, tonumber(seat_num))
-    end
-    success_count = success_count + 1
-end
-
-for section_id, count in pairs(section_stats) do
-    redis.call('ZADD', key_prefix .. 'event_sections:' .. event_id, 0, section_id)
-    redis.call('HSET', key_prefix .. 'section_stats:' .. event_id .. ':' .. section_id, 'section_id', section_id, 'event_id', event_id, 'available', count, 'reserved', 0, 'sold', 0, 'total', count, 'updated_at', timestamp)
-    local config = section_configs[section_id]
-    redis.call('HSET', key_prefix .. 'section_config:' .. event_id .. ':' .. section_id, 'rows', config.max_row, 'seats_per_row', config.seats_per_row)
-end
-
-return success_count
-"""
 
 # Get key prefix from environment for test isolation
 _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
@@ -187,7 +146,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             Logger.base.info(f'⚙️  [INIT-HANDLER] Executing Lua script with {len(all_seats)} seats')
 
             # Step 4: 執行 Lua 腳本
-            success_count: int = await client.eval(INITIALIZE_SEATS_LUA_SCRIPT, 0, *args)  # type: ignore[misc]
+            success_count: int = await client.eval(INITIALIZE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
 
             Logger.base.info(
                 f'✅ [INIT-HANDLER] Initialized {success_count}/{len(all_seats)} seats'

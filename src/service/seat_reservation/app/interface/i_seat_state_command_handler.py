@@ -34,6 +34,36 @@ class ISeatStateCommandHandler(ABC):
         pass
 
     @abstractmethod
+    async def find_and_reserve_consecutive_seats(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        quantity: int,
+        booking_id: int,
+        buyer_id: int,
+    ) -> Dict:
+        """
+        自動找出並預訂連續座位 (best_available mode)
+
+        Args:
+            event_id: 活動 ID
+            section: 區域 (e.g., 'A')
+            subsection: 子區域編號 (e.g., 1)
+            quantity: 需要的連續座位數量
+            booking_id: 訂單 ID
+            buyer_id: 買家 ID
+
+        Returns:
+            Dict with keys:
+                - success: bool
+                - reserved_seats: List[str] (座位 ID 列表)
+                - error_message: Optional[str]
+        """
+        pass
+
+    @abstractmethod
     async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """
         釋放座位 (RESERVED -> AVAILABLE)
