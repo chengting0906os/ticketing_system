@@ -16,10 +16,6 @@ from src.service.seat_reservation.app.command.finalize_seat_payment_use_case imp
 )
 from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-
-# from src.service.seat_reservation.app.query.list_subsection_seats_detail_use_case import (
-#     GetSectionSeatsDetailUseCase,
-# )
 from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
 from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
@@ -108,10 +104,6 @@ class Container(containers.DeclarativeContainer):
         FinalizeSeatPaymentUseCase,
         seat_state_handler=seat_state_command_handler,
     )
-    # list_subsection_seats_detail_use_case = providers.Factory(
-    #     GetSectionSeatsDetailUseCase,
-    #     session=providers.Dependency(),
-    # )
 
 
 container = Container()
