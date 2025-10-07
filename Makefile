@@ -95,8 +95,8 @@ lint:
 format:
 	@uv run ruff format .
 
-.PHONY: pyrefly
-pyrefly:
+.PHONY: pyrefly pyre
+pyrefly pyre:
 	@uv run pyrefly check
 
 # Development
