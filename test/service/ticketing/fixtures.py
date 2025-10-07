@@ -50,7 +50,18 @@ def mock_kafka_infrastructure(request):
         return
 
     async def mock_publish_domain_event(event, topic: str, partition_key: str):
+        """Mock publishing domain events - bypasses Kafka completely"""
         return True
+
+    def mock_get_quix_app():
+        """Mock Quix Application - returns a mock app that doesn't connect to Kafka"""
+        from unittest.mock import MagicMock
+
+        mock_app = MagicMock()
+        mock_topic = MagicMock()
+        mock_topic.name = 'mock_topic'
+        mock_app.topic.return_value = mock_topic
+        return mock_app
 
     async def mock_seat_initialization(
         self, *, event_id: int, ticket_tuples: list, seating_config: dict
@@ -120,6 +131,10 @@ def mock_kafka_infrastructure(request):
         patch(
             'src.platform.message_queue.event_publisher.publish_domain_event',
             side_effect=mock_publish_domain_event,
+        ),
+        patch(
+            'src.platform.message_queue.event_publisher._get_quix_app',
+            side_effect=mock_get_quix_app,
         ),
     ):
         # 設置 mock 返回值為 AsyncMock
