@@ -111,3 +111,19 @@ Feature: Event Creation
       | 400 |
     And the error message should contain:
       | Ticket price must over 0 |
+
+  @compensating_transaction
+  Scenario: Compensating transaction when Kvrocks initialization fails
+    Given Kvrocks seat initialization will fail
+    When I create a event with
+      | name         | description                       | venue_name   | seating_config                                                                                                |
+      | Doomed Event | This event will fail Kvrocks init | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+    Then the response status code should be:
+      | 500 |
+    And the error message should contain:
+      | Internal server error |
+    And the event should not exist in database:
+      | name         |
+      | Doomed Event |
+    And no tickets should exist for this event
+    And the database should be in consistent state

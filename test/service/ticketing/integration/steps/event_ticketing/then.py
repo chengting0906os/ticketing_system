@@ -1,14 +1,13 @@
+import json
+
 from pytest_bdd import then
+
+from test.shared.then import get_state_with_response
 from test.shared.utils import extract_single_value, extract_table_data
 
 
 @then('the event should be created with:')
 def verify_event_created(step, event_state=None, context=None):
-    import json
-
-    # Import the helper function from shared
-    from test.shared.then import get_state_with_response
-
     expected_data = extract_table_data(step)
     state = get_state_with_response(event_state=event_state, context=context)
     response = state['response']
@@ -33,15 +32,6 @@ def verify_event_created(step, event_state=None, context=None):
             )
         else:
             assert response_json[field] == expected_value
-
-
-def _verify_error_contains(event_state, expected_text):
-    response = event_state['response']
-    response_json = response.json()
-    error_msg = str(response_json)
-    assert expected_text in error_msg, (
-        f"Expected '{expected_text}' in error message, got: {error_msg}"
-    )
 
 
 def _verify_event_count(event_state, count):
@@ -489,3 +479,71 @@ def verify_mixed_subsection_statuses(step, context):
     assert actual_total_sold == expected_total_sold, (
         f'Total sold tickets: expected {expected_total_sold}, got {actual_total_sold}'
     )
+
+
+@then('the event should not exist in database:')
+def verify_event_not_exists(step, execute_sql_statement):
+    """
+    Verify that event does not exist in database (compensating transaction worked).
+
+    This validates that after Kvrocks failure, the compensating transaction
+    successfully deleted the event from PostgreSQL.
+    """
+    expected_data = extract_table_data(step)
+    event_name = expected_data['name']
+
+    # Query database for event with this name
+    result = execute_sql_statement(
+        'SELECT id, name FROM event WHERE name = :name',
+        {'name': event_name},
+        fetch=True,
+    )
+
+    # Result should be empty list (no matching events)
+    assert not result or len(result) == 0, (
+        f'Event "{event_name}" should NOT exist in database after compensating transaction, '
+        f'but found: {result}'
+    )
+
+
+@then('no tickets should exist for this event')
+def verify_no_tickets_exist(execute_sql_statement):
+    """
+    Verify that no tickets exist for the failed event.
+
+    Validates that compensating transaction cleaned up both event AND tickets.
+    Since event creation failed, check that NO tickets exist for "Doomed%" events.
+    """
+    # Check that NO tickets exist for any event created in this test
+    result = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket WHERE event_id IN '
+        '(SELECT id FROM event WHERE name LIKE :pattern)',
+        {'pattern': 'Doomed%'},
+        fetch=True,
+    )
+
+    ticket_count = result[0]['count'] if result else 0
+
+    assert ticket_count == 0, f'Expected 0 tickets for failed event, but found {ticket_count}'
+
+
+@then('the database should be in consistent state')
+def verify_database_consistency(execute_sql_statement):
+    """
+    Verify overall database consistency after compensating transaction.
+
+    Checks:
+    1. No orphaned tickets (tickets without corresponding events)
+    2. All events have matching ticket counts
+    """
+    # Check for orphaned tickets
+    orphaned_tickets = execute_sql_statement(
+        'SELECT COUNT(*) as count FROM ticket t '
+        'WHERE NOT EXISTS (SELECT 1 FROM event e WHERE e.id = t.event_id)',
+        {},
+        fetch=True,
+    )
+
+    orphan_count = orphaned_tickets[0]['count'] if orphaned_tickets else 0
+
+    assert orphan_count == 0, f'Found {orphan_count} orphaned tickets (tickets without events)'

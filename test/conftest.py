@@ -261,8 +261,13 @@ async def clean_database():
 # =============================================================================
 @pytest.fixture(scope='session')
 def client():
-    """FastAPI TestClient for making HTTP requests"""
-    with TestClient(app) as test_client:
+    """
+    FastAPI TestClient for making HTTP requests.
+
+    raise_server_exceptions=False allows catching 500 errors as HTTP responses
+    instead of raising exceptions, enabling proper testing of error handling.
+    """
+    with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
 
 

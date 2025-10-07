@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import time
 from typing import Any, AsyncContextManager, AsyncIterator, Callable, Dict, List, Optional
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.platform.database.db_setting import get_asyncpg_pool
@@ -260,6 +260,9 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     await session.flush()
                     ticket.id = ticket_model.id
 
+            # Commit changes (same as create_event_aggregate)
+            await session.commit()
+
             Logger.base.info(
                 f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
             )
@@ -322,21 +325,36 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
 
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:
-        """刪除 Event Aggregate (cascade delete tickets)"""
+        """
+        刪除 Event Aggregate (cascade delete tickets)
+
+        Used for compensating transactions when Kvrocks initialization fails.
+        """
         async with self._get_session() as session:
             try:
                 # 先刪除票務
-                await session.execute(update(TicketModel).where(TicketModel.event_id == event_id))
+                tickets_result = await session.execute(
+                    delete(TicketModel).where(TicketModel.event_id == event_id)
+                )
 
                 # 然後刪除活動
-                result = await session.execute(update(EventModel).where(EventModel.id == event_id))
+                event_result = await session.execute(
+                    delete(EventModel).where(EventModel.id == event_id)
+                )
 
-                success = result.rowcount > 0
-                Logger.base.info(f'🗑️ [DELETE_AGGREGATE] Deleted event {event_id}: {success}')
+                # Commit the deletion
+                await session.commit()
+
+                success = event_result.rowcount > 0
+                Logger.base.info(
+                    f'🗑️ [DELETE_AGGREGATE] Deleted event {event_id}: '
+                    f'{tickets_result.rowcount} tickets, {event_result.rowcount} event'
+                )
                 return success
 
             except Exception as e:
                 Logger.base.error(f'❌ [DELETE_AGGREGATE] Failed to delete event {event_id}: {e}')
+                await session.rollback()
                 return False
 
     @Logger.io

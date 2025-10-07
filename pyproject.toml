@@ -107,6 +107,7 @@ markers = [
     "api: API test",
     "entity: Entity test",
     "integration: Integration test",
+    "compensating_transaction: Tests for SAGA compensating transaction pattern",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pydantic._internal._config",

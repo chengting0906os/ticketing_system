@@ -1,8 +1,14 @@
 import json
 import os
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+
+from src.platform.constant.route_constant import (
+    EVENT_BASE,
+)
+from src.platform.state.kvrocks_client import kvrocks_client_sync
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from test.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from test.util_constant import (
@@ -14,11 +20,6 @@ from test.util_constant import (
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
-
-from src.platform.constant.route_constant import (
-    EVENT_BASE,
-)
-from src.platform.state.kvrocks_client import kvrocks_client_sync
 
 
 @given('a event exists')
@@ -280,3 +281,36 @@ def event_exists(step, execute_sql_statement):
                     'updated_at': str(int(1759562700)),  # Fixed timestamp for test
                 },
             )
+
+
+@given('Kvrocks seat initialization will fail')
+def mock_kvrocks_failure(request):
+    """
+    Mock Kvrocks initialization to fail, testing compensating transaction.
+
+    This simulates a distributed system failure scenario where:
+    1. PostgreSQL commits successfully
+    2. Kvrocks initialization fails
+    3. Compensating transaction should delete PostgreSQL data
+    """
+
+    async def failing_init(*args, **kwargs):
+        """Mock initialization that always fails"""
+        return {
+            'success': False,
+            'error': 'Simulated Kvrocks connection failure',
+            'total_seats': 0,
+            'sections_count': 0,
+        }
+
+    # Patch the init_state_handler to return failure
+    mock_patcher = patch(
+        'src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl'
+        '.InitEventAndTicketsStateHandlerImpl.initialize_seats_from_config',
+        new=failing_init,
+    )
+
+    mock_patcher.start()
+
+    # Register cleanup to stop the patcher after test
+    request.addfinalizer(mock_patcher.stop)

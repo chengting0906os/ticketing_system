@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     KAFKA_BATCH_SIZE: int = 16384
     KAFKA_LINGER_MS: int = 10
 
+    # Kafka Consumer Modules
+    TICKETING_CONSUMER_MODULE: str = (
+        'src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer'
+    )
+    SEAT_RESERVATION_CONSUMER_MODULE: str = (
+        'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer'
+    )
+
     @property
     def KAFKA_PRODUCER_CONFIG(self) -> dict:
         return {

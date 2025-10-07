@@ -27,6 +27,9 @@ from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl i
     SeatStateQueryHandlerImpl,
 )
 from src.service.ticketing.app.service.auth_service import AuthService
+from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator import (
+    MqInfraOrchestrator,
+)
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
     IBookingCommandRepoImpl,
 )
@@ -87,6 +90,12 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Factory(
         InitEventAndTicketsStateHandlerImpl,
+    )
+
+    # MQ Infrastructure Orchestrator
+    mq_infra_orchestrator = providers.Factory(
+        MqInfraOrchestrator,
+        kafka_service=kafka_service,
     )
 
     # Seat Reservation Use Cases
