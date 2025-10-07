@@ -1,5 +1,5 @@
 # Database operations
-ALEMBIC_CONFIG = src/platform/alembic/alembic.ini
+ALEMBIC_CONFIG = alembic.ini
 
 .PHONY: reset reset-all reset-db seed
 reset:

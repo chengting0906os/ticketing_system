@@ -107,7 +107,7 @@ jobs:
 
       - name: Run database migrations
         run: |
-          uv run alembic -c src/platform/alembic/alembic.ini upgrade head
+          uv run alembic upgrade head
           
       - name: Run test (integration and unit only)
         run: |
