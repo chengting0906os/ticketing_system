@@ -8,7 +8,7 @@ Seat Reservation Event Publisher
 - 封裝 Kafka 發布邏輯
 """
 
-from dataclasses import dataclass
+import attrs
 from datetime import datetime, timezone
 from typing import List
 
@@ -20,7 +20,7 @@ from src.service.seat_reservation.app.interface.i_seat_reservation_event_publish
 )
 
 
-@dataclass
+@attrs.define
 class SeatsReservedEvent:
     """座位預訂成功事件"""
 
@@ -29,14 +29,14 @@ class SeatsReservedEvent:
     reserved_seats: List[str]
     total_price: int
     status: str = 'seats_reserved'
-    occurred_at: datetime = datetime.now(timezone.utc)
+    occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
     def aggregate_id(self) -> int:
         return self.booking_id
 
 
-@dataclass
+@attrs.define
 class SeatReservationFailedEvent:
     """座位預訂失敗事件"""
 
@@ -44,7 +44,7 @@ class SeatReservationFailedEvent:
     buyer_id: int
     error_message: str
     status: str = 'seat_reservation_failed'
-    occurred_at: datetime = datetime.now(timezone.utc)
+    occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
     def aggregate_id(self) -> int:
