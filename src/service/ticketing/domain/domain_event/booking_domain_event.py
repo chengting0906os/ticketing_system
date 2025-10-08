@@ -5,7 +5,6 @@ These events are published when booking operations occur and should
 be handled by other bounded contexts (like event_ticketing).
 """
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
@@ -14,7 +13,7 @@ import attrs
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 
 
-@dataclass
+@attrs.define
 class BookingCreatedDomainEvent:
     """Domain event fired when a booking is created"""
 

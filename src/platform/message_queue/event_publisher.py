@@ -5,8 +5,10 @@ Domain Event Publisher
 簡化版事件發布接口 - 直接使用 Quix Streams
 """
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
 
+import attrs
 from quixstreams import Application
 
 from src.platform.config.core_setting import settings
@@ -16,6 +18,17 @@ from src.service.ticketing.shared_kernel.domain.domain_event.mq_domain_event imp
 
 # 全域 Quix Application 實例
 _quix_app: Application | None = None
+
+
+def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
+    """
+    自定義序列化器 - 將 datetime 轉換為 timestamp
+
+    用於 attrs.asdict 的 value_serializer 參數
+    """
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    return value
 
 
 def _get_quix_app() -> Application:
@@ -67,12 +80,14 @@ async def publish_domain_event(
         value_serializer='json',
     )
 
-    # 準備事件數據
+    # 準備事件數據 - 使用 attrs.asdict 並確保 datetime 轉換為 timestamp
+    event_dict = attrs.asdict(event, value_serializer=_serialize_value)
+
     event_data = {
         'event_type': event.__class__.__name__,
         'aggregate_id': str(event.aggregate_id),
         'occurred_at': int(event.occurred_at.timestamp()),
-        **event.__dict__,
+        **event_dict,
     }
 
     # 移除已包含的欄位
