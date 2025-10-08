@@ -50,8 +50,11 @@ if mode == "manual" then
 
         -- Only reserve if AVAILABLE
         if current_status == AVAILABLE then
-            redis.call('SETBIT', bf_key, offset, 1)
-            redis.call('SETBIT', bf_key, offset + 1, 0)
+            -- Set to RESERVED (01 binary)
+            -- offset is bit0 (LSB), offset+1 is bit1 (MSB)
+            -- For RESERVED=1: bit0*2 + bit1 = 0*2 + 1 = 1
+            redis.call('SETBIT', bf_key, offset, 0)      -- bit0 = 0
+            redis.call('SETBIT', bf_key, offset + 1, 1)  -- bit1 = 1
             results[i + 1] = seat_id .. ':1'
 
             if not section_changes[section_id] then
@@ -120,8 +123,9 @@ elseif mode == "best_available" then
                         local reserve_index = (row - 1) * seats_per_row + (reserve_seat - 1)
                         local reserve_offset = reserve_index * 2
 
-                        redis.call('SETBIT', bf_key, reserve_offset, 1)
-                        redis.call('SETBIT', bf_key, reserve_offset + 1, 0)
+                        -- Set to RESERVED (01 binary): bit0=0, bit1=1
+                        redis.call('SETBIT', bf_key, reserve_offset, 0)
+                        redis.call('SETBIT', bf_key, reserve_offset + 1, 1)
 
                         local seat_id = section .. '-' .. subsection .. '-' .. row .. '-' .. reserve_seat
                         table.insert(found_seats, seat_id)

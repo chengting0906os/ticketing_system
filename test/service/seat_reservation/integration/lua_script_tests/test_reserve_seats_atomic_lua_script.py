@@ -74,11 +74,14 @@ class TestReserveSeatsAtomicManualMode:
         assert result['success'] is True
         assert result['reserved_seats'] == ['A-1-1-1']
 
-        # Verify seat status is RESERVED (01)
+        # Verify seat status is RESERVED (01 binary)
+        # Bit encoding: status = bit0*2 + bit1
+        # RESERVED=1: bit0=0, bit1=1 → 0*2 + 1 = 1
         bf_key = _make_key(f'seats_bf:{event_id}:A-1')
         bit0 = kvrocks_client_sync_for_test.getbit(bf_key, 0)
         bit1 = kvrocks_client_sync_for_test.getbit(bf_key, 1)
-        assert (bit0, bit1) == (1, 0)  # RESERVED
+        assert (bit0, bit1) == (0, 1)  # RESERVED
+        assert bit0 * 2 + bit1 == 1  # status value = 1 (RESERVED)
 
         # Verify stats updated
         stats_key = _make_key(f'section_stats:{event_id}:A-1')
@@ -468,3 +471,75 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Then: Should choose row 1 seats 3-4 (earliest available consecutive pair)
         assert result['success'] is True
         assert result['reserved_seats'] == ['A-1-1-3', 'A-1-1-4']
+
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_reserved_status_not_sold(
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+    ):
+        """
+        Test that reserved seats have correct status (RESERVED not SOLD)
+
+        This test specifically validates the bug fix where reserved seats
+        were incorrectly showing as 'sold' instead of 'reserved'.
+
+        Bug: Bitfield encoding was setting bit0=1, bit1=0 which resulted in
+             status = 1*2 + 0 = 2 (SOLD) instead of 1 (RESERVED)
+        Fix: Changed to bit0=0, bit1=1 which gives status = 0*2 + 1 = 1 (RESERVED)
+        """
+        # Given: Initialize seats
+        config = {
+            'sections': [
+                {
+                    'name': 'A',
+                    'price': 3000,
+                    'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 5}],
+                }
+            ]
+        }
+        event_id = 999
+        await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
+
+        # When: Reserve 3 seats using manual mode
+        result = await seat_handler.reserve_seats_atomic(
+            event_id=event_id,
+            booking_id=100,
+            buyer_id=1,
+            mode='manual',
+            seat_ids=['A-1-1-1', 'A-1-1-2', 'A-1-2-1'],
+        )
+
+        # Then: Reservation should succeed
+        assert result['success'] is True
+        assert len(result['reserved_seats']) == 3
+
+        # Verify each reserved seat has correct bitfield encoding
+        bf_key = _make_key(f'seats_bf:{event_id}:A-1')
+
+        # Check seat A-1-1-1 (index 0)
+        bit0_s1 = kvrocks_client_sync_for_test.getbit(bf_key, 0)
+        bit1_s1 = kvrocks_client_sync_for_test.getbit(bf_key, 1)
+        status_s1 = bit0_s1 * 2 + bit1_s1
+        assert (bit0_s1, bit1_s1) == (0, 1), 'Seat 1 should have bit0=0, bit1=1'
+        assert status_s1 == 1, f'Seat 1 should have status=1 (RESERVED), got {status_s1}'
+
+        # Check seat A-1-1-2 (index 1)
+        bit0_s2 = kvrocks_client_sync_for_test.getbit(bf_key, 2)
+        bit1_s2 = kvrocks_client_sync_for_test.getbit(bf_key, 3)
+        status_s2 = bit0_s2 * 2 + bit1_s2
+        assert (bit0_s2, bit1_s2) == (0, 1), 'Seat 2 should have bit0=0, bit1=1'
+        assert status_s2 == 1, f'Seat 2 should have status=1 (RESERVED), got {status_s2}'
+
+        # Check seat A-1-2-1 (index 5: row 2, seat 1 in 5-seat rows)
+        bit0_s3 = kvrocks_client_sync_for_test.getbit(bf_key, 10)
+        bit1_s3 = kvrocks_client_sync_for_test.getbit(bf_key, 11)
+        status_s3 = bit0_s3 * 2 + bit1_s3
+        assert (bit0_s3, bit1_s3) == (0, 1), 'Seat in row 2 should have bit0=0, bit1=1'
+        assert status_s3 == 1, f'Seat in row 2 should have status=1 (RESERVED), got {status_s3}'
+
+        # Verify stats show reserved, not sold
+        stats_key = _make_key(f'section_stats:{event_id}:A-1')
+        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        assert int(stats['available']) == 7  # 10 - 3
+        assert int(stats['reserved']) == 3
+        assert int(stats.get('sold', 0)) == 0  # Should be 0, not 3!
