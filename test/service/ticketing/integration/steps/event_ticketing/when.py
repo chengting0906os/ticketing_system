@@ -258,3 +258,16 @@ def buyer_cancels_booking(client, context):
     # Cancel the booking
     response = client.delete(f'/api/booking/{booking_id}')
     context['response'] = response
+
+
+@when('I get the event details')
+def get_event_details(client: TestClient, event_state):
+    """Get event details by ID."""
+    event_id = event_state['event_id']
+    event_state['response'] = client.get(f'{EVENT_BASE}/{event_id}')
+
+
+@when('I get event with id 99999')
+def get_nonexistent_event(client: TestClient, event_state):
+    """Try to get a non-existent event."""
+    event_state['response'] = client.get(f'{EVENT_BASE}/99999')

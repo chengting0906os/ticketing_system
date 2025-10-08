@@ -22,6 +22,43 @@ from test.util_constant import (
 )
 
 
+@given('an event exists with seating config:')
+def event_exists_with_seating_config(step, client: TestClient, event_state, execute_sql_statement):
+    """Create an event with specific seating configuration for get event tests."""
+    row_data = extract_table_data(step)
+    seller_email = TEST_SELLER_EMAIL
+
+    # Check if seller exists, create if not
+    existing_seller = execute_sql_statement(
+        'SELECT id FROM "user" WHERE email = :email',
+        {'email': seller_email},
+        fetch=True,
+    )
+
+    if not existing_seller:
+        create_user(client, seller_email, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
+
+    login_user(client, seller_email, DEFAULT_PASSWORD)
+
+    # Prepare request data
+    request_data = {
+        'name': row_data['name'],
+        'description': row_data['description'],
+        'venue_name': row_data['venue_name'],
+        'seating_config': parse_seating_config(row_data['seating_config']),
+        'is_active': True,
+    }
+
+    # Create the event
+    response = client.post(EVENT_BASE, json=request_data)
+    assert response.status_code == 201, f'Failed to create event: {response.text}'
+
+    event_data = response.json()
+    event_state['event_id'] = event_data['id']
+    event_state['original_event'] = event_data
+    event_state['request_data'] = request_data
+
+
 @given('a event exists')
 def _(step, client: TestClient, event_state):
     row_data = extract_table_data(step)

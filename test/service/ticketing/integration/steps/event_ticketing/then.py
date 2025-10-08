@@ -547,3 +547,128 @@ def verify_database_consistency(execute_sql_statement):
     orphan_count = orphaned_tickets[0]['count'] if orphaned_tickets else 0
 
     assert orphan_count == 0, f'Found {orphan_count} orphaned tickets (tickets without events)'
+
+
+@then('the event response should include:')
+def verify_event_response_includes(step, event_state):
+    """Verify the event response includes specific fields."""
+    expected_data = extract_table_data(step)
+    response = event_state['response']
+    response_json = response.json()
+
+    for field, expected_value in expected_data.items():
+        assert field in response_json, f"Response should contain field '{field}'"
+        assert response_json[field] == expected_value, (
+            f"Expected {field}='{expected_value}', got '{response_json[field]}'"
+        )
+
+
+@then('the seating config should include sections with availability:')
+def verify_seating_config_with_availability(step, event_state):
+    """Verify the seating config includes seat availability information."""
+    response = event_state['response']
+    response_json = response.json()
+
+    assert 'seating_config' in response_json, 'Response should contain seating_config'
+    seating_config = response_json['seating_config']
+    assert 'sections' in seating_config, 'seating_config should contain sections'
+
+    # Parse expected data from step table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    # Build expected subsections map
+    expected_subsections = {}
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        row_data = dict(zip(headers, values, strict=True))
+        section_key = f'{row_data["section_name"]}-{row_data["subsection_number"]}'
+        expected_subsections[section_key] = {
+            'available': int(row_data['available']),
+            'total': int(row_data['total']),
+        }
+
+    # Verify each section has availability info
+    for section in seating_config['sections']:
+        section_name = section['name']
+        assert 'subsections' in section, f'Section {section_name} should contain subsections'
+
+        for subsection in section['subsections']:
+            subsection_number = subsection['number']
+            section_key = f'{section_name}-{subsection_number}'
+
+            # Check if this subsection is expected
+            if section_key in expected_subsections:
+                expected = expected_subsections[section_key]
+
+                # Verify availability fields exist
+                assert 'available' in subsection, (
+                    f'Subsection {section_key} should contain available count'
+                )
+                assert 'total' in subsection, f'Subsection {section_key} should contain total count'
+
+                # Verify values match
+                assert subsection['available'] == expected['available'], (
+                    f'Subsection {section_key}: expected available={expected["available"]}, '
+                    f'got {subsection["available"]}'
+                )
+                assert subsection['total'] == expected['total'], (
+                    f'Subsection {section_key}: expected total={expected["total"]}, '
+                    f'got {subsection["total"]}'
+                )
+
+
+@then('the seating config should show reserved seats:')
+def verify_seating_config_shows_reserved_seats(step, event_state):
+    """Verify the seating config shows reserved and sold seat counts."""
+    response = event_state['response']
+    response_json = response.json()
+
+    assert 'seating_config' in response_json, 'Response should contain seating_config'
+    seating_config = response_json['seating_config']
+    assert 'sections' in seating_config, 'seating_config should contain sections'
+
+    # Parse expected data from step table
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    # Build expected subsections map
+    expected_subsections = {}
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        row_data = dict(zip(headers, values, strict=True))
+        section_key = f'{row_data["section_name"]}-{row_data["subsection_number"]}'
+        expected_subsections[section_key] = {
+            'available': int(row_data['available']),
+            'reserved': int(row_data['reserved']),
+            'sold': int(row_data['sold']),
+            'total': int(row_data['total']),
+        }
+
+    # Verify each section has availability info
+    for section in seating_config['sections']:
+        section_name = section['name']
+        assert 'subsections' in section, f'Section {section_name} should contain subsections'
+
+        for subsection in section['subsections']:
+            subsection_number = subsection['number']
+            section_key = f'{section_name}-{subsection_number}'
+
+            # Check if this subsection is expected
+            if section_key in expected_subsections:
+                expected = expected_subsections[section_key]
+
+                # Verify all status fields exist
+                for field in ['available', 'reserved', 'sold', 'total']:
+                    assert field in subsection, (
+                        f'Subsection {section_key} should contain {field} count'
+                    )
+
+                # Verify values match
+                for field in ['available', 'reserved', 'sold', 'total']:
+                    assert subsection[field] == expected[field], (
+                        f'Subsection {section_key}: expected {field}={expected[field]}, '
+                        f'got {subsection[field]}'
+                    )
