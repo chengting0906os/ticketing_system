@@ -203,6 +203,103 @@ def create_events(step, booking_state, execute_sql_statement):
     )
 
 
+@given('bookings with tickets exist:')
+def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
+    """Create bookings with associated tickets for detailed testing."""
+    data_table = step.data_table
+    rows = data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        booking_data = dict(zip(headers, values, strict=True))
+
+        booking_id = int(booking_data['booking_id'])
+        buyer_id = int(booking_data['buyer_id'])
+        event_id = int(booking_data['event_id'])
+        section = booking_data['section']
+        subsection = int(booking_data['subsection'])
+        quantity = int(booking_data['quantity'])
+        total_price = int(booking_data['total_price'])
+        status = booking_data['status']
+        seat_selection_mode = booking_data.get('seat_selection_mode', 'best_available')
+
+        # Create booking
+        if booking_data.get('paid_at') == 'not_null':
+            execute_sql_statement(
+                """
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW(), NOW())
+                """,
+                {
+                    'id': booking_id,
+                    'buyer_id': buyer_id,
+                    'event_id': event_id,
+                    'section': section,
+                    'subsection': subsection,
+                    'quantity': quantity,
+                    'total_price': total_price,
+                    'status': status,
+                    'seat_selection_mode': seat_selection_mode,
+                    'seat_positions': [],
+                },
+            )
+        else:
+            execute_sql_statement(
+                """
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW())
+                """,
+                {
+                    'id': booking_id,
+                    'buyer_id': buyer_id,
+                    'event_id': event_id,
+                    'section': section,
+                    'subsection': subsection,
+                    'quantity': quantity,
+                    'total_price': total_price,
+                    'status': status,
+                    'seat_selection_mode': seat_selection_mode,
+                    'seat_positions': [],
+                },
+            )
+
+        # Create tickets if ticket_ids provided
+        if 'ticket_ids' in booking_data:
+            ticket_ids = [int(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
+            for idx, ticket_id in enumerate(ticket_ids):
+                # Create ticket - map booking status to ticket status
+                ticket_status = 'sold' if status == 'paid' else 'reserved'
+                execute_sql_statement(
+                    """
+                    INSERT INTO ticket (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
+                    VALUES (:id, :event_id, :section, :subsection, :row_number, :seat_number, :price, :status, :buyer_id, NOW(), NOW())
+                    """,
+                    {
+                        'id': ticket_id,
+                        'event_id': event_id,
+                        'section': section,
+                        'subsection': subsection,
+                        'row_number': 1,
+                        'seat_number': idx + 1,
+                        'price': 1000,
+                        'status': ticket_status,
+                        'buyer_id': buyer_id,
+                    },
+                )
+                # Link ticket to booking
+                execute_sql_statement(
+                    """
+                    INSERT INTO booking_ticket (booking_id, ticket_id)
+                    VALUES (:booking_id, :ticket_id)
+                    """,
+                    {
+                        'booking_id': booking_id,
+                        'ticket_id': ticket_id,
+                    },
+                )
+
+
 @given('bookings exist:')
 def create_bookings(step, booking_state, execute_sql_statement):
     """Create bookings for booking_list test."""

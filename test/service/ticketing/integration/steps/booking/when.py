@@ -159,6 +159,18 @@ def buyer_6_requests_bookings_pending(step, client: TestClient, booking_state):
     booking_state['response'] = response
 
 
+@when('buyer with id {buyer_id:d} requests booking details for booking {booking_id:d}')
+def buyer_requests_booking_details(
+    buyer_id: int, booking_id: int, client: TestClient, booking_state
+):
+    from src.platform.constant.route_constant import BOOKING_GET
+
+    login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)
+    response = client.get(BOOKING_GET.format(booking_id=booking_id))
+    booking_state['response'] = response
+    booking_state['booking_id'] = booking_id
+
+
 @when('buyer creates booking with manual seat selection:')
 def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, booking_state):
     """Buyer creates booking with manual seat selection."""

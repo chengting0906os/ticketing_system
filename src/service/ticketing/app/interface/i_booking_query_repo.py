@@ -13,6 +13,11 @@ class IBookingQueryRepo(ABC):
         pass
 
     @abstractmethod
+    async def get_by_id_with_details(self, *, booking_id: int) -> Optional[dict]:
+        """Get booking by ID with full details (event, user info)"""
+        pass
+
+    @abstractmethod
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         pass
 

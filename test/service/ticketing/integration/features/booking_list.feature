@@ -92,3 +92,18 @@ Feature: Booking List
     And the booking with id 5 should have seat_positions:
       | A-1-1-5 |
       | A-1-1-6 |
+
+  Scenario: Get booking by ID with full details and tickets
+    Given bookings with tickets exist:
+      | buyer_id | event_id | total_price | status | paid_at  | booking_id | section | subsection | quantity | seat_selection_mode | ticket_ids |
+      |        6 |        1 |        2000 | paid   | not_null |          6 | A       |          1 |        2 | best_available      | 101,102    |
+    When buyer with id 6 requests booking details for booking 6
+    Then the response status code should be:
+      | 200 |
+    And the booking details should include:
+      | id | event_name | venue_name   | section | subsection | quantity | total_price | status | seller_name  | buyer_name  |
+      |  6 | Event A    | Taipei Arena | A       |          1 |        2 |        2000 | paid   | Test Seller1 | Test Buyer1 |
+    And the booking should include tickets:
+      | ticket_id | section | subsection | row | seat | price | status |
+      |       101 | A       |          1 |   1 |    1 |  1000 | sold   |
+      |       102 | A       |          1 |   1 |    2 |  1000 | sold   |

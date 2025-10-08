@@ -690,6 +690,80 @@ def verify_tickets_returned_to_pool(client: TestClient, booking_state):
         )
 
 
+@then('the booking details should include:')
+def verify_booking_details_include(step, booking_state):
+    """Verify booking details response includes all expected fields."""
+    expected_data = {}
+    rows = step.data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    expected_data = dict(zip(headers, values, strict=True))
+
+    response = booking_state['response']
+    booking = response.json()
+
+    # Verify all expected fields
+    if 'id' in expected_data:
+        assert booking.get('id') == int(expected_data['id'])
+    if 'event_name' in expected_data:
+        assert booking.get('event_name') == expected_data['event_name']
+    if 'venue_name' in expected_data:
+        assert booking.get('venue_name') == expected_data['venue_name']
+    if 'section' in expected_data:
+        assert booking.get('section') == expected_data['section']
+    if 'subsection' in expected_data:
+        assert booking.get('subsection') == int(expected_data['subsection'])
+    if 'quantity' in expected_data:
+        assert booking.get('quantity') == int(expected_data['quantity'])
+    if 'total_price' in expected_data:
+        assert booking.get('total_price') == int(expected_data['total_price'])
+    if 'status' in expected_data:
+        assert booking.get('status') == expected_data['status']
+    if 'seller_name' in expected_data:
+        assert booking.get('seller_name') == expected_data['seller_name']
+    if 'buyer_name' in expected_data:
+        assert booking.get('buyer_name') == expected_data['buyer_name']
+
+
+@then('the booking should include tickets:')
+def verify_booking_includes_tickets(step, booking_state):
+    """Verify booking response includes expected tickets."""
+    expected_tickets = []
+    rows = step.data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        expected_tickets.append(dict(zip(headers, values, strict=True)))
+
+    response = booking_state['response']
+    booking = response.json()
+
+    # Verify tickets field exists
+    assert 'tickets' in booking, 'Booking response should include tickets field'
+    actual_tickets = booking['tickets']
+
+    # Verify correct number of tickets
+    assert len(actual_tickets) == len(expected_tickets), (
+        f'Expected {len(expected_tickets)} tickets, got {len(actual_tickets)}'
+    )
+
+    # Verify each ticket
+    for expected in expected_tickets:
+        found = False
+        for actual in actual_tickets:
+            if str(actual.get('id')) == expected['ticket_id']:
+                assert actual.get('section') == expected['section']
+                assert actual.get('subsection') == int(expected['subsection'])
+                assert actual.get('row') == int(expected['row'])
+                assert actual.get('seat') == int(expected['seat'])
+                assert actual.get('price') == int(expected['price'])
+                assert actual.get('status') == expected['status']
+                found = True
+                break
+        assert found, f'Ticket {expected["ticket_id"]} not found in response'
+
+
 @then('the booking with id {booking_id:d} should have seat_positions:')
 def verify_booking_seat_positions(step, booking_state, booking_id: int):
     """Verify that a booking has the expected seat positions."""

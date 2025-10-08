@@ -20,6 +20,7 @@ from src.service.ticketing.app.service.role_auth_service import (
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.schema.booking_schema import (
     BookingCreateRequest,
+    BookingDetailResponse,
     BookingResponse,
     BookingWithDetailsResponse,
     CancelReservationResponse,
@@ -83,18 +84,9 @@ async def get_booking(
     booking_id: int,
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
-) -> BookingResponse:
-    booking = await use_case.get_booking(booking_id)
-
-    return BookingResponse(
-        id=booking_id,
-        buyer_id=booking.buyer_id,
-        event_id=booking.event_id,
-        total_price=booking.total_price,
-        status=booking.status.value,
-        created_at=booking.created_at,  # pyright: ignore[reportArgumentType]
-        paid_at=booking.paid_at,  # pyright: ignore[reportCallIssue]
-    )
+) -> BookingDetailResponse:
+    booking_details = await use_case.get_booking_with_details(booking_id)
+    return BookingDetailResponse(**booking_details)
 
 
 @router.patch('/{booking_id}', status_code=status.HTTP_200_OK)

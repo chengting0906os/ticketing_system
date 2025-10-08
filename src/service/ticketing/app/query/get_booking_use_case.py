@@ -32,3 +32,35 @@ class GetBookingUseCase:
             raise NotFoundError('Booking not found')
 
         return booking
+
+    @Logger.io
+    async def get_booking_with_details(self, booking_id: int) -> dict:
+        """Get booking with full details including event, user info, and tickets"""
+        booking_details = await self.booking_query_repo.get_by_id_with_details(
+            booking_id=booking_id
+        )
+
+        if not booking_details:
+            raise NotFoundError('Booking not found')
+
+        # Get tickets for this booking
+        tickets = await self.booking_query_repo.get_tickets_by_booking_id(booking_id=booking_id)
+
+        # Convert tickets to dict format
+        tickets_data = [
+            {
+                'id': ticket.id,
+                'section': ticket.section,
+                'subsection': ticket.subsection,
+                'row': ticket.row,
+                'seat': ticket.seat,
+                'price': ticket.price,
+                'status': ticket.status.value,
+            }
+            for ticket in tickets
+        ]
+
+        # Add tickets to booking details
+        booking_details['tickets'] = tickets_data
+
+        return booking_details

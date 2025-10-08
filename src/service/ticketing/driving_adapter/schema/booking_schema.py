@@ -106,3 +106,37 @@ class BookingWithDetailsResponse(BaseModel):
     quantity: int
     seat_selection_mode: str
     seat_positions: List[str]
+
+
+class TicketDetail(BaseModel):
+    """Ticket detail in booking"""
+
+    id: int
+    section: str
+    subsection: int
+    row: int
+    seat: int
+    price: int
+    status: str
+
+
+class BookingDetailResponse(BaseModel):
+    """Detailed booking response with all information and tickets"""
+
+    id: int
+    buyer_id: int
+    event_id: int
+    total_price: int
+    status: str
+    created_at: datetime
+    paid_at: datetime | None = None
+    event_name: str
+    buyer_name: str
+    seller_name: str
+    venue_name: str
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: List[str]
+    tickets: List[TicketDetail]

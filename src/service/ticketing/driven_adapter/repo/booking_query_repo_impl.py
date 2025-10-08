@@ -114,6 +114,27 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             return BookingQueryRepoImpl._to_entity(db_booking)
 
     @Logger.io
+    async def get_by_id_with_details(self, *, booking_id: int) -> dict | None:
+        """Get booking by ID with full details (event, user, seller info)"""
+        from src.service.ticketing.driven_adapter.model.event_model import EventModel
+
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(BookingModel)
+                .options(
+                    selectinload(BookingModel.event).selectinload(EventModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                )
+                .where(BookingModel.id == booking_id)
+            )
+            db_booking = result.scalar_one_or_none()
+
+            if not db_booking:
+                return None
+
+            return BookingQueryRepoImpl._to_booking_dict(db_booking)
+
+    @Logger.io
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
         from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
