@@ -78,6 +78,32 @@ def verify_booking_created(step, booking_state):
     booking_state['created_booking'] = booking_data
 
 
+@then('the booking status should be:')
+def verify_booking_status(step, booking_state):
+    expected_status = extract_single_value(step)
+    booking = booking_state.get('booking')
+    if not booking:
+        response = booking_state.get('response')
+        if response:
+            booking = response.json()
+    assert booking['status'] == expected_status, (
+        f'Booking status should be {expected_status}, but got {booking["status"]}'
+    )
+
+
+@then('the booking total_price should be:')
+def verify_booking_total_price(step, booking_state):
+    expected_price = int(extract_single_value(step))
+    booking = booking_state.get('booking')
+    if not booking:
+        response = booking_state.get('response')
+        if response:
+            booking = response.json()
+    assert booking['total_price'] == expected_price, (
+        f'Booking total_price should be {expected_price}, but got {booking["total_price"]}'
+    )
+
+
 @then('the booking status should remain:')
 def verify_booking_status_remains(step, client: TestClient, booking_state):
     expected_status = extract_single_value(step)

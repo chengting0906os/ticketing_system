@@ -30,23 +30,6 @@ class ISeatStateQueryHandler(ABC):
         pass
 
     @abstractmethod
-    async def get_available_seats_by_section(
-        self, event_id: int, section: str, subsection: int, limit: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        按區域獲取可用座位
-
-        Args:
-            event_id: 活動 ID
-            section: 區域代碼
-            subsection: 子區域編號
-            limit: 限制返回數量
-
-        Returns:
-            可用座位列表
-        """
-        pass
-
     @abstractmethod
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """

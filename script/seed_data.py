@@ -96,19 +96,17 @@ async def create_init_event_in_session(session, seller_id: int):
         async def get_current_session():
             yield session
 
-        event_ticketing_repo = EventTicketingCommandRepoImpl(lambda: get_current_session())
-        kafka_config = KafkaConfigService()
-
-        # 從 DI 容器取得 init_state_handler
+        # 從 DI 容器取得所有依賴
         from src.platform.config.di import container
 
+        event_ticketing_repo = EventTicketingCommandRepoImpl(lambda: get_current_session())
         init_state_handler = container.init_event_and_tickets_state_handler()
+        mq_infra_orchestrator = container.mq_infra_orchestrator()
 
         # 創建 UseCase
         create_event_use_case = CreateEventAndTicketsUseCase(
-            session=session,
             event_ticketing_command_repo=event_ticketing_repo,
-            kafka_service=kafka_config,
+            mq_infra_orchestrator=mq_infra_orchestrator,
             init_state_handler=init_state_handler,
         )
 

@@ -5,17 +5,17 @@ These events are published when booking operations occur and should
 be handled by other bounded contexts (like event_ticketing).
 """
 
-from typing import List
-import attrs
-from datetime import datetime
 from dataclasses import dataclass
-from src.service.ticketing.domain.entity.booking_entity import BookingStatus
-from src.service.ticketing.domain.entity.booking_entity import Booking
-# Domain events implement MqDomainEvent protocol through duck typing
+from datetime import datetime
+from typing import List
+
+import attrs
+
+from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 
 
 @dataclass
-class BookingCreated:
+class BookingCreatedDomainEvent:
     """Domain event fired when a booking is created"""
 
     booking_id: int
@@ -35,7 +35,7 @@ class BookingCreated:
         return self.booking_id
 
     @classmethod
-    def from_booking(cls, booking: 'Booking') -> 'BookingCreated':
+    def from_booking(cls, booking: 'Booking') -> 'BookingCreatedDomainEvent':
         from datetime import datetime, timezone
 
         return cls(

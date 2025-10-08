@@ -66,55 +66,158 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             raise
 
     @Logger.io
-    async def reserve_seats(
-        self, seat_ids: List[str], booking_id: int, buyer_id: int, event_id: int
-    ) -> Dict[str, bool]:
+    async def reserve_seats_atomic(
+        self,
+        *,
+        event_id: int,
+        booking_id: int,
+        buyer_id: int,
+        mode: str,
+        seat_ids: Optional[List[str]] = None,
+        section: Optional[str] = None,
+        subsection: Optional[int] = None,
+        quantity: Optional[int] = None,
+    ) -> Dict:
         """
-        預訂座位 (AVAILABLE -> RESERVED) - 使用 Lua script 確保原子性
+        原子性預訂座位 - 統一接口，由 Lua 腳本根據 mode 分流
 
-        Exactly-Once 語義：
-        - Check-and-Set: 只有 AVAILABLE 狀態才能改為 RESERVED
-        - 同時更新 section statistics
+        支持兩種模式：
+        1. manual: 預訂指定座位
+        2. best_available: 自動查找並預訂連續座位
         """
-        Logger.base.info(f'🔒 [CMD] Reserving {len(seat_ids)} seats for booking {booking_id}')
+        Logger.base.info(f'🎯 [CMD] Reserving seats (mode={mode}) for booking {booking_id}')
 
         client = await kvrocks_client.connect()
-        args = [_KEY_PREFIX, str(event_id), 'manual']  # Add mode parameter
 
-        # Parse seat_ids and prepare Lua script arguments
-        for seat_id in seat_ids:
-            parts = seat_id.split('-')
-            if len(parts) != 4:
-                Logger.base.warning(f'⚠️ Invalid seat_id format: {seat_id}')
-                continue
+        if mode == 'manual':
+            # Manual mode: 準備指定座位的參數
+            if not seat_ids:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'error_message': 'Manual mode requires seat_ids',
+                }
 
-            section, subsection, row, seat = parts
+            args = [_KEY_PREFIX, str(event_id), 'manual']
+
+            # Parse seat_ids and prepare Lua script arguments
+            for seat_id in seat_ids:
+                parts = seat_id.split('-')
+                if len(parts) != 4:
+                    Logger.base.warning(f'⚠️ Invalid seat_id format: {seat_id}')
+                    continue
+
+                sec, subsec, row, seat = parts
+                section_id = f'{sec}-{subsec}'
+
+                # Get config to calculate seat_index
+                config = await self._get_section_config(event_id, section_id)
+                seats_per_row = config['seats_per_row']
+                seat_index = self._calculate_seat_index(int(row), int(seat), seats_per_row)
+
+                args.extend([sec, subsec, row, seat, str(seat_index)])
+
+            # Execute Lua script
+            Logger.base.info('⚙️  [CMD] Executing manual mode Lua script')
+            raw_results = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
+
+            # Parse results (manual mode returns array of "seat_id:success")
+            results = {}
+            for raw_result in raw_results:
+                if isinstance(raw_result, bytes):
+                    raw_result = raw_result.decode('utf-8')
+
+                seat_id, success = raw_result.split(':')
+                results[seat_id] = success == '1'
+
+            successful_seats = [sid for sid, succ in results.items() if succ]
+            failed_seats = [sid for sid, succ in results.items() if not succ]
+
+            if failed_seats:
+                Logger.base.warning(f'⚠️ [CMD] Some seats unavailable: {failed_seats}')
+                return {
+                    'success': False,
+                    'reserved_seats': successful_seats,
+                    'error_message': f'Some seats are not available: {failed_seats}',
+                }
+
+            Logger.base.info(f'✅ [CMD] Reserved {len(successful_seats)} seats (manual)')
+            return {
+                'success': True,
+                'reserved_seats': successful_seats,
+                'error_message': None,
+            }
+
+        elif mode == 'best_available':
+            # Best available mode: 準備自動查找連續座位的參數
+            if not section or subsection is None or not quantity:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'error_message': 'Best available mode requires section, subsection, and quantity',
+                }
+
             section_id = f'{section}-{subsection}'
 
-            # Get config to calculate seat_index
+            # Get section config
             config = await self._get_section_config(event_id, section_id)
+            rows = config['rows']
             seats_per_row = config['seats_per_row']
-            seat_index = self._calculate_seat_index(int(row), int(seat), seats_per_row)
 
-            args.extend([section, subsection, row, seat, str(seat_index)])
+            args = [
+                _KEY_PREFIX,
+                str(event_id),
+                'best_available',
+                section_id,
+                str(quantity),
+                str(rows),
+                str(seats_per_row),
+            ]
 
-        # Execute Lua script
-        Logger.base.info('⚙️  [CMD] Executing atomic reserve Lua script')
-        raw_results = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
+            # Execute Lua script
+            Logger.base.info('⚙️  [CMD] Executing best_available mode Lua script')
+            raw_result = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
 
-        # Parse results
-        results = {}
-        for raw_result in raw_results:
+            # Parse result (best_available returns "success:seat1,seat2,..." or "error:message")
             if isinstance(raw_result, bytes):
                 raw_result = raw_result.decode('utf-8')
 
-            seat_id, success = raw_result.split(':')
-            results[seat_id] = success == '1'
+            if raw_result.startswith('success:'):
+                seat_ids_str = raw_result.split(':', 1)[1]
+                reserved_seats = seat_ids_str.split(',') if seat_ids_str else []
 
-        success_count = sum(results.values())
-        Logger.base.info(f'🎯 [CMD] Reserved {success_count}/{len(seat_ids)} seats atomically')
+                Logger.base.info(
+                    f'✅ [CMD] Reserved {len(reserved_seats)} consecutive seats (best_available)'
+                )
+                return {
+                    'success': True,
+                    'reserved_seats': reserved_seats,
+                    'error_message': None,
+                }
 
-        return results
+            elif raw_result.startswith('error:'):
+                error_msg = raw_result.split(':', 1)[1]
+                Logger.base.warning(f'⚠️ [CMD] {error_msg}')
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'error_message': error_msg,
+                }
+
+            else:
+                Logger.base.error(f'❌ [CMD] Unexpected Lua result: {raw_result}')
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'error_message': 'Unexpected script result',
+                }
+
+        else:
+            return {
+                'success': False,
+                'reserved_seats': [],
+                'error_message': f'Invalid mode: {mode}',
+            }
 
     @Logger.io
     async def find_and_reserve_consecutive_seats(

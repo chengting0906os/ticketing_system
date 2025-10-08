@@ -32,10 +32,12 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
-        ticket_ids = []
-        if hasattr(db_booking, '__dict__') and 'tickets' in db_booking.__dict__:
-            ticket_ids = [ticket.id for ticket in db_booking.tickets] if db_booking.tickets else []
+        """
+        Convert BookingModel to Booking entity
 
+        Note: ticket_ids are managed via booking_ticket association table,
+        not stored in the Booking entity itself.
+        """
         return Booking(
             buyer_id=db_booking.buyer_id,
             event_id=db_booking.event_id,
@@ -46,12 +48,26 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             seat_selection_mode=db_booking.seat_selection_mode or 'manual',
             seat_positions=db_booking.seat_positions or [],
             status=BookingStatus(db_booking.status),
-            ticket_ids=ticket_ids if hasattr(db_booking, 'tickets') and db_booking.tickets else [],
             id=db_booking.id,
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
             paid_at=db_booking.paid_at,
         )
+
+    @Logger.io
+    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+        """查詢單筆 booking（用於 command 操作前的驗證）"""
+        from sqlalchemy import select
+
+        result = await self.session.execute(
+            select(BookingModel).where(BookingModel.id == booking_id)
+        )
+        db_booking = result.scalar_one_or_none()
+
+        if not db_booking:
+            return None
+
+        return self._to_entity(db_booking)
 
     @Logger.io
     async def create(self, *, booking: Booking) -> Booking:
@@ -78,6 +94,8 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             .where(BookingModel.id == booking.id)
             .values(
                 status=booking.status.value,
+                total_price=booking.total_price,
+                seat_positions=booking.seat_positions,
                 updated_at=booking.updated_at,
             )
             .returning(BookingModel)
@@ -183,7 +201,6 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             sql_update(BookingModel)
             .where(BookingModel.id == booking.id)
             .values(
-                ticket_ids=booking.ticket_ids,
                 total_price=booking.total_price,
                 status=booking.status.value,
                 updated_at=booking.updated_at,
@@ -216,6 +233,23 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             self.session.add(booking_ticket)
 
         await self.session.flush()
+
+    @Logger.io
+    async def get_ticket_ids_by_booking_id(self, *, booking_id: int) -> list[int]:
+        """
+        Get ticket IDs linked to a booking from booking_ticket association table
+
+        Args:
+            booking_id: Booking ID
+
+        Returns:
+            List of ticket IDs
+        """
+        result = await self.session.execute(
+            select(BookingTicketModel.ticket_id).where(BookingTicketModel.booking_id == booking_id)
+        )
+        ticket_ids = [row[0] for row in result.all()]
+        return ticket_ids
 
     @Logger.io
     async def cancel_booking_atomically(self, *, booking_id: int, buyer_id: int) -> Booking:

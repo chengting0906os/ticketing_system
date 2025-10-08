@@ -1,3 +1,5 @@
+import time
+
 from fastapi.testclient import TestClient
 from pytest_bdd import when
 from test.shared.utils import create_user, extract_table_data, login_user
@@ -221,3 +223,11 @@ def buyer_creates_booking_with_best_available_seat_selection(
     if response.status_code == 201:
         booking_state['booking'] = response.json()
         booking_state['selected_quantity'] = quantity
+
+
+@when('wait for async processing:')
+def wait_for_async_processing(step):
+    """Wait for async processing to complete"""
+    wait_data = extract_table_data(step)
+    seconds = int(wait_data.get('seconds', 1))
+    time.sleep(seconds)

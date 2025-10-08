@@ -41,12 +41,12 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
 
     @staticmethod
     def _to_entity(db_booking: BookingModel) -> Booking:
-        # Safely handle tickets relationship to avoid greenlet_spawn errors
-        ticket_ids = []
-        if hasattr(db_booking, '__dict__') and 'tickets' in db_booking.__dict__:
-            # Only access tickets if they're already loaded in the instance
-            ticket_ids = [ticket.id for ticket in db_booking.tickets] if db_booking.tickets else []
+        """
+        Convert BookingModel to Booking entity
 
+        Note: ticket_ids are managed via booking_ticket association table,
+        not stored in the Booking entity itself.
+        """
         return Booking(
             buyer_id=db_booking.buyer_id,
             event_id=db_booking.event_id,
@@ -57,7 +57,6 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             seat_selection_mode=db_booking.seat_selection_mode or 'manual',
             seat_positions=db_booking.seat_positions or [],
             status=BookingStatus(db_booking.status),
-            ticket_ids=ticket_ids,
             id=db_booking.id,
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
@@ -153,16 +152,24 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
-        """Get all tickets for a booking using the ticket_ids stored in the booking"""
+        """Get all tickets for a booking by querying the booking_ticket association table"""
+        from src.service.ticketing.driven_adapter.model.booking_model import BookingTicketModel
+
         async with self._get_session() as session:
-            # First get the booking to get the ticket_ids
-            booking = await self.get_by_id(booking_id=booking_id)
-            if not booking or not booking.ticket_ids:
+            # Query the association table to get ticket IDs for this booking
+            result = await session.execute(
+                select(BookingTicketModel.ticket_id).where(
+                    BookingTicketModel.booking_id == booking_id
+                )
+            )
+            ticket_ids = [row[0] for row in result.all()]
+
+            if not ticket_ids:
                 return []
 
             # Then get the tickets by their IDs
             result = await session.execute(
-                select(TicketModel).where(TicketModel.id.in_(booking.ticket_ids))
+                select(TicketModel).where(TicketModel.id.in_(ticket_ids))
             )
             db_tickets = result.scalars().all()
 

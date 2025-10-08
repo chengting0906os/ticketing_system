@@ -16,44 +16,30 @@ class ISeatStateCommandHandler(ABC):
     """
 
     @abstractmethod
-    async def reserve_seats(
-        self, seat_ids: List[str], booking_id: int, buyer_id: int, event_id: int
-    ) -> Dict[str, bool]:
-        """
-        預訂座位 (AVAILABLE -> RESERVED)
-
-        Args:
-            seat_ids: 座位 ID 列表
-            booking_id: 訂單 ID
-            buyer_id: 買家 ID
-            event_id: 活動 ID
-
-        Returns:
-            Dict mapping seat_id to success status
-        """
-        pass
-
-    @abstractmethod
-    async def find_and_reserve_consecutive_seats(
+    async def reserve_seats_atomic(
         self,
         *,
         event_id: int,
-        section: str,
-        subsection: int,
-        quantity: int,
         booking_id: int,
         buyer_id: int,
+        mode: str,  # 'manual' or 'best_available'
+        seat_ids: Optional[List[str]] = None,  # for manual mode
+        section: Optional[str] = None,  # for best_available mode
+        subsection: Optional[int] = None,  # for best_available mode
+        quantity: Optional[int] = None,  # for best_available mode
     ) -> Dict:
         """
-        自動找出並預訂連續座位 (best_available mode)
+        原子性預訂座位 - 統一接口，由 Lua 腳本根據 mode 分流
 
         Args:
             event_id: 活動 ID
-            section: 區域 (e.g., 'A')
-            subsection: 子區域編號 (e.g., 1)
-            quantity: 需要的連續座位數量
             booking_id: 訂單 ID
             buyer_id: 買家 ID
+            mode: 預訂模式 ('manual' 或 'best_available')
+            seat_ids: 手動模式的座位 ID 列表
+            section: 自動模式的區域 (e.g., 'A')
+            subsection: 自動模式的子區域編號 (e.g., 1)
+            quantity: 自動模式需要的連續座位數量
 
         Returns:
             Dict with keys:

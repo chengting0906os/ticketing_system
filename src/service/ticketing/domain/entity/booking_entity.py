@@ -36,7 +36,6 @@ class Booking:
     seat_selection_mode: str
     seat_positions: Optional[List[str]] = attrs.field(factory=list)
     status: BookingStatus = BookingStatus.PROCESSING
-    ticket_ids: List[int] = attrs.field(factory=list)  # Store ticket IDs in booking
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -126,9 +125,30 @@ class Booking:
         )
 
     @Logger.io
-    def mark_as_pending_payment(self) -> 'Booking':
+    def mark_as_pending_payment_and_update_newest_info(
+        self,
+        *,
+        total_price: int,
+        seat_positions: list[str],
+    ) -> 'Booking':
+        """
+        將 booking 標記為待付款狀態，同時更新總價和座位資訊
+
+        Args:
+            total_price: 計算後的總價
+            seat_positions: 確認的座位列表
+
+        Returns:
+            更新後的 Booking
+        """
         now = datetime.now()
-        return attrs.evolve(self, status=BookingStatus.PENDING_PAYMENT, updated_at=now)
+        return attrs.evolve(
+            self,
+            status=BookingStatus.PENDING_PAYMENT,
+            total_price=total_price,
+            seat_positions=seat_positions,
+            updated_at=now,
+        )
 
     @Logger.io
     def mark_as_paid(self) -> 'Booking':

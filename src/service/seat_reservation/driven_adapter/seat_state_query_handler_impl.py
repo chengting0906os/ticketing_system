@@ -106,53 +106,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         return seat_states
 
     @Logger.io
-    async def get_available_seats_by_section(
-        self, event_id: int, section: str, subsection: int, limit: Optional[int] = None
-    ) -> List[Dict]:
-        """按區域獲取可用座位"""
-        Logger.base.info(f'🔍 [QUERY] Getting available seats for {section}-{subsection}')
-
-        section_id = f'{section}-{subsection}'
-        config = await self._get_section_config(event_id, section_id)
-        total_rows = config['rows']
-        seats_per_row = config['seats_per_row']
-
-        client = await kvrocks_client.connect()
-        bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-
-        available_seats = []
-
-        for row in range(1, total_rows + 1):
-            if limit and len(available_seats) >= limit:
-                break
-
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
-            prices = await client.hgetall(meta_key)  # type: ignore
-
-            for seat_num in range(1, seats_per_row + 1):
-                if limit and len(available_seats) >= limit:
-                    break
-
-                seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
-                offset = seat_index * 2
-
-                bit0 = await client.getbit(bf_key, offset)
-                bit1 = await client.getbit(bf_key, offset + 1)
-                status_value = bit0 * 2 + bit1
-
-                if status_value == 0:  # AVAILABLE
-                    available_seats.append(
-                        {
-                            'seat_id': f'{section}-{subsection}-{row}-{seat_num}',
-                            'event_id': event_id,
-                            'status': 'available',
-                            'price': int(prices.get(str(seat_num), 0)) if prices else 0,
-                        }
-                    )
-
-        Logger.base.info(f'📊 [QUERY] Found {len(available_seats)} available seats')
-        return available_seats
-
     @Logger.io
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """獲取座位價格"""

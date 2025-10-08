@@ -2,22 +2,32 @@ from typing import List
 
 from fastapi import Depends
 
+from src.platform.config.di import get_booking_event_publisher
 from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.platform.message_queue.event_publisher import publish_domain_event
-from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
-from src.service.ticketing.domain.domain_event.booking_events import BookingCreated
+from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
+from src.service.ticketing.domain.domain_event.booking_domain_event import BookingCreatedDomainEvent
 from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class CreateBookingUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
+    def __init__(
+        self,
+        *,
+        uow: AbstractUnitOfWork,
+        event_publisher: IBookingEventPublisher,
+    ):
         self.uow = uow
+        self.event_publisher = event_publisher
 
     @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+    def depends(
+        cls,
+        uow: AbstractUnitOfWork = Depends(get_unit_of_work),
+        event_publisher: IBookingEventPublisher = Depends(get_booking_event_publisher),
+    ):
+        return cls(uow=uow, event_publisher=event_publisher)
 
     @Logger.io
     async def create_booking(
@@ -51,24 +61,8 @@ class CreateBookingUseCase:
             # UoW commits the transaction
             await self.uow.commit()
 
-        # Publish domain event after successful commit
-        booking_created_event = BookingCreated.from_booking(created_booking)
-        Logger.base.info(
-            f'\033[94m📤 [BOOKING UseCase] 發送事件到 Topic: {KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=booking.event_id)}\033[0m'
-        )
-        Logger.base.info(
-            f'\033[93m📦 [BOOKING UseCase] 事件內容: event_id={created_booking.event_id}, buyer_id={created_booking.buyer_id}, seat_mode={created_booking.seat_selection_mode}\033[0m'
-        )
-        await publish_domain_event(
-            event=booking_created_event,
-            topic=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
-                event_id=booking.event_id
-            ),
-            partition_key=str(created_booking.id),
-        )
-
-        Logger.base.info(
-            '\033[92m✅ [BOOKING UseCase] 事件發送完成！等待 event_ticketing 服務處理...\033[0m'
-        )
+        # Publish domain event after successful commit (using abstraction)
+        booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
+        await self.event_publisher.publish_booking_created(event=booking_created_event)
 
         return created_booking

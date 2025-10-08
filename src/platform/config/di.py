@@ -45,6 +45,9 @@ from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQ
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
+from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
+    BookingEventPublisherImpl,
+)
 
 
 class Container(containers.DeclarativeContainer):
@@ -79,8 +82,9 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     auth_service = providers.Singleton(AuthService)
 
-    # Seat Reservation Infrastructure
+    # Message Queue Publishers
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
+    booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
 
     # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
@@ -101,7 +105,6 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Use Cases
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
-        seat_selection_domain=seat_selection_domain,
         seat_state_handler=seat_state_command_handler,
         mq_publisher=seat_reservation_mq_publisher,
     )
@@ -126,3 +129,10 @@ def setup():
 
 def cleanup():
     container.reset_singletons()
+
+
+# FastAPI Dependency Providers
+def get_booking_event_publisher():
+    """FastAPI dependency provider for booking event publisher."""
+
+    return container.booking_event_publisher()

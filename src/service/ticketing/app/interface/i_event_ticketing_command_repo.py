@@ -139,3 +139,21 @@ class IEventTicketingCommandRepo(ABC):
             已售出的票務列表
         """
         pass
+
+    @abstractmethod
+    async def get_ticket_ids_by_seat_identifiers(
+        self, *, event_id: int, seat_identifiers: List[str]
+    ) -> List[int]:
+        """
+        根據座位標識符獲取票券 ID
+
+        此方法用於支援寫入操作（如創建 booking），屬於 command repo 的查詢輔助方法
+
+        Args:
+            event_id: 活動 ID
+            seat_identifiers: 座位標識符列表 (例如: ['A-1-1-1', 'A-1-1-2'])
+
+        Returns:
+            票券 ID 列表
+        """
+        pass
