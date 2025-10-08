@@ -12,12 +12,12 @@ from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_ca
 )
 from src.service.ticketing.app.query.get_booking_use_case import GetBookingUseCase
 from src.service.ticketing.app.query.list_bookings_use_case import ListBookingsUseCase
-from src.service.ticketing.app.service.role_auth_service import (
+from src.service.ticketing.domain.entity.user_entity import UserEntity
+from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import (
     RoleAuthStrategy,
     get_current_user,
     require_buyer,
 )
-from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.schema.booking_schema import (
     BookingCreateRequest,
     BookingDetailResponse,

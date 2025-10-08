@@ -26,7 +26,9 @@ from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl
 from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
-from src.service.ticketing.app.service.auth_service import AuthService
+from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
+    BookingEventPublisherImpl,
+)
 from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator import (
     MqInfraOrchestrator,
 )
@@ -45,9 +47,7 @@ from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQ
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
-from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
-    BookingEventPublisherImpl,
-)
+from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import AuthService
 
 
 class Container(containers.DeclarativeContainer):
@@ -80,7 +80,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Auth service
-    auth_service = providers.Singleton(AuthService)
+    jwt_auth = providers.Singleton(AuthService)
 
     # Message Queue Publishers
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)

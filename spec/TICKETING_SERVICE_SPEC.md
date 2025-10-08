@@ -128,4 +128,4 @@ See controller implementations:
 4. **Batch ticket insertion**: [event_ticketing_aggregate.py](../src/service/ticketing/domain/event_ticketing_aggregate.py) (~50x faster)
 5. **CQRS pattern**: Separate read/write operations for scalability
 6. **Aggregate pattern**: Ensures Event + Tickets consistency
-7. **Role-based auth**: [role_auth_service.py](../src/service/ticketing/app/service/role_auth_service.py)
+7. **Role-based auth**: [role_auth.py](../src/service/ticketing/app/service/role_auth.py)

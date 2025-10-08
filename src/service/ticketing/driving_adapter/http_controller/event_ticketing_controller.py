@@ -2,22 +2,22 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, status
 
+from src.platform.exception.exceptions import NotFoundError
+from src.platform.logging.loguru_io import Logger
+from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
+    SeatStateQueryHandlerImpl,
+)
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
 from src.service.ticketing.app.query.get_event_use_case import GetEventUseCase
 from src.service.ticketing.app.query.list_events_use_case import ListEventsUseCase
+from src.service.ticketing.domain.entity.user_entity import UserEntity
+from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import require_seller
 from src.service.ticketing.driving_adapter.schema.event_schema import (
     EventCreateWithTicketConfigRequest,
     EventResponse,
     TicketResponse,
-)
-from src.platform.exception.exceptions import NotFoundError
-from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.service.role_auth_service import require_seller
-from src.service.ticketing.domain.entity.user_entity import UserEntity
-from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
 )
 
 
