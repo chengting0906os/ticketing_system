@@ -672,3 +672,52 @@ def verify_seating_config_shows_reserved_seats(step, event_state):
                         f'Subsection {section_key}: expected {field}={expected[field]}, '
                         f'got {subsection[field]}'
                     )
+
+
+@then('the response should contain {count:d} tickets')
+def verify_ticket_count(count, event_state):
+    """Verify the response contains the expected number of tickets."""
+    response = event_state['response']
+    response_json = response.json()
+
+    assert 'tickets' in response_json, 'Response should contain tickets field'
+    tickets = response_json['tickets']
+
+    assert len(tickets) == count, f'Expected {count} tickets, got {len(tickets)}'
+
+
+@then('the tickets should include seat identifiers:')
+def verify_tickets_include_seat_identifiers(step, event_state):
+    """Verify the tickets include specific seat identifiers."""
+    response = event_state['response']
+    response_json = response.json()
+
+    assert 'tickets' in response_json, 'Response should contain tickets field'
+    tickets = response_json['tickets']
+
+    # Extract seat identifiers from tickets
+    ticket_seat_ids = {ticket['seat_identifier'] for ticket in tickets}
+
+    # Get expected seat identifiers from step
+    data_table = step.data_table
+    expected_seat_ids = {row.cells[0].value for row in data_table.rows}
+
+    # Verify all expected seats are present
+    missing_seats = expected_seat_ids - ticket_seat_ids
+    assert not missing_seats, f'Missing seat identifiers: {missing_seats}'
+
+
+@then('all tickets should have status "{expected_status}"')
+def verify_all_tickets_have_status(expected_status, event_state):
+    """Verify all tickets have the expected status."""
+    response = event_state['response']
+    response_json = response.json()
+
+    assert 'tickets' in response_json, 'Response should contain tickets field'
+    tickets = response_json['tickets']
+
+    for ticket in tickets:
+        assert ticket['status'] == expected_status, (
+            f"Ticket {ticket['seat_identifier']} has status '{ticket['status']}', "
+            f"expected '{expected_status}'"
+        )

@@ -245,6 +245,22 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             return tickets
 
     @Logger.io
+    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+        """獲取活動的所有票務（不限狀態）"""
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(TicketModel).where(TicketModel.event_id == event_id)
+            )
+            ticket_models = result.scalars().all()
+
+            tickets = [self._model_to_ticket(ticket_model) for ticket_model in ticket_models]
+
+            Logger.base.info(
+                f'✅ [GET_ALL_TICKETS] Found {len(tickets)} tickets for event {event_id}'
+            )
+            return tickets
+
+    @Logger.io
     async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
         """獲取購買者的所有票務"""
         async with self._get_session() as session:

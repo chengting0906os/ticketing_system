@@ -27,6 +27,7 @@ Feature: Get Event with Seat Availability
       | A            | 1                 | 100       | 100   |
       | A            | 2                 | 100       | 100   |
       | B            | 1                 | 40        | 40    |
+    And the response should contain 240 tickets
 
   Scenario: Get event shows seat availability from Kvrocks
     Given an event exists with seating config:
@@ -38,6 +39,23 @@ Feature: Get Event with Seat Availability
     And the seating config should include sections with availability:
       | section_name | subsection_number | available | total |
       | A            | 1                 | 100       | 100   |
+
+  Scenario: Get event with detailed ticket information
+    Given an event exists with seating config:
+      | name         | description | venue_name   | seating_config                                                                                               |
+      | Rock Concert | Great music | Taipei Arena | {"sections": [{"name": "A", "price": 2000, "subsections": [{"number": 1, "rows": 2, "seats_per_row": 3}]}]} |
+    When I get the event details
+    Then the response status code should be:
+      | 200 |
+    And the response should contain 6 tickets
+    And the tickets should include seat identifiers:
+      | A-1-1-1 |
+      | A-1-1-2 |
+      | A-1-1-3 |
+      | A-1-2-1 |
+      | A-1-2-2 |
+      | A-1-2-3 |
+    And all tickets should have status "available"
 
   Scenario: Get non-existent event
     When I get event with id 99999

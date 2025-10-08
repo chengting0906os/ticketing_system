@@ -120,6 +120,19 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
+    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+        """
+        獲取活動的所有票務（不限狀態）
+
+        Args:
+            event_id: 活動 ID
+
+        Returns:
+            所有票務列表
+        """
+        pass
+
+    @abstractmethod
     async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
         """
         獲取購買者的所有票務
