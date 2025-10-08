@@ -11,18 +11,18 @@ from typing import AsyncContextManager, AsyncIterator, Callable, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
+    IEventTicketingQueryRepo,
+)
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     Event,
     EventTicketingAggregate,
     Ticket,
     TicketStatus,
 )
-from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
-    IEventTicketingQueryRepo,
-)
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
 
 
@@ -86,68 +86,37 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
         )
 
     @Logger.io
-    async def get_event_aggregate_by_id(
+    async def get_event_aggregate_by_id_with_tickets(
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
-        """根據 ID 獲取完整的 Event Aggregate"""
+        """根據 ID 獲取完整的 Event Aggregate（使用 JOIN 優化為單次查詢）"""
         async with self._get_session() as session:
-            # 查詢活動
-            event_result = await session.execute(
-                select(EventModel).where(EventModel.id == event_id)
+            # Use LEFT JOIN to fetch event and tickets in one query
+            result = await session.execute(
+                select(EventModel, TicketModel)
+                .outerjoin(TicketModel, EventModel.id == TicketModel.event_id)
+                .where(EventModel.id == event_id)
             )
-            event_model = event_result.scalar_one_or_none()
+            rows = result.all()
 
-            if not event_model:
+            if not rows:
                 return None
 
-            # 查詢所有票務
-            tickets_result = await session.execute(
-                select(TicketModel).where(TicketModel.event_id == event_id)
-            )
-            ticket_models = tickets_result.scalars().all()
-
-            # 轉換為領域實體
+            # First row contains the event (all rows have same event due to JOIN)
+            event_model = rows[0][0]
             event = self._model_to_event(event_model)
-            tickets = [self._model_to_ticket(ticket_model) for ticket_model in ticket_models]
+
+            # Extract tickets from all rows (skip if ticket is None for events with no tickets)
+            tickets = [
+                self._model_to_ticket(ticket_model)
+                for _, ticket_model in rows
+                if ticket_model is not None
+            ]
 
             aggregate = EventTicketingAggregate(event=event, tickets=tickets)
 
             Logger.base.info(
-                f'🔍 [GET_AGGREGATE] Loaded event {event_id} with {len(tickets)} tickets'
-            )
-            return aggregate
-
-    @Logger.io
-    async def get_event_aggregate_by_id_with_available_tickets_only(
-        self, *, event_id: int
-    ) -> Optional[EventTicketingAggregate]:
-        """根據 ID 獲取 Event Aggregate (只包含可用票務)"""
-        async with self._get_session() as session:
-            # 查詢活動
-            event_result = await session.execute(
-                select(EventModel).where(EventModel.id == event_id)
-            )
-            event_model = event_result.scalar_one_or_none()
-
-            if not event_model:
-                return None
-
-            # 只查詢可用票務
-            tickets_result = await session.execute(
-                select(TicketModel)
-                .where(TicketModel.event_id == event_id)
-                .where(TicketModel.status == TicketStatus.AVAILABLE.value)
-            )
-            ticket_models = tickets_result.scalars().all()
-
-            # 轉換為領域實體
-            event = self._model_to_event(event_model)
-            tickets = [self._model_to_ticket(ticket_model) for ticket_model in ticket_models]
-
-            aggregate = EventTicketingAggregate(event=event, tickets=tickets)
-
-            Logger.base.info(
-                f'🎯 [GET_AVAILABLE] Loaded event {event_id} with {len(tickets)} available tickets'
+                f'🔍 [GET_AGGREGATE] Loaded event {event_id} with {len(tickets)} tickets (single query)'
             )
             return aggregate
 

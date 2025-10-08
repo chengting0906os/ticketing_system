@@ -24,7 +24,7 @@ class IEventTicketingQueryRepo(ABC):
     """Event Ticketing 查詢倉儲接口 - CQRS Read Side"""
 
     @abstractmethod
-    async def get_event_aggregate_by_id(
+    async def get_event_aggregate_by_id_with_tickets(
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
         """
@@ -35,21 +35,6 @@ class IEventTicketingQueryRepo(ABC):
 
         Returns:
             活動聚合根 (包含所有 tickets) 或 None
-        """
-        pass
-
-    @abstractmethod
-    async def get_event_aggregate_by_id_with_available_tickets_only(
-        self, *, event_id: int
-    ) -> Optional[EventTicketingAggregate]:
-        """
-        根據 ID 獲取 Event Aggregate (只包含可用票務)
-
-        Args:
-            event_id: 活動 ID
-
-        Returns:
-            活動聚合根 (只包含 available tickets) 或 None
         """
         pass
 
