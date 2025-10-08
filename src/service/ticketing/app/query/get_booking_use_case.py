@@ -43,24 +43,5 @@ class GetBookingUseCase:
         if not booking_details:
             raise NotFoundError('Booking not found')
 
-        # Get tickets for this booking
-        tickets = await self.booking_query_repo.get_tickets_by_booking_id(booking_id=booking_id)
-
-        # Convert tickets to dict format
-        tickets_data = [
-            {
-                'id': ticket.id,
-                'section': ticket.section,
-                'subsection': ticket.subsection,
-                'row': ticket.row,
-                'seat': ticket.seat,
-                'price': ticket.price,
-                'status': ticket.status.value,
-            }
-            for ticket in tickets
-        ]
-
-        # Add tickets to booking details
-        booking_details['tickets'] = tickets_data
-
+        # Tickets are already included in booking_details via eager loading
         return booking_details

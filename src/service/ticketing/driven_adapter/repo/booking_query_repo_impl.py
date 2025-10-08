@@ -5,11 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
+from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.shared_kernel.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
@@ -81,6 +82,26 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         if hasattr(db_booking, '__dict__') and 'buyer' in db_booking.__dict__ and db_booking.buyer:
             buyer_name = db_booking.buyer.name  # pyright: ignore[reportAttributeAccessIssue]
 
+        # Convert tickets relationship to dict format (already loaded via lazy='selectin')
+        tickets_data = []
+        if (
+            hasattr(db_booking, '__dict__')
+            and 'tickets' in db_booking.__dict__
+            and db_booking.tickets
+        ):
+            tickets_data = [
+                {
+                    'id': ticket.id,
+                    'section': ticket.section,
+                    'subsection': ticket.subsection,
+                    'row': ticket.row_number,
+                    'seat': ticket.seat_number,
+                    'price': ticket.price,
+                    'status': ticket.status,
+                }
+                for ticket in db_booking.tickets  # pyright: ignore[reportAttributeAccessIssue]
+            ]
+
         return {
             'id': db_booking.id,
             'buyer_id': db_booking.buyer_id,
@@ -98,6 +119,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             'quantity': db_booking.quantity,
             'seat_selection_mode': db_booking.seat_selection_mode or 'manual',
             'seat_positions': db_booking.seat_positions or [],
+            'tickets': tickets_data,
         }
 
     @Logger.io
@@ -116,7 +138,6 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
     @Logger.io
     async def get_by_id_with_details(self, *, booking_id: int) -> dict | None:
         """Get booking by ID with full details (event, user, seller info)"""
-        from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
         async with self._get_session() as session:
             result = await session.execute(
