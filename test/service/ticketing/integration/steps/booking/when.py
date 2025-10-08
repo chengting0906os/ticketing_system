@@ -124,6 +124,13 @@ def buyer_6_requests_bookings(step, client: TestClient, booking_state):
     booking_state['response'] = response
 
 
+@when('buyer with id 6 requests their bookings')
+def buyer_6_requests_bookings_no_table(step, client: TestClient, booking_state):
+    login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
+    booking_state['response'] = response
+
+
 @when('buyer with id 8 requests their bookings')
 def buyer_8_requests_bookings(step, client: TestClient, booking_state):
     login_user(client, get_user_email_by_id(8), DEFAULT_PASSWORD)

@@ -2,6 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, status
 
+from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
@@ -11,6 +12,12 @@ from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_ca
 )
 from src.service.ticketing.app.query.get_booking_use_case import GetBookingUseCase
 from src.service.ticketing.app.query.list_bookings_use_case import ListBookingsUseCase
+from src.service.ticketing.app.service.role_auth_service import (
+    RoleAuthStrategy,
+    get_current_user,
+    require_buyer,
+)
+from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.schema.booking_schema import (
     BookingCreateRequest,
     BookingResponse,
@@ -19,22 +26,15 @@ from src.service.ticketing.driving_adapter.schema.booking_schema import (
     PaymentRequest,
     PaymentResponse,
 )
-from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.service.role_auth_service import (
-    RoleAuthStrategy,
-    get_current_user,
-    require_buyer,
-)
-from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
 router = APIRouter()
 
 
-@router.get('/my-bookings', response_model=List[BookingWithDetailsResponse])
+@router.get('/my_booking', response_model=List[BookingWithDetailsResponse])
 @Logger.io
 async def list_my_bookings(
-    booking_status: str,
+    booking_status: str = '',
     current_user: UserEntity = Depends(get_current_user),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
 ):

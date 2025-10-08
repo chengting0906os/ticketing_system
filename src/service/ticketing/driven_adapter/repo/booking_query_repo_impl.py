@@ -68,8 +68,10 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         # Safely access event relationship if loaded
         event_name = 'Unknown Event'
         seller_name = 'Unknown Seller'
+        venue_name = 'Unknown Venue'
         if hasattr(db_booking, '__dict__') and 'event' in db_booking.__dict__ and db_booking.event:
             event_name = db_booking.event.name  # pyright: ignore[reportAttributeAccessIssue]
+            venue_name = db_booking.event.venue_name  # pyright: ignore[reportAttributeAccessIssue]
             # Get seller name from event's seller relationship
             if hasattr(db_booking.event, 'seller') and db_booking.event.seller:  # pyright: ignore[reportAttributeAccessIssue]
                 seller_name = db_booking.event.seller.name  # pyright: ignore[reportAttributeAccessIssue]
@@ -90,6 +92,12 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             'event_name': event_name,
             'buyer_name': buyer_name,
             'seller_name': seller_name,
+            'venue_name': venue_name,
+            'section': db_booking.section,
+            'subsection': db_booking.subsection,
+            'quantity': db_booking.quantity,
+            'seat_selection_mode': db_booking.seat_selection_mode or 'manual',
+            'seat_positions': db_booking.seat_positions or [],
         }
 
     @Logger.io

@@ -625,6 +625,26 @@ def verify_bookings_include(step, booking_state):
                     assert actual.get('buyer_name') == expected['buyer_name'], (
                         f'Buyer name mismatch for booking {expected["id"]}'
                     )
+                if 'venue_name' in expected:
+                    assert actual.get('venue_name') == expected['venue_name'], (
+                        f'Venue name mismatch for booking {expected["id"]}'
+                    )
+                if 'section' in expected:
+                    assert actual.get('section') == expected['section'], (
+                        f'Section mismatch for booking {expected["id"]}'
+                    )
+                if 'subsection' in expected:
+                    assert actual.get('subsection') == int(expected['subsection']), (
+                        f'Subsection mismatch for booking {expected["id"]}'
+                    )
+                if 'quantity' in expected:
+                    assert actual.get('quantity') == int(expected['quantity']), (
+                        f'Quantity mismatch for booking {expected["id"]}'
+                    )
+                if 'seat_selection_mode' in expected:
+                    assert actual.get('seat_selection_mode') == expected['seat_selection_mode'], (
+                        f'Seat selection mode mismatch for booking {expected["id"]}'
+                    )
                 # Check nullable fields
                 for field in ['created_at', 'paid_at']:
                     if field in expected:
@@ -668,3 +688,40 @@ def verify_tickets_returned_to_pool(client: TestClient, booking_state):
         assert ticket['status'] == 'available', (
             f'Ticket {ticket_id} should be available but has status {ticket["status"]}'
         )
+
+
+@then('the booking with id {booking_id:d} should have seat_positions:')
+def verify_booking_seat_positions(step, booking_state, booking_id: int):
+    """Verify that a booking has the expected seat positions."""
+    # Extract expected seat positions from table (no header row in this table)
+    rows = step.data_table.rows
+    expected_seats = []
+    for row in rows:  # No header to skip
+        expected_seats.append(row.cells[0].value)
+
+    # Get bookings from response
+    response = booking_state['response']
+    bookings = response.json()
+
+    # Find the booking with the specified ID
+    booking = next((b for b in bookings if b['id'] == booking_id), None)
+    assert booking is not None, f'Booking {booking_id} not found in response'
+
+    # Verify seat_positions field exists and is a list
+    assert 'seat_positions' in booking, f'Booking {booking_id} missing seat_positions field'
+    actual_seats = booking['seat_positions']
+    assert isinstance(actual_seats, list), (
+        f'seat_positions should be a list, got {type(actual_seats)}'
+    )
+
+    # Verify all expected seats are present
+    for expected_seat in expected_seats:
+        assert expected_seat in actual_seats, (
+            f'Expected seat {expected_seat} not found in booking {booking_id}. '
+            f'Actual seats: {actual_seats}'
+        )
+
+    # Verify no extra seats
+    assert len(actual_seats) == len(expected_seats), (
+        f'Expected {len(expected_seats)} seats, got {len(actual_seats)} in booking {booking_id}'
+    )

@@ -220,40 +220,67 @@ def create_bookings(step, booking_state, execute_sql_statement):
             event_id = event_key
         booking_id = int(booking_data['id'])
 
+        # Get section/subsection/quantity/seat_selection_mode/seat_positions from table if provided
+        if 'section' in booking_data:
+            section = booking_data['section']
+            subsection = int(booking_data['subsection'])
+            quantity = int(booking_data['quantity'])
+            seat_selection_mode = booking_data.get('seat_selection_mode', 'best_available')
+            # Parse seat_positions from JSON string if provided
+            if 'seat_positions' in booking_data:
+                import json
+
+                seat_positions = json.loads(booking_data['seat_positions'])
+            else:
+                seat_positions = []
+        else:
+            # Determine section/subsection from event_id (backward compatibility)
+            # Event A (id=1) -> section A, subsection 1
+            # Event B (id=2) -> section B, subsection 2
+            # Event C (id=3) -> section C, subsection 3
+            # Event D (id=4) -> section D, subsection 4
+            section_map = {1: ('A', 1), 2: ('B', 2), 3: ('C', 3), 4: ('D', 4)}
+            section, subsection = section_map.get(event_id, ('A', 1))
+            quantity = 1
+            seat_selection_mode = 'best_available'
+            seat_positions = []
+
         if booking_data.get('paid_at') == 'not_null' and booking_data['status'] == 'paid':
             execute_sql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, created_at, updated_at, paid_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, NOW(), NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW(), NOW())
                 """,
                 {
                     'id': booking_id,
                     'buyer_id': int(booking_data['buyer_id']),
                     'event_id': event_id,
-                    'section': 'A',
-                    'subsection': 1,
-                    'quantity': 2,
+                    'section': section,
+                    'subsection': subsection,
+                    'quantity': quantity,
                     'total_price': int(booking_data['total_price']),
                     'status': booking_data['status'],
-                    'seat_selection_mode': 'manual',
+                    'seat_selection_mode': seat_selection_mode,
+                    'seat_positions': seat_positions,
                 },
             )
         else:
             execute_sql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, created_at, updated_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW())
                 """,
                 {
                     'id': booking_id,
                     'buyer_id': int(booking_data['buyer_id']),
                     'event_id': event_id,
-                    'section': 'A',
-                    'subsection': 1,
-                    'quantity': 2,
+                    'section': section,
+                    'subsection': subsection,
+                    'quantity': quantity,
                     'total_price': int(booking_data['total_price']),
                     'status': booking_data['status'],
-                    'seat_selection_mode': 'manual',
+                    'seat_selection_mode': seat_selection_mode,
+                    'seat_positions': seat_positions,
                 },
             )
         booking_state['bookings'][int(booking_data['id'])] = {'id': booking_id}

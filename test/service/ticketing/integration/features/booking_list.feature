@@ -38,10 +38,10 @@ Feature: Booking List
     And the response should contain bookings:
       | 3 |
     And the bookings should include:
-      | id | event_name | total_price | status          | seller_name  | created_at | paid_at  |
-      |  1 | Event A    |        1000 | paid            | Test Seller1 | not_null   | not_null |
-      |  2 | Event B    |        2000 | paid            | Test Seller1 | not_null   | not_null |
-      |  3 | Event C    |        3000 | pending_payment | Test Seller2 | not_null   | null     |
+      | id | event_name | total_price | status          | seller_name  | venue_name   | section | subsection | quantity | seat_selection_mode | created_at | paid_at  |
+      |  1 | Event A    |        1000 | paid            | Test Seller1 | Taipei Arena | A       |          1 |        1 | best_available      | not_null   | not_null |
+      |  2 | Event B    |        2000 | paid            | Test Seller1 | Taipei Dome  | B       |          2 |        1 | best_available      | not_null   | not_null |
+      |  3 | Event C    |        3000 | pending_payment | Test Seller2 | Taipei Arena | C       |          3 |        1 | best_available      | not_null   | null     |
 
   Scenario: Seller lists bookings for their events
     When seller with id 4 requests their bookings
@@ -50,10 +50,10 @@ Feature: Booking List
     And the response should contain bookings:
       | 3 |
     And the bookings should include:
-      | id | event_name | total_price | status    | buyer_name  | created_at | paid_at  |
-      |  1 | Event A    |        1000 | paid      | Test Buyer1 | not_null   | not_null |
-      |  2 | Event B    |        2000 | paid      | Test Buyer1 | not_null   | not_null |
-      |  4 | Event D    |        4000 | cancelled | Test Buyer2 | not_null   | null     |
+      | id | event_name | total_price | status    | buyer_name  | venue_name   | section | subsection | quantity | seat_selection_mode | created_at | paid_at  |
+      |  1 | Event A    |        1000 | paid      | Test Buyer1 | Taipei Arena | A       |          1 |        1 | best_available      | not_null   | not_null |
+      |  2 | Event B    |        2000 | paid      | Test Buyer1 | Taipei Dome  | B       |          2 |        1 | best_available      | not_null   | not_null |
+      |  4 | Event D    |        4000 | cancelled | Test Buyer2 | Taipei Dome  | D       |          4 |        1 | best_available      | not_null   | null     |
 
   Scenario: Buyer with no bookings gets empty list
     When buyer with id 8 requests their bookings
@@ -79,3 +79,16 @@ Feature: Booking List
       | 1 |
     And all bookings should have status:
       | pending_payment |
+
+  Scenario: Booking list includes seat_positions for manual selection
+    Given bookings exist:
+      | buyer_id | event_id | total_price | status | paid_at | id | section | subsection | quantity | seat_selection_mode | seat_positions    |
+      |        6 |        1 |        1500 | paid   | null    |  5 | A       |          1 |        2 | manual              | ["A-1-1-5","A-1-1-6"] |
+    When buyer with id 6 requests their bookings
+    Then the response status code should be:
+      | 200 |
+    And the response should contain bookings:
+      | 4 |
+    And the booking with id 5 should have seat_positions:
+      | A-1-1-5 |
+      | A-1-1-6 |

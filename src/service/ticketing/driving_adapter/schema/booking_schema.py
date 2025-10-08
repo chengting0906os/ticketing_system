@@ -100,3 +100,9 @@ class BookingWithDetailsResponse(BaseModel):
     event_name: str
     buyer_name: str
     seller_name: str
+    venue_name: str
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: List[str]

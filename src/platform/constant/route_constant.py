@@ -23,7 +23,7 @@ BOOKING_LIST = BOOKING_BASE
 BOOKING_GET = f'{BOOKING_BASE}/{{booking_id}}'
 BOOKING_PAY = f'{BOOKING_BASE}/{{booking_id}}/pay'
 BOOKING_CANCEL = f'{BOOKING_BASE}/{{booking_id}}'
-BOOKING_MY_BOOKINGS = f'{BOOKING_BASE}/my-bookings'
+BOOKING_MY_BOOKINGS = f'{BOOKING_BASE}/my_booking'
 
 # Event ticket routes (moved from ticket module)
 EVENT_TICKETS_CREATE = f'{EVENT_BASE}/{{event_id}}/tickets'
