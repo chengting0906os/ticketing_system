@@ -195,6 +195,144 @@ services:
     depends_on:
       - loki
 
+  # =============================================================================
+  # Application Services (with hot-reload support)
+  # =============================================================================
+
+  # FastAPI Server
+  ticketing-api:
+    build:
+      context: .
+      target: development
+    container_name: ticketing-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: py_arch_lab
+      POSTGRES_PASSWORD: py_arch_lab
+      POSTGRES_DB: ticketing_system_db
+      POSTGRES_PORT: 5432
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      # Kvrocks
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: 6666
+      # Application
+      DEBUG: "true"
+      # Load from .env.example for other settings
+    env_file:
+      - .env.example
+    volumes:
+      - ./src:/app/src:ro  # Hot-reload: mount source code
+      - ./test:/app/test:ro  # Hot-reload: mount tests
+      - ./logs:/app/logs  # Share logs with promtail
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  # Ticketing Service Consumer (PostgreSQL State Manager)
+  ticketing-consumer:
+    build:
+      context: .
+      target: development
+    container_name: ticketing-consumer
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: py_arch_lab
+      POSTGRES_PASSWORD: py_arch_lab
+      POSTGRES_DB: ticketing_system_db
+      POSTGRES_PORT: 5432
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CONSUMER_INSTANCE_ID: "consumer-ticketing-1"
+      # Event selection (default to event 1, can override)
+      EVENT_ID: "${EVENT_ID:-1}"
+      # Application
+      DEBUG: "true"
+    env_file:
+      - .env.example
+    volumes:
+      - ./src:/app/src:ro  # Hot-reload: mount source code
+      - ./logs:/app/logs  # Share logs
+    command: ["uv", "run", "python", "-m", "src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+    networks:
+      - ticketing-network
+    restart: unless-stopped
+
+  # Seat Reservation Service Consumer (Kvrocks State Manager)
+  seat-reservation-consumer:
+    build:
+      context: .
+      target: development
+    container_name: seat-reservation-consumer
+    environment:
+      # Database (for event metadata)
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: py_arch_lab
+      POSTGRES_PASSWORD: py_arch_lab
+      POSTGRES_DB: ticketing_system_db
+      POSTGRES_PORT: 5432
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CONSUMER_INSTANCE_ID: "consumer-seat-reservation-1"
+      # Kvrocks
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: 6666
+      # Event selection (default to event 1, can override)
+      EVENT_ID: "${EVENT_ID:-1}"
+      # Application
+      DEBUG: "true"
+    env_file:
+      - .env.example
+    volumes:
+      - ./src:/app/src:ro  # Hot-reload: mount source code
+      - ./logs:/app/logs  # Share logs
+      - ./state:/app/state  # Quix Streams state directory
+    command: ["uv", "run", "python", "-m", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   kafka1_data:

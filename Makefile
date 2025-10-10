@@ -137,13 +137,15 @@ clean:
 	@find . -type f -name "*.pyc" -delete
 	@find . -type f -name ".DS_Store" -delete
 
-# Docker
+# Docker - Infrastructure Only
 .PHONY: docker-up
 docker-up:
-	@docker-compose up -d
+	@echo "🐳 Starting infrastructure services (DB, Kafka, Kvrocks, Monitoring)..."
+	@docker-compose up -d postgres kafka1 kafka2 kafka3 kafka-ui kvrocks prometheus grafana loki promtail
 
 .PHONY: docker-down
 docker-down:
+	@echo "🛑 Stopping all Docker services..."
 	@docker-compose down
 
 .PHONY: docker-logs
@@ -158,6 +160,148 @@ db-shell psql:
 db-restart:
 	@echo "Restarting PostgreSQL container..."
 	@docker restart ticketing_system_db
+
+# Docker - Full Stack (Infrastructure + Application)
+.PHONY: docker-stack-up dsu
+docker-stack-up dsu:  ## 🚀 Start complete containerized stack (infrastructure + app services)
+	@echo "🚀 Building and starting complete stack..."
+	@docker-compose build
+	@docker-compose up -d
+	@echo ""
+	@echo "✅ Stack started! Access points:"
+	@echo "   🌐 API:        http://localhost:8000"
+	@echo "   📚 API Docs:   http://localhost:8000/docs"
+	@echo "   📊 Kafka UI:   http://localhost:8080"
+	@echo "   📈 Grafana:    http://localhost:3000 (admin/admin)"
+	@echo "   🔍 Prometheus: http://localhost:9090"
+	@echo ""
+	@echo "📖 Full guide: see DOCKER_GUIDE.md"
+
+.PHONY: docker-stack-down dsd
+docker-stack-down dsd:  ## 🛑 Stop complete stack
+	@docker-compose down
+
+.PHONY: docker-stack-restart dsr
+docker-stack-restart dsr:  ## 🔄 Restart application services (keep infrastructure running)
+	@echo "🔄 Restarting application services..."
+	@docker-compose restart ticketing-api ticketing-consumer seat-reservation-consumer
+
+.PHONY: docker-app-logs dal
+docker-app-logs dal:  ## 📋 View application service logs
+	@docker-compose logs -f ticketing-api ticketing-consumer seat-reservation-consumer
+
+.PHONY: docker-api-logs dlog
+docker-api-logs dlog:  ## 📋 View API logs only
+	@docker-compose logs -f ticketing-api
+
+.PHONY: docker-rebuild dr
+docker-rebuild dr:  ## 🔨 Rebuild and restart application services
+	@echo "🔨 Rebuilding application services..."
+	@docker-compose build ticketing-api ticketing-consumer seat-reservation-consumer
+	@docker-compose up -d ticketing-api ticketing-consumer seat-reservation-consumer
+
+.PHONY: docker-shell dsh
+docker-shell dsh:  ## 🐚 Enter API container shell
+	@docker-compose exec ticketing-api bash
+
+.PHONY: docker-test dt
+docker-test dt:  ## 🧪 Run tests in container
+	@docker-compose exec ticketing-api uv run pytest test/ --ignore=test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: docker-test-e2e dte2e de2e
+docker-test-e2e dte2e de2e:  ## 🧪 Run E2E tests in container
+	@docker-compose exec ticketing-api uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: docker-test-all dta
+docker-test-all dta:  ## 🧪 Run all tests (including E2E) in container
+	@docker-compose exec ticketing-api uv run pytest test/ -v $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: docker-migrate dm
+docker-migrate dm:  ## 🗄️ Run migrations in container
+	@docker-compose exec ticketing-api uv run alembic upgrade head
+
+.PHONY: docker-seed ds
+docker-seed ds:  ## 🌱 Seed data in container
+	@docker-compose exec ticketing-api uv run python script/seed_data.py
+
+.PHONY: docker-clean dc
+docker-clean dc:  ## 🧹 Remove all containers, volumes, and images
+	@echo "⚠️  This will remove ALL data. Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] && docker-compose down -v --rmi all || echo "Cancelled"
+
+.PHONY: docker-clean-all dca
+docker-clean-all dca:  ## 🧹 Clean Kafka topics, consumer groups, and Kvrocks (in container)
+	@echo "🧹 Cleaning Kafka + Kvrocks in Docker..."
+	@docker-compose exec ticketing-api uv run python script/clean_all.py
+
+.PHONY: docker-reset dre
+docker-reset dre:  ## 🔄 Reset database (migrate + seed)
+	@echo "🔄 Resetting database..."
+	@$(MAKE) docker-migrate
+	@$(MAKE) docker-seed
+
+# Consumer scaling parameters (can be overridden: make dra SEAT_CONSUMERS=5)
+SEAT_CONSUMERS ?= 1
+TICKETING_CONSUMERS ?= 1
+
+.PHONY: docker-scale-consumers dsc
+docker-scale-consumers dsc:  ## 📈 Scale consumers to specified replicas
+	@echo "📈 Scaling consumers..."
+	@echo "   🪑 Seat Reservation: $(SEAT_CONSUMERS) instances"
+	@echo "   🎫 Ticketing: $(TICKETING_CONSUMERS) instances"
+	@docker-compose up -d --scale seat-reservation-consumer=$(SEAT_CONSUMERS) --scale ticketing-consumer=$(TICKETING_CONSUMERS) --no-recreate
+
+.PHONY: docker-reset-all dra
+docker-reset-all dra:  ## 🚀 Complete Docker reset (down → up → clean → migrate → seed → scale consumers)
+	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
+	@echo ""
+	@echo "🔧 Configuration:"
+	@echo "   🪑 Seat Reservation Consumers: $(SEAT_CONSUMERS)"
+	@echo "   🎫 Ticketing Consumers: $(TICKETING_CONSUMERS)"
+	@echo ""
+	@echo "⚠️  This will:"
+	@echo "   1. Stop and remove all containers + volumes"
+	@echo "   2. Start fresh infrastructure"
+	@echo "   3. Clean all Kafka topics + consumer groups"
+	@echo "   4. Reset database (migrate + seed)"
+	@echo "   5. Start $(SEAT_CONSUMERS) seat-reservation + $(TICKETING_CONSUMERS) ticketing consumers"
+	@echo ""
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@echo ""
+	@echo "Step 1/6: Stopping and removing old environment..."
+	@docker-compose down -v
+	@echo ""
+	@echo "Step 2/6: Starting infrastructure services..."
+	@docker-compose up -d postgres kafka1 kafka2 kafka3 kvrocks
+	@echo "⏳ Waiting 15s for services to be healthy..."
+	@sleep 15
+	@echo ""
+	@echo "Step 3/6: Starting application services..."
+	@docker-compose up -d ticketing-api
+	@echo "⏳ Waiting 10s for API to be ready..."
+	@sleep 10
+	@echo ""
+	@echo "Step 4/6: Cleaning Kafka + Kvrocks..."
+	@$(MAKE) docker-clean-all || echo "⚠️ Clean failed (might be first run)"
+	@echo ""
+	@echo "Step 5/6: Resetting database..."
+	@$(MAKE) docker-migrate
+	@$(MAKE) docker-seed
+	@echo ""
+	@echo "Step 6/6: Starting consumers..."
+	@$(MAKE) docker-scale-consumers SEAT_CONSUMERS=$(SEAT_CONSUMERS) TICKETING_CONSUMERS=$(TICKETING_CONSUMERS)
+	@echo ""
+	@echo "✅ ==================== RESET COMPLETED ===================="
+	@echo ""
+	@echo "🌐 Access Points:"
+	@echo "   API:        http://localhost:8000"
+	@echo "   API Docs:   http://localhost:8000/docs"
+	@echo "   Kafka UI:   http://localhost:8080"
+	@echo "   Grafana:    http://localhost:3000"
+	@echo ""
+	@echo "📋 View logs:  make docker-app-logs"
+	@echo "🧪 Run tests:  make docker-test"
 
 # Kafka
 .PHONY: clean-all ca
@@ -215,41 +359,66 @@ restart-services restart: stop-services services  ## 🔄 重啟所有服務
 # Help
 .PHONY: help
 help:
-	@echo "Available commands:"
-	@echo "  Database Migrations:"
-	@echo "    make migrate-up (mu)     - Run all pending migrations"
-	@echo "    make migrate-down (md)   - Rollback one migration"
-	@echo "    make migrate-new (mn) MSG='message' - Create new migration"
-	@echo "    make migrate-history (mh) - Show migration history"
-	@echo "    make migrate-current (mc) - Show current migration"
+	@echo "╔═══════════════════════════════════════════════════════════════╗"
+	@echo "║           📋 Ticketing System - Makefile Commands            ║"
+	@echo "╚═══════════════════════════════════════════════════════════════╝"
 	@echo ""
+	@echo "🚀 QUICK START"
+	@echo "  make dra [SEAT_CONSUMERS=N]  - Docker: Complete reset + scale consumers"
+	@echo "  make reset-all               - Local: Reset Kafka + DB + start consumers"
+	@echo "  make help-full               - Show detailed command documentation"
+	@echo ""
+	@echo "🐳 DOCKER (Recommended)"
+	@echo "  Complete Workflows:"
+	@echo "    dra  - Complete reset (down→up→clean→migrate→seed→scale)"
+	@echo "    dca  - Clean Kafka + Kvrocks only"
+	@echo "    dre  - Reset database only"
+	@echo "    dsc  - Scale consumers"
+	@echo "  Stack:"
+	@echo "    dsu  - Start stack        dsd  - Stop stack"
+	@echo "    dsr  - Restart services   dr   - Rebuild containers"
 	@echo "  Testing:"
-	@echo "    make test (t) [args]     - Run all test (accepts pytest args)"
-	@echo "    make test-api [args]     - Run API test (accepts pytest args)"
-	@echo "    make test-bdd (tbdd) [args] - Run BDD test (accepts pytest args)"
+	@echo "    dt   - Run tests          de2e - Run E2E tests"
+	@echo "    dta  - Run all tests"
+	@echo "  Database:"
+	@echo "    dm   - Migrate            ds   - Seed data"
+	@echo "  Logs:"
+	@echo "    dal  - App logs           dlog - API logs"
+	@echo "    dsh  - Enter shell"
 	@echo ""
-	@echo "  Development:"
-	@echo "    make run                 - Run development server"
-	@echo "    make lint                - Check code style"
-	@echo "    make format              - Format code"
-	@echo "    make typecheck           - Run type checking"
-	@echo "    make clean               - Remove cache files"
+	@echo "🧪 TESTING (Local)"
+	@echo "    t    - Run unit tests     te2e - Run E2E tests"
+	@echo "    ts   - With output (-s)   txs  - Stop on fail (-xs)"
+	@echo "    tbdd - Run BDD tests"
 	@echo ""
-	@echo "  Docker & Database:"
-	@echo "    make docker-up           - Start Docker containers"
-	@echo "    make docker-down         - Stop Docker containers"
-	@echo "    make docker-logs         - View Docker logs"
-	@echo "    make db-shell (psql)     - Connect to PostgreSQL shell"
+	@echo "🗄️  DATABASE"
+	@echo "    mu   - Migrate up         md   - Migrate down"
+	@echo "    mn   - New migration      mh   - History"
+	@echo "    psql - PostgreSQL shell"
 	@echo ""
-	@echo "  Cleanup & Reset:"
-	@echo "    make reset               - 🔄 Reset Kafka + Database + Seed data"
-	@echo "    make reset-all           - 🚀 Reset + Auto-start services (one-stop!)"
-	@echo "    make clean-all (ca)      - 🧹 Complete cleanup (topics, groups, RocksDB)"
-	@echo "    make kafka-clean (kc)    - Clean all Kafka topics"
-	@echo "    make kafka-status (ks)   - Check Kafka cluster status"
+	@echo "🌊 KAFKA"
+	@echo "    ca   - Clean all (Kafka+Kvrocks+DB+RocksDB)"
+	@echo "    kc   - Clean Kafka only   ks   - Kafka status"
 	@echo ""
-	@echo "  Services:"
-	@echo "    make services (ss)       - 🚀 Start services (interactive event selection)"
-	@echo "    make stop                - 🛑 Stop all services"
-	@echo "    make restart             - 🔄 Restart all services"
-	@echo "    make mkt EVENT_ID=1      - 📊 Monitor Kafka topics for event"
+	@echo "🎫 SERVICES (Local)"
+	@echo "    ss   - Start consumers    stop - Stop consumers"
+	@echo ""
+	@echo "🔧 DEVELOPMENT"
+	@echo "    run    - Start API server"
+	@echo "    lint   - Check style      format - Fix style"
+	@echo "    pyre   - Type check       clean  - Remove cache"
+	@echo ""
+	@echo "💡 Examples:"
+	@echo "    make dra SEAT_CONSUMERS=2          # Start with 2 seat consumers"
+	@echo "    make dt test/service/ticketing/    # Test specific directory"
+	@echo "    make t -k \"test_booking\"            # Test matching pattern"
+	@echo ""
+	@echo "📚 Full Documentation:"
+	@echo "    COMMANDS.md          - Complete command reference"
+	@echo "    DOCKER_QUICKSTART.md - Docker quick start guide"
+	@echo "    DOCKER_GUIDE.md      - Complete Docker documentation"
+
+.PHONY: help-full
+help-full:
+	@echo "Opening complete command reference..."
+	@cat COMMANDS.md 2>/dev/null || echo "COMMANDS.md not found. Run 'make help' for quick reference."

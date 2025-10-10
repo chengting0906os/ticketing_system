@@ -1,32 +1,72 @@
 -- Init script for ticketing_system_db
 -- This script runs when the PostgreSQL container is first created
 
--- Create schema if needed (optional, uncomment if you use a specific schema)
--- CREATE SCHEMA IF NOT EXISTS ticketing;
-
--- Set timezone (optional)
+-- Set timezone
 SET timezone = 'UTC';
 
--- Create extension for UUID generation if needed
+-- =============================================================================
+-- Create Test Databases for pytest
+-- =============================================================================
+
+-- Main test database
+CREATE DATABASE ticketing_system_test_db;
+
+-- Test databases for parallel pytest-xdist workers (gw0-gw7)
+CREATE DATABASE ticketing_system_test_db_gw0;
+CREATE DATABASE ticketing_system_test_db_gw1;
+CREATE DATABASE ticketing_system_test_db_gw2;
+CREATE DATABASE ticketing_system_test_db_gw3;
+CREATE DATABASE ticketing_system_test_db_gw4;
+CREATE DATABASE ticketing_system_test_db_gw5;
+CREATE DATABASE ticketing_system_test_db_gw6;
+CREATE DATABASE ticketing_system_test_db_gw7;
+
+-- =============================================================================
+-- Setup Extensions for All Databases
+-- =============================================================================
+
+-- Main database
+\c ticketing_system_db;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- You can add initial table creation here if needed
--- For example:
--- CREATE TABLE IF NOT EXISTS events (
---     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
---     name VARCHAR(255) NOT NULL,
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+-- Test databases
+\c ticketing_system_test_db;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Add any seed data or initial configuration
--- INSERT INTO ... VALUES ...;
+\c ticketing_system_test_db_gw0;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Grant permissions if needed
--- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO py_arch_lab;
--- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO py_arch_lab;
+\c ticketing_system_test_db_gw1;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Log that initialization is complete
+\c ticketing_system_test_db_gw2;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+\c ticketing_system_test_db_gw3;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+\c ticketing_system_test_db_gw4;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+\c ticketing_system_test_db_gw5;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+\c ticketing_system_test_db_gw6;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+\c ticketing_system_test_db_gw7;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- =============================================================================
+-- Log Completion
+-- =============================================================================
+
+\c ticketing_system_db;
 DO $$
 BEGIN
-    RAISE NOTICE 'Database initialization complete';
+    RAISE NOTICE '✅ Database initialization complete';
+    RAISE NOTICE '📦 Created databases:';
+    RAISE NOTICE '   - ticketing_system_db (main)';
+    RAISE NOTICE '   - ticketing_system_test_db (test)';
+    RAISE NOTICE '   - ticketing_system_test_db_gw0-gw7 (parallel test workers)';
 END $$;

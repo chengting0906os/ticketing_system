@@ -7,6 +7,40 @@ A high-performance event ticketing platform built with Clean Architecture, BDD/T
 **Concurrency**: Lock-free seat reservations
 **Deployment**: 2 servers with 10 Kafka partitions
 
+## 🚀 Quick Start
+
+**Get the complete system running in ONE command:**
+
+```bash
+# Docker (Recommended) - Complete reset with 2 seat-reservation consumers
+make docker-reset-all SEAT_CONSUMERS=2
+
+# View logs and partition assignments
+make docker-app-logs
+
+# Run tests
+make docker-test
+```
+
+**Access Points:**
+- 🌐 **API**: http://localhost:8000
+- 📚 **API Docs**: http://localhost:8000/docs
+- 📊 **Kafka UI**: http://localhost:8080
+- 📈 **Grafana**: http://localhost:3000
+
+**📋 All Commands:**
+```bash
+make help            # Quick reference
+make help-full       # Complete command guide
+```
+
+**📚 Documentation:**
+- **[COMMANDS.md](./COMMANDS.md)** - Complete command reference
+- **[DOCKER_QUICKSTART.md](./DOCKER_QUICKSTART.md)** - Docker quick start guide
+- **[spec/CONSTITUTION.md](./spec/CONSTITUTION.md)** - Development guidelines
+
+---
+
 ## Core Features
 - **Real-time seat reservation** with atomic Kvrocks Bitfield + Counter operations
 - **Event-driven microservices** communication via Kafka

@@ -150,15 +150,24 @@ class SeatReservationConsumer:
     # ========== Message Handlers ==========
 
     @Logger.io
-    def _process_reservation_request(self, message: Dict) -> Dict:
+    def _process_reservation_request(
+        self, message: Dict, key: Any = None, context: Any = None
+    ) -> Dict:
         """處理預訂請求"""
         start_time = time.time()
         event_id = message.get('event_id', self.event_id)
         section = message.get('section', 'unknown')
         mode = message.get('seat_selection_mode', 'unknown')
 
+        # Extract partition info from Quix Streams context
+        partition_info = ''
+        if hasattr(context, 'topic') and hasattr(context, 'partition'):
+            partition_info = f' | partition={context.partition}, offset={context.offset}'
+
         try:
-            Logger.base.info(f'🎫 [RESERVATION] Processing: {message.get("aggregate_id")}')
+            Logger.base.info(
+                f'🎫 [RESERVATION-{self.instance_id}] Processing: {message.get("aggregate_id")}{partition_info}'
+            )
             result = self.portal.call(self._handle_reservation, message)
 
             # 記錄成功的預訂
@@ -187,8 +196,13 @@ class SeatReservationConsumer:
             return {'success': False, 'error': str(e)}
 
     @Logger.io
-    def _process_release_seat(self, message: Dict) -> Dict:
+    def _process_release_seat(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
         """處理釋放座位"""
+        # Extract partition info
+        partition_info = ''
+        if hasattr(context, 'partition'):
+            partition_info = f' | partition={context.partition}'
+
         # Handle both old format (seat_id) and new format (seat_positions)
         seat_id = message.get('seat_id')
         seat_positions = message.get('seat_positions', [])
@@ -206,11 +220,11 @@ class SeatReservationConsumer:
                 result = self.portal.call(self.release_seat_use_case.execute, request)
 
                 if result.success:
-                    Logger.base.info(f'🔓 [RELEASE] {seat_id}')
+                    Logger.base.info(f'🔓 [RELEASE-{self.instance_id}] {seat_id}{partition_info}')
                     released_seats.append(seat_id)
                 else:
                     Logger.base.warning(
-                        f'⚠️ [RELEASE] Failed to release {seat_id}: {result.error_message}'
+                        f'⚠️ [RELEASE-{self.instance_id}] Failed to release {seat_id}: {result.error_message}'
                     )
 
             return {
@@ -224,8 +238,15 @@ class SeatReservationConsumer:
             return {'success': False, 'error': str(e)}
 
     @Logger.io
-    def _process_finalize_payment(self, message: Dict) -> Dict:
+    def _process_finalize_payment(
+        self, message: Dict, key: Any = None, context: Any = None
+    ) -> Dict:
         """處理完成支付"""
+        # Extract partition info
+        partition_info = ''
+        if hasattr(context, 'partition'):
+            partition_info = f' | partition={context.partition}'
+
         seat_id = message.get('seat_id')
         if not seat_id:
             return {'success': False, 'error': 'Missing seat_id'}
@@ -240,7 +261,7 @@ class SeatReservationConsumer:
             result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
 
             if result.success:
-                Logger.base.info(f'💰 [FINALIZE] {seat_id}')
+                Logger.base.info(f'💰 [FINALIZE-{self.instance_id}] {seat_id}{partition_info}')
                 return {'success': True, 'seat_id': seat_id}
 
             return {'success': False, 'error': result.error_message}
@@ -359,11 +380,17 @@ class SeatReservationConsumer:
             Logger.base.info(
                 f'🚀 [SEAT-RESERVATION-{self.instance_id}] Started\n'
                 f'   📊 Event: {self.event_id}\n'
-                f'   👥 Group: {self.consumer_group_id}'
+                f'   👥 Group: {self.consumer_group_id}\n'
+                f'   🔒 Processing: exactly-once\n'
+                f'   📦 Waiting for partition assignment...'
             )
 
             self.running = True
             if self.kafka_app:
+                Logger.base.info(
+                    f'🎯 [SEAT-RESERVATION-{self.instance_id}] Running app\n'
+                    f'   💡 Partition assignments will be logged when messages are processed'
+                )
                 self.kafka_app.run()
 
         except Exception as e:

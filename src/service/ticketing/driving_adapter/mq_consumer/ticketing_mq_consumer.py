@@ -73,14 +73,16 @@ class TicketingMqConsumer:
             }
         )
 
-        # 訂閱 topics
+        # 訂閱 topics with rebalance callback
         self.consumer.subscribe(
             [
                 KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
                     event_id=self.event_id
                 ),
                 KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
-            ]
+            ],
+            on_assign=self._on_partitions_assigned,
+            on_revoke=self._on_partitions_revoked,
         )
 
         self.running = False
@@ -93,6 +95,25 @@ class TicketingMqConsumer:
     def set_portal(self, portal: 'BlockingPortal') -> None:
         """設置 BlockingPortal 用於同步調用 async 函數"""
         self.portal = portal
+
+    def _on_partitions_assigned(self, consumer, partitions):
+        """Partition 分配回調 - 記錄此 consumer 分配到哪些 partitions"""
+        partition_ids = [p.partition for p in partitions]
+        Logger.base.info(
+            f'🎯 [TICKETING-{self.instance_id}] Partitions ASSIGNED\n'
+            f'   📦 Partitions: {partition_ids}\n'
+            f'   🔢 Count: {len(partition_ids)}\n'
+            f'   👥 Group: {self.consumer_group_id}'
+        )
+
+    def _on_partitions_revoked(self, consumer, partitions):
+        """Partition 撤銷回調 - 在 rebalance 前觸發"""
+        partition_ids = [p.partition for p in partitions]
+        Logger.base.warning(
+            f'🔄 [TICKETING-{self.instance_id}] Partitions REVOKED (rebalancing...)\n'
+            f'   📦 Partitions: {partition_ids}\n'
+            f'   🔢 Count: {len(partition_ids)}'
+        )
 
     async def start(self):
         """使用 AnyIO 啟動消費者"""
@@ -137,15 +158,22 @@ class TicketingMqConsumer:
     async def _route_message(self, msg):
         """根據 topic 路由到對應處理器"""
         topic = msg.topic()
+        partition = msg.partition()
+        offset = msg.offset()
 
         try:
             value = json.loads(msg.value().decode('utf-8'))
 
+            Logger.base.debug(
+                f'📨 [TICKETING-{self.instance_id}] Message received | '
+                f'partition={partition}, offset={offset}'
+            )
+
             # 路由表
             if 'pending-payment-and' in topic:
-                await self._process_pending_payment_and_reserved(value)
+                await self._process_pending_payment_and_reserved(value, partition)
             elif 'failed' in topic:
-                await self._process_failed(value)
+                await self._process_failed(value, partition)
             else:
                 Logger.base.warning(f'⚠️ [TICKETING] Unknown topic: {topic}')
 
@@ -157,15 +185,15 @@ class TicketingMqConsumer:
     # ============================================================
 
     @Logger.io
-    async def _process_pending_payment_and_reserved(self, message: Dict[str, Any]):
+    async def _process_pending_payment_and_reserved(self, message: Dict[str, Any], partition: int):
         """處理 Booking → PENDING_PAYMENT + Ticket → RESERVED (原子操作)"""
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reserved_seats = message.get('reserved_seats', [])
 
         Logger.base.info(
-            f'📥 [BOOKING+TICKET] Processing atomic update: '
-            f'booking_id={booking_id}, buyer_id={buyer_id}, seats={len(reserved_seats)}'
+            f'📥 [BOOKING+TICKET-{self.instance_id}] Processing atomic update | '
+            f'partition={partition}, booking_id={booking_id}, buyer_id={buyer_id}, seats={len(reserved_seats)}'
         )
 
         # Create session for this message processing
@@ -194,13 +222,16 @@ class TicketingMqConsumer:
                 await session.rollback()
 
     @Logger.io
-    async def _process_failed(self, message: Dict[str, Any]):
+    async def _process_failed(self, message: Dict[str, Any], partition: int):
         """處理 Booking → FAILED"""
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reason = message.get('error_message', 'Unknown')
 
-        Logger.base.info(f'📥 [BOOKING-FAILED] Processing: {booking_id} | Reason: {reason}')
+        Logger.base.info(
+            f'📥 [BOOKING-FAILED-{self.instance_id}] Processing | '
+            f'partition={partition}, booking_id={booking_id}, reason={reason}'
+        )
 
         # Create session for this message processing
         async for session in get_async_session():
