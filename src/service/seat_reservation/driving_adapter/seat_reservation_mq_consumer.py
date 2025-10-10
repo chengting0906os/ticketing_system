@@ -6,6 +6,7 @@ Seat Reservation Consumer - 座位選擇路由器
 from dataclasses import dataclass
 import json
 import os
+import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
@@ -22,6 +23,7 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+from src.platform.metrics.ticketing_metrics import metrics
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
@@ -145,11 +147,37 @@ class SeatReservationConsumer:
     @Logger.io
     def _process_reservation_request(self, message: Dict) -> Dict:
         """處理預訂請求"""
+        start_time = time.time()
+        event_id = message.get('event_id', self.event_id)
+        section = message.get('section', 'unknown')
+        mode = message.get('seat_selection_mode', 'unknown')
+
         try:
             Logger.base.info(f'🎫 [RESERVATION] Processing: {message.get("aggregate_id")}')
             result = self.portal.call(self._handle_reservation, message)
+
+            # 記錄成功的預訂
+            processing_time = time.time() - start_time
+            metrics.record_seat_reservation(
+                event_id=event_id,
+                section=section,
+                mode=mode,
+                result='success',
+                duration=processing_time,
+            )
+
             return {'success': True, 'result': result}
         except Exception as e:
+            # 記錄失敗的預訂
+            processing_time = time.time() - start_time
+            metrics.record_seat_reservation(
+                event_id=event_id,
+                section=section,
+                mode=mode,
+                result='error',
+                duration=processing_time,
+            )
+
             Logger.base.error(f'❌ [RESERVATION] Failed: {e}')
             return {'success': False, 'error': str(e)}
 

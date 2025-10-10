@@ -3,12 +3,13 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse  # type: ignore[attr-defined]
+from fastapi.responses import PlainTextResponse, RedirectResponse  # type: ignore[attr-defined]
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from src.platform.config.core_setting import settings
-from src.platform.database.db_setting import create_db_and_tables
 from src.platform.config.di import cleanup, container, setup
+from src.platform.database.db_setting import create_db_and_tables
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
@@ -106,6 +107,12 @@ app.include_router(auth_router, prefix='/api/user', tags=['user'])
 app.include_router(event_router, prefix='/api/event', tags=['event'])
 app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
 app.include_router(seat_reservation_router)
+
+
+@app.get('/metrics')
+async def get_metrics():
+    """Prometheus metrics endpoint"""
+    return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get('/')
