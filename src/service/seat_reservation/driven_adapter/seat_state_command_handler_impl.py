@@ -105,7 +105,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     'error_message': 'Manual mode requires section and subsection',
                 }
 
-            args = [_KEY_PREFIX, str(event_id), 'manual']
+            args = [_KEY_PREFIX, str(event_id), str(booking_id), 'manual']  # 🆕 添加 booking_id
             section_id = f'{section}-{subsection}'
 
             # Get config to calculate seat_index
@@ -194,6 +194,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             args = [
                 _KEY_PREFIX,
                 str(event_id),
+                str(booking_id),  # 🆕 添加 booking_id
                 'best_available',
                 section_id,
                 str(quantity),
@@ -285,6 +286,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         args = [
             _KEY_PREFIX,
             str(event_id),
+            str(booking_id),  # 🆕 添加 booking_id
             'best_available',
             section_id,
             str(quantity),

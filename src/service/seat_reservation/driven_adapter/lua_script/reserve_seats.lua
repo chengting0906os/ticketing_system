@@ -1,37 +1,70 @@
--- Reserve seats atomically with Check-and-Set pattern
+-- Reserve seats atomically with Check-and-Set pattern + Idempotency
 -- Supports two modes: manual (specific seats) and best_available (auto-find consecutive)
 --
 -- Mode 1: manual - Reserve specific seats
 --   ARGV[1]: key_prefix
 --   ARGV[2]: event_id
---   ARGV[3]: "manual"
---   ARGV[4..n]: seat data in groups of 5: section, subsection, row, seat, seat_index
---   Returns: array of "seat_id:success" strings
+--   ARGV[3]: booking_id (for idempotency)
+--   ARGV[4]: "manual"
+--   ARGV[5..n]: seat data in groups of 5: section, subsection, row, seat, seat_index
+--   Returns: array of "seat_id:success" strings or cached result
 --
 -- Mode 2: best_available - Find and reserve consecutive seats
 --   ARGV[1]: key_prefix
 --   ARGV[2]: event_id
---   ARGV[3]: "best_available"
---   ARGV[4]: section_id (e.g., "A-1")
---   ARGV[5]: quantity (number of consecutive seats needed)
---   ARGV[6]: rows (max number of rows in section)
---   ARGV[7]: seats_per_row
---   Returns: "success:seat_id1,seat_id2,..." or "error:message"
+--   ARGV[3]: booking_id (for idempotency)
+--   ARGV[4]: "best_available"
+--   ARGV[5]: section_id (e.g., "A-1")
+--   ARGV[6]: quantity (number of consecutive seats needed)
+--   ARGV[7]: rows (max number of rows in section)
+--   ARGV[8]: seats_per_row
+--   Returns: "success:seat_id1,seat_id2,..." or "error:message" or cached result
 
 local key_prefix = ARGV[1]
 local event_id = ARGV[2]
-local mode = ARGV[3]
+local booking_id = ARGV[3]
+local mode = ARGV[4]
 local AVAILABLE = 0  -- 00 in binary
 local RESERVED = 1   -- 01 in binary
 
+-- 🔍 Build section-aware idempotency key
+local section_id
+if mode == "manual" then
+    -- Extract section_id from first seat (ARGV[5] = section, ARGV[6] = subsection)
+    local section = ARGV[5]
+    local subsection = ARGV[6]
+    section_id = section .. '-' .. subsection
+elseif mode == "best_available" then
+    -- section_id is directly provided in ARGV[5]
+    section_id = ARGV[5]
+end
+
+local idempotency_key = key_prefix .. 'processed_booking:' .. booking_id .. ':' .. section_id
+local cached_result = redis.call('GET', idempotency_key)
+
+if cached_result then
+    -- 📦 Return cached result (already processed)
+    local cached_data = cjson.decode(cached_result)
+
+    if mode == "manual" then
+        -- Return array format for manual mode
+        return cached_data.result
+    else
+        -- Return string format for best_available mode
+        return cached_data.result
+    end
+end
+
+-- 🎯 First time processing - continue with normal logic
+
 -- Mode 1: Manual seat selection
 if mode == "manual" then
-    local seat_count = (#ARGV - 3) / 5
+    local seat_count = (#ARGV - 4) / 5  -- 🔧 調整索引 (新增了 booking_id)
     local results = {}
     local section_changes = {}
 
     for i = 0, seat_count - 1 do
-        local base_idx = 4 + i * 5
+        local base_idx = 5 + i * 5  -- 🔧 調整索引 (從 4 改為 5)
         local section = ARGV[base_idx]
         local subsection = ARGV[base_idx + 1]
         local row = ARGV[base_idx + 2]
@@ -75,14 +108,22 @@ if mode == "manual" then
         redis.call('HSET', stats_key, 'updated_at', timestamp)
     end
 
+    -- 💾 Cache result for idempotency (TTL: 7 days = 604800 seconds, adjust per event duration in production)
+    local cache_data = {
+        result = results,
+        timestamp = timestamp,
+        mode = "manual"
+    }
+    redis.call('SETEX', idempotency_key, 604800, cjson.encode(cache_data))
+
     return results
 
 -- Mode 2: Best available (find consecutive seats)
 elseif mode == "best_available" then
-    local section_id = ARGV[4]
-    local quantity = tonumber(ARGV[5])
-    local rows = tonumber(ARGV[6])
-    local seats_per_row = tonumber(ARGV[7])
+    local section_id = ARGV[5]  -- 🔧 調整索引 (從 4 改為 5)
+    local quantity = tonumber(ARGV[6])  -- 🔧 調整索引 (從 5 改為 6)
+    local rows = tonumber(ARGV[7])  -- 🔧 調整索引 (從 6 改為 7)
+    local seats_per_row = tonumber(ARGV[8])  -- 🔧 調整索引 (從 7 改為 8)
 
     local bf_key = key_prefix .. 'seats_bf:' .. event_id .. ':' .. section_id
 
@@ -153,9 +194,29 @@ elseif mode == "best_available" then
         redis.call('HINCRBY', stats_key, 'reserved', quantity)
         redis.call('HSET', stats_key, 'updated_at', timestamp)
 
-        return 'success:' .. table.concat(found_seats, ',')
+        local success_result = 'success:' .. table.concat(found_seats, ',')
+
+        -- 💾 Cache successful result for idempotency (TTL: 7 days = 604800 seconds)
+        local cache_data = {
+            result = success_result,
+            timestamp = timestamp,
+            mode = "best_available"
+        }
+        redis.call('SETEX', idempotency_key, 604800, cjson.encode(cache_data))
+
+        return success_result
     else
-        return 'error:No consecutive seats available'
+        local error_result = 'error:No consecutive seats available'
+
+        -- 💾 Cache failed result for idempotency (TTL: 7 days = 604800 seconds, seat scarcity is stable during event period)
+        local cache_data = {
+            result = error_result,
+            timestamp = redis.call('TIME')[1],
+            mode = "best_available"
+        }
+        redis.call('SETEX', idempotency_key, 604800, cjson.encode(cache_data))
+
+        return error_result
     end
 else
     return 'error:Invalid mode'

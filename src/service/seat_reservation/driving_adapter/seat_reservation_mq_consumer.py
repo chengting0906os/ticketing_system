@@ -49,7 +49,8 @@ class KafkaConfig:
     @property
     def consumer_config(self) -> Dict:
         return {
-            'enable.auto.commit': False,
+            'enable.auto.commit': False,  # 🆕 exactly-once 需要手動提交
+            'isolation.level': 'read_committed',  # 🆕 只讀取已提交的事務消息
             'auto.offset.reset': 'earliest',
         }
 
@@ -66,7 +67,7 @@ class SeatReservationConsumer:
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        self.instance_id = os.getenv('CONSUMER_INSTANCE_ID', '1')
+        self.instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID',
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=self.event_id),
@@ -88,25 +89,27 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
-        """創建無狀態 Kafka 應用"""
+        """創建支援 Exactly-Once 的 Kafka 應用"""
         app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
             consumer_group=self.consumer_group_id,
-            commit_interval=self.kafka_config.commit_interval,
+            processing_guarantee='exactly-once',  # 🆕 啟用 exactly-once 處理
+            commit_interval=0,  # 🆕 禁用自動提交間隔，讓事務管理
             producer_extra_config=self.kafka_config.producer_config,
             consumer_extra_config=self.kafka_config.consumer_config,
         )
 
         Logger.base.info(
-            f'🪑 [SEAT-RESERVATION] Created stateless Kafka app\n'
+            f'🪑 [SEAT-RESERVATION] Created exactly-once Kafka app\n'
             f'   👥 Group: {self.consumer_group_id}\n'
-            f'   🎫 Event: {self.event_id}'
+            f'   🎫 Event: {self.event_id}\n'
+            f'   🔒 Processing: exactly-once'
         )
         return app
 
     @Logger.io
     def _setup_topics(self):
-        """設置 3 個 topic 的處理邏輯"""
+        """設置 3 個 topic 的處理邏輯 - 使用 Kafka 事務實現 Exactly Once"""
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
@@ -130,17 +133,19 @@ class SeatReservationConsumer:
             ),
         }
 
-        # 註冊所有 topics
+        # 註冊所有 topics - 使用 stateless 模式，依賴 Kafka 事務
         for name, (topic_name, handler) in topics.items():
             topic = self.kafka_app.topic(
                 name=topic_name,
                 key_serializer='str',
                 value_serializer='json',
             )
-            self.kafka_app.dataframe(topic=topic).apply(handler, stateful=False)
-            Logger.base.info(f'   ✓ {name.capitalize()} topic configured')
 
-        Logger.base.info('✅ All topics configured (stateless mode)')
+            # 使用 stateless 處理，依賴 Kafka 事務的 exactly once 保證
+            self.kafka_app.dataframe(topic=topic).apply(handler, stateful=False)
+            Logger.base.info(f'   ✓ {name.capitalize()} topic configured (stateless + transaction)')
+
+        Logger.base.info('✅ All topics configured (exactly once via Kafka transactions)')
 
     # ========== Message Handlers ==========
 

@@ -86,7 +86,7 @@ class ReserveSeatsUseCase:
             # 1. 驗證請求
             self._validate_request(request)
 
-            # 2. 統一調用 Command Handler（Lua 腳本根據 mode 自動分流）
+            # 2. 統一調用 Command Handler（Lua 腳本處理冪等性和座位預訂）
             result = await self.seat_state_handler.reserve_seats_atomic(
                 event_id=request.event_id,
                 booking_id=request.booking_id,

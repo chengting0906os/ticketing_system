@@ -58,7 +58,8 @@ See [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_bui
 ```bash
 EVENT_ID=1
 CONSUMER_GROUP_ID=event-id-1_____seat-reservation-service--1
-CONSUMER_INSTANCE_ID=1  # For multiple instances
+KAFKA_CONSUMER_INSTANCE_ID=1  # For multiple consumer instances
+KAFKA_PRODUCER_INSTANCE_ID=producer-12345  # For producer transactional.id
 PYTHONPATH=/path/to/project
 ```
 

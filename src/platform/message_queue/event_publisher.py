@@ -32,16 +32,23 @@ def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
 
 
 def _get_quix_app() -> Application:
-    """取得全域 Quix Application 實例"""
+    """取得全域 Quix Application 實例 - 支援 Exactly-Once 語義"""
     global _quix_app
     if _quix_app is None:
+        # 產生唯一的事務 ID (用於 exactly-once)
+        instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
+        transactional_id = f'ticketing-producer-{instance_id}'
+
         _quix_app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
+            processing_guarantee='exactly-once',  # 🆕 啟用 exactly-once
             producer_extra_config={
                 'enable.idempotence': True,
                 'acks': 'all',
                 'retries': 3,
                 'compression.type': 'snappy',
+                'transactional.id': transactional_id,  # 🆕 事務 ID
+                'max.in.flight.requests.per.connection': 5,  # 🆕 exactly-once 優化
             },
         )
     return _quix_app

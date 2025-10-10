@@ -227,7 +227,7 @@ class KafkaConfigService(IKafkaConfigService):
             env = os.environ.copy()
             env['EVENT_ID'] = str(event_id)
             env['PYTHONPATH'] = project_root
-            env['CONSUMER_INSTANCE_ID'] = str(instance_id)
+            env['KAFKA_CONSUMER_INSTANCE_ID'] = str(instance_id)
 
             # 根據不同的 consumer 設置不同的 consumer group
             if 'ticketing' in consumer.name:

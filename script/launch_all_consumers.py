@@ -257,7 +257,7 @@ class EventServiceLauncher:
             env = os.environ.copy()
             env['EVENT_ID'] = str(event.id)
             env['PYTHONPATH'] = project_root
-            env['CONSUMER_INSTANCE_ID'] = '1'
+            env['KAFKA_CONSUMER_INSTANCE_ID'] = '1'
 
             # 啟動 consumer
             cmd = ['uv', 'run', 'python', '-m', module]

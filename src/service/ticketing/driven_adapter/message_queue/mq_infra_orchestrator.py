@@ -106,7 +106,7 @@ class MqInfraOrchestrator(IMqInfraOrchestrator):
                     env['EVENT_ID'] = str(event_id)
                     env['PYTHONPATH'] = str(project_root)
                     env['CONSUMER_GROUP_ID'] = str(consumer_config['group_id'])
-                    env['CONSUMER_INSTANCE_ID'] = str(consumer_config['instance_id'])
+                    env['KAFKA_CONSUMER_INSTANCE_ID'] = str(consumer_config['instance_id'])
 
                     cmd = ['uv', 'run', 'python', '-m', str(consumer_config['module'])]
 

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import List
 
@@ -67,6 +68,14 @@ class Settings(BaseSettings):
     KVROCKS_PASSWORD: str = ''
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks 也用 Redis 協議
 
+    # Kafka Instance Configuration (for Exactly-Once Processing)
+    KAFKA_PRODUCER_INSTANCE_ID: str = os.getenv(
+        'KAFKA_PRODUCER_INSTANCE_ID', f'producer-{os.getpid()}'
+    )
+    KAFKA_CONSUMER_INSTANCE_ID: str = os.getenv(
+        'KAFKA_CONSUMER_INSTANCE_ID', f'consumer-{os.getpid()}'
+    )
+
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
     KAFKA_SECURITY_PROTOCOL: str = 'PLAINTEXT'
@@ -110,7 +119,6 @@ class Settings(BaseSettings):
             'group_id': self.KAFKA_GROUP_ID,
             'auto_offset_reset': self.KAFKA_AUTO_OFFSET_RESET,
             'enable_auto_commit': False,
-            'max_poll_records': 500,
         }
 
 
