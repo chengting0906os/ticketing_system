@@ -16,7 +16,6 @@ class SeatSelectionMode(StrEnum):
 class BookingStatus(StrEnum):
     PROCESSING = 'processing'
     PENDING_PAYMENT = 'pending_payment'
-    PAID = 'paid'
     CANCELLED = 'cancelled'
     COMPLETED = 'completed'
     FAILED = 'failed'
@@ -151,11 +150,6 @@ class Booking:
         )
 
     @Logger.io
-    def mark_as_paid(self) -> 'Booking':
-        now = datetime.now()
-        return attrs.evolve(self, status=BookingStatus.PAID, paid_at=now, updated_at=now)
-
-    @Logger.io
     def mark_as_failed(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
@@ -163,7 +157,7 @@ class Booking:
     @Logger.io
     def mark_as_completed(self) -> 'Booking':
         now = datetime.now()
-        return attrs.evolve(self, status=BookingStatus.COMPLETED, updated_at=now)
+        return attrs.evolve(self, status=BookingStatus.COMPLETED, paid_at=now, updated_at=now)
 
     @Logger.io
     def cancel(self) -> 'Booking':

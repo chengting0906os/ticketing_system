@@ -39,13 +39,30 @@ def init_handler():
     return InitEventAndTicketsStateHandlerImpl()
 
 
+@pytest.fixture(scope='function')
+def unique_event_id(kvrocks_client_sync_for_test):
+    """Generate unique event_id for each test to avoid conflicts in parallel execution"""
+    import random
+    import time
+
+    # Use timestamp (microseconds) + random for strong uniqueness guarantee
+    event_id = int(time.time() * 1000000) % 10000000 + random.randint(1, 9999)
+
+    # Extra cleanup: ensure no stale data for this event_id
+    keys_to_clean = kvrocks_client_sync_for_test.keys(f'{_KEY_PREFIX}*:{event_id}:*')
+    if keys_to_clean:
+        kvrocks_client_sync_for_test.delete(*keys_to_clean)
+
+    return event_id
+
+
 class TestReserveSeatsAtomicManualMode:
     """測試 reserve_seats_atomic() - Manual Mode (手動選擇座位)"""
 
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_single_seat_success(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test reserving a single available seat"""
         # Given: Initialize seats
@@ -58,7 +75,7 @@ class TestReserveSeatsAtomicManualMode:
                 }
             ]
         }
-        event_id = 1
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # When: Reserve one seat using manual mode
@@ -67,7 +84,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=100,
             buyer_id=1,
             mode='manual',
-            seat_ids=['A-1-1-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1'],
         )
 
         # Then: Should succeed
@@ -92,7 +111,7 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_multiple_seats_atomically(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test reserving multiple seats in one atomic operation"""
         # Given: Initialize seats
@@ -105,7 +124,7 @@ class TestReserveSeatsAtomicManualMode:
                 }
             ]
         }
-        event_id = 2
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # When: Reserve 3 seats using manual mode
@@ -114,12 +133,17 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=101,
             buyer_id=2,
             mode='manual',
-            seat_ids=['A-1-1-1', 'A-1-1-2', 'A-1-2-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1', '1-2', '2-1'],
         )
 
         # Then: Should succeed
         assert result['success'] is True
         assert len(result['reserved_seats']) == 3
+        # All reserved seats should be in full format
+        expected_seats = ['A-1-1-1', 'A-1-1-2', 'A-1-2-1']
+        assert sorted(result['reserved_seats']) == sorted(expected_seats)
 
         # Verify stats
         stats_key = _make_key(f'section_stats:{event_id}:A-1')
@@ -130,7 +154,7 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_already_reserved_seat_fails(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test Check-and-Set: cannot reserve already reserved seat"""
         # Given: Initialize and reserve a seat
@@ -143,7 +167,7 @@ class TestReserveSeatsAtomicManualMode:
                 }
             ]
         }
-        event_id = 3
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Reserve seat A-1-1-1
@@ -152,7 +176,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=102,
             buyer_id=3,
             mode='manual',
-            seat_ids=['A-1-1-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1'],
         )
 
         # When: Try to reserve the same seat again
@@ -161,7 +187,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=103,
             buyer_id=4,
             mode='manual',
-            seat_ids=['A-1-1-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1'],
         )
 
         # Then: Should fail
@@ -176,7 +204,7 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_partial_reservation_failure(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test partial failure: some seats reserved, some already taken"""
         # Given: Initialize seats and reserve one
@@ -189,7 +217,7 @@ class TestReserveSeatsAtomicManualMode:
                 }
             ]
         }
-        event_id = 4
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Reserve seat A-1-1-2
@@ -198,7 +226,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=104,
             buyer_id=5,
             mode='manual',
-            seat_ids=['A-1-1-2'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-2'],
         )
 
         # When: Try to reserve 3 seats including the reserved one
@@ -207,7 +237,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=105,
             buyer_id=6,
             mode='manual',
-            seat_ids=['A-1-1-1', 'A-1-1-2', 'A-1-1-3'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1', '1-2', '1-3'],
         )
 
         # Then: Should fail (manual mode requires ALL seats to be available)
@@ -216,7 +248,7 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_seats_updates_timestamp(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test that reservation updates the timestamp"""
         # Given: Initialize seats
@@ -229,7 +261,7 @@ class TestReserveSeatsAtomicManualMode:
                 }
             ]
         }
-        event_id = 5
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Get initial timestamp
@@ -243,7 +275,9 @@ class TestReserveSeatsAtomicManualMode:
             booking_id=106,
             buyer_id=7,
             mode='manual',
-            seat_ids=['A-1-1-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1'],
         )
 
         # Then: Timestamp should be updated
@@ -254,7 +288,7 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_seats_across_multiple_sections(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test reserving seats from different sections atomically"""
         # Given: Initialize multiple sections
@@ -272,17 +306,35 @@ class TestReserveSeatsAtomicManualMode:
                 },
             ]
         }
-        event_id = 6
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # When: Reserve seats from both sections
-        result = await seat_handler.reserve_seats_atomic(
+        # When: Reserve seats from both sections (need separate calls for different sections)
+        result_a = await seat_handler.reserve_seats_atomic(
             event_id=event_id,
             booking_id=107,
             buyer_id=8,
             mode='manual',
-            seat_ids=['A-1-1-1', 'B-1-1-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1'],
         )
+
+        result_b = await seat_handler.reserve_seats_atomic(
+            event_id=event_id,
+            booking_id=107,
+            buyer_id=8,
+            mode='manual',
+            section='B',
+            subsection=1,
+            seat_ids=['1-1'],
+        )
+
+        # Combine results for assertion
+        result = {
+            'success': result_a['success'] and result_b['success'],
+            'reserved_seats': result_a['reserved_seats'] + result_b['reserved_seats'],
+        }
 
         # Then: Should succeed
         assert result['success'] is True
@@ -300,7 +352,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_and_reserve_consecutive_seats_in_single_row(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test finding and reserving consecutive seats in a single row"""
         # Given: Initialize seats with 1 row, 5 seats
@@ -313,7 +365,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
                 }
             ]
         }
-        event_id = 10
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # When: Request 3 consecutive seats (best_available mode)
@@ -344,7 +396,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_consecutive_seats_across_multiple_rows(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test finding consecutive seats when first row doesn't have enough"""
         # Given: Initialize seats with 2 rows, 3 seats per row
@@ -358,7 +410,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
                 }
             ]
         }
-        event_id = 11
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Reserve 2 seats in first row
@@ -367,7 +419,9 @@ class TestReserveSeatsAtomicBestAvailableMode:
             booking_id=99,
             buyer_id=99,
             mode='manual',
-            seat_ids=['A-1-1-1', 'A-1-1-2'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1', '1-2'],
         )
 
         # When: Request 2 consecutive seats
@@ -389,7 +443,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_no_consecutive_seats_available(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test when no consecutive seats are available"""
         # Given: Initialize 1 row with 3 seats, reserve middle seat
@@ -402,7 +456,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
                 }
             ]
         }
-        event_id = 12
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Reserve middle seat to break continuity
@@ -411,7 +465,9 @@ class TestReserveSeatsAtomicBestAvailableMode:
             booking_id=99,
             buyer_id=99,
             mode='manual',
-            seat_ids=['A-1-1-2'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-2'],
         )
 
         # When: Request 2 consecutive seats (but only [1] and [3] available)
@@ -432,7 +488,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_best_position_for_consecutive_seats(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """Test that it finds the best (earliest) position for consecutive seats"""
         # Given: Multiple rows with available seats
@@ -445,7 +501,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
                 }
             ]
         }
-        event_id = 13
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Reserve some seats to create gaps
@@ -454,7 +510,9 @@ class TestReserveSeatsAtomicBestAvailableMode:
             booking_id=98,
             buyer_id=98,
             mode='manual',
-            seat_ids=['A-1-1-1', 'A-1-1-2'],  # Row 1: XX--
+            section='A',
+            subsection=1,
+            seat_ids=['1-1', '1-2'],  # Row 1: XX--
         )
 
         # When: Request 2 consecutive seats
@@ -475,7 +533,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserved_status_not_sold(
-        self, kvrocks_client_sync_for_test, seat_handler, init_handler
+        self, kvrocks_client_sync_for_test, seat_handler, init_handler, unique_event_id
     ):
         """
         Test that reserved seats have correct status (RESERVED not SOLD)
@@ -497,7 +555,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
                 }
             ]
         }
-        event_id = 999
+        event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # When: Reserve 3 seats using manual mode
@@ -506,7 +564,9 @@ class TestReserveSeatsAtomicBestAvailableMode:
             booking_id=100,
             buyer_id=1,
             mode='manual',
-            seat_ids=['A-1-1-1', 'A-1-1-2', 'A-1-2-1'],
+            section='A',
+            subsection=1,
+            seat_ids=['1-1', '1-2', '2-1'],
         )
 
         # Then: Reservation should succeed

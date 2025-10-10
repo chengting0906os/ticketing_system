@@ -64,15 +64,19 @@ migrate-current mc:
 # Testing
 .PHONY: test t
 test t:
-	@uv run pytest test/ -v $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ --ignore=test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: ts
 ts:
-	@uv run pytest test/ -vs $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ --ignore=test/service/e2e -vs $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: txs
 txs:
-	@uv run pytest test/ -vxs $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest test/ --ignore=test/service/e2e -vxs $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: test-e2e te2e
+test-e2e te2e:
+	@uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-api
 test-api:

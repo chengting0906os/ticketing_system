@@ -156,19 +156,35 @@ class SeatReservationConsumer:
     @Logger.io
     def _process_release_seat(self, message: Dict) -> Dict:
         """處理釋放座位"""
+        # Handle both old format (seat_id) and new format (seat_positions)
         seat_id = message.get('seat_id')
-        if not seat_id:
-            return {'success': False, 'error': 'Missing seat_id'}
+        seat_positions = message.get('seat_positions', [])
+
+        if seat_id:
+            # Legacy single seat release
+            seat_positions = [seat_id]
+        elif not seat_positions:
+            return {'success': False, 'error': 'Missing seat_id or seat_positions'}
 
         try:
-            request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
-            result = self.portal.call(self.release_seat_use_case.execute, request)
+            released_seats = []
+            for seat_id in seat_positions:
+                request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
+                result = self.portal.call(self.release_seat_use_case.execute, request)
 
-            if result.success:
-                Logger.base.info(f'🔓 [RELEASE] {seat_id}')
-                return {'success': True, 'seat_id': seat_id}
+                if result.success:
+                    Logger.base.info(f'🔓 [RELEASE] {seat_id}')
+                    released_seats.append(seat_id)
+                else:
+                    Logger.base.warning(
+                        f'⚠️ [RELEASE] Failed to release {seat_id}: {result.error_message}'
+                    )
 
-            return {'success': False, 'error': result.error_message}
+            return {
+                'success': True,
+                'released_seats': released_seats,
+                'total_released': len(released_seats),
+            }
 
         except Exception as e:
             Logger.base.error(f'❌ [RELEASE] {e}')

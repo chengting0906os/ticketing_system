@@ -98,27 +98,54 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     'error_message': 'Manual mode requires seat_ids',
                 }
 
+            if not section or subsection is None:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'error_message': 'Manual mode requires section and subsection',
+                }
+
             args = [_KEY_PREFIX, str(event_id), 'manual']
+            section_id = f'{section}-{subsection}'
+
+            # Get config to calculate seat_index
+            config = await self._get_section_config(event_id, section_id)
+            seats_per_row = config['seats_per_row']
 
             # Parse seat_ids and prepare Lua script arguments
             for seat_id in seat_ids:
                 parts = seat_id.split('-')
-                if len(parts) != 4:
-                    Logger.base.warning(f'⚠️ Invalid seat_id format: {seat_id}')
+
+                if len(parts) == 2:
+                    # 2-part format from ticketing domain: "row-seat"
+                    # Combine with section and subsection parameters
+                    row, seat = parts
+                    Logger.base.info(
+                        f'📍 [CMD] Processing seat: {section}-{subsection}-{row}-{seat} (from {seat_id})'
+                    )
+
+                    # Calculate seat_index
+                    seat_index = self._calculate_seat_index(int(row), int(seat), seats_per_row)
+                    args.extend([section, str(subsection), row, seat, str(seat_index)])
+
+                elif len(parts) == 4:
+                    # 4-part format: "section-subsection-row-seat" (backward compatibility)
+                    sec, subsec, row, seat = parts
+                    Logger.base.info(
+                        f'📍 [CMD] Processing seat: {sec}-{subsec}-{row}-{seat} (4-part format)'
+                    )
+
+                    # Calculate seat_index
+                    seat_index = self._calculate_seat_index(int(row), int(seat), seats_per_row)
+                    args.extend([sec, subsec, row, seat, str(seat_index)])
+                else:
+                    Logger.base.warning(
+                        f'⚠️ Invalid seat_id format: {seat_id} (expected row-seat or section-subsection-row-seat)'
+                    )
                     continue
 
-                sec, subsec, row, seat = parts
-                section_id = f'{sec}-{subsec}'
-
-                # Get config to calculate seat_index
-                config = await self._get_section_config(event_id, section_id)
-                seats_per_row = config['seats_per_row']
-                seat_index = self._calculate_seat_index(int(row), int(seat), seats_per_row)
-
-                args.extend([sec, subsec, row, seat, str(seat_index)])
-
             # Execute Lua script
-            Logger.base.info('⚙️  [CMD] Executing manual mode Lua script')
+            Logger.base.info('⚙️ [CMD] Executing manual mode Lua script')
             raw_results = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
 
             # Parse results (manual mode returns array of "seat_id:success")
@@ -175,7 +202,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             ]
 
             # Execute Lua script
-            Logger.base.info('⚙️  [CMD] Executing best_available mode Lua script')
+            Logger.base.info('⚙️ [CMD] Executing best_available mode Lua script')
             raw_result = await client.eval(RESERVE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
 
             # Parse result (best_available returns "success:seat1,seat2,..." or "error:message")

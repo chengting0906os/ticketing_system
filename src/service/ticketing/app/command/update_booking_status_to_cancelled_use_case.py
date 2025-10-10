@@ -33,8 +33,8 @@ class CancelBookingUseCase:
                 raise ForbiddenError('Only the buyer can cancel this booking')
 
             # Check if booking can be cancelled
-            if booking.status == BookingStatus.PAID:
-                raise DomainError('Cannot cancel paid booking', 400)
+            if booking.status == BookingStatus.COMPLETED:
+                raise DomainError('Cannot cancel completed booking', 400)
             elif booking.status == BookingStatus.CANCELLED:
                 raise DomainError('Booking already cancelled', 400)
 
@@ -49,6 +49,23 @@ class CancelBookingUseCase:
                 booking_id=booking_id
             )
 
+            # Get seat positions for seat release
+            seat_positions = []
+            if ticket_ids:
+                # Get ticket details to extract seat positions
+                tickets = await self.uow.event_ticketing_query_repo.get_tickets_by_ids(
+                    ticket_ids=ticket_ids
+                )
+                # Extract seat identifiers, filtering out any None values
+                seat_positions = [
+                    ticket.seat_identifier
+                    for ticket in tickets
+                    if ticket.seat_identifier is not None
+                ]
+                Logger.base.info(
+                    f'🎫 [CANCEL] Found {len(seat_positions)} seat positions: {seat_positions}'
+                )
+
             # UoW commits!
             await self.uow.commit()
 
@@ -62,6 +79,7 @@ class CancelBookingUseCase:
                 buyer_id=buyer_id,
                 event_id=booking.event_id,
                 ticket_ids=ticket_ids,
+                seat_positions=seat_positions,  # Now properly populated
                 cancelled_at=datetime.now(timezone.utc),
             )
 

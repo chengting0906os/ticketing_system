@@ -48,21 +48,46 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     )
     booking_id = result[0]['id'] if result else 1
 
+    # Create reserved tickets for this booking
+    # Find available tickets from the event
+    available_tickets = execute_sql_statement(
+        "SELECT id FROM ticket WHERE event_id = :event_id AND status = 'available' AND section = 'A' AND subsection = 1 ORDER BY id LIMIT 2",
+        {'event_id': event_id},
+        fetch=True,
+    )
+
+    ticket_ids = []
+    if available_tickets:
+        for ticket in available_tickets:
+            ticket_id = ticket['id']
+            ticket_ids.append(ticket_id)
+            # Update ticket to reserved status and link to booking
+            execute_sql_statement(
+                "UPDATE ticket SET status = 'reserved', buyer_id = :buyer_id WHERE id = :ticket_id",
+                {'buyer_id': buyer_id, 'ticket_id': ticket_id},
+            )
+            # Link ticket to booking
+            execute_sql_statement(
+                'INSERT INTO booking_ticket (booking_id, ticket_id) VALUES (:booking_id, :ticket_id)',
+                {'booking_id': booking_id, 'ticket_id': ticket_id},
+            )
+
     booking_state['booking'] = {'id': booking_id, 'status': 'pending_payment', 'event_id': event_id}
     booking_state['buyer_id'] = buyer_id
     booking_state['event_id'] = event_id
+    booking_state['ticket_ids'] = ticket_ids
 
 
-@given('a booking exists with status "paid":')
-def create_paid_booking(step, client: TestClient, booking_state, execute_sql_statement):
+@given('a booking exists with status "completed":')
+def create_completed_booking(step, client: TestClient, booking_state, execute_sql_statement):
     booking_data = extract_table_data(step)
     create_pending_booking(step, client, booking_state, execute_sql_statement)
     if 'paid_at' in booking_data and booking_data['paid_at'] == 'not_null':
         execute_sql_statement(
-            'UPDATE "booking" SET status = \'paid\', paid_at = :paid_at WHERE id = :id',
+            'UPDATE "booking" SET status = \'completed\', paid_at = :paid_at WHERE id = :id',
             {'paid_at': datetime.now(), 'id': booking_state['booking']['id']},
         )
-        booking_state['booking']['status'] = 'paid'
+        booking_state['booking']['status'] = 'completed'
         booking_state['booking']['paid_at'] = datetime.now().isoformat()
 
 

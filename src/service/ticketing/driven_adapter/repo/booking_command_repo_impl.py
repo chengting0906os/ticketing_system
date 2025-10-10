@@ -182,6 +182,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             .values(
                 status=booking.status.value,
                 updated_at=booking.updated_at,
+                paid_at=booking.paid_at,
             )
             .returning(BookingModel)
         )
@@ -274,8 +275,8 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
                 raise NotFoundError('Booking not found')
             elif existing_booking.buyer_id != buyer_id:
                 raise ForbiddenError('Only the buyer can cancel this booking')
-            elif existing_booking.status == BookingStatus.PAID.value:
-                raise DomainError('Cannot cancel paid booking')
+            elif existing_booking.status == BookingStatus.COMPLETED.value:
+                raise DomainError('Cannot cancel completed booking')
             elif existing_booking.status == BookingStatus.CANCELLED.value:
                 raise DomainError('Booking already cancelled')
             else:

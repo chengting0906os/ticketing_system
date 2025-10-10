@@ -102,6 +102,7 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: unit",
     "integration: integration",
+    "e2e",
     "asyncio: mark test as async",
     "bdd: BDD scenario test",
     "api: API test",

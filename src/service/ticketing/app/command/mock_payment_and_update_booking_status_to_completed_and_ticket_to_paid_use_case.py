@@ -38,7 +38,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             if booking.buyer_id != buyer_id:
                 raise ForbiddenError('Only the buyer can pay for this booking')
 
-            if booking.status == BookingStatus.PAID:
+            if booking.status == BookingStatus.COMPLETED:
                 raise DomainError('Booking already paid')
             elif booking.status == BookingStatus.CANCELLED:
                 raise DomainError('Cannot pay for cancelled booking')
@@ -46,15 +46,31 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
                 raise DomainError('Booking is not in a payable state')
 
             # Process payment and update booking
-            paid_booking = booking.mark_as_paid()
-            updated_booking = await self.uow.booking_command_repo.update_status_to_paid(
-                booking=paid_booking
+            completed_booking = booking.mark_as_completed()
+            updated_booking = await self.uow.booking_command_repo.update_status_to_completed(
+                booking=completed_booking
             )
 
             # Get reserved tickets
             reserved_tickets = await self.uow.booking_query_repo.get_tickets_by_booking_id(
                 booking_id=booking_id
             )
+
+            # Extract ticket IDs for status update
+            ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
+
+            # Update tickets status to SOLD in PostgreSQL (within the same transaction)
+            if ticket_ids:
+                from src.service.ticketing.shared_kernel.domain.enum.ticket_status import (
+                    TicketStatus,
+                )
+
+                await self.uow.event_ticketing_command_repo.update_tickets_status(
+                    ticket_ids=ticket_ids, status=TicketStatus.SOLD
+                )
+                Logger.base.info(
+                    f'🎫 [PAYMENT] Updated {len(ticket_ids)} tickets to SOLD in PostgreSQL'
+                )
 
             # UoW commits!
             await self.uow.commit()
@@ -64,9 +80,6 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             Logger.base.info(
                 f'💳 [PAYMENT] Publishing payment event for {len(reserved_tickets)} tickets in booking {booking_id}'
             )
-
-            # Extract ticket IDs
-            ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
 
             if ticket_ids:
                 # Create and publish BookingPaidEvent
@@ -103,6 +116,6 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         return {
             'booking_id': updated_booking.id,
             'payment_id': payment_id,
-            'status': 'paid',
+            'status': BookingStatus.COMPLETED.value,
             'paid_at': updated_booking.paid_at.isoformat() if updated_booking.paid_at else None,
         }

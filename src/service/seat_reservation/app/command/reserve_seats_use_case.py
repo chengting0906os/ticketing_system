@@ -93,12 +93,8 @@ class ReserveSeatsUseCase:
                 buyer_id=request.buyer_id,
                 mode=request.selection_mode,
                 seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
-                section=request.section_filter
-                if request.selection_mode == 'best_available'
-                else None,
-                subsection=request.subsection_filter
-                if request.selection_mode == 'best_available'
-                else None,
+                section=request.section_filter,  # 兩種模式都需要 section
+                subsection=request.subsection_filter,  # 兩種模式都需要 subsection
                 quantity=request.quantity if request.selection_mode == 'best_available' else None,
             )
 

@@ -63,3 +63,29 @@ class UserResponse(BaseModel):
                 'is_active': True,
             }
         }
+
+
+class LoginResponse(BaseModel):
+    """Login response schema with JWT token"""
+
+    id: int
+    email: str
+    name: str
+    role: UserRole
+    is_active: bool
+    access_token: str
+    token_type: str = 'bearer'
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            'example': {
+                'id': 1,
+                'email': 'user@example.com',
+                'name': 'John Doe',
+                'role': 'buyer',
+                'is_active': True,
+                'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+                'token_type': 'bearer',
+            }
+        }

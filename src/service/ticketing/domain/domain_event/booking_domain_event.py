@@ -84,6 +84,7 @@ class BookingCancelledEvent:
     buyer_id: int
     event_id: int
     ticket_ids: List[int]
+    seat_positions: List[str]  # Added for seat release
     cancelled_at: datetime
 
     @property

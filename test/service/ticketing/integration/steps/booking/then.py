@@ -2,6 +2,12 @@ from typing import Any, Dict, List
 
 from fastapi.testclient import TestClient
 from pytest_bdd import then
+
+from src.platform.constant.route_constant import (
+    BOOKING_GET,
+    EVENT_GET,
+    EVENT_TICKETS_BY_SUBSECTION,
+)
 from test.shared.then import get_state_with_response
 from test.shared.utils import (
     assert_response_status,
@@ -10,13 +16,6 @@ from test.shared.utils import (
     login_user,
 )
 from test.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
-
-from src.platform.constant.route_constant import (
-    BOOKING_GET,
-    EVENT_GET,
-    EVENT_TICKETS_BY_SUBSECTION,
-    USER_LOGIN,
-)
 
 
 def assert_nullable_field(
@@ -187,121 +186,47 @@ def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_sta
     )
 
 
-@then('the booking status should remain "paid"')
-def verify_booking_status_remains_paid(step, client: TestClient, booking_state):
+@then('the booking status should remain "completed"')
+def verify_booking_status_remains_completed(step, client: TestClient, booking_state):
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
-    assert booking_data['status'] == 'paid', (
-        f'Expected booking status to remain "paid", got {booking_data["status"]}'
+    assert booking_data['status'] == 'completed', (
+        f'Expected booking status to remain "completed", got {booking_data["status"]}'
     )
 
 
 @then('the tickets should have status:')
-def _(step, client: TestClient, booking_state=None, context=None):
+def verify_tickets_have_status(
+    step, client: TestClient, booking_state=None, context=None, execute_sql_statement=None
+):
+    if execute_sql_statement is None:
+        raise ValueError('execute_sql_statement function is required but was not provided')
     expected_data = extract_table_data(step)
     expected_status = expected_data['status']
 
     # Get state that contains the booking or event information
     state = get_state_with_response(booking_state=booking_state, context=context)
 
-    # Try to get event_id from various sources in priority booking
-    event_id = None
-
-    # First check if event_id is directly available in state (most common for booking test)
-    if 'event_id' in state:
-        event_id = state['event_id']
-
-    # Then check the booking object for event_id
-    elif 'booking' in state:
-        event_id = state['booking'].get('event_id')
-
-    # Then check if there's an event object
-    elif 'event' in state:
-        event_id = state['event']['id']
-
-    # Finally check the response data
-    elif 'response' in state and state['response'].status_code in [200, 201]:
-        response_data = state['response'].json()
-        if 'event_id' in response_data:
-            event_id = response_data['event_id']
-        elif 'event' in response_data:
-            event_id = response_data['event']['id']
-
-    assert event_id, 'Could not determine event_id for ticket status verification'
-
-    if expected_status == 'sold':
-        # Login as seller to see all tickets
-        login_response = client.post(
-            USER_LOGIN,
-            data={'username': TEST_SELLER_EMAIL, 'password': DEFAULT_PASSWORD},
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        )
-
-        if login_response.status_code == 200:
-            if 'fastapiusersauth' in login_response.cookies:
-                client.cookies.set('fastapiusersauth', login_response.cookies['fastapiusersauth'])
-
-    # Get tickets for the event (now with appropriate permissions)
-    tickets_response = client.get(
-        EVENT_TICKETS_BY_SUBSECTION.format(event_id=event_id, section='A', subsection=1)
-    )
-    assert tickets_response.status_code == 200, f'Failed to get tickets: {tickets_response.text}'
-
-    tickets_data = tickets_response.json()
-    tickets = tickets_data.get('tickets', [])
-
     # Get the specific ticket IDs that are part of this booking
     ticket_ids = state.get('ticket_ids', [])
 
-    if expected_status == 'sold':
-        # For "sold" status, check the specific tickets associated with this booking
-        if ticket_ids:
-            booking_tickets = [t for t in tickets if t['id'] in ticket_ids]
+    if not ticket_ids:
+        raise ValueError('No ticket_ids found in state - cannot verify ticket status')
 
-            if len(booking_tickets) > 0:
-                sold_booking_tickets = [t for t in booking_tickets if t['status'] == 'sold']
-                assert len(sold_booking_tickets) > 0, (
-                    f"Expected booking tickets {ticket_ids} to be marked as 'sold' after payment, "
-                    f'but found statuses: {[(t["id"], t["status"]) for t in booking_tickets]}'
-                )
-            else:
-                sold_tickets = [t for t in tickets if t['status'] == 'sold']
-                assert len(sold_tickets) > 0, (
-                    f"Expected some tickets to be marked as 'sold' after payment, but found none. "
-                    f'Found {len(tickets)} tickets with statuses: {set(t["status"] for t in tickets)}'
-                )
-        else:
-            sold_tickets = [t for t in tickets if t['status'] == 'sold']
-            assert len(sold_tickets) > 0, (
-                f"Expected some tickets to be marked as 'sold' after payment, but found none. "
-                f'Found {len(tickets)} tickets with statuses: {set(t["status"] for t in tickets)}'
-            )
-    elif expected_status == 'available' and ticket_ids:
-        # For cancellation scenarios with specific ticket IDs
-        booking_tickets = [t for t in tickets if t['id'] in ticket_ids]
-        if booking_tickets:
-            for ticket in booking_tickets:
-                assert ticket['status'] == expected_status, (
-                    f"Expected ticket status '{expected_status}', got '{ticket['status']}' for ticket {ticket['id']}"
-                )
-        else:
-            # If specific ticket IDs not found, check if any tickets became available
-            available_tickets = [t for t in tickets if t['status'] == 'available']
-            assert len(available_tickets) > 0, (
-                "Expected some tickets to be 'available' but found none"
-            )
-    else:
-        # Default behavior: verify all tickets have expected status
-        assert len(tickets) > 0, 'No tickets found for verification'
-        matching_tickets = [t for t in tickets if t['status'] == expected_status]
-        total_tickets = len(tickets)
+    # Query tickets directly from PostgreSQL database (source of truth)
+    for ticket_id in ticket_ids:
+        result = execute_sql_statement(
+            'SELECT id, status FROM ticket WHERE id = :ticket_id',
+            {'ticket_id': ticket_id},
+            fetch=True,
+        )
 
-        if len(matching_tickets) == 0:
-            statuses = set(t['status'] for t in tickets)
-            raise AssertionError(
-                f"Expected tickets with status '{expected_status}' but found none. "
-                f'Found {total_tickets} tickets with statuses: {statuses}'
-            )
+        assert result, f'Ticket {ticket_id} not found in database'
+        ticket = result[0]
+
+        assert ticket['status'] == expected_status, (
+            f"Expected ticket {ticket_id} status '{expected_status}', got '{ticket['status']}'"
+        )
 
 
 @then('the event status should be "reserved"')
