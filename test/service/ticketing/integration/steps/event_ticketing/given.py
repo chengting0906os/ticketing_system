@@ -319,6 +319,28 @@ def event_exists(step, execute_sql_statement):
                 },
             )
 
+    # Verify Kvrocks data is actually written (防止並行測試的競爭條件)
+    import time
+
+    max_retries = 10
+    for attempt in range(max_retries):
+        # Check both index and first section stats exist
+        if client.exists(index_key):
+            # Also verify at least one section has stats
+            first_section = sections_list2[0] if sections_list2 else None
+            if first_section:
+                first_subsection = first_section['subsections'][0]
+                first_section_id = f'{first_section["name"]}-{first_subsection["number"]}'
+                first_stats_key = f'{key_prefix}section_stats:{event_id}:{first_section_id}'
+                if client.exists(first_stats_key):
+                    break
+        if attempt < max_retries - 1:
+            time.sleep(0.15)
+    else:
+        raise RuntimeError(
+            f'Failed to initialize Kvrocks data for event {event_id} after {max_retries} attempts'
+        )
+
 
 @given('Kvrocks seat initialization will fail')
 def mock_kvrocks_failure(request):

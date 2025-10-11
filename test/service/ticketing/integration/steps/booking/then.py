@@ -80,7 +80,10 @@ def verify_booking_created(step, booking_state):
 @then('the booking status should be:')
 def verify_booking_status(step, booking_state):
     expected_status = extract_single_value(step)
-    booking = booking_state.get('booking')
+    # Check updated_booking first (from payment or cancellation), then fallback to booking or response
+    booking = booking_state.get('updated_booking')
+    if not booking:
+        booking = booking_state.get('booking')
     if not booking:
         response = booking_state.get('response')
         if response:

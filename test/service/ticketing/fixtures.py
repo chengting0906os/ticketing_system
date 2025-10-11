@@ -4,10 +4,6 @@ import pytest
 
 
 # Patch paths - extracted to avoid hardcoding
-PATCH_MQ_ORCHESTRATOR_SETUP = (
-    'src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator'
-    '.MqInfraOrchestrator.setup_mq_infra'
-)
 PATCH_SEAT_INITIALIZER = (
     'src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl'
     '.InitEventAndTicketsStateHandlerImpl.initialize_seats_from_config'

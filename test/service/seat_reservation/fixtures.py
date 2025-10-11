@@ -20,7 +20,7 @@ def get_free_port():
 
 def run_server(port: int):
     """Run uvicorn server in separate process."""
-    from src.main import app
+    from test.test_app import app
 
     uvicorn.run(app, host='127.0.0.1', port=port, log_level='error')
 

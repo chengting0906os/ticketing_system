@@ -49,3 +49,5 @@ rocksdb_state_*/
 knowledge_base/
 kvrocks_state/
 .actrc
+cdk.out/
+test_log/

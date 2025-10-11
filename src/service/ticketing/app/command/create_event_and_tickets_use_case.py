@@ -95,7 +95,7 @@ class CreateEventAndTicketsUseCase:
         4. Extract event_id (fail-fast check)
         5. Initialize seats in Kvrocks (fail-fast with compensating transaction)
         6. Update status to AVAILABLE in DB (atomic, repo commits)
-        7. Setup MQ infrastructure (fail-safe)
+        7. Setup Kafka topics and partitions (fail-safe, auto-creates if fails)
 
         Args:
             name: Event name
@@ -177,6 +177,17 @@ class CreateEventAndTicketsUseCase:
         final_aggregate = await self.event_ticketing_command_repo.update_event_aggregate(
             event_aggregate=final_aggregate
         )
+
+        # 7. Setup Kafka topics and partitions (fail-safe)
+        try:
+            await self.mq_infra_orchestrator.setup_kafka_topics_and_partitions(
+                event_id=event_id,
+                seating_config=seating_config,
+            )
+        except Exception as e:
+            # Kafka setup failure should not block event creation
+            # Topics will be auto-created when first message is sent
+            Logger.base.warning(f'⚠️ Kafka setup failed, will auto-create on first use: {e}')
 
         Logger.base.info(
             f'✅ Created event {final_aggregate.event.id} with {len(final_aggregate.tickets)} tickets'

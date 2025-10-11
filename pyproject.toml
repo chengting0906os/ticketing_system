@@ -34,6 +34,10 @@ dependencies = [
     "pyrefly>=0.35.0",
     "prometheus-client>=0.20.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "aws-cdk-lib>=2.219.0",
+    "constructs>=10.4.2",
+    "aws-cdk-aws-apigatewayv2-alpha>=2.114.1a0",
+    "aws-cdk-aws-apigatewayv2-integrations-alpha>=2.114.1a0",
 ]
 
 [dependency-groups]
@@ -118,7 +122,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:gherkin.gherkin_line",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 12"
+addopts = "-v --tb=short --strict-markers -n 6"
 
 [tool.pyright]
 

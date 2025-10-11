@@ -29,7 +29,7 @@ from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl i
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
 )
-from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator import (
+from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator_impl import (
     MqInfraOrchestrator,
 )
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (

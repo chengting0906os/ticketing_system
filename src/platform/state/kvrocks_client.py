@@ -4,6 +4,7 @@ Kvrocks Client - Pure Redis Protocol Client
 Kvrocks = Redis 協議 + Kvrocks 存儲引擎（持久化、零丟失）
 """
 
+import asyncio
 from typing import Optional
 
 import redis
@@ -18,8 +19,21 @@ from src.platform.logging.loguru_io import Logger
 class KvrocksClient:
     def __init__(self):
         self._client: Optional[Redis] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def connect(self) -> Redis:
+        current_loop = asyncio.get_running_loop()
+
+        # If client exists but is bound to a different event loop, close it first
+        if self._client is not None and self._loop is not current_loop:
+            Logger.base.warning('🔄 [KVROCKS] Event loop changed, reconnecting...')
+            try:
+                await self._client.aclose()
+            except Exception as e:
+                Logger.base.warning(f'⚠️ [KVROCKS] Error closing old connection: {e}')
+            self._client = None
+            self._loop = None
+
         if self._client is None:
             self._client = await aioredis.from_url(
                 f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
@@ -28,6 +42,7 @@ class KvrocksClient:
                 socket_connect_timeout=5,
                 socket_keepalive=True,
             )
+            self._loop = current_loop
             Logger.base.info('📡 [KVROCKS] Connected')
         return self._client
 
@@ -39,6 +54,7 @@ class KvrocksClient:
             # (3) sockets/file descriptors. close() is deprecated & leaves dangling refs
             await self._client.aclose()
             self._client = None
+            self._loop = None
             Logger.base.info('🔌 [KVROCKS] Disconnected')
 
 

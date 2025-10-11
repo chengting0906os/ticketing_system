@@ -168,7 +168,7 @@ class SeatReservationConsumer:
             Logger.base.info(
                 f'🎫 [RESERVATION-{self.instance_id}] Processing: {message.get("aggregate_id")}{partition_info}'
             )
-            result = self.portal.call(self._handle_reservation, message)
+            result = self.portal.call(self._handle_reservation_async, message)
 
             # 記錄成功的預訂
             processing_time = time.time() - start_time
@@ -273,8 +273,8 @@ class SeatReservationConsumer:
     # ========== Reservation Logic ==========
 
     @Logger.io
-    async def _handle_reservation(self, event_data: Any) -> bool:
-        """處理座位預訂事件 - 只負責路由到 use case"""
+    async def _handle_reservation_async(self, event_data: Any) -> bool:
+        """處理座位預訂事件 - 只負責路由到 use case (async wrapper for portal.call)"""
         try:
             parsed = self._parse_event_data(event_data)
             if not parsed:

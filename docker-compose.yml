@@ -1,3 +1,16 @@
+  # =============================================================================
+  # DATABASE (Optional - can use external database)
+  # =============================================================================
+  #
+  # Option 1: Use standalone database (docker-compose.db.yml)
+  #   docker-compose -f docker-compose.db.yml up -d
+  #   Then comment out this postgres service
+  #
+  # Option 2: Use this embedded database (default for quick start)
+  #   Keep this service enabled for all-in-one deployment
+  #
+  # =============================================================================
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -43,10 +56,17 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
     volumes:
       - kafka1_data:/var/lib/kafka/data
     networks:
       - ticketing-network
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
 
   kafka2:
     image: confluentinc/cp-kafka:7.5.0
@@ -71,10 +91,17 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
     volumes:
       - kafka2_data:/var/lib/kafka/data
     networks:
       - ticketing-network
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
 
   kafka3:
     image: confluentinc/cp-kafka:7.5.0
@@ -99,10 +126,17 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
     volumes:
       - kafka3_data:/var/lib/kafka/data
     networks:
       - ticketing-network
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -196,65 +230,53 @@ services:
       - loki
 
   # =============================================================================
-  # Application Services (with hot-reload support)
+  # API Gateway (LocalStack - AWS Simulation)
   # =============================================================================
 
-  # FastAPI Server
-  ticketing-api:
-    build:
-      context: .
-      target: development
-    container_name: ticketing-api
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
     ports:
-      - "8000:8000"
+      - "8000:4566"  # API Gateway endpoint (external:internal)
+      - "4566:4566"  # LocalStack Gateway (all AWS services)
+      - "4510-4559:4510-4559"  # External services port range
     environment:
-      # Database
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_PORT: 5432
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
-      KVROCKS_PORT: 6666
-      # Application
-      DEBUG: "true"
-      # Load from .env.example for other settings
-    env_file:
-      - .env.example
+      - SERVICES=apigateway,lambda,iam,s3,ssm,cloudformation
+      - DEBUG=1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LAMBDA_EXECUTOR=docker
+      - LAMBDA_REMOTE_DOCKER=false
     volumes:
-      - ./src:/app/src:ro  # Hot-reload: mount source code
-      - ./test:/app/test:ro  # Hot-reload: mount tests
-      - ./logs:/app/logs  # Share logs with promtail
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka1:
-        condition: service_started
-      kafka2:
-        condition: service_started
-      kafka3:
-        condition: service_started
-      kvrocks:
-        condition: service_healthy
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # Note: Bash scripts removed - use AWS CDK for infrastructure management
+      # Old approach: ./localstack:/etc/localstack/init/ready.d
+      # New approach: make cdk-deploy (Python-based Infrastructure as Code)
+      - localstack_data:/var/lib/localstack
     networks:
       - ticketing-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 40s
-    restart: unless-stopped
 
-  # Ticketing Service Consumer (PostgreSQL State Manager)
-  ticketing-consumer:
+  # =============================================================================
+  # Microservices Architecture
+  # Each service has its own API + Consumer following Bounded Context principle
+  # =============================================================================
+
+  # ============= TICKETING SERVICE =============
+  # Handles: User Auth, Event Management, Booking Operations
+
+  ticketing-service:
     build:
       context: .
       target: development
-    container_name: ticketing-consumer
+    container_name: ticketing-service
+    ports:
+      - "8100:8000"  # Dev: Direct access for /docs, /metrics, debugging
+    expose:
+      - "8000"
     environment:
       # Database
       POSTGRES_SERVER: postgres
@@ -265,6 +287,9 @@ services:
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
       KAFKA_CONSUMER_INSTANCE_ID: "consumer-ticketing-1"
+      # Kvrocks (for seed script initialization)
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: 6666
       # Event selection (default to event 1, can override)
       EVENT_ID: "${EVENT_ID:-1}"
       # Application
@@ -273,8 +298,11 @@ services:
       - .env.example
     volumes:
       - ./src:/app/src:ro  # Hot-reload: mount source code
-      - ./logs:/app/logs  # Share logs
-    command: ["uv", "run", "python", "-m", "src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer"]
+      - ./test:/app/test  # Tests need write access for test logs
+      - ./logs:/app/logs  # Share logs with promtail
+    command: ["uv", "run", "granian", "src.service.ticketing.main:app",
+              "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000",
+              "--reload", "--reload-paths", "src"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -286,14 +314,32 @@ services:
         condition: service_started
     networks:
       - ticketing-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
 
-  # Seat Reservation Service Consumer (Kvrocks State Manager)
-  seat-reservation-consumer:
+  # ============= SEAT RESERVATION SERVICE =============
+  # Handles: Seat Allocation, Reservation via Kvrocks
+
+  seat-reservation-service:
     build:
       context: .
       target: development
-    container_name: seat-reservation-consumer
+    container_name: seat-reservation-service
+    ports:
+      - "8200:8000"  # Dev: Direct access for /docs, /metrics, debugging
+    expose:
+      - "8000"
     environment:
       # Database (for event metadata)
       POSTGRES_SERVER: postgres
@@ -315,9 +361,12 @@ services:
       - .env.example
     volumes:
       - ./src:/app/src:ro  # Hot-reload: mount source code
+      - ./test:/app/test  # Tests need write access for test logs
       - ./logs:/app/logs  # Share logs
       - ./state:/app/state  # Quix Streams state directory
-    command: ["uv", "run", "python", "-m", "src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer"]
+    command: ["uv", "run", "granian", "src.service.seat_reservation.main:app",
+              "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000",
+              "--reload", "--reload-paths", "src"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -331,7 +380,19 @@ services:
         condition: service_healthy
     networks:
       - ticketing-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
 
 volumes:
   postgres_data:
@@ -342,6 +403,7 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  localstack_data:
 
 networks:
   ticketing-network:

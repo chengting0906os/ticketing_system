@@ -1,8 +1,10 @@
 from contextvars import ContextVar
+from datetime import datetime
 from enum import StrEnum
 import logging
 import os
 import sys
+import zoneinfo
 
 from loguru import logger as loguru_logger
 
@@ -148,15 +150,18 @@ custom_logger.add(sys.stdout, format=io_log_format)
 
 # Add file output with daily rotation and compression
 # Use test_ prefix if in test environment
+# Generate filename with Taipei timezone
+taipei_tz = zoneinfo.ZoneInfo('Asia/Taipei')
+now_taipei = datetime.now(taipei_tz)
 log_filename = (
-    'test_{time:YYYY-MM-DD_HH}.log'
+    f'test_{now_taipei.strftime("%Y-%m-%d_%H")}.log'
     if os.environ.get('TEST_LOG_DIR')
-    else '{time:YYYY-MM-DD_HH}.log'
+    else f'{now_taipei.strftime("%Y-%m-%d_%H")}.log'
 )
 custom_logger.add(
     f'{LOG_DIR}/{log_filename}',
     format=io_log_format,
-    rotation='1 day',
+    rotation='1 hour',  # Rotate every hour to match filename pattern
     retention='14 days',
     compression='gz',
     enqueue=True,

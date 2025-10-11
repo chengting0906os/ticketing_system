@@ -17,31 +17,29 @@ class IMqInfraOrchestrator(ABC):
 
     Responsibilities:
     - Kafka topic creation
-    - Consumer process management
 
     Does NOT handle:
     - Kvrocks seat initialization (delegated to IInitEventAndTicketsStateHandler)
     """
 
     @abstractmethod
-    async def setup_mq_infra(
+    async def setup_kafka_topics_and_partitions(
         self,
         *,
         event_id: int,
         seating_config: Dict,
     ) -> None:
         """
-        Setup Kafka infrastructure for an event.
+        Setup Kafka topics and partitions for an event.
 
-        Steps:
-        1. Create Kafka topics
-        2. Start consumer processes
+        Only handles Kafka infrastructure (topics/partitions).
+        Does NOT auto-start consumers - they should be started manually via Docker.
 
         Args:
             event_id: Event identifier
-            seating_config: Seat configuration (for topic/partition setup)
+            seating_config: Seat configuration (for partition calculation)
 
         Raises:
-            InfrastructureSetupError: If setup fails
+            InfrastructureSetupError: If Kafka setup fails
         """
         pass

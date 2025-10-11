@@ -16,13 +16,14 @@ import asyncio
 import os
 from pathlib import Path
 
-import pytest
 from alembic import command
 from alembic.config import Config
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
 
 # =============================================================================
 # Environment Setup for Parallel Testing
@@ -45,9 +46,8 @@ os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 # =============================================================================
 # Import Application and Test Components
 # =============================================================================
-from src.main import app  # noqa: E402
-
 # Import all BDD steps and service fixtures through consolidated modules
+from src.main import app  # noqa: E402
 from test.bdd_steps_loader import *  # noqa: E402, F403
 from test.fixture_loader import *  # noqa: E402, F403
 
@@ -62,6 +62,7 @@ from test.util_constant import (  # noqa: E402
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
+
 
 # =============================================================================
 # Database Configuration

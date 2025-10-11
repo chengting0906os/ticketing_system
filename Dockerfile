@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (pinned version for reproducibility)
-# Version: 0.4.18 (update cautiously, test thoroughly)
-COPY --from=ghcr.io/astral-sh/uv:0.4.18 /uv /uvx /bin/
+# Version: 0.5.15 (supports --all-groups for dependency groups)
+COPY --from=ghcr.io/astral-sh/uv:0.5.15 /uv /uvx /bin/
 
 WORKDIR /app
 
@@ -32,10 +32,12 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     make \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install all dependencies (including dev/test)
-RUN uv sync --all-extras --dev
+RUN uv sync --all-groups
 
 # Copy application code (will be overridden by volume mount in docker-compose)
 COPY . .

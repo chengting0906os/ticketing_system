@@ -63,6 +63,9 @@ class KafkaConfigService(IKafkaConfigService):
         """
         為新活動設置完整的 Kafka 基礎設施
 
+        Note: Consumer 由各服務獨立啟動，不在這裡自動啟動
+        這樣可以避免重複啟動和更好的生命週期管理
+
         Returns:
             bool: 是否設置成功
         """
@@ -75,11 +78,13 @@ class KafkaConfigService(IKafkaConfigService):
             # 2. 分析並報告 partition 策略
             self._analyze_partition_distribution(event_id, seating_config)
 
-            # 3. 啟動 event-specific consumers
-            await self._start_event_consumers(event_id)
+            # Note: Consumers are started independently by each service
+            # See: src/service/ticketing/main.py
+            # See: src/service/seat_reservation/main.py
 
             Logger.base.info(
-                f'✅ [KAFKA_CONFIG] Infrastructure setup completed for EVENT_ID={event_id}'
+                f'✅ [KAFKA_CONFIG] Infrastructure setup completed for EVENT_ID={event_id}\n'
+                f'   💡 Consumers should be started independently by each service'
             )
             return True
 
@@ -110,8 +115,11 @@ class KafkaConfigService(IKafkaConfigService):
     async def _create_single_topic(self, topic: str) -> bool:
         """創建單個 topic"""
         try:
+            # Use full path to docker or search PATH explicitly
+            docker_cmd = self._find_docker_executable()
+
             cmd = [
-                'docker',
+                docker_cmd,
                 'exec',
                 'kafka1',
                 'kafka-topics',
@@ -129,7 +137,10 @@ class KafkaConfigService(IKafkaConfigService):
 
             # 使用 asyncio 執行 subprocess
             process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=os.environ.copy(),  # Explicitly pass environment
             )
 
             _, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
@@ -261,6 +272,23 @@ class KafkaConfigService(IKafkaConfigService):
                 f'❌ [KAFKA_CONFIG] Failed to start {consumer.description} for EVENT_ID={event_id}: {e}'
             )
             raise
+
+    def _find_docker_executable(self) -> str:
+        """查找 docker 可執行文件的完整路徑"""
+        import shutil
+
+        docker_path = shutil.which('docker')
+        if docker_path:
+            return docker_path
+
+        # Fallback to common locations
+        common_paths = ['/usr/local/bin/docker', '/usr/bin/docker']
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+
+        # If not found, return 'docker' and let it fail with a clear error
+        return 'docker'
 
     def _get_project_root(self) -> str:
         """獲取項目根目錄"""

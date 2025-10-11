@@ -140,7 +140,17 @@ class TicketingMqConsumer:
                     continue
 
                 if msg.error():
-                    Logger.base.error(f'❌ [TICKETING] Kafka error: {msg.error()}')
+                    error_code = msg.error().code()
+                    error_str = str(msg.error())
+
+                    # UNKNOWN_TOPIC_OR_PART (code=3) is expected during cold start
+                    # Topics will be created when first message is sent
+                    if error_code == 3:  # KafkaError.UNKNOWN_TOPIC_OR_PART
+                        Logger.base.warning(
+                            f'⚠️ [TICKETING] Topic not yet created (will be auto-created): {error_str}'
+                        )
+                    else:
+                        Logger.base.error(f'❌ [TICKETING] Kafka error: {error_str}')
                     continue
 
                 # 異步路由處理
