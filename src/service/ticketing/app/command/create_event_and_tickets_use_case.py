@@ -182,16 +182,4 @@ class CreateEventAndTicketsUseCase:
             f'✅ Created event {final_aggregate.event.id} with {len(final_aggregate.tickets)} tickets'
         )
 
-        # 7. Setup MQ infrastructure (fail-safe - event already persisted)
-        try:
-            await self.mq_infra_orchestrator.setup_mq_infra(
-                event_id=event_id,
-                seating_config=seating_config,
-            )
-            Logger.base.info('✅ MQ infrastructure setup completed')
-
-        except Exception as e:
-            Logger.base.error(f'❌ MQ infrastructure setup failed: {e}')
-            # Event and seats already committed - MQ failure is logged but not raised
-
         return final_aggregate

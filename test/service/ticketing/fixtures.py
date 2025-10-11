@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+
 # Patch paths - extracted to avoid hardcoding
 PATCH_MQ_ORCHESTRATOR_SETUP = (
     'src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator'
@@ -57,10 +58,6 @@ def mock_kafka_infrastructure(request):
     if 'lua_script_tests' in request.node.nodeid:
         yield
         return
-
-    async def mock_setup_mq_infra(self, *, event_id: int, seating_config: dict) -> None:
-        """Mock MQ setup - no-op in tests."""
-        pass
 
     async def mock_initialize_seats(self, *, event_id: int, seating_config: dict) -> dict:
         """
@@ -143,12 +140,10 @@ def mock_kafka_infrastructure(request):
         return mock_app
 
     with (
-        patch(PATCH_MQ_ORCHESTRATOR_SETUP, new=mock_setup_mq_infra),
         patch(PATCH_SEAT_INITIALIZER, new=mock_initialize_seats),
         patch(PATCH_EVENT_PUBLISHER, side_effect=mock_publish_domain_event),
         patch(PATCH_QUIX_APP, side_effect=mock_get_quix_app),
     ):
         yield {
-            'mq_orchestrator': mock_setup_mq_infra,
             'seat_initializer': mock_initialize_seats,
         }
