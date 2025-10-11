@@ -21,7 +21,8 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     Logger.base.error(f'Validation error: {exc.errors()}')
     return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST, content={'detail': 'LOGIN_BAD_CREDENTIALS'}
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={'detail': exc.errors()},
     )
 
 

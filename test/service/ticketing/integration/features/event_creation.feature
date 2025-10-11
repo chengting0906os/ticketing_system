@@ -76,7 +76,7 @@ Feature: Event Creation
     Then the response status code should be:
       | 400 |
     And the error message should contain:
-      | LOGIN_BAD_CREDENTIALS |
+      | Input should be a valid dictionary |
 
   Scenario: Seller creates event with multiple sections and subsections
     When seller creates event with complex seating config:

@@ -64,4 +64,4 @@ Feature: User Login
     And the response status code should be:
       | 400 |
     And the error message should contain:
-      | LOGIN_BAD_CREDENTIALS |
+      | valid email |
