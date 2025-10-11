@@ -1,0 +1,13 @@
+# Binaries
+loadtest
+loadtest.exe
+setup_users
+setup_users.exe
+
+# Test outputs
+*.txt
+*.log
+
+# Go build cache
+*.test
+*.out

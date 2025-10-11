@@ -4,11 +4,10 @@ Database Seed Script
 填充測試資料到資料庫
 
 功能：
-1. Create Initial Users - 創建測試用 seller 和 buyer
-2. Create Initial Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation Kvrocks)
+1. Create Users - 創建 12 個測試用戶 (1 seller + 1 buyer + 10 load test)
+2. Create Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation Kvrocks)
 
 注意：
-- 此腳本會觸發座位初始化消息，需要 seat_reservation_mq_consumer 運行中
 - 座位資料會存入 seat_reservation 的 Kvrocks (不是 PostgreSQL)
 - 票券資料會存入 event_ticketing 的 PostgreSQL
 """
@@ -20,7 +19,6 @@ from sqlalchemy import text
 
 from script.seating_config import SEATING_CONFIG_3000
 from src.platform.database.db_setting import async_session_maker
-from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
@@ -34,10 +32,14 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
 )
 
 
-async def create_init_users_in_session(session):
-    """創建初始測試用戶"""
+async def create_init_users_in_session(session) -> int:
+    """創建初始測試用戶 (12 users total)
+
+    Returns:
+        int: seller_id
+    """
     try:
-        print('👥 Creating initial users...')
+        print('👥 Creating 12 users (1 seller + 1 buyer + 10 load test)...')
 
         @asynccontextmanager
         async def get_current_user_session():
@@ -46,6 +48,7 @@ async def create_init_users_in_session(session):
         user_repo = UserCommandRepoImpl(lambda: get_current_user_session())
         password_hasher = BcryptPasswordHasher()
 
+        # 1. 創建 seller
         seller = UserEntity(
             email='s@t.com',
             name='init seller',
@@ -58,6 +61,7 @@ async def create_init_users_in_session(session):
         created_seller = await user_repo.create(seller)
         print(f'   ✅ Created seller: ID={created_seller.id}, Email={created_seller.email}')
 
+        # 2. 創建 buyer
         buyer = UserEntity(
             email='b@t.com',
             name='init buyer',
@@ -70,7 +74,33 @@ async def create_init_users_in_session(session):
         created_buyer = await user_repo.create(buyer)
         print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
 
-        print('   ✅ Initial users created!')
+        # 3. 批量創建 10 個 load test 用戶
+        print('   📝 Creating 10 load test users...')
+        for i in range(1, 11):
+            loadtest_user = UserEntity(
+                email=f'b_{i}@t.com',
+                name=f'Load Test User {i}',
+                role=UserRole.BUYER,
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+            loadtest_user.set_password('P@ssw0rd', password_hasher)
+            await user_repo.create(loadtest_user)
+
+        print('   ✅ Created 10 load test users')
+
+        result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
+        user_count = result.scalar()
+
+        print(f'   📊 Total users: {user_count}')
+        print(f'   📧 Seller: s@t.com / P@ssw0rd (ID={created_seller.id})')
+        print(f'   📧 Buyer: b@t.com / P@ssw0rd')
+        print(f'   📧 Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
+
+        if created_seller.id is None:
+            raise Exception("Failed to create seller: ID is None")
+
         return created_seller.id
 
     except Exception as e:
@@ -193,7 +223,7 @@ async def main():
                 seller_id = await create_init_users_in_session(session)
                 print()
 
-                await create_init_event_in_session(session, seller_id)  # type: ignore
+                await create_init_event_in_session(session, seller_id)
                 print()
 
                 # 一次性提交所有操作
@@ -213,6 +243,7 @@ async def main():
         print('📋 Test accounts:')
         print('   Seller: s@t.com / P@ssw0rd')
         print('   Buyer:  b@t.com / P@ssw0rd')
+        print('   Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')

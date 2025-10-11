@@ -222,7 +222,7 @@ docker-migrate dm:  ## 🗄️ Run migrations in container
 
 .PHONY: docker-seed ds
 docker-seed ds:  ## 🌱 Seed data in container
-	@docker-compose exec ticketing-api uv run python script/seed_data.py
+	@docker-compose exec ticketing-api sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
 .PHONY: docker-clean dc
 docker-clean dc:  ## 🧹 Remove all containers, volumes, and images
@@ -232,7 +232,7 @@ docker-clean dc:  ## 🧹 Remove all containers, volumes, and images
 .PHONY: docker-clean-all dca
 docker-clean-all dca:  ## 🧹 Clean Kafka topics, consumer groups, and Kvrocks (in container)
 	@echo "🧹 Cleaning Kafka + Kvrocks in Docker..."
-	@docker-compose exec ticketing-api uv run python script/clean_all.py
+	@docker-compose exec ticketing-api sh -c "PYTHONPATH=/app uv run python script/clean_all.py"
 
 .PHONY: docker-reset dre
 docker-reset dre:  ## 🔄 Reset database (migrate + seed)
@@ -252,7 +252,7 @@ docker-scale-consumers dsc:  ## 📈 Scale consumers to specified replicas
 	@docker-compose up -d --scale seat-reservation-consumer=$(SEAT_CONSUMERS) --scale ticketing-consumer=$(TICKETING_CONSUMERS) --no-recreate
 
 .PHONY: docker-reset-all dra
-docker-reset-all dra:  ## 🚀 Complete Docker reset (down → up → clean → migrate → seed → scale consumers)
+docker-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed → scale consumers)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
 	@echo ""
 	@echo "🔧 Configuration:"
@@ -260,36 +260,27 @@ docker-reset-all dra:  ## 🚀 Complete Docker reset (down → up → clean → 
 	@echo "   🎫 Ticketing Consumers: $(TICKETING_CONSUMERS)"
 	@echo ""
 	@echo "⚠️  This will:"
-	@echo "   1. Stop and remove all containers + volumes"
-	@echo "   2. Start fresh infrastructure"
-	@echo "   3. Clean all Kafka topics + consumer groups"
-	@echo "   4. Reset database (migrate + seed)"
-	@echo "   5. Start $(SEAT_CONSUMERS) seat-reservation + $(TICKETING_CONSUMERS) ticketing consumers"
+	@echo "   1. Stop and remove all containers + volumes (cleans Kafka/Kvrocks automatically)"
+	@echo "   2. Start all services (Docker handles dependencies via healthchecks)"
+	@echo "   3. Reset database (migrate + seed)"
+	@echo "   4. Start $(SEAT_CONSUMERS) seat-reservation + $(TICKETING_CONSUMERS) ticketing consumers"
 	@echo ""
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
 	@echo ""
-	@echo "Step 1/6: Stopping and removing old environment..."
+	@echo "Step 1/4: Stopping and removing old environment..."
 	@docker-compose down -v
 	@echo ""
-	@echo "Step 2/6: Starting infrastructure services..."
-	@docker-compose up -d postgres kafka1 kafka2 kafka3 kvrocks
-	@echo "⏳ Waiting 15s for services to be healthy..."
-	@sleep 15
+	@echo "Step 2/4: Starting all services (dependencies handled by Docker)..."
+	@docker-compose up -d
+	@echo "⏳ Waiting for services to be healthy..."
+	@timeout 60 sh -c 'until docker-compose exec -T ticketing-api curl -sf http://localhost:8000/health > /dev/null 2>&1; do sleep 2; done' || (echo "⚠️  API not ready yet, but continuing..." && true)
 	@echo ""
-	@echo "Step 3/6: Starting application services..."
-	@docker-compose up -d ticketing-api
-	@echo "⏳ Waiting 10s for API to be ready..."
-	@sleep 10
-	@echo ""
-	@echo "Step 4/6: Cleaning Kafka + Kvrocks..."
-	@$(MAKE) docker-clean-all || echo "⚠️ Clean failed (might be first run)"
-	@echo ""
-	@echo "Step 5/6: Resetting database..."
+	@echo "Step 3/4: Resetting database (migrate + seed)..."
 	@$(MAKE) docker-migrate
 	@$(MAKE) docker-seed
 	@echo ""
-	@echo "Step 6/6: Starting consumers..."
+	@echo "Step 4/4: Starting consumers..."
 	@$(MAKE) docker-scale-consumers SEAT_CONSUMERS=$(SEAT_CONSUMERS) TICKETING_CONSUMERS=$(TICKETING_CONSUMERS)
 	@echo ""
 	@echo "✅ ==================== RESET COMPLETED ===================="
@@ -303,7 +294,47 @@ docker-reset-all dra:  ## 🚀 Complete Docker reset (down → up → clean → 
 	@echo "📋 View logs:  make docker-app-logs"
 	@echo "🧪 Run tests:  make docker-test"
 
+# Load Testing
+.PHONY: loadtest-build ltb
+loadtest-build ltb:  ## 🔨 Build load test binary
+	@echo "🔨 Building load test binary..."
+	@cd script/go_client && go build -o loadtest main.go
+	@echo "✅ Load test binary built: script/go_client/loadtest"
+
+.PHONY: loadtest-quick ltq
+loadtest-quick ltq:  ## ⚡ Quick load test: 1,000 requests (10 users)
+	@echo "⚡ Running quick test (1K requests, 10 users)..."
+	@cd script/go_client && ./loadtest -requests 25 -concurrency 5
+
+
+.PHONY: loadtest-full ltf
+loadtest-full ltf:  ## 💪 Full load test: 50,000 requests (10 users)
+	@echo "💪 Running full load test (50K requests, 10 users)..."
+	@cd script/go_client && ./loadtest -requests 50000 -concurrency 100
+
+.PHONY: loadtest-docker ltd
+loadtest-docker ltd:  ## 🐳 Test Docker environment: 5,000 requests
+	@echo "🐳 Testing Docker environment..."
+	@cd script/go_client && ./loadtest -host http://localhost:8000 -requests 5000 -concurrency 100
+
+.PHONY: loadtest-help lth
+loadtest-help lth:  ## 📖 Show load test documentation
+	@echo "📋 Load Test Commands:"
+	@echo "  ltb   - Build load test binary"
+	@echo "  ltq   - Quick test (1K requests)"
+	@echo "  ltm   - Medium test (10K requests)"
+	@echo "  ltf   - Full test (50K requests)"
+	@echo "  ltx   - Stress test (100K requests)"
+	@echo "  ltmix - Mixed mode (80% auto, 20% manual)"
+	@echo "  ltd   - Docker test (5K requests)"
+	@echo ""
+	@echo "💡 Before running tests:"
+	@echo "  make seed         - Setup test data (12 users + 3K tickets)"
+	@echo "  make docker-seed  - Setup in Docker"
+
 # Kafka
+# Note: seed_data.py now creates ~3K tickets by default (suitable for development/testing)
+
 .PHONY: clean-all ca
 clean-all ca:
 	@echo "🧹 Complete system cleanup (ALL topics, consumer groups, RocksDB state)..."
@@ -399,6 +430,12 @@ help:
 	@echo "🌊 KAFKA"
 	@echo "    ca   - Clean all (Kafka+Kvrocks+DB+RocksDB)"
 	@echo "    kc   - Clean Kafka only   ks   - Kafka status"
+	@echo ""
+	@echo "⚡ LOAD TESTING"
+	@echo "    ltb  - Build binary       lth  - Show help"
+	@echo "    ltq  - Quick (1K)         ltm  - Medium (10K)"
+	@echo "    ltf  - Full (50K)         ltx  - Stress (100K)"
+	@echo "    ltmix- Mixed mode         ltd  - Docker test"
 	@echo ""
 	@echo "🎫 SERVICES (Local)"
 	@echo "    ss   - Start consumers    stop - Stop consumers"

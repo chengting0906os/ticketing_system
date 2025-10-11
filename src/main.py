@@ -109,6 +109,12 @@ app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
 app.include_router(seat_reservation_router)
 
 
+@app.get('/health')
+async def health_check():
+    """Health check endpoint for container orchestration"""
+    return {'status': 'healthy'}
+
+
 @app.get('/metrics')
 async def get_metrics():
     """Prometheus metrics endpoint"""

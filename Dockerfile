@@ -42,12 +42,13 @@ COPY . .
 
 EXPOSE 8000
 
-# Development server with hot-reload
+# Development server with hot-reload (only watch src directory to avoid log file triggers)
 CMD ["uv", "run", "granian", "src.main:app", \
      "--interface", "asgi", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
-     "--reload"]
+     "--reload", \
+     "--reload-paths", "src"]
 
 # =============================================================================
 # Production Stage (optimized, multi-worker, non-root)
