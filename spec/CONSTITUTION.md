@@ -25,6 +25,7 @@
 - **Unit of Work Pattern**: Centralizes session and repository management, defines transaction boundaries
 - **Fail Fast**: Check for errors early and raise exceptions immediately
 - **Open/Closed**: Open for extension, closed for modification
+- **BlockingPortal**: When running sync code (like Kafka consumers) that needs to call async functions, use `anyio.from_thread.start_blocking_portal()` to bridge the gap. Always set the portal before starting the consumer.
 
 ## BDD (Behavior-Driven Development)
 

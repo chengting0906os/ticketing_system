@@ -3,6 +3,7 @@
 > **📂 Service Root**: [src/service/ticketing/](../src/service/ticketing/)
 >
 > **📁 Directory Structure**:
+>
 > ```
 > ticketing/
 > ├── driving_adapter/
@@ -29,6 +30,7 @@
 See directory structure above for Hexagonal Architecture implementation.
 
 **Key Patterns**:
+
 - **CQRS**: [app/command/](../src/service/ticketing/app/command/) vs [app/query/](../src/service/ticketing/app/query/)
 - **Aggregate Root**: [event_ticketing_aggregate.py](../src/service/ticketing/domain/event_ticketing_aggregate.py)
 - **Repository**: [driven_adapter/repository/](../src/service/ticketing/driven_adapter/repository/)
@@ -36,6 +38,7 @@ See directory structure above for Hexagonal Architecture implementation.
 ## Database Schema
 
 See SQLAlchemy models for actual schema:
+
 - [user_model.py](../src/service/ticketing/driven_adapter/model/user_model.py) - Authentication & roles
 - [event_model.py](../src/service/ticketing/driven_adapter/model/event_model.py) - Events with JSONB config
 - [ticket_model.py](../src/service/ticketing/driven_adapter/model/ticket_model.py) - Tickets (unique constraint)
@@ -44,16 +47,19 @@ See SQLAlchemy models for actual schema:
 ## Domain Entities
 
 See entity implementations:
+
 - [user_entity.py](../src/service/ticketing/domain/entity/user_entity.py) - User with role enum
 - [booking_entity.py](../src/service/ticketing/domain/entity/booking_entity.py) - Booking lifecycle
 
 ## Use Cases
 
 ### Event Management
+
 - **Create**: [create_event_and_tickets_use_case.py](../src/service/ticketing/app/command/create_event_and_tickets_use_case.py)
 - **Query**: [get_event_use_case.py](../src/service/ticketing/app/query/get_event_use_case.py) | [list_events_use_case.py](../src/service/ticketing/app/query/list_events_use_case.py)
 
 ### Booking Management
+
 - **Create**: [create_booking_use_case.py](../src/service/ticketing/app/command/create_booking_use_case.py)
 - **Payment**: [mock_payment_and_update_status_to_completed_use_case.py](../src/service/ticketing/app/command/mock_payment_and_update_status_to_completed_use_case.py)
 - **Cancel**: [update_booking_status_to_cancelled_use_case.py](../src/service/ticketing/app/command/update_booking_status_to_cancelled_use_case.py)
@@ -62,9 +68,11 @@ See entity implementations:
 ## Integration
 
 ### Kafka Topics
+
 See [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) `KafkaTopicBuilder` class for topic naming
 
 ### MQ Consumer
+
 See [ticketing_mq_consumer.py](../src/service/ticketing/driving_adapter/mq_consumer/ticketing_mq_consumer.py)
 
 See [KAFKA_SPEC.md](KAFKA_SPEC.md) for partition strategy and consumer group configuration.
@@ -72,6 +80,7 @@ See [KAFKA_SPEC.md](KAFKA_SPEC.md) for partition strategy and consumer group con
 ### Database Schema (PostgreSQL)
 
 > **📁 SQLAlchemy Models**:
+>
 > - [user_model.py](../src/service/ticketing/driven_adapter/model/user_model.py) - User authentication & roles
 > - [event_model.py](../src/service/ticketing/driven_adapter/model/event_model.py) - Event with JSONB seating config
 > - [ticket_model.py](../src/service/ticketing/driven_adapter/model/ticket_model.py) - Tickets with unique constraint
@@ -112,11 +121,13 @@ See [KAFKA_SPEC.md](KAFKA_SPEC.md) for partition strategy and consumer group con
 ## HTTP API Endpoints
 
 See controller implementations:
+
 - **Event API**: [event_ticketing_controller.py](../src/service/ticketing/driving_adapter/http_controller/event_ticketing_controller.py)
 - **Booking API**: [booking_controller.py](../src/service/ticketing/driving_adapter/http_controller/booking_controller.py)
 - **User API**: [user_controller.py](../src/service/ticketing/driving_adapter/http_controller/user_controller.py)
 
 **Request/Response Schemas**: [schema/](../src/service/ticketing/driving_adapter/schema/)
+
 - [event_schema.py](../src/service/ticketing/driving_adapter/schema/event_schema.py)
 - [booking_schema.py](../src/service/ticketing/driving_adapter/schema/booking_schema.py)
 
