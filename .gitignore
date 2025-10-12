@@ -52,3 +52,7 @@ kvrocks_state/
 test_log/
 cpu.prof
 *.out
+
+# Load test reports
+script/go_client/report/*
+!script/go_client/report/.gitkeep

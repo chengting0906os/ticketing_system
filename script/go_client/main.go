@@ -11,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
@@ -436,13 +437,16 @@ func generateBookingRequest(reqNum int, config *Config) BookingCreateRequest {
 	section := config.Sections[rand.Intn(len(config.Sections))]
 	subsection := config.Subsections[rand.Intn(len(config.Subsections))]
 
+	// Random quantity between 1-4 seats per booking
+	quantity := rand.Intn(4) + 1
+
 	req := BookingCreateRequest{
 		EventID:           config.EventID,
 		Section:           section,
 		Subsection:        subsection,
 		SeatSelectionMode: "best_available",
 		SeatPositions:     []string{}, // Initialize as empty slice to serialize as [] not null
-		Quantity:          config.BestAvailableQty,
+		Quantity:          quantity,
 	}
 
 	// Mixed mode: 20% manual selection, 80% best available
@@ -523,15 +527,26 @@ func printResults(metrics *Metrics, config Config, testStartTime time.Time) {
 	pendingCount := atomic.LoadInt64(&metrics.pendingCount)
 	duplicateSeats := atomic.LoadInt64(&metrics.duplicateSeats)
 
+	// Get CPU info
+	numCPU := runtime.NumCPU()
+	numGoroutines := runtime.NumGoroutine()
+
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
 	fmt.Println("\n========================================")
 	fmt.Println("📊 Load Test Results")
 	fmt.Println("========================================")
 
 	// Show request sending speed
+	var firstTime, lastTime time.Time
+	var sendDuration time.Duration
+	var hasSendTiming bool
 	if metrics.firstSendTime.Load() != nil && metrics.lastSendTime.Load() != nil {
-		firstTime := metrics.firstSendTime.Load().(time.Time)
-		lastTime := metrics.lastSendTime.Load().(time.Time)
-		sendDuration := lastTime.Sub(firstTime)
+		firstTime = metrics.firstSendTime.Load().(time.Time)
+		lastTime = metrics.lastSendTime.Load().(time.Time)
+		sendDuration = lastTime.Sub(firstTime)
+		hasSendTiming = true
 		fmt.Println("🚀 Request Sending Speed:")
 		fmt.Printf("  First request sent at:  %s\n", firstTime.Format("15:04:05.000"))
 		fmt.Printf("  Last request sent at:   %s\n", lastTime.Format("15:04:05.000"))
@@ -565,25 +580,26 @@ func printResults(metrics *Metrics, config Config, testStartTime time.Time) {
 
 	// Calculate latency percentiles
 	fmt.Println("\n⏱️  Latency Distribution:")
+	var min, max, avg, p50, p75, p90, p95, p99 time.Duration
 	if len(metrics.latencies) > 0 {
 		sort.Slice(metrics.latencies, func(i, j int) bool {
 			return metrics.latencies[i] < metrics.latencies[j]
 		})
 
-		p50 := metrics.latencies[len(metrics.latencies)*50/100]
-		p75 := metrics.latencies[len(metrics.latencies)*75/100]
-		p90 := metrics.latencies[len(metrics.latencies)*90/100]
-		p95 := metrics.latencies[len(metrics.latencies)*95/100]
-		p99 := metrics.latencies[len(metrics.latencies)*99/100]
-		min := metrics.latencies[0]
-		max := metrics.latencies[len(metrics.latencies)-1]
+		p50 = metrics.latencies[len(metrics.latencies)*50/100]
+		p75 = metrics.latencies[len(metrics.latencies)*75/100]
+		p90 = metrics.latencies[len(metrics.latencies)*90/100]
+		p95 = metrics.latencies[len(metrics.latencies)*95/100]
+		p99 = metrics.latencies[len(metrics.latencies)*99/100]
+		min = metrics.latencies[0]
+		max = metrics.latencies[len(metrics.latencies)-1]
 
 		// Calculate average
 		var sum time.Duration
 		for _, lat := range metrics.latencies {
 			sum += lat
 		}
-		avg := sum / time.Duration(len(metrics.latencies))
+		avg = sum / time.Duration(len(metrics.latencies))
 
 		fmt.Printf("Min:    %v\n", min)
 		fmt.Printf("P50:    %v\n", p50)
@@ -595,7 +611,145 @@ func printResults(metrics *Metrics, config Config, testStartTime time.Time) {
 		fmt.Printf("Avg:    %v\n", avg)
 	}
 
+	fmt.Println("\n💻 System Resources:")
+	fmt.Printf("  CPU Cores:          %d\n", numCPU)
+	fmt.Printf("  Goroutines:         %d\n", numGoroutines)
+	fmt.Printf("  Memory Allocated:   %.2f MB\n", float64(memStats.Alloc)/1024/1024)
+	fmt.Printf("  Total Memory:       %.2f MB\n", float64(memStats.TotalAlloc)/1024/1024)
+	fmt.Printf("  Sys Memory:         %.2f MB\n", float64(memStats.Sys)/1024/1024)
+	fmt.Printf("  GC Runs:            %d\n", memStats.NumGC)
+
 	fmt.Println("\n========================================")
 	fmt.Println("✅ Load test completed")
 	fmt.Println("========================================")
+
+	// Generate Markdown report
+	generateMarkdownReport(config, duration, totalRequests, successCount,
+		failureCount, firstTime, lastTime, sendDuration,
+		min, max, avg, p50, p75, p90, p95, p99, numCPU, numGoroutines, &memStats, hasSendTiming)
+}
+
+func generateMarkdownReport(config Config, duration time.Duration,
+	totalRequests, successCount, failureCount int64,
+	firstTime, lastTime time.Time, sendDuration time.Duration,
+	min, max, avg, p50, p75, p90, p95, p99 time.Duration,
+	numCPU, numGoroutines int, memStats *runtime.MemStats, hasSendTiming bool) {
+
+	// Get executable directory and create report subdirectory
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("⚠️  Failed to get executable path: %v\n", err)
+		return
+	}
+	exeDir := filepath.Dir(exePath)
+	reportDir := filepath.Join(exeDir, "report")
+
+	if err := os.MkdirAll(reportDir, 0755); err != nil {
+		fmt.Printf("⚠️  Failed to create report directory: %v\n", err)
+		return
+	}
+
+	filename := filepath.Join(reportDir, fmt.Sprintf("loadtest-report-%s.md", time.Now().Format("20060102-150405")))
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("⚠️  Failed to create markdown report: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	// Build request sending speed section conditionally
+	sendingSpeedSection := ""
+	if hasSendTiming {
+		sendingSpeedSection = fmt.Sprintf(`
+## 🚀 Request Sending Speed
+
+| Metric | Value |
+|--------|-------|
+| First Request Sent | %s |
+| Last Request Sent | %s |
+| All Requests Sent In | %.3f ms |
+| Sending Rate | %.0f req/ms |
+
+---
+`, firstTime.Format("15:04:05.000"), lastTime.Format("15:04:05.000"),
+			sendDuration.Seconds()*1000, float64(totalRequests)/sendDuration.Seconds()/1000)
+	}
+
+	report := fmt.Sprintf(`# Ticketing System Load Test
+
+**Run at:** %s
+**Environment:** %s (CPUs: %d)
+**Test Duration:** %.2fs
+
+*Configuration: Concurrency=%d, Client Pool=%d, Event ID=%d, Mode=%s, Seats per Booking=1-4 (random)*
+
+---
+
+## Performance Results
+
+| Metric | Value |
+|--------|-------|
+| Total Requests | %d |
+| Successful | %d |
+| Failed | %d |
+| RPS (Requests/sec) | %.2f |
+| Success Rate | %.2f%% |
+
+---
+
+## Latency Distribution
+
+| Percentile | Latency |
+|------------|---------|
+| Min | %v |
+| P50 | %v |
+| P75 | %v |
+| P90 | %v |
+| P95 | %v |
+| P99 | %v |
+| Max | %v |
+| Avg | %v |
+
+---
+%s
+## System Resources
+
+| Resource | Value |
+|----------|-------|
+| CPU Cores | %d |
+| Goroutines | %d |
+| Memory Allocated | %.2f MB |
+| GC Runs | %d |
+
+---
+
+*Report generated by Go Load Test Tool*
+`,
+		time.Now().Format("Mon 02 Jan 2006, 15:04"),
+		config.Host,
+		numCPU,
+		duration.Seconds(),
+		config.Concurrency,
+		config.ClientPoolSize,
+		config.EventID,
+		config.Mode,
+		totalRequests,
+		successCount,
+		failureCount,
+		float64(totalRequests)/duration.Seconds(),
+		float64(successCount)/float64(totalRequests)*100,
+		min, p50, p75, p90, p95, p99, max, avg,
+		sendingSpeedSection,
+		numCPU,
+		numGoroutines,
+		float64(memStats.Alloc)/1024/1024,
+		memStats.NumGC,
+	)
+
+	if _, err := file.WriteString(report); err != nil {
+		fmt.Printf("⚠️  Failed to write markdown report: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n📄 Markdown report generated: %s\n", filename)
 }
