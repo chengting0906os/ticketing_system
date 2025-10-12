@@ -138,14 +138,16 @@ class TicketingMqConsumer:
 
     def _on_processing_error(self, exc: Exception, row: Any, _logger: Any) -> bool:
         """
-        Quix Streams 錯誤處理 callback - 不阻塞 consumer
+        Quix Streams 錯誤處理 callback
 
         當訊息處理失敗時，此 callback 會被調用。
-        我們檢查錯誤類型並決定如何處理。
 
         Returns:
-            True: 繼續處理下一個訊息（不阻塞）
-            False: 停止 consumer
+            True: 忽略錯誤，提交 offset（訊息被丟棄）
+            False: 傳播錯誤，不提交 offset（停止 consumer，重啟後重試）
+
+        注意：Quix Streams 的 callback 無法做到「跳過此訊息但不提交 offset」
+        因此可重試錯誤會導致 consumer 停止，需要外部監控重啟
         """
         error_msg = str(exc)
 
@@ -158,10 +160,6 @@ class TicketingMqConsumer:
             'constraint',
         ]
         is_non_retryable = any(kw in error_msg.lower() for kw in non_retryable_keywords)
-
-        # 判斷是否為資源耗盡錯誤（需要延遲）
-        resource_exhaustion_keywords = ['too many clients', 'connection pool', 'max connections']
-        is_resource_exhaustion = any(kw in error_msg.lower() for kw in resource_exhaustion_keywords)
 
         if is_non_retryable:
             Logger.base.warning(
@@ -176,21 +174,32 @@ class TicketingMqConsumer:
                     error=error_msg,
                     retry_count=0,
                 )
+            # 返回 True：提交 offset，跳過此訊息
+            return True
         else:
-            # 可重試錯誤：僅記錄，Kafka 會自動重試（通過 offset 不提交）
+            # 可重試錯誤：不提交 offset，停止 consumer
+            # 外部監控（如 Kubernetes）會重啟 consumer，重新處理此訊息
+            resource_exhaustion_keywords = [
+                'too many clients',
+                'connection pool',
+                'max connections',
+            ]
+            is_resource_exhaustion = any(
+                kw in error_msg.lower() for kw in resource_exhaustion_keywords
+            )
+
             if is_resource_exhaustion:
-                Logger.base.warning(
-                    f'⚠️ [TICKETING-ERROR-CALLBACK] Resource exhaustion, will retry after delay: {exc}'
+                Logger.base.error(
+                    f'❌ [TICKETING-ERROR-CALLBACK] Resource exhaustion, stopping consumer for restart: {exc}'
                 )
-                # 資源耗盡錯誤：暫停 0.5 秒讓系統釋放資源
-                time.sleep(0.5)
             else:
                 Logger.base.error(
-                    f'❌ [TICKETING-ERROR-CALLBACK] Processing error (will retry): {exc}'
+                    f'❌ [TICKETING-ERROR-CALLBACK] Retryable error, stopping consumer: {exc}'
                 )
 
-        # 總是返回 True，讓 consumer 繼續處理下一個訊息
-        return True
+            # 返回 False：不提交 offset，停止 consumer
+            # 重啟後會重新處理此訊息
+            return False
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
