@@ -19,11 +19,16 @@ services:
       POSTGRES_DB: ticketing_system_db
       POSTGRES_USER: py_arch_lab
       POSTGRES_PASSWORD: py_arch_lab
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U py_arch_lab" ]
       interval: 5s
