@@ -64,6 +64,15 @@ test-e2e:  ## 🧪 Run E2E tests
 test-bdd:  ## 🧪 Run BDD tests (Gherkin)
 	@uv run pytest test/features/ -v $(filter-out $@,$(MAKECMDGOALS))
 
+.PHONY: test-infra
+test-infra:  ## 🏗️ Run infrastructure tests (load balancer, docker)
+	@echo "🏗️  Testing infrastructure components..."
+	@uv run pytest test/infrastructure/ -v --tb=short
+	@echo "✅ Infrastructure tests complete!"
+
+.PHONY: test-lb
+test-lb: test-infra  ## 🔀 Alias for test-infra (load balancer tests)
+
 %:
 	@:
 
@@ -98,11 +107,12 @@ dsu:  ## 🚀 Start Docker stack
 	@docker-compose build
 	@docker-compose up -d
 	@echo "✅ Stack started!"
-	@echo "   🌐 API Gateway:  http://localhost:8000"
-	@echo "   📚 Ticketing:    http://localhost:8100/docs"
-	@echo "   🪑 Seat Res:     http://localhost:8200/docs"
-	@echo "   📊 Kafka UI:     http://localhost:8080"
-	@echo "   📈 Grafana:      http://localhost:3000"
+	@echo "   🔀 Load Balancer: http://localhost (nginx)"
+	@echo "   🌐 API Gateway:   http://localhost:8000"
+	@echo "   📚 Ticketing:     http://localhost:8100/docs"
+	@echo "   🪑 Seat Res:      http://localhost:8200/docs"
+	@echo "   📊 Kafka UI:      http://localhost:8080"
+	@echo "   📈 Grafana:       http://localhost:3000"
 
 .PHONY: dsd
 dsd:  ## 🛑 Stop Docker stack
@@ -116,6 +126,57 @@ dsr:  ## 🔄 Restart services
 dr:  ## 🔨 Rebuild services
 	@docker-compose build ticketing-service seat-reservation-service
 	@docker-compose up -d ticketing-service seat-reservation-service
+
+# ==============================================================================
+# 📈 SERVICE SCALING (Nginx Load Balancer)
+# ==============================================================================
+
+.PHONY: scale-up
+scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
+	@if [ -z "$(T)" ] || [ -z "$(R)" ]; then \
+		echo "Usage: make scale-up T=<ticketing_count> R=<reservation_count>"; \
+		echo "Example: make scale-up T=3 R=2"; \
+		exit 1; \
+	fi
+	@echo "📈 Scaling services: ticketing=$(T), reservation=$(R)"
+	@docker-compose up -d --scale ticketing-service=$(T) --scale seat-reservation-service=$(R) --no-recreate
+	@echo "✅ Scaled successfully!"
+	@docker-compose ps ticketing-service seat-reservation-service
+
+.PHONY: scale-down
+scale-down:  ## 📉 Scale down to 1 instance each
+	@echo "📉 Scaling down to 1 instance each..."
+	@docker-compose up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
+	@echo "✅ Scaled down successfully!"
+
+.PHONY: scale-ticketing
+scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
+	@if [ -z "$(N)" ]; then \
+		echo "Usage: make scale-ticketing N=<count>"; \
+		echo "Example: make scale-ticketing N=5"; \
+		exit 1; \
+	fi
+	@echo "📈 Scaling ticketing-service to $(N) instances..."
+	@docker-compose up -d --scale ticketing-service=$(N) --no-recreate
+	@echo "✅ Done!"
+	@docker-compose ps ticketing-service
+
+.PHONY: scale-reservation
+scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
+	@if [ -z "$(N)" ]; then \
+		echo "Usage: make scale-reservation N=<count>"; \
+		echo "Example: make scale-reservation N=3"; \
+		exit 1; \
+	fi
+	@echo "📈 Scaling seat-reservation-service to $(N) instances..."
+	@docker-compose up -d --scale seat-reservation-service=$(N) --no-recreate
+	@echo "✅ Done!"
+	@docker-compose ps seat-reservation-service
+
+.PHONY: scale-status
+scale-status:  ## 📊 Show current scaling status
+	@echo "📊 Current service instances:"
+	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
 
 .PHONY: dra
 dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
@@ -145,8 +206,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
 .PHONY: dm
 dm:  ## 🗄️ Run migrations in Docker
 	@echo "🗄️  Running database migrations..."
-	@docker-compose exec ticketing-service uv run alembic stamp head 2>/dev/null || \
-		docker-compose exec ticketing-service uv run alembic upgrade head
+	@docker-compose exec ticketing-service uv run alembic upgrade head
 	@echo "✅ Migrations completed"
 
 .PHONY: ds
@@ -160,6 +220,14 @@ tdt:  ## 🧪 Run tests in Docker
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
 	@docker-compose exec ticketing-service uv run pytest test/service/e2e -v
+
+.PHONY: tdci
+tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e)
+	@docker-compose exec ticketing-service uv run pytest test/ \
+		--ignore=test/service/e2e \
+		--ignore=test/infrastructure \
+		-m "not api and not infra and not e2e" \
+		-v
 
 .PHONY: dsh
 dsh:  ## 🐚 Shell into Ticketing Service

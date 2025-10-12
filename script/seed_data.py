@@ -180,7 +180,8 @@ async def create_init_event_in_session(session, seller_id: int):
 
 async def verify_data():
     """驗證填充的資料"""
-    async with async_session_maker() as session:
+    # async_session_maker is a function that returns a sessionmaker
+    async with async_session_maker()() as session:
         try:
             print('🔍 Verifying seeded data...')
 
@@ -218,7 +219,8 @@ async def main():
 
     try:
         # 使用單一 session 來處理所有數據操作
-        async with async_session_maker() as session:
+        # async_session_maker is a function that returns a sessionmaker
+        async with async_session_maker()() as session:
             try:
                 seller_id = await create_init_users_in_session(session)
                 print()
