@@ -309,7 +309,7 @@ services:
       - ./test:/app/test # Tests need write access for test logs
       - ./logs:/app/logs # Share logs with promtail
       - ./pyproject.toml:/app/pyproject.toml:ro # Pytest config and dependencies
-    command: [ "uv", "run", "granian", "src.service.ticketing.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "12", "--reload", "--reload-paths", "src" ]
+    command: [ "uv", "run", "granian", "src.service.ticketing.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "8", "--reload", "--reload-paths", "src" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -331,10 +331,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '6'
-          memory: 9G
+          cpus: '4'
+          memory: 8G
         reservations:
-          cpus: '3'
+          cpus: '2'
           memory: 4G
 
   # ============= SEAT RESERVATION SERVICE =============

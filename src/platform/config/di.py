@@ -62,12 +62,12 @@ class Container(containers.DeclarativeContainer):
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
     # Repositories - session will be injected by use cases
+    # Command repos use raw SQL with asyncpg (no session needed)
     booking_command_repo = providers.Factory(IBookingCommandRepoImpl)
+    event_ticketing_command_repo = providers.Factory(EventTicketingCommandRepoImpl)
+    # Query repos still use SQLAlchemy for complex queries
     booking_query_repo = providers.Factory(
         BookingQueryRepoImpl, session_factory=database.provided.session
-    )
-    event_ticketing_command_repo = providers.Factory(
-        EventTicketingCommandRepoImpl, session_factory=database.provided.session
     )
     event_ticketing_query_repo = providers.Factory(
         EventTicketingQueryRepoImpl, session_factory=database.provided.session

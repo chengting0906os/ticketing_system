@@ -45,13 +45,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             elif booking.status != BookingStatus.PENDING_PAYMENT:
                 raise DomainError('Booking is not in a payable state')
 
-            # Process payment and update booking
-            completed_booking = booking.mark_as_completed()
-            updated_booking = await self.uow.booking_command_repo.update_status_to_completed(
-                booking=completed_booking
-            )
-
-            # Get reserved tickets
+            # Get reserved tickets first (before transaction)
             reserved_tickets = await self.uow.booking_query_repo.get_tickets_by_booking_id(
                 booking_id=booking_id
             )
@@ -59,21 +53,15 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             # Extract ticket IDs for status update
             ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
 
-            # Update tickets status to SOLD in PostgreSQL (within the same transaction)
-            if ticket_ids:
-                from src.service.ticketing.shared_kernel.domain.enum.ticket_status import (
-                    TicketStatus,
-                )
+            # Process payment - atomically update booking AND tickets in single transaction
+            completed_booking = booking.mark_as_completed()
+            updated_booking = await self.uow.booking_command_repo.complete_booking_and_mark_tickets_sold_atomically(
+                booking=completed_booking, ticket_ids=ticket_ids
+            )
 
-                await self.uow.event_ticketing_command_repo.update_tickets_status(
-                    ticket_ids=ticket_ids, status=TicketStatus.SOLD
-                )
-                Logger.base.info(
-                    f'🎫 [PAYMENT] Updated {len(ticket_ids)} tickets to SOLD in PostgreSQL'
-                )
-
-            # UoW commits!
-            await self.uow.commit()
+            Logger.base.info(
+                f'💳 [PAYMENT] Atomically completed booking {booking_id} and marked {len(ticket_ids)} tickets as SOLD'
+            )
 
         # Publish domain event after successful commit
         if reserved_tickets:

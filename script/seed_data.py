@@ -129,7 +129,8 @@ async def create_init_event_in_session(session, seller_id: int):
         # 從 DI 容器取得所有依賴
         from src.platform.config.di import container
 
-        event_ticketing_repo = EventTicketingCommandRepoImpl(lambda: get_current_session())
+        # Command repo 使用 raw SQL，不需要 session
+        event_ticketing_repo = EventTicketingCommandRepoImpl()
         init_state_handler = container.init_event_and_tickets_state_handler()
         mq_infra_orchestrator = container.mq_infra_orchestrator()
 

@@ -33,14 +33,6 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def update_status_to_paid(self, *, booking: Booking) -> Booking:
-        pass
-
-    @abstractmethod
-    async def update_with_ticket_details(self, *, booking: Booking) -> Booking:
-        pass
-
-    @abstractmethod
     async def link_tickets_to_booking(self, *, booking_id: int, ticket_ids: list[int]) -> None:
         """Link tickets to a booking by writing to booking_ticket association table"""
         pass
@@ -59,9 +51,17 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def update_status_to_completed(self, *, booking: Booking) -> Booking:
-        pass
+    async def complete_booking_and_mark_tickets_sold_atomically(
+        self, *, booking: Booking, ticket_ids: list[int]
+    ) -> Booking:
+        """
+        Atomically update booking to COMPLETED and mark tickets as SOLD in single transaction
 
-    @abstractmethod
-    async def cancel_booking_atomically(self, *, booking_id: int, buyer_id: int) -> Booking:
+        Args:
+            booking: Booking entity with COMPLETED status
+            ticket_ids: List of ticket IDs to mark as SOLD
+
+        Returns:
+            Updated booking entity
+        """
         pass

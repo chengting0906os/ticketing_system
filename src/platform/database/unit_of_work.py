@@ -108,11 +108,8 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         self.booking_query_repo = BookingQueryRepoImpl(session_factory=None)
         self.booking_query_repo.session = self.session  # Inject session for UoW mode
 
-        # Event/Ticket repos
-        self.event_ticketing_command_repo = EventTicketingCommandRepoImpl(
-            session_factory=None  # type: ignore
-        )
-        self.event_ticketing_command_repo.session = self.session  # type: ignore
+        # Event/Ticket command repo uses raw SQL with asyncpg (no session needed)
+        self.event_ticketing_command_repo = EventTicketingCommandRepoImpl()
         self.event_ticketing_query_repo = EventTicketingQueryRepoImpl(
             session_factory=None  # type: ignore
         )
