@@ -20,6 +20,10 @@ services:
       POSTGRES_DB: ticketing_system_db
       POSTGRES_USER: py_arch_lab
       POSTGRES_PASSWORD: py_arch_lab
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=500"
     volumes:
       - postgres_data_standalone:/var/lib/postgresql/data
       - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
