@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 
-from script.seating_config import SEATING_CONFIG_3000
+from script.seating_config import  SEATING_CONFIG_50000
 from src.platform.database.db_setting import async_session_maker
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
@@ -141,7 +141,7 @@ async def create_init_event_in_session(session, seller_id: int):
         )
 
         # 座位配置選擇
-        seating_config = SEATING_CONFIG_3000  # 開發模式預設使用小規模配置
+        seating_config =  SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
 
         # Calculate total seats
         total_seats = 0

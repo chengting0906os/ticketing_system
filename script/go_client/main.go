@@ -9,6 +9,11 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"runtime/trace"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -57,6 +62,8 @@ type Metrics struct {
 	duplicateSeats   int64
 	startTime        time.Time
 	endTime          time.Time
+	firstSendTime    atomic.Value // time.Time
+	lastSendTime     atomic.Value // time.Time
 }
 
 // Configuration
@@ -64,11 +71,21 @@ type Config struct {
 	Host             string
 	TotalRequests    int
 	Concurrency      int
+	ClientPoolSize   int // Number of HTTP clients in pool
 	EventID          int
 	Sections         []string
 	Subsections      []int
 	Mode             string // "best_available" or "mixed"
 	BestAvailableQty int
+	Debug            bool // Enable debug output
+}
+
+func mustParseURL(urlStr string) *url.URL {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }
 
 func main() {
@@ -77,14 +94,70 @@ func main() {
 	flag.StringVar(&config.Host, "host", "http://localhost", "API host")
 	flag.IntVar(&config.TotalRequests, "requests", 50000, "Total number of requests")
 	flag.IntVar(&config.Concurrency, "concurrency", 500, "Number of concurrent workers")
+	flag.IntVar(&config.ClientPoolSize, "clients", 10, "Number of HTTP clients in pool")
 	flag.IntVar(&config.EventID, "event", 1, "Event ID to book")
 	flag.StringVar(&config.Mode, "mode", "best_available", "Booking mode: best_available or mixed")
 	flag.IntVar(&config.BestAvailableQty, "quantity", 2, "Number of seats per booking for best_available mode")
+	flag.BoolVar(&config.Debug, "debug", false, "Enable debug output (verbose logging)")
+
+	// Profiling flags
+	var cpuProfile string
+	var memProfile string
+	var blockProfile string
+	var mutexProfile string
+	var traceProfile string
+
+	flag.StringVar(&cpuProfile, "cpuprofile", "", "Write CPU profile to file")
+	flag.StringVar(&memProfile, "memprofile", "", "Write memory profile to file")
+	flag.StringVar(&blockProfile, "blockprofile", "", "Write block profile to file")
+	flag.StringVar(&mutexProfile, "mutexprofile", "", "Write mutex profile to file")
+	flag.StringVar(&traceProfile, "trace", "", "Write execution trace to file")
+
 	flag.Parse()
 
+	// Enable profiling if requested
+	if blockProfile != "" {
+		runtime.SetBlockProfileRate(1)
+	}
+	if mutexProfile != "" {
+		runtime.SetMutexProfileFraction(1)
+	}
+
+	// Start CPU profiling
+	if cpuProfile != "" {
+		f, err := os.Create(cpuProfile)
+		if err != nil {
+			fmt.Printf("❌ Could not create CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Printf("❌ Could not start CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer pprof.StopCPUProfile()
+		fmt.Printf("🔍 CPU profiling enabled: %s\n", cpuProfile)
+	}
+
+	// Start execution trace
+	if traceProfile != "" {
+		f, err := os.Create(traceProfile)
+		if err != nil {
+			fmt.Printf("❌ Could not create trace file: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		if err := trace.Start(f); err != nil {
+			fmt.Printf("❌ Could not start trace: %v\n", err)
+			os.Exit(1)
+		}
+		defer trace.Stop()
+		fmt.Printf("🔍 Execution trace enabled: %s\n", traceProfile)
+	}
+
 	// Default sections and subsections (match actual database seeded data)
-	config.Sections = []string{"A", "B", "C"}  // Database has A, B, C only
-	config.Subsections = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}  // Each section has 10 subsections
+	config.Sections = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} // D
+	config.Subsections = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}                    // Each section has 10 subsections
 
 	fmt.Println("========================================")
 	fmt.Println("🎫 Ticketing System Load Test")
@@ -108,40 +181,61 @@ func main() {
 	requestChan := make(chan int, config.TotalRequests)
 	var wg sync.WaitGroup
 
-	// Pre-create authenticated HTTP clients
-	// Phase 1: Authenticate users (warm-up phase)
-	// Fixed pool of 10 users - workers will share these authenticated sessions
-	fmt.Println("\n📝 Phase 1: Authenticating users...")
-	fmt.Println("   (Using fixed pool of 10 users - workers will share sessions)")
+	// Pre-create authenticated HTTP client pool
+	// Phase 1: Authenticate once and create client pool (warm-up phase)
+	fmt.Println("\n📝 Phase 1: Creating HTTP client pool...")
+	fmt.Printf("   (Creating %d clients with shared authentication)\n", config.ClientPoolSize)
 	fmt.Println("   (Login phase - NOT included in performance metrics)")
 	setupStartTime := time.Now()
 
-	const maxUsers = 10 // Fixed to 10 users (b_1@t.com ~ b_10@t.com)
-	clients := make([]*http.Client, maxUsers)
-	for i := 0; i < maxUsers; i++ {
-		client, err := createAuthenticatedClient(config.Host, i)
-		if err != nil {
-			fmt.Printf("❌ Failed to create client %d: %v\n", i, err)
-			return
+	// Login once and get authenticated cookies
+	masterClient, err := createAuthenticatedClient(config.Host, 0)
+	if err != nil {
+		fmt.Printf("❌ Failed to authenticate: %v\n", err)
+		return
+	}
+
+	// Extract cookies from authenticated client
+	masterCookies := masterClient.Jar.Cookies(mustParseURL(config.Host))
+
+	// Create pool of HTTP clients, all sharing the same cookies
+	clientPool := make([]*http.Client, config.ClientPoolSize)
+	for i := 0; i < config.ClientPoolSize; i++ {
+		jar, _ := cookiejar.New(nil)
+		jar.SetCookies(mustParseURL(config.Host), masterCookies)
+
+		transport := &http.Transport{
+			MaxIdleConns:        1000,
+			MaxIdleConnsPerHost: 1000,
+			MaxConnsPerHost:     0,
+			IdleConnTimeout:     90 * time.Second,
 		}
-		clients[i] = client
+
+		clientPool[i] = &http.Client{
+			Jar:       jar,
+			Timeout:   30 * time.Second,
+			Transport: transport,
+		}
 	}
 
 	setupDuration := time.Since(setupStartTime)
-	fmt.Printf("   ✅ %d users authenticated in %.2fs\n", maxUsers, setupDuration.Seconds())
-	fmt.Printf("   ℹ️  %d workers will share these %d user sessions\n", config.Concurrency, maxUsers)
+	fmt.Printf("   ✅ %d clients authenticated in %.2fs\n", config.ClientPoolSize, setupDuration.Seconds())
+	fmt.Printf("   ℹ️  %d workers will round-robin across %d clients\n", config.Concurrency, config.ClientPoolSize)
 
 	// Phase 2: Start load test (only booking requests)
 	fmt.Println("\n🚀 Phase 2: Starting booking load test...")
 	fmt.Println("   (Performance measurement starts NOW)")
 	testStartTime := time.Now()
 
-	// Start workers - each worker will use one of the 10 authenticated clients (round-robin)
+	// Create separate WaitGroup for tracking responses
+	var responseWg sync.WaitGroup
+
+	// Start workers - each worker picks a client from pool (round-robin)
 	for i := 0; i < config.Concurrency; i++ {
 		wg.Add(1)
 		workerID := i
-		clientID := i % len(clients) // Round-robin: 200 workers share 10 clients
-		go worker(workerID, clients[clientID], requestChan, &config, metrics, &wg)
+		clientIdx := i % len(clientPool) // Round-robin assignment
+		go worker(workerID, clientPool[clientIdx], requestChan, &config, metrics, &wg, &responseWg)
 	}
 
 	// Send requests
@@ -150,12 +244,65 @@ func main() {
 	}
 	close(requestChan)
 
-	// Wait for completion
+	// Wait for all workers to finish sending requests
 	wg.Wait()
+	fmt.Println("\n   ✅ All requests sent! Waiting for responses...")
+
+	// Wait for all responses to be received
+	responseWg.Wait()
 	metrics.endTime = time.Now()
+
+	// Print newline after progress bar to separate from results
+	fmt.Println()
 
 	// Print results
 	printResults(metrics, config, testStartTime)
+
+	// Write memory profile if requested
+	if memProfile != "" {
+		f, err := os.Create(memProfile)
+		if err != nil {
+			fmt.Printf("❌ Could not create memory profile: %v\n", err)
+		} else {
+			runtime.GC() // Get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				fmt.Printf("❌ Could not write memory profile: %v\n", err)
+			} else {
+				fmt.Printf("📊 Memory profile written to: %s\n", memProfile)
+			}
+			f.Close()
+		}
+	}
+
+	// Write block profile if requested
+	if blockProfile != "" {
+		f, err := os.Create(blockProfile)
+		if err != nil {
+			fmt.Printf("❌ Could not create block profile: %v\n", err)
+		} else {
+			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+				fmt.Printf("❌ Could not write block profile: %v\n", err)
+			} else {
+				fmt.Printf("📊 Block profile written to: %s\n", blockProfile)
+			}
+			f.Close()
+		}
+	}
+
+	// Write mutex profile if requested
+	if mutexProfile != "" {
+		f, err := os.Create(mutexProfile)
+		if err != nil {
+			fmt.Printf("❌ Could not create mutex profile: %v\n", err)
+		} else {
+			if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
+				fmt.Printf("❌ Could not write mutex profile: %v\n", err)
+			} else {
+				fmt.Printf("📊 Mutex profile written to: %s\n", mutexProfile)
+			}
+			f.Close()
+		}
+	}
 }
 
 func createAuthenticatedClient(host string, workerID int) (*http.Client, error) {
@@ -165,9 +312,18 @@ func createAuthenticatedClient(host string, workerID int) (*http.Client, error) 
 		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
 	}
 
+	// Configure HTTP transport with larger connection pool
+	transport := &http.Transport{
+		MaxIdleConns:        1000,             // Total idle connections across all hosts
+		MaxIdleConnsPerHost: 1000,             // Idle connections per host (support high concurrency)
+		MaxConnsPerHost:     0,                // 0 = unlimited active connections
+		IdleConnTimeout:     90 * time.Second, // Keep connections alive for reuse
+	}
+
 	client := &http.Client{
-		Jar:     jar,
-		Timeout: 30 * time.Second,
+		Jar:       jar,
+		Timeout:   60 * time.Second,
+		Transport: transport,
 	}
 
 	// Generate unique user credentials (must be pre-registered)
@@ -178,7 +334,7 @@ func createAuthenticatedClient(host string, workerID int) (*http.Client, error) 
 	// Login to get JWT token (user must already exist)
 	err = loginUser(client, host, email, password)
 	if err != nil {
-		return nil, fmt.Errorf("login failed for %s: %w\nHint: Run 'make seed' or 'make docker-seed' to setup test data first", email)
+		return nil, fmt.Errorf("login failed for %s: %w\nHint: Run 'make seed' or 'make docker-seed' to setup test data first", email, err)
 	}
 
 	return client, nil
@@ -214,49 +370,64 @@ func loginUser(client *http.Client, host, email, password string) error {
 	return nil
 }
 
-func worker(id int, client *http.Client, requests <-chan int, config *Config, metrics *Metrics, wg *sync.WaitGroup) {
+func worker(id int, client *http.Client, requests <-chan int, config *Config, metrics *Metrics, wg *sync.WaitGroup, responseWg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for reqNum := range requests {
+		// Increment and show progress BEFORE sending request (same line update)
+		sent := atomic.AddInt64(&metrics.totalRequests, 1)
+
+		// Debug: Show when request is actually sent
+		if config.Debug {
+			fmt.Printf("\r   [Worker %d] Sending request #%d at %s", id, sent, time.Now().Format("15:04:05.000"))
+		} else {
+			fmt.Printf("\r   Sending: %d/%d requests", sent, config.TotalRequests)
+		}
+
 		// Create booking request
 		bookingReq := generateBookingRequest(reqNum, config)
 
-		// Send request and measure latency
-		start := time.Now()
-		success, seats := sendBookingRequest(client, config.Host, bookingReq)
-		latency := time.Since(start)
+		// Launch goroutine to handle request/response asynchronously
+		responseWg.Add(1)
+		go func(reqID int64, req BookingCreateRequest) {
+			defer responseWg.Done()
 
-		// Update metrics
-		atomic.AddInt64(&metrics.totalRequests, 1)
-		if success {
-			atomic.AddInt64(&metrics.successCount, 1)
+			// Send request and measure latency
+			start := time.Now()
+			success, seats := sendBookingRequestWithTiming(client, config.Host, req, metrics)
+			latency := time.Since(start)
 
-			// Track booked seats for duplicate detection
-			if len(seats) > 0 {
-				metrics.bookedSeatsMutex.Lock()
-				for _, seat := range seats {
-					if metrics.bookedSeats[seat] {
-						atomic.AddInt64(&metrics.duplicateSeats, 1)
-					}
-					metrics.bookedSeats[seat] = true
-				}
-				metrics.bookedSeatsMutex.Unlock()
-			} else {
-				atomic.AddInt64(&metrics.pendingCount, 1)
+			// Debug: Show when response is received
+			if config.Debug {
+				fmt.Printf("\r   [Worker %d] Response #%d received after %.2fs\n", id, reqID, latency.Seconds())
 			}
-		} else {
-			atomic.AddInt64(&metrics.failureCount, 1)
-		}
 
-		// Record latency
-		metrics.latenciesMutex.Lock()
-		metrics.latencies = append(metrics.latencies, latency)
-		metrics.latenciesMutex.Unlock()
+			// Update success/failure metrics
+			if success {
+				atomic.AddInt64(&metrics.successCount, 1)
 
-		// Progress update every 1000 requests
-		if reqNum%1000 == 0 {
-			fmt.Printf("   Progress: %d/%d requests completed\n", reqNum, config.TotalRequests)
-		}
+				// Track booked seats for duplicate detection
+				if len(seats) > 0 {
+					metrics.bookedSeatsMutex.Lock()
+					for _, seat := range seats {
+						if metrics.bookedSeats[seat] {
+							atomic.AddInt64(&metrics.duplicateSeats, 1)
+						}
+						metrics.bookedSeats[seat] = true
+					}
+					metrics.bookedSeatsMutex.Unlock()
+				} else {
+					atomic.AddInt64(&metrics.pendingCount, 1)
+				}
+			} else {
+				atomic.AddInt64(&metrics.failureCount, 1)
+			}
+
+			// Record latency
+			metrics.latenciesMutex.Lock()
+			metrics.latencies = append(metrics.latencies, latency)
+			metrics.latenciesMutex.Unlock()
+		}(sent, bookingReq)
 	}
 }
 
@@ -286,9 +457,8 @@ func generateBookingRequest(reqNum int, config *Config) BookingCreateRequest {
 	return req
 }
 
-func sendBookingRequest(client *http.Client, host string, req BookingCreateRequest) (bool, []string) {
+func sendBookingRequestWithTiming(client *http.Client, host string, req BookingCreateRequest, metrics *Metrics) (bool, []string) {
 	body, _ := json.Marshal(req)
-	fmt.Printf("📦 Request body: %s\n", string(body))
 
 	// Debug: Check cookies before sending booking request
 	bookingURL := host + "/api/booking"
@@ -300,7 +470,6 @@ func sendBookingRequest(client *http.Client, host string, req BookingCreateReque
 		if len(cookies) == 0 {
 			fmt.Printf("⚠️  No cookies found for booking request to %s\n", bookingURL)
 		} else {
-			fmt.Printf("🍪 Cookies in jar: %v\n", cookies)
 			// Manually add cookies to request for debugging
 			for _, cookie := range cookies {
 				httpReq.AddCookie(cookie)
@@ -308,7 +477,12 @@ func sendBookingRequest(client *http.Client, host string, req BookingCreateReque
 		}
 	}
 
-	fmt.Printf("📤 Request headers: %v\n", httpReq.Header)
+	// Record timing JUST before actual HTTP send
+	sendTime := time.Now()
+	if metrics.firstSendTime.Load() == nil {
+		metrics.firstSendTime.Store(sendTime)
+	}
+	metrics.lastSendTime.Store(sendTime)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
@@ -352,6 +526,20 @@ func printResults(metrics *Metrics, config Config, testStartTime time.Time) {
 	fmt.Println("\n========================================")
 	fmt.Println("📊 Load Test Results")
 	fmt.Println("========================================")
+
+	// Show request sending speed
+	if metrics.firstSendTime.Load() != nil && metrics.lastSendTime.Load() != nil {
+		firstTime := metrics.firstSendTime.Load().(time.Time)
+		lastTime := metrics.lastSendTime.Load().(time.Time)
+		sendDuration := lastTime.Sub(firstTime)
+		fmt.Println("🚀 Request Sending Speed:")
+		fmt.Printf("  First request sent at:  %s\n", firstTime.Format("15:04:05.000"))
+		fmt.Printf("  Last request sent at:   %s\n", lastTime.Format("15:04:05.000"))
+		fmt.Printf("  All %d requests sent in: %.3fms\n", totalRequests, sendDuration.Seconds()*1000)
+		fmt.Printf("  Sending rate:           %.0f req/ms\n", float64(totalRequests)/sendDuration.Seconds()/1000)
+		fmt.Println()
+	}
+
 	fmt.Println("⏱️  Test Duration:")
 	fmt.Printf("  Pure booking time:  %.2fs\n", duration.Seconds())
 	fmt.Printf("  (Auth setup time excluded from metrics)\n")

@@ -242,13 +242,32 @@ dal:  ## 📋 View application logs
 ltb:  ## 🔨 Build Go load test binary
 	@cd script/go_client && go build -o loadtest main.go
 
+.PHONY: ltt
+ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
+	@cd script/go_client && ./loadtest -requests 10 -concurrency 10 -clients 10
+
 .PHONY: ltq
-ltq:  ## ⚡ Quick load test (1K requests)
-	@cd script/go_client && ./loadtest -requests 100 -concurrency 25
+ltq:  ## ⚡ Quick load test (2 processes × 250 requests, 25 workers each)
+	@echo "🚀 Starting 2 parallel load test processes..."
+	@cd script/go_client && \
+		./loadtest -requests 250 -concurrency 25 -clients 25 & \
+		wait
+	@echo "✅ All parallel load tests completed"
 
 .PHONY: ltf
-ltf:  ## 💪 Full load test (50K requests)
-	@cd script/go_client && ./loadtest -requests 50000 -concurrency 100
+ltf:  ## 💪 Full load test (50K requests, 100 workers, 100 clients)
+	@cd script/go_client && ./loadtest -requests 50000 -concurrency 100 -clients 100
+
+.PHONY: ltp
+ltp:  ## 🚀 Parallel load test (4 processes × 25 requests × 10 workers = 100 total concurrent)
+	@echo "🚀 Starting 4 parallel load test processes..."
+	@cd script/go_client && \
+		./loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./loadtest -requests 25 -concurrency 10 -clients 10 & \
+		wait
+	@echo "✅ All parallel load tests completed"
 
 .PHONY: k6-smoke
 k6-smoke:  ## 🔍 k6 smoke test

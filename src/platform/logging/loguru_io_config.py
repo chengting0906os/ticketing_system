@@ -9,6 +9,7 @@ import zoneinfo
 from loguru import logger as loguru_logger
 
 from src.platform.constant.path import LOG_DIR
+from src.platform.config.core_setting import settings
 
 # Use test log directory if in test environment
 LOG_DIR = os.environ.get('TEST_LOG_DIR', LOG_DIR)
@@ -145,8 +146,11 @@ custom_logger = loguru_logger.bind(
     }
 )
 
+# Determine minimum log level based on DEBUG setting
+min_log_level = 'DEBUG' if settings.DEBUG else 'INFO'
+
 # Add console output with custom format
-custom_logger.add(sys.stdout, format=io_log_format)
+custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level)
 
 # Add file output with daily rotation and compression
 # Use test_ prefix if in test environment
@@ -165,6 +169,7 @@ custom_logger.add(
     retention='14 days',
     compression='gz',
     enqueue=True,
+    level=min_log_level,
 )
 
 # Intercept standard logging

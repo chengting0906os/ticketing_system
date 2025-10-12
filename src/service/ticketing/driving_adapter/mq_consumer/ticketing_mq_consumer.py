@@ -145,9 +145,6 @@ class TicketingMqConsumer:
         Returns:
             True: 忽略錯誤，提交 offset（訊息被丟棄）
             False: 傳播錯誤，不提交 offset（停止 consumer，重啟後重試）
-
-        注意：Quix Streams 的 callback 無法做到「跳過此訊息但不提交 offset」
-        因此可重試錯誤會導致 consumer 停止，需要外部監控重啟
         """
         error_msg = str(exc)
 
@@ -176,30 +173,78 @@ class TicketingMqConsumer:
                 )
             # 返回 True：提交 offset，跳過此訊息
             return True
-        else:
-            # 可重試錯誤：不提交 offset，停止 consumer
-            # 外部監控（如 Kubernetes）會重啟 consumer，重新處理此訊息
-            resource_exhaustion_keywords = [
-                'too many clients',
-                'connection pool',
-                'max connections',
-            ]
-            is_resource_exhaustion = any(
-                kw in error_msg.lower() for kw in resource_exhaustion_keywords
+
+        # 可重試錯誤：原地重試，不停止 consumer
+        resource_exhaustion_keywords = [
+            'too many clients',
+            'connection pool',
+            'max connections',
+            'database',
+        ]
+        is_resource_exhaustion = any(kw in error_msg.lower() for kw in resource_exhaustion_keywords)
+
+        if is_resource_exhaustion:
+            Logger.base.warning(
+                f'⚠️ [TICKETING-ERROR-CALLBACK] Resource exhaustion, will retry with backoff: {exc}'
             )
+            # 快速重試 (10 次，每次 0.5 秒)
+            max_retries = 10
+            for attempt in range(1, max_retries + 1):
+                try:
+                    import time
 
-            if is_resource_exhaustion:
-                Logger.base.error(
-                    f'❌ [TICKETING-ERROR-CALLBACK] Resource exhaustion, stopping consumer for restart: {exc}'
-                )
-            else:
-                Logger.base.error(
-                    f'❌ [TICKETING-ERROR-CALLBACK] Retryable error, stopping consumer: {exc}'
-                )
+                    backoff_seconds = 0.5
+                    Logger.base.info(
+                        f'🔄 [TICKETING-RETRY] Attempt {attempt}/{max_retries}, waiting {backoff_seconds}s...'
+                    )
+                    time.sleep(backoff_seconds)
 
-            # 返回 False：不提交 offset，停止 consumer
-            # 重啟後會重新處理此訊息
-            return False
+                    # 重新處理訊息
+                    if row and hasattr(row, 'value'):
+                        message = row.value
+                        # 根據訊息內容判斷是哪個處理器
+                        if 'reserved_seats' in message:
+                            result = self._process_pending_payment_and_reserved(message)
+                        else:
+                            result = self._process_failed(message)
+
+                        if result.get('success'):
+                            Logger.base.info(
+                                f'✅ [TICKETING-RETRY] Retry successful on attempt {attempt}'
+                            )
+                            return True  # 成功，提交 offset
+                except Exception as retry_exc:
+                    Logger.base.warning(
+                        f'⚠️ [TICKETING-RETRY] Attempt {attempt} failed: {retry_exc}'
+                    )
+                    if attempt == max_retries:
+                        # 最後一次重試失敗，發送到 DLQ
+                        Logger.base.error(
+                            '❌ [TICKETING-RETRY] All retries exhausted, sending to DLQ'
+                        )
+                        if row and hasattr(row, 'value'):
+                            self._send_to_dlq(
+                                message=row.value,
+                                original_topic='unknown',
+                                error=f'Max retries exhausted: {error_msg}',
+                                retry_count=max_retries,
+                            )
+                        return True  # 提交 offset，避免無限重試
+
+            # 不應該到這裡
+            return True
+
+        # 其他可重試錯誤：也嘗試重試
+        Logger.base.warning(f'⚠️ [TICKETING-ERROR-CALLBACK] Retryable error: {exc}')
+        # 發送到 DLQ，因為不確定能否重試成功
+        if row and hasattr(row, 'value'):
+            self._send_to_dlq(
+                message=row.value,
+                original_topic='unknown',
+                error=error_msg,
+                retry_count=0,
+            )
+        return True
 
     @Logger.io
     def _create_kafka_app(self) -> Application:

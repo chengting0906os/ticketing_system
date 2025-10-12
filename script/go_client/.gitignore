@@ -11,3 +11,4 @@ setup_users.exe
 # Go build cache
 *.test
 *.out
+cpu.prof
