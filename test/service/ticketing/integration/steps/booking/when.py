@@ -250,3 +250,30 @@ def wait_for_async_processing(step):
     wait_data = extract_table_data(step)
     seconds = int(wait_data.get('seconds', 1))
     time.sleep(seconds)
+
+
+@when('buyer creates booking with best available in section:')
+def buyer_creates_booking_with_best_available_in_section(step, client: TestClient, booking_state):
+    """Buyer creates booking with best available seat selection in specified section."""
+    seat_data = extract_table_data(step)
+    quantity = int(seat_data['quantity'])
+    section = seat_data.get('section', 'A')
+    subsection = int(seat_data.get('subsection', 1))
+
+    # Create booking with best available seat selection
+    booking_request = {
+        'event_id': booking_state['event_id'],
+        'section': section,
+        'subsection': subsection,
+        'seat_selection_mode': 'best_available',
+        'seat_positions': [],
+        'quantity': quantity,
+    }
+
+    response = client.post(BOOKING_BASE, json=booking_request)
+    booking_state['response'] = response
+
+    # Store booking if created successfully
+    if response.status_code == 201:
+        booking_state['booking'] = response.json()
+        booking_state['selected_quantity'] = quantity

@@ -47,6 +47,9 @@ from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQ
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
+from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
+    SeatAvailabilityQueryHandlerImpl,
+)
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import AuthService
 
 
@@ -96,6 +99,11 @@ class Container(containers.DeclarativeContainer):
         InitEventAndTicketsStateHandlerImpl,
     )
 
+    # Ticketing Service - Seat Availability Query Handler
+    seat_availability_query_handler = providers.Factory(
+        SeatAvailabilityQueryHandlerImpl,
+    )
+
     # MQ Infrastructure Orchestrator
     mq_infra_orchestrator = providers.Factory(
         MqInfraOrchestrator,
@@ -131,7 +139,8 @@ def cleanup():
     container.reset_singletons()
 
 
-# FastAPI Dependency Providers
+# FastAPI Dependency Providers (deprecated - use Provide[Container.xxx] instead)
+# Keeping these for backward compatibility with existing code
 def get_booking_event_publisher():
     """FastAPI dependency provider for booking event publisher."""
 
