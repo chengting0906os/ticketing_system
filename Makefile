@@ -64,15 +64,6 @@ test-e2e:  ## 🧪 Run E2E tests
 test-bdd:  ## 🧪 Run BDD tests (Gherkin)
 	@uv run pytest test/features/ -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-infra
-test-infra:  ## 🏗️ Run infrastructure tests (load balancer, docker)
-	@echo "🏗️  Testing infrastructure components..."
-	@uv run pytest test/infrastructure/ -v --tb=short
-	@echo "✅ Infrastructure tests complete!"
-
-.PHONY: test-lb
-test-lb: test-infra  ## 🔀 Alias for test-infra (load balancer tests)
-
 %:
 	@:
 
@@ -220,6 +211,12 @@ tdt:  ## 🧪 Run tests in Docker
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
 	@docker-compose exec ticketing-service uv run pytest test/service/e2e -v
+
+.PHONY: tdinfra
+tdinfra:  ## 🏗️ Run infrastructure tests in Docker
+	@echo "🏗️  Testing infrastructure components in Docker..."
+	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
+	@echo "✅ Infrastructure tests complete!"
 
 .PHONY: tdci
 tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e)

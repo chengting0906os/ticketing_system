@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     KVROCKS_PASSWORD: str = ''
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks 也用 Redis 協議
 
+    # Kvrocks Connection Pool Configuration
+    KVROCKS_POOL_MAX_CONNECTIONS: int = 50  # Max connections in pool
+    KVROCKS_POOL_SOCKET_TIMEOUT: int = 5  # Socket read/write timeout (seconds)
+    KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT: int = 5  # Connection timeout (seconds)
+    KVROCKS_POOL_SOCKET_KEEPALIVE: bool = True  # Enable TCP keepalive
+    KVROCKS_POOL_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval (seconds)
+
     # Kafka Instance Configuration (for Exactly-Once Processing)
     KAFKA_PRODUCER_INSTANCE_ID: str = os.getenv(
         'KAFKA_PRODUCER_INSTANCE_ID', f'producer-{os.getpid()}'

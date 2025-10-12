@@ -74,7 +74,7 @@ type Config struct {
 func main() {
 	// Parse command line flags
 	config := Config{}
-	flag.StringVar(&config.Host, "host", "http://localhost:8000", "API host")
+	flag.StringVar(&config.Host, "host", "http://localhost", "API host")
 	flag.IntVar(&config.TotalRequests, "requests", 50000, "Total number of requests")
 	flag.IntVar(&config.Concurrency, "concurrency", 500, "Number of concurrent workers")
 	flag.IntVar(&config.EventID, "event", 1, "Event ID to book")
