@@ -143,6 +143,10 @@ class SeatReservationConsumer:
         non_retryable_keywords = ['validation', 'invalid', 'not found', 'missing required']
         is_non_retryable = any(kw in error_msg.lower() for kw in non_retryable_keywords)
 
+        # 判斷是否為資源耗盡錯誤（需要延遲）
+        resource_exhaustion_keywords = ['too many clients', 'connection pool', 'max connections']
+        is_resource_exhaustion = any(kw in error_msg.lower() for kw in resource_exhaustion_keywords)
+
         if is_non_retryable:
             Logger.base.warning(f'⚠️ [ERROR-CALLBACK] Non-retryable error, sending to DLQ: {exc}')
             # 發送到 DLQ
@@ -156,7 +160,14 @@ class SeatReservationConsumer:
                 )
         else:
             # 可重試錯誤：僅記錄，Kafka 會自動重試（通過 offset 不提交）
-            Logger.base.error(f'❌ [ERROR-CALLBACK] Processing error (will retry): {exc}')
+            if is_resource_exhaustion:
+                Logger.base.warning(
+                    f'⚠️ [ERROR-CALLBACK] Resource exhaustion, will retry after delay: {exc}'
+                )
+                # 資源耗盡錯誤：暫停 0.5 秒讓系統釋放資源
+                time.sleep(0.5)
+            else:
+                Logger.base.error(f'❌ [ERROR-CALLBACK] Processing error (will retry): {exc}')
 
         # 總是返回 True，讓 consumer 繼續處理下一個訊息
         return True
