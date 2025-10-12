@@ -84,8 +84,8 @@ async def start_ticketing_consumer() -> None:
 
                 signal.signal = mock_signal  # type: ignore[bad-assignment]
                 try:
-                    # Run the consumer's async start method from sync context
-                    portal.call(consumer.start)  # type: ignore[arg-type]
+                    # Run the consumer's sync start method (Quix Streams app.run() is sync)
+                    consumer.start()  # Direct call - start() is now sync
                 finally:
                     signal.signal = original_signal
 

@@ -39,6 +39,16 @@ class KafkaTopicBuilder:
         return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
+    def ticketing_dlq(*, event_id: int) -> str:
+        """Dead Letter Queue for ticketing service unrecoverable errors"""
+        return f'event-id-{event_id}______ticketing-dlq______{ServiceNames.TICKETING_SERVICE}'
+
+    @staticmethod
+    def seat_reservation_dlq(*, event_id: int) -> str:
+        """Dead Letter Queue for seat reservation service unrecoverable errors"""
+        return f'event-id-{event_id}______seat-reservation-dlq______{ServiceNames.SEAT_RESERVATION_SERVICE}'
+
+    @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
         return [
             # To Seat Reservation Service
@@ -50,6 +60,9 @@ class KafkaTopicBuilder:
                 event_id=event_id
             ),
             KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
+            # Dead Letter Queues
+            KafkaTopicBuilder.ticketing_dlq(event_id=event_id),
+            KafkaTopicBuilder.seat_reservation_dlq(event_id=event_id),
         ]
 
 
@@ -76,6 +89,30 @@ class KafkaConsumerGroupBuilder:
             KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
         ]
+
+
+class KafkaProducerTransactionalIdBuilder:
+    """
+    Kafka Producer Transactional ID 命名統一建構器
+
+    Transactional ID 是 Kafka exactly-once 語義的核心：
+    - 確保 producer 冪等性 (防止重複寫入)
+    - 每個 producer instance 必須有唯一的 transactional.id
+    - 格式: {service_name}-producer-event-{event_id}-instance-{instance_id}
+
+    Environment Variables:
+    - KAFKA_PRODUCER_INSTANCE_ID: Producer instance identifier (default: "1")
+    """
+
+    @staticmethod
+    def ticketing_service(*, event_id: int, instance_id: str) -> str:
+        """Ticketing Service Producer Transactional ID"""
+        return f'{ServiceNames.TICKETING_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
+
+    @staticmethod
+    def seat_reservation_service(*, event_id: int, instance_id: str) -> str:
+        """Seat Reservation Service Producer Transactional ID"""
+        return f'{ServiceNames.SEAT_RESERVATION_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
 
 
 class PartitionKeyBuilder:
