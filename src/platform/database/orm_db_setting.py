@@ -36,9 +36,22 @@ class AsyncEngineManager:
 
     Ensures engine is always bound to the current event loop to prevent
     "Task got Future attached to a different loop" errors.
+
+    Supports dual engine mode:
+    - Writer engine: For INSERT/UPDATE/DELETE operations
+    - Reader engine: For SELECT operations (Aurora read replicas)
     """
 
-    def __init__(self):
+    def __init__(self, db_url: str, is_read_replica: bool = False):
+        """
+        Initialize engine manager
+
+        Args:
+            db_url: Database connection URL
+            is_read_replica: If True, this engine connects to read replicas
+        """
+        self._db_url = db_url
+        self._is_read_replica = is_read_replica
         self._engine: Optional[AsyncEngine] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._session_maker: Optional[async_sessionmaker[AsyncSession]] = None
@@ -85,8 +98,11 @@ class AsyncEngineManager:
 
     def _create_engine(self) -> AsyncEngine:
         """Create new async engine"""
+        engine_type = 'READ' if self._is_read_replica else 'WRITE'
+        logger.info(f'🔗 [DB] Creating {engine_type} engine: {self._db_url.split("@")[-1]}')
+
         return create_async_engine(
-            settings.DATABASE_URL_ASYNC,
+            self._db_url,
             echo=False,
             future=True,
             pool_size=100,
@@ -97,8 +113,9 @@ class AsyncEngineManager:
         )
 
 
-# Global engine manager
-_engine_manager = AsyncEngineManager()
+# Global engine managers (singleton pattern)
+_writer_engine_manager = AsyncEngineManager(settings.DATABASE_URL_ASYNC, is_read_replica=False)
+_reader_engine_manager = AsyncEngineManager(settings.DATABASE_READ_URL_ASYNC, is_read_replica=True)
 
 
 # =============================================================================
@@ -107,13 +124,24 @@ _engine_manager = AsyncEngineManager()
 
 
 def get_engine() -> AsyncEngine | None:
-    """Get event-loop-aware engine"""
-    return _engine_manager.get_engine()
+    """Get event-loop-aware writer engine (default for backward compatibility)"""
+    return _writer_engine_manager.get_engine()
 
 
 def get_session_maker() -> async_sessionmaker[AsyncSession]:
-    """Get event-loop-aware session maker"""
-    return _engine_manager.get_session_maker()
+    """Get event-loop-aware writer session maker (default for backward compatibility)"""
+    return _writer_engine_manager.get_session_maker()
+
+
+# New: Read replica accessors
+def get_read_engine() -> AsyncEngine | None:
+    """Get event-loop-aware reader engine (for SELECT operations)"""
+    return _reader_engine_manager.get_engine()
+
+
+def get_read_session_maker() -> async_sessionmaker[AsyncSession]:
+    """Get event-loop-aware reader session maker (for SELECT operations)"""
+    return _reader_engine_manager.get_session_maker()
 
 
 # Backward compatibility: expose as module-level callables
@@ -160,7 +188,9 @@ async def create_db_and_tables():
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    Provide async session for dependency injection
+    Provide async WRITER session for dependency injection
+
+    Use this for endpoints that perform writes (INSERT/UPDATE/DELETE).
 
     Note: The async_session_maker() context manager automatically:
     - Handles session cleanup on exit
@@ -168,6 +198,20 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     - Uses event-loop-aware engine to prevent loop conflicts
     """
     session_maker = get_session_maker()
+    async with session_maker() as session:
+        yield session
+
+
+async def get_async_read_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Provide async READER session for dependency injection
+
+    Use this for read-only endpoints that only perform SELECT queries.
+    Routes traffic to Aurora read replicas for better performance.
+
+    Note: Falls back to writer endpoint if POSTGRES_READ_SERVER not configured.
+    """
+    session_maker = get_read_session_maker()
     async with session_maker() as session:
         yield session
 
@@ -190,8 +234,8 @@ class Database:
             db_url,
             echo=False,
             future=True,
-            pool_size=100,
-            max_overflow=100,
+            pool_size=50,
+            max_overflow=150,
             pool_timeout=30,
             pool_recycle=3600,
             pool_pre_ping=True,

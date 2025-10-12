@@ -11,14 +11,8 @@
 - 可重試錯誤（暫時性錯誤）→ Kafka 通過 offset 管理重試
 """
 
-import asyncio
 import json
-import os
-import sys
-
-
-# Add project root to Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import time
 
 from confluent_kafka import Consumer, Producer
 
@@ -84,9 +78,9 @@ def monitor_dlq(event_id: int, timeout: int = 30):
     consumer = create_dlq_consumer(event_id)
 
     try:
-        start_time = asyncio.get_event_loop().time()
+        start_time = time.time()
 
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
+        while (time.time() - start_time) < timeout:
             msg = consumer.poll(timeout=1.0)
 
             if msg is None:
@@ -132,8 +126,6 @@ def main():
     Logger.base.info('\n⏳ Step 2: Waiting for error callback processing...')
     Logger.base.info('   Expected: Non-retryable error detected → Immediate DLQ')
     Logger.base.info('   No application-layer retry delay')
-    import time
-
     time.sleep(5)  # 縮短等待時間，因為不再有應用層重試
 
     # Step 3: 監控 DLQ

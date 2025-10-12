@@ -26,9 +26,18 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # =============================================================================
+# Database Configuration - MUST BE FIRST!
+# =============================================================================
+# Load .env file first, before any other imports that might use settings
+# IMPORTANT: Don't override existing env vars (for Docker/CI where they're set explicitly)
+env_file = '.env' if Path('.env').exists() else '.env.example'
+load_dotenv(env_file, override=False)
+
+# =============================================================================
 # Environment Setup for Parallel Testing
 # =============================================================================
 # Each pytest-xdist worker gets isolated database and Kvrocks namespace
+# IMPORTANT: Set these BEFORE importing app, as settings is a singleton!
 worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
 if worker_id == 'master':
     os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
@@ -46,7 +55,7 @@ os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 # =============================================================================
 # Import Application and Test Components
 # =============================================================================
-# Import all BDD steps and service fixtures through consolidated modules
+# NOW safe to import app - settings will use the correct POSTGRES_DB
 from src.main import app  # noqa: E402
 from test.bdd_steps_loader import *  # noqa: E402, F403
 from test.fixture_loader import *  # noqa: E402, F403
@@ -63,12 +72,14 @@ from test.util_constant import (  # noqa: E402
     TEST_SELLER_NAME,
 )
 
-
-# =============================================================================
-# Database Configuration
-# =============================================================================
-env_file = '.env' if Path('.env').exists() else '.env.example'
-load_dotenv(env_file)
+# Validate required environment variables
+required_env_vars = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_SERVER', 'POSTGRES_PORT']
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    raise RuntimeError(
+        f'Missing required environment variables: {missing_vars}. '
+        f'Please check {env_file} exists and contains these variables.'
+    )
 
 DB_CONFIG = {
     'user': os.getenv('POSTGRES_USER'),
@@ -90,20 +101,36 @@ _cached_tables = None
 # Database Setup and Cleanup
 # =============================================================================
 async def setup_test_database():
-    """Create test database and run migrations"""
-    # Create database if not exists
-    postgres_url = TEST_DATABASE_URL.replace(f'/{DB_CONFIG["test_db"]}', '/postgres')
-    engine = create_async_engine(postgres_url, isolation_level='AUTOCOMMIT')
-    async with engine.begin() as conn:
-        result = await conn.execute(
-            text(f"SELECT 1 FROM pg_database WHERE datname = '{DB_CONFIG['test_db']}'")
-        )
-        if not result.fetchone():
-            await conn.execute(text(f'CREATE DATABASE {DB_CONFIG["test_db"]}'))
-    await engine.dispose()
+    """Create test database and run migrations
 
-    # Reset schema and run migrations
-    await execute_sql(TEST_DATABASE_URL, ['DROP SCHEMA public CASCADE', 'CREATE SCHEMA public'])
+    Uses minimal connection pool to avoid exhaustion when multiple workers start simultaneously.
+    Each worker uses a different database name (test_db_gw0, test_db_gw1, etc.), so no locking needed.
+    """
+    # Connect to postgres database for database operations
+    postgres_url = TEST_DATABASE_URL.replace(f'/{DB_CONFIG["test_db"]}', '/postgres')
+    engine = create_async_engine(
+        postgres_url,
+        isolation_level='AUTOCOMMIT',
+        pool_size=1,
+        max_overflow=0,
+        pool_pre_ping=True,
+    )
+    try:
+        async with engine.begin() as conn:
+            # Terminate existing connections to the test database
+            await conn.execute(
+                text(
+                    f'SELECT pg_terminate_backend(pid) FROM pg_stat_activity '
+                    f"WHERE datname = '{DB_CONFIG['test_db']}' AND pid <> pg_backend_pid()"
+                )
+            )
+            # Drop and recreate database (each worker has unique database name)
+            await conn.execute(text(f'DROP DATABASE IF EXISTS {DB_CONFIG["test_db"]}'))
+            await conn.execute(text(f'CREATE DATABASE {DB_CONFIG["test_db"]}'))
+    finally:
+        await engine.dispose()
+
+    # Run migrations (synchronous Alembic with proper URL)
     alembic_cfg = Config(Path(__file__).parent.parent / 'alembic.ini')
     alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
     command.upgrade(alembic_cfg, 'head')
@@ -127,8 +154,12 @@ async def verify_migration_completed():
     retry_delay = 0.1
 
     for attempt in range(max_retries):
+        engine = None
         try:
-            engine = create_async_engine(TEST_DATABASE_URL)
+            # Use minimal pool to avoid connection exhaustion
+            engine = create_async_engine(
+                TEST_DATABASE_URL, pool_size=1, max_overflow=0, pool_pre_ping=True
+            )
             async with engine.begin() as conn:
                 result = await conn.execute(
                     text(
@@ -137,7 +168,6 @@ async def verify_migration_completed():
                     )
                 )
                 existing_tables = [row[0] for row in result]
-            await engine.dispose()
 
             missing_tables = [t for t in required_tables if t not in existing_tables]
             if not missing_tables:
@@ -156,12 +186,16 @@ async def verify_migration_completed():
                 await asyncio.sleep(retry_delay)
             else:
                 raise RuntimeError(f'Migration verification failed: {e}')
+        finally:
+            if engine:
+                await engine.dispose()
 
 
 async def clean_all_tables():
     """Truncate all tables for test isolation"""
     global _cached_tables
-    engine = create_async_engine(TEST_DATABASE_URL)
+    # Use minimal pool to avoid connection exhaustion during parallel tests
+    engine = create_async_engine(TEST_DATABASE_URL, pool_size=1, max_overflow=0, pool_pre_ping=True)
     try:
         async with engine.begin() as conn:
             # Refresh table list if not cached
@@ -197,14 +231,24 @@ async def clean_all_tables():
 # =============================================================================
 def pytest_sessionstart(session):
     """Setup database in master process (runs once before workers spawn)"""
-    if os.environ.get('PYTEST_XDIST_WORKER', 'master') == 'master':
-        asyncio.run(setup_test_database())
+    worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    if worker_id == 'master':
+        try:
+            asyncio.run(setup_test_database())
+        except Exception as e:
+            print(f'[{worker_id}] Database setup failed: {e}')
+            raise
 
 
 def pytest_configure(config):
     """Setup database in each worker process"""
-    if os.environ.get('PYTEST_XDIST_WORKER', 'master') != 'master':
-        asyncio.run(setup_test_database())
+    worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    if worker_id != 'master':
+        try:
+            asyncio.run(setup_test_database())
+        except Exception as e:
+            print(f'[{worker_id}] Database setup failed: {e}')
+            raise
 
 
 # =============================================================================

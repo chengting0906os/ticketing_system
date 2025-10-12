@@ -270,4 +270,4 @@ class LoadBalancerStackForLocalStack(Stack):
         )
 
         # TODO: If LocalStack ALB support improves, add minimal config here
-        # For now, recommend using docker-compose.yml with nginx
+        # For now, recommend using docker-compose.local.yml with nginx

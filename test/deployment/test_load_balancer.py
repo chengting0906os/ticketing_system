@@ -28,7 +28,7 @@ def nginx_client():
 # ==============================================================================
 
 
-@pytest.mark.infra
+@pytest.mark.deployment
 def test_nginx_health_endpoint(nginx_client):
     """
     Infrastructure: Verify nginx is running and responding.
@@ -47,7 +47,7 @@ def test_nginx_health_endpoint(nginx_client):
     assert data['service'] == 'nginx-alb', 'Should identify as nginx load balancer'
 
 
-@pytest.mark.infra
+@pytest.mark.deployment
 def test_nginx_routes_to_backend_services(nginx_client):
     """
     Infrastructure: Verify nginx routes requests to backend services.

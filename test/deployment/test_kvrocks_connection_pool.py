@@ -13,6 +13,7 @@ from src.platform.config.core_setting import settings
 from src.platform.state.kvrocks_client import KvrocksClient
 
 
+@pytest.mark.deployment
 class TestKvrocksClientAsyncPooling:
     """Test async client connection pooling"""
 

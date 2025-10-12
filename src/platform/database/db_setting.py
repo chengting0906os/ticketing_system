@@ -15,20 +15,27 @@ from src.platform.database.orm_db_setting import (
     async_session_maker,
     create_db_and_tables,
     engine,
+    get_async_read_session,
     get_async_session,
+    get_read_engine,
+    get_read_session_maker,
 )
 
 # asyncpg (raw SQL for bulk operations)
 from src.platform.database.asyncpg_setting import close_asyncpg_pool, get_asyncpg_pool
 
 __all__ = [
-    # SQLAlchemy
+    # SQLAlchemy (Writer)
     'Base',
     'Database',
     'engine',
     'async_session_maker',
     'create_db_and_tables',
     'get_async_session',
+    # SQLAlchemy (Reader - for read replicas)
+    'get_read_engine',
+    'get_read_session_maker',
+    'get_async_read_session',
     # asyncpg
     'get_asyncpg_pool',
     'close_asyncpg_pool',

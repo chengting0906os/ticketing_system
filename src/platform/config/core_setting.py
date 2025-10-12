@@ -16,28 +16,48 @@ class Settings(BaseSettings):
         env_file=str(_ENV_FILE),
         env_ignore_empty=True,
         extra='ignore',
+        # Environment variables take precedence over .env file (for Docker/CI)
+        env_file_encoding='utf-8',
     )
 
     PROJECT_NAME: str = 'Ticketing System'
     VERSION: str = '0.1.0'
     DEBUG: bool = True  # Set to False in evention
 
-    # Database
+    # Database - Writer endpoint (for writes via RDS Proxy)
     POSTGRES_SERVER: str
     POSTGRES_USER: str
     POSTGRES_PASSWORD: SecretStr
     POSTGRES_DB: str
     POSTGRES_PORT: int
 
+    # Database - Reader endpoint (for reads from Aurora read replicas)
+    # If not set, falls back to POSTGRES_SERVER (for local development)
+    POSTGRES_READ_SERVER: str | None = None
+
     @property
     def DATABASE_URL_ASYNC(self) -> str:
+        """Writer endpoint - Use for INSERT/UPDATE/DELETE operations"""
         password = self.POSTGRES_PASSWORD.get_secret_value()
         return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
 
     @property
     def DATABASE_URL_SYNC(self) -> str:
+        """Writer endpoint (sync) - Use for INSERT/UPDATE/DELETE operations"""
         password = self.POSTGRES_PASSWORD.get_secret_value()
         return f'postgresql://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
+
+    @property
+    def DATABASE_READ_URL_ASYNC(self) -> str:
+        """
+        Reader endpoint - Use for SELECT operations
+
+        Falls back to writer endpoint if POSTGRES_READ_SERVER not configured
+        (for local development with single PostgreSQL instance)
+        """
+        read_server = self.POSTGRES_READ_SERVER or self.POSTGRES_SERVER
+        password = self.POSTGRES_PASSWORD.get_secret_value()
+        return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{read_server}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
 
     # Security
     SECRET_KEY: SecretStr

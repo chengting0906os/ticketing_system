@@ -1,10 +1,10 @@
 # Kvrocks Data Storage Specification
 
-> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py) | [docker-compose.yml](../docker-compose.yml)
+> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py) | [docker-compose.local.yml](../docker-compose.local.yml)
 
 ## Infrastructure Setup
 
-See [docker-compose.yml](../docker-compose.yml) for deployment config
+See [docker-compose.local.yml](../docker-compose.local.yml) for deployment config
 
 **Connection Settings**: See [kvrocks_client.py](../src/platform/state/kvrocks_client.py)
 

@@ -113,6 +113,7 @@ markers = [
     "bdd: BDD scenario test",
     "api: API test",
     "infra: infra test",
+    "deployment: AWS deployment and infrastructure tests",
     "entity: Entity test",
     "integration: Integration test",
     "compensating_transaction: Tests for SAGA compensating transaction pattern",
@@ -123,7 +124,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:gherkin.gherkin_line",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 10"
+addopts = "-v --tb=short --strict-markers -n auto --dist loadscope"
 
 [tool.pyright]
 
@@ -141,8 +142,8 @@ search-path = [
     ".venv/lib/python3.13/site-packages",
 ]
 site-package-path = [".venv/lib/python3.13/site-packages"]
-# Only check src/ and test/ for fast type checking (excludes slow AWS CDK modules)
 project-includes = ["src", "test"]
+project-excludes = ['test/deployment']
 
 [tool.pyrefly.errors]
 missing-attribute = false

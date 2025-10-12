@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.platform.database.db_setting import get_async_session
+from src.platform.database.db_setting import get_async_read_session, get_async_session
 
 
 if TYPE_CHECKING:
@@ -78,14 +78,27 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
     """
     SQLAlchemy implementation of Unit of Work
 
+    Supports dual session mode:
+    - Writer session: For command repos (INSERT/UPDATE/DELETE)
+    - Reader session: For query repos (SELECT) - routes to Aurora read replicas
+
     Usage in use case:
         async with uow:
             booking = await uow.booking_command_repo.create(booking=...)
             await uow.commit()
     """
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, writer_session: AsyncSession, reader_session: AsyncSession):
+        """
+        Initialize UnitOfWork with separate read/write sessions
+
+        Args:
+            writer_session: Session connected to writer endpoint (RDS Proxy)
+            reader_session: Session connected to reader endpoint (read replicas)
+        """
+        self.session = writer_session  # For backward compatibility
+        self.writer_session = writer_session
+        self.reader_session = reader_session
 
     async def __aenter__(self):
         from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
@@ -101,19 +114,23 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
             EventTicketingQueryRepoImpl,
         )
 
-        # Create repositories with shared session
-        # Booking repos
+        # Create repositories with appropriate sessions
+        # Command repos use WRITER session
         self.booking_command_repo = IBookingCommandRepoImpl()
-        self.booking_command_repo.session = self.session
+        self.booking_command_repo.session = self.writer_session
+
+        # Query repos use READER session (read replicas)
         self.booking_query_repo = BookingQueryRepoImpl(session_factory=None)
-        self.booking_query_repo.session = self.session  # Inject session for UoW mode
+        self.booking_query_repo.session = self.reader_session
 
         # Event/Ticket command repo uses raw SQL with asyncpg (no session needed)
         self.event_ticketing_command_repo = EventTicketingCommandRepoImpl()
+
+        # Query repo uses READER session (read replicas)
         self.event_ticketing_query_repo = EventTicketingQueryRepoImpl(
             session_factory=None  # type: ignore
         )
-        self.event_ticketing_query_repo.session = self.session  # type: ignore
+        self.event_ticketing_query_repo.session = self.reader_session  # type: ignore
 
         return await super().__aenter__()
 
@@ -122,22 +139,40 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         # Note: session cleanup handled by get_async_session context manager
 
     async def _commit(self):
-        await self.session.commit()
+        """
+        Commit writer session
+
+        Note: Reader session is read-only, so only writer session needs commit
+        """
+        await self.writer_session.commit()
 
     async def rollback(self) -> None:
-        await self.session.rollback()
+        """
+        Rollback writer session
+
+        Note: Reader session is read-only, so only writer session needs rollback
+        """
+        await self.writer_session.rollback()
 
 
 def get_unit_of_work(
-    session: AsyncSession = Depends(get_async_session),
+    writer_session: AsyncSession = Depends(get_async_session),
+    reader_session: AsyncSession = Depends(get_async_read_session),
 ) -> AbstractUnitOfWork:
     """
-    FastAPI dependency for Unit of Work
+    FastAPI dependency for Unit of Work with read/write splitting
+
+    Provides dual sessions:
+    - writer_session: Connected to Aurora writer (via RDS Proxy)
+    - reader_session: Connected to Aurora read replicas
 
     Usage:
         async def create_booking(uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
             async with uow:
+                # Command repos automatically use writer_session
                 booking = await uow.booking_command_repo.create(...)
+                # Query repos automatically use reader_session
+                existing = await uow.booking_query_repo.get_by_id(booking_id=1)
                 await uow.commit()
     """
-    return SqlAlchemyUnitOfWork(session)
+    return SqlAlchemyUnitOfWork(writer_session, reader_session)

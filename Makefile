@@ -95,8 +95,8 @@ clean:  ## 🧹 Remove cache files
 
 .PHONY: dsu
 dsu:  ## 🚀 Start Docker stack
-	@docker-compose build
-	@docker-compose up -d
+	@docker-compose -f docker-compose.local.yml build
+	@docker-compose -f docker-compose.local.yml up -d
 	@echo "✅ Stack started!"
 	@echo "   🔀 Load Balancer: http://localhost (nginx)"
 	@echo "   🌐 API Gateway:   http://localhost:8000"
@@ -107,16 +107,16 @@ dsu:  ## 🚀 Start Docker stack
 
 .PHONY: dsd
 dsd:  ## 🛑 Stop Docker stack
-	@docker-compose down
+	@docker-compose -f docker-compose.local.yml down
 
 .PHONY: dsr
 dsr:  ## 🔄 Restart services
-	@docker-compose restart ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.local.yml restart ticketing-service seat-reservation-service
 
 .PHONY: dr
 dr:  ## 🔨 Rebuild services
-	@docker-compose build ticketing-service seat-reservation-service
-	@docker-compose up -d ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.local.yml build ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.local.yml up -d ticketing-service seat-reservation-service
 
 # ==============================================================================
 # 📈 SERVICE SCALING (Nginx Load Balancer)
@@ -130,14 +130,14 @@ scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
 		exit 1; \
 	fi
 	@echo "📈 Scaling services: ticketing=$(T), reservation=$(R)"
-	@docker-compose up -d --scale ticketing-service=$(T) --scale seat-reservation-service=$(R) --no-recreate
+	@docker-compose -f docker-compose.local.yml up -d --scale ticketing-service=$(T) --scale seat-reservation-service=$(R) --no-recreate
 	@echo "✅ Scaled successfully!"
-	@docker-compose ps ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.local.yml ps ticketing-service seat-reservation-service
 
 .PHONY: scale-down
 scale-down:  ## 📉 Scale down to 1 instance each
 	@echo "📉 Scaling down to 1 instance each..."
-	@docker-compose up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
+	@docker-compose -f docker-compose.local.yml up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
 	@echo "✅ Scaled down successfully!"
 
 .PHONY: scale-ticketing
@@ -148,9 +148,9 @@ scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticket
 		exit 1; \
 	fi
 	@echo "📈 Scaling ticketing-service to $(N) instances..."
-	@docker-compose up -d --scale ticketing-service=$(N) --no-recreate
+	@docker-compose -f docker-compose.local.yml up -d --scale ticketing-service=$(N) --no-recreate
 	@echo "✅ Done!"
-	@docker-compose ps ticketing-service
+	@docker-compose -f docker-compose.local.yml ps ticketing-service
 
 .PHONY: scale-reservation
 scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
@@ -160,14 +160,14 @@ scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-re
 		exit 1; \
 	fi
 	@echo "📈 Scaling seat-reservation-service to $(N) instances..."
-	@docker-compose up -d --scale seat-reservation-service=$(N) --no-recreate
+	@docker-compose -f docker-compose.local.yml up -d --scale seat-reservation-service=$(N) --no-recreate
 	@echo "✅ Done!"
-	@docker-compose ps seat-reservation-service
+	@docker-compose -f docker-compose.local.yml ps seat-reservation-service
 
 .PHONY: scale-status
 scale-status:  ## 📊 Show current scaling status
 	@echo "📊 Current service instances:"
-	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
+	@docker-compose -f docker-compose.local.yml ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
 
 .PHONY: dra
 dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
@@ -175,8 +175,8 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
 	@echo "⚠️  This will stop containers and remove volumes"
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
-	@docker-compose down -v
-	@docker-compose up -d
+	@docker-compose -f docker-compose.local.yml down -v
+	@docker-compose -f docker-compose.local.yml up -d
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -197,25 +197,25 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
 .PHONY: dm
 dm:  ## 🗄️ Run migrations in Docker
 	@echo "🗄️  Running database migrations..."
-	@docker-compose exec ticketing-service uv run alembic upgrade head
+	@docker-compose -f docker-compose.local.yml exec ticketing-service uv run alembic upgrade head
 	@echo "✅ Migrations completed"
 
 .PHONY: ds
 ds:  ## 🌱 Seed data in Docker
-	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
+	@docker-compose -f docker-compose.local.yml exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
 .PHONY: tdt
 tdt:  ## 🧪 Run tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/ --ignore=test/service/e2e -v
+	@docker-compose -f docker-compose.local.yml exec ticketing-service uv run pytest test/ --ignore=test/service/e2e -v
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/service/e2e -v
+	@docker-compose -f docker-compose.local.yml exec ticketing-service uv run pytest test/service/e2e -v
 
 .PHONY: tdinfra
 tdinfra:  ## 🏗️ Run infrastructure tests in Docker
 	@echo "🏗️  Testing infrastructure components in Docker..."
-	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
+	@docker-compose -f docker-compose.local.yml exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
 	@echo "✅ Infrastructure tests complete!"
 
 .PHONY: tdci
