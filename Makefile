@@ -251,7 +251,11 @@ ltb:  ## 🔨 Build Go load test binary
 
 .PHONY: ltt
 ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
-	@cd script/go_client && ./loadtest -requests 10 -concurrency 10 -clients 10
+	@cd script/go_client && ./loadtest -requests 10 -concurrency 5 -clients 5
+
+.PHONY: ltt
+lts:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
+	@cd script/go_client && ./loadtest -requests 50 -concurrency 5 -clients 5
 
 .PHONY: ltq
 ltq:  ## ⚡ Quick load test (2 processes × 250 requests, 25 workers each)
