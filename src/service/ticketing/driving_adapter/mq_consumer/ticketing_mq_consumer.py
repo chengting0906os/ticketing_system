@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
-from src.platform.database.db_setting import get_async_session
 from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
@@ -361,7 +360,7 @@ class TicketingMqConsumer:
                 f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
             )
 
-            # Use portal to call async function (same pattern as seat_reservation)
+            # Use portal to call async function (ensures proper async context)
             self.portal.call(self._handle_pending_payment_and_reserved_async, message)
 
             Logger.base.info(
@@ -374,31 +373,26 @@ class TicketingMqConsumer:
             return {'success': False, 'error': str(e)}
 
     async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
-        """Async handler for pending payment and reserved"""
+        """
+        Async handler for pending payment and reserved
+
+        Note: Repository uses asyncpg (raw SQL) and doesn't need SQLAlchemy session.
+        UoW is created without session - repositories manage their own connections.
+        """
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reserved_seats = message.get('reserved_seats', [])
 
-        # Create session for this message processing
-        async for session in get_async_session():
-            try:
-                # Create UoW with session
-                uow = SqlAlchemyUnitOfWork(session)
+        # Create UoW without session (repositories use asyncpg directly)
+        uow = SqlAlchemyUnitOfWork(session=None)  # type: ignore
 
-                # Create use case with UoW
-                use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=uow)
-
-                # Execute use case (use case handles commit)
-                await use_case.execute(
-                    booking_id=booking_id or 0,
-                    buyer_id=buyer_id or 0,
-                    seat_identifiers=reserved_seats,
-                )
-
-            except Exception as e:
-                Logger.base.error(f'❌ [BOOKING+TICKET] DB Error: {e}')
-                await session.rollback()
-                raise
+        # Create and execute use case
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=uow)
+        await use_case.execute(
+            booking_id=booking_id or 0,
+            buyer_id=buyer_id or 0,
+            seat_identifiers=reserved_seats,
+        )
 
     @Logger.io
     def _process_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
@@ -415,7 +409,7 @@ class TicketingMqConsumer:
                 f'📥 [BOOKING-FAILED-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
             )
 
-            # Use portal to call async function (same pattern as seat_reservation)
+            # Use portal to call async function (ensures proper async context)
             self.portal.call(self._handle_failed_async, message)
 
             Logger.base.info(f'✅ [BOOKING-FAILED] Completed: {booking_id}')
@@ -426,29 +420,24 @@ class TicketingMqConsumer:
             return {'success': False, 'error': str(e)}
 
     async def _handle_failed_async(self, message: Dict[str, Any]):
-        """Async handler for failed booking"""
+        """
+        Async handler for failed booking
+
+        Note: Repository uses asyncpg (raw SQL) and doesn't need SQLAlchemy session.
+        UoW is created without session - repositories manage their own connections.
+        """
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reason = message.get('error_message', 'Unknown')
 
-        # Create session for this message processing
-        async for session in get_async_session():
-            try:
-                # Create UoW with session
-                uow = SqlAlchemyUnitOfWork(session)
+        # Create UoW without session (repositories use asyncpg directly)
+        uow = SqlAlchemyUnitOfWork(session=None)  # type: ignore
 
-                # Create use case with UoW
-                use_case = UpdateBookingToFailedUseCase(uow=uow)
-
-                # Execute use case (use case handles commit)
-                await use_case.execute(
-                    booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
-                )
-
-            except Exception as e:
-                Logger.base.error(f'❌ [BOOKING-FAILED] DB Error: {e}')
-                await session.rollback()
-                raise
+        # Create and execute use case
+        use_case = UpdateBookingToFailedUseCase(uow=uow)
+        await use_case.execute(
+            booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
+        )
 
     # ========== Lifecycle ==========
 

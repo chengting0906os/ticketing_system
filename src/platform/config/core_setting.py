@@ -33,13 +33,18 @@ class Settings(BaseSettings):
     POSTGRES_REPLICA_SERVER: str | None = None
     POSTGRES_REPLICA_PORT: int | None = None
 
-    # Database Connection Pool Configuration
+    # Database Connection Pool Configuration (SQLAlchemy)
     DB_POOL_SIZE_WRITE: int = 20  # Smaller pool for write operations
     DB_POOL_SIZE_READ: int = 100  # Larger pool for read operations
     DB_POOL_MAX_OVERFLOW: int = 50  # Max connections beyond pool_size
     DB_POOL_TIMEOUT: int = 30  # Seconds to wait for connection
     DB_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
     DB_POOL_PRE_PING: bool = True  # Verify connection health before use
+
+    # Database Connection Pool Configuration (asyncpg - for bulk operations)
+    ASYNCPG_POOL_MIN_SIZE: int = 5  # Minimum connections in pool
+    ASYNCPG_POOL_MAX_SIZE: int = 50  # Maximum connections in pool
+    ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
 
     @property
     def DATABASE_URL_ASYNC(self) -> str:

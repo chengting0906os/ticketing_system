@@ -32,9 +32,9 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
 
         asyncpg_pool = await asyncpg.create_pool(
             dsn,
-            min_size=5,
-            max_size=20,
-            command_timeout=60,
+            min_size=settings.ASYNCPG_POOL_MIN_SIZE,
+            max_size=settings.ASYNCPG_POOL_MAX_SIZE,
+            command_timeout=settings.ASYNCPG_POOL_COMMAND_TIMEOUT,
         )
     return asyncpg_pool
 
