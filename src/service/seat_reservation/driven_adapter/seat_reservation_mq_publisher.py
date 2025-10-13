@@ -80,7 +80,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         )
 
         Logger.base.info(
-            '\033[92m✅ [SEAT-RESERVATION Publisher] SeatsReserved 事件發送完成！\033[0m'
+            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved 事件發送完成！\033[0m'
         )
 
     async def publish_reservation_failed(
