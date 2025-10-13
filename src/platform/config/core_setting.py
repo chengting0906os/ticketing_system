@@ -29,10 +29,32 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: int
 
+    # Read Replica (Optional - for read-write separation)
+    POSTGRES_REPLICA_SERVER: str | None = None
+    POSTGRES_REPLICA_PORT: int | None = None
+
+    # Database Connection Pool Configuration
+    DB_POOL_SIZE_WRITE: int = 20  # Smaller pool for write operations
+    DB_POOL_SIZE_READ: int = 100  # Larger pool for read operations
+    DB_POOL_MAX_OVERFLOW: int = 50  # Max connections beyond pool_size
+    DB_POOL_TIMEOUT: int = 30  # Seconds to wait for connection
+    DB_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
+    DB_POOL_PRE_PING: bool = True  # Verify connection health before use
+
     @property
     def DATABASE_URL_ASYNC(self) -> str:
+        """Primary database URL for write operations"""
         password = self.POSTGRES_PASSWORD.get_secret_value()
         return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
+
+    @property
+    def DATABASE_READ_URL_ASYNC(self) -> str:
+        """Read replica database URL for read operations (falls back to primary if not configured)"""
+        password = self.POSTGRES_PASSWORD.get_secret_value()
+        if self.POSTGRES_REPLICA_SERVER and self.POSTGRES_REPLICA_PORT:
+            return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_REPLICA_SERVER}:{self.POSTGRES_REPLICA_PORT}/{self.POSTGRES_DB}'
+        # Fall back to primary if replica not configured
+        return self.DATABASE_URL_ASYNC
 
     @property
     def DATABASE_URL_SYNC(self) -> str:

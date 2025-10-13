@@ -16,6 +16,7 @@ from src.platform.database.orm_db_setting import (
     create_db_and_tables,
     engine,
     get_async_session,
+    get_async_read_session,
 )
 
 # asyncpg (raw SQL for bulk operations)
@@ -29,6 +30,7 @@ __all__ = [
     'async_session_maker',
     'create_db_and_tables',
     'get_async_session',
+    'get_async_read_session',
     # asyncpg
     'get_asyncpg_pool',
     'close_asyncpg_pool',
