@@ -34,20 +34,3 @@ def verify_error_message_with_table(
     assert expected_text.lower() in error_message.lower(), (
         f'Expected "{expected_text}" in error message, got: {error_message}'
     )
-
-
-@then('the booking status should be:')
-def verify_booking_status_with_table(step, booking_state=None):
-    expected_status = extract_single_value(step)
-
-    # If booking_state has 'updated_booking', use that, otherwise use 'booking'
-    if booking_state and 'updated_booking' in booking_state:
-        actual_status = booking_state['updated_booking']['status']
-    elif booking_state and 'booking' in booking_state:
-        actual_status = booking_state['booking']['status']
-    else:
-        raise AssertionError('No booking found in state to check status')
-
-    assert actual_status == expected_status, (
-        f'Expected booking status "{expected_status}", got "{actual_status}"'
-    )
