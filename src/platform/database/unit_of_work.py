@@ -122,10 +122,14 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
         # Note: session cleanup handled by get_async_session context manager
 
     async def _commit(self):
-        await self.session.commit()
+        # If session is None, repositories use asyncpg and handle their own transactions
+        if self.session is not None:
+            await self.session.commit()
 
     async def rollback(self) -> None:
-        await self.session.rollback()
+        # If session is None, repositories use asyncpg and handle their own transactions
+        if self.session is not None:
+            await self.session.rollback()
 
 
 def get_unit_of_work(
