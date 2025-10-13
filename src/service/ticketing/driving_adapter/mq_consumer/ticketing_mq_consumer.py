@@ -121,7 +121,9 @@ class TicketingMqConsumer:
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        self.instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
+        base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID',
             KafkaConsumerGroupBuilder.ticketing_service(event_id=self.event_id),

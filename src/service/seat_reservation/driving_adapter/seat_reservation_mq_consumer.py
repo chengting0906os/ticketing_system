@@ -103,7 +103,9 @@ class SeatReservationConsumer:
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        self.instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
+        base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID',
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=self.event_id),
@@ -307,7 +309,7 @@ class SeatReservationConsumer:
 
         booking_id = message.get('booking_id', 'unknown')
         Logger.base.info(
-            f'🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+            f'\033[94m🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}\033[0m'
         )
 
         # 執行預訂邏輯（拋出異常會被 on_processing_error 捕獲）
