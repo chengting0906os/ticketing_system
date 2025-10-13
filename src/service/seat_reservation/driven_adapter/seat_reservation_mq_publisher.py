@@ -80,8 +80,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         )
 
         Logger.base.info(
-            f'📡 [EVENT-PUBLISHER] 發送座位預訂成功事件（Booking PENDING_PAYMENT + Ticket RESERVED）: '
-            f'booking_id={booking_id}, seats={len(reserved_seats)}個'
+            '\033[92m✅ [SEAT-RESERVATION Publisher] SeatsReserved 事件發送完成！\033[0m'
         )
 
     async def publish_reservation_failed(
@@ -106,6 +105,5 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         )
 
         Logger.base.info(
-            f'📡 [EVENT-PUBLISHER] 發送座位預訂失敗事件: booking_id={booking_id}, '
-            f'error={error_message}'
+            '\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed 事件發送完成\033[0m'
         )

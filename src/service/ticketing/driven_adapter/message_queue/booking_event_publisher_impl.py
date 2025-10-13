@@ -34,10 +34,10 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         )
 
         Logger.base.info(
-            f'\033[94m📤 [BOOKING Publisher] 發送 BookingCreated 到 Topic: {topic}\033[0m'
+            f'\033[92m📤 [BOOKING Publisher] 發送 BookingCreated 到 Topic: {topic}\033[0m'
         )
         Logger.base.info(
-            f'\033[93m📦 [BOOKING Publisher] 事件內容: event_id={event.event_id}, '
+            f'\033[92m📦 [BOOKING Publisher] 事件內容: event_id={event.event_id}, '
             f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}\033[0m'
         )
 

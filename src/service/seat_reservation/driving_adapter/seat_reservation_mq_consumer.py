@@ -305,8 +305,9 @@ class SeatReservationConsumer:
         if hasattr(context, 'topic') and hasattr(context, 'partition'):
             partition_info = f' | partition={context.partition}, offset={context.offset}'
 
+        booking_id = message.get('booking_id', 'unknown')
         Logger.base.info(
-            f'🎫 [RESERVATION-{self.instance_id}] Processing: {message.get("aggregate_id")}{partition_info}'
+            f'🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
         )
 
         # 執行預訂邏輯（拋出異常會被 on_processing_error 捕獲）
