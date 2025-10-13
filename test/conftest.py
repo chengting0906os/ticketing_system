@@ -222,11 +222,11 @@ async def clean_kvrocks():
     from src.platform.state.kvrocks_client import kvrocks_client, kvrocks_client_sync
 
     # 1. Disconnect and reset async client (prevents event loop contamination)
-    if kvrocks_client._client is not None:
-        try:
-            await kvrocks_client.disconnect()
-        except Exception:
-            kvrocks_client._client = None
+    # Note: KvrocksClient now uses per-event-loop clients (_clients dict)
+    try:
+        await kvrocks_client.disconnect()
+    except Exception:
+        pass  # Ignore if no client exists for current loop
 
     # 2. Clean Kvrocks data using sync client
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
@@ -242,12 +242,11 @@ async def clean_kvrocks():
     if keys_after:
         sync_client.delete(*keys_after)
 
-    # 4. Reset async client again
-    if kvrocks_client._client is not None:
-        try:
-            await kvrocks_client.disconnect()
-        except Exception:
-            kvrocks_client._client = None
+    # 4. Reset async client again (per-event-loop cleanup)
+    try:
+        await kvrocks_client.disconnect()
+    except Exception:
+        pass  # Ignore if no client exists for current loop
 
 
 @pytest.fixture(autouse=True, scope='function')

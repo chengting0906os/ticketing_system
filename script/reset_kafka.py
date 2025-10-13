@@ -24,10 +24,34 @@ class KafkaReset:
     def __init__(self):
         self.kafka_container = 'kafka1'
         self.bootstrap_server = 'kafka1:29092'
+        self.in_container = self._check_if_in_container()
+
+        env_type = 'Docker Container' if self.in_container else 'Host Machine'
+        Logger.base.info(f'🔍 [Kafka Reset] Running in: {env_type}')
+
+    def _check_if_in_container(self) -> bool:
+        """檢測是否在 Docker 容器內執行"""
+        import os
+        import shutil
+
+        # 方法 1: 檢查 /.dockerenv 檔案
+        if os.path.exists('/.dockerenv'):
+            return True
+
+        # 方法 2: 檢查是否有 docker 命令
+        if shutil.which('docker') is None:
+            return True
+
+        return False
 
     def run_kafka_command(self, command: List[str]) -> bool:
-        """執行 Kafka 命令"""
-        full_command = ['docker', 'exec', self.kafka_container] + command
+        """執行 Kafka 命令（自動偵測環境）"""
+        if self.in_container:
+            # 容器內：直接執行 Kafka 命令
+            full_command = command
+        else:
+            # 宿主機：透過 docker exec 執行
+            full_command = ['docker', 'exec', self.kafka_container] + command
 
         try:
             result = subprocess.run(full_command, capture_output=True, text=True, timeout=30)
@@ -50,17 +74,16 @@ class KafkaReset:
         """列出所有 topics"""
         command = ['kafka-topics', '--bootstrap-server', self.bootstrap_server, '--list']
 
+        if self.in_container:
+            full_command = command
+        else:
+            full_command = ['docker', 'exec', self.kafka_container] + command
+
         try:
-            result = subprocess.run(
-                ['docker', 'exec', self.kafka_container] + command,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            result = subprocess.run(full_command, capture_output=True, text=True, timeout=30)
 
             if result.returncode == 0:
                 topics = [topic.strip() for topic in result.stdout.split('\n') if topic.strip()]
-                # 過濾掉 Kafka 內部 topics
                 user_topics = [t for t in topics if not t.startswith('__')]
                 return user_topics
             else:
@@ -94,13 +117,13 @@ class KafkaReset:
         """列出所有 consumer groups"""
         command = ['kafka-consumer-groups', '--bootstrap-server', self.bootstrap_server, '--list']
 
+        if self.in_container:
+            full_command = command
+        else:
+            full_command = ['docker', 'exec', self.kafka_container] + command
+
         try:
-            result = subprocess.run(
-                ['docker', 'exec', self.kafka_container] + command,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            result = subprocess.run(full_command, capture_output=True, text=True, timeout=30)
 
             if result.returncode == 0:
                 groups = [group.strip() for group in result.stdout.split('\n') if group.strip()]
@@ -113,12 +136,60 @@ class KafkaReset:
             Logger.base.error(f'Error listing consumer groups: {e}')
             return []
 
+    def get_consumer_group_state(self, group: str) -> str:
+        """獲取 consumer group 的狀態"""
+        command = [
+            'kafka-consumer-groups',
+            '--bootstrap-server',
+            self.bootstrap_server,
+            '--describe',
+            '--group',
+            group,
+        ]
+
+        if self.in_container:
+            full_command = command
+        else:
+            full_command = ['docker', 'exec', self.kafka_container] + command
+
+        try:
+            result = subprocess.run(full_command, capture_output=True, text=True, timeout=30)
+
+            if result.returncode == 0:
+                output = result.stdout
+                # 檢查是否有 active consumers (CONSUMER-ID 欄位有值)
+                lines = output.strip().split('\n')
+                if len(lines) > 1:  # 有 header + data
+                    # 如果有任何行包含 CONSUMER-ID（不是空的 "-"），表示有 active members
+                    for line in lines[1:]:  # 跳過 header
+                        columns = line.split()
+                        if len(columns) >= 7:  # 確保有足夠的欄位
+                            consumer_id = columns[6] if len(columns) > 6 else '-'
+                            if consumer_id != '-':
+                                return 'STABLE'  # 有 active members
+                return 'EMPTY'
+            else:
+                return 'UNKNOWN'
+
+        except Exception as e:
+            Logger.base.warning(f'Error checking group state: {e}')
+            return 'UNKNOWN'
+
     def delete_consumer_group(self, group: str) -> bool:
         """刪除指定 consumer group"""
         # 保護包含 "event-id-1" 的 consumer groups
         if 'event-id-1' in group:
             Logger.base.info(f'🛡️ Protecting consumer group: {group} (contains event-id-1)')
             return True
+
+        # 檢查 group 狀態
+        state = self.get_consumer_group_state(group)
+        if state == 'STABLE':
+            Logger.base.warning(
+                f'⚠️ Cannot delete {group}: has active members (state: STABLE)\n'
+                f'   💡 Tip: Stop all consumers first with "docker-compose down"'
+            )
+            return False
 
         command = [
             'kafka-consumer-groups',

@@ -170,7 +170,7 @@ scale-status:  ## 📊 Show current scaling status
 	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
 
 .PHONY: dra
-dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
+dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
 	@echo "⚠️  This will stop containers and remove volumes"
 	@echo "Continue? (y/N)"
@@ -191,6 +191,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → seed)
 		exit 1; \
 	fi
 	@$(MAKE) dm
+	@$(MAKE) drk
 	@$(MAKE) ds
 	@echo "✅ ==================== RESET COMPLETED ===================="
 
@@ -203,6 +204,12 @@ dm:  ## 🗄️ Run migrations in Docker
 .PHONY: ds
 ds:  ## 🌱 Seed data in Docker
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
+
+.PHONY: drk
+drk:  ## 🌊 Reset Kafka in Docker
+	@echo "🌊 Resetting Kafka..."
+	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
+	@echo "✅ Kafka reset completed"
 
 .PHONY: tdt
 tdt:  ## 🧪 Run tests in Docker
@@ -354,7 +361,7 @@ help:
 	@echo "  reset       - Local reset (Kafka + DB + seed)"
 	@echo ""
 	@echo "🐳 DOCKER (Recommended)"
-	@echo "  dsu/dsd/dsr/dr/dra/dm/ds/dt/de2e/dsh/dal"
+	@echo "  dsu/dsd/dsr/dr/dra/dm/drk/ds/dt/de2e/dsh/dal"
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up/down/new/history, psql"

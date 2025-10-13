@@ -21,65 +21,64 @@ from src.platform.logging.loguru_io import Logger
 
 
 class KvrocksClient:
-    def __init__(self):
-        self._client: Optional[Redis] = None
-        self._pool: Optional[AsyncConnectionPool] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+    """
+    Multi-Event-Loop Safe Kvrocks Client
 
-    def _create_pool(self) -> AsyncConnectionPool:
-        """Create connection pool with configured settings"""
-        return AsyncConnectionPool.from_url(
-            f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
-            password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
-            decode_responses=settings.REDIS_DECODE_RESPONSES,
-            max_connections=settings.KVROCKS_POOL_MAX_CONNECTIONS,
-            socket_timeout=settings.KVROCKS_POOL_SOCKET_TIMEOUT,
-            socket_connect_timeout=settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT,
-            socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
-            health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
-        )
+    Maintains separate connection pools per event loop to support
+    concurrent services (e.g., FastAPI + MQ Consumer) without reconnection overhead.
+
+    Architecture:
+    - FastAPI service: runs in main event loop
+    - MQ Consumer: runs in separate event loop via start_blocking_portal()
+    - Each loop gets its own connection pool for isolation
+    """
+
+    def __init__(self):
+        self._clients: dict[int, Redis] = {}
+        self._lock = asyncio.Lock()
 
     async def connect(self) -> Redis:
-        current_loop = asyncio.get_running_loop()
+        """Get or create Redis client for current event loop"""
+        loop_id = id(asyncio.get_running_loop())
 
-        # If client exists but is bound to a different event loop, close it first
-        if self._client is not None and self._loop is not current_loop:
-            Logger.base.warning('🔄 [KVROCKS] Event loop changed, reconnecting...')
-            try:
-                await self._client.aclose()
-                if self._pool:
-                    await self._pool.aclose()
-            except Exception as e:
-                Logger.base.warning(f'⚠️ [KVROCKS] Error closing old connection: {e}')
-            self._client = None
-            self._pool = None
-            self._loop = None
+        if loop_id in self._clients:
+            return self._clients[loop_id]
 
-        if self._client is None:
-            self._pool = self._create_pool()
-            self._client = Redis.from_pool(self._pool)
-            self._loop = current_loop
-            Logger.base.info(
-                f'📡 [KVROCKS] Connected with pool (max_connections={settings.KVROCKS_POOL_MAX_CONNECTIONS})'
+        async with self._lock:
+            if loop_id in self._clients:
+                return self._clients[loop_id]
+
+            pool = AsyncConnectionPool.from_url(
+                f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
+                password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
+                decode_responses=settings.REDIS_DECODE_RESPONSES,
+                max_connections=settings.KVROCKS_POOL_MAX_CONNECTIONS,
+                socket_timeout=settings.KVROCKS_POOL_SOCKET_TIMEOUT,
+                socket_connect_timeout=settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT,
+                socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
+                health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
             )
-        return self._client
+            self._clients[loop_id] = Redis.from_pool(pool)
+            Logger.base.info(f'📡 [KVROCKS] Connected loop {loop_id}')
+
+        return self._clients[loop_id]
 
     async def disconnect(self):
-        """關閉 Kvrocks 連線與連線池"""
-        if self._client:
-            # CRITICAL: aclose() properly cleans: (1) connection pool + pending tasks
-            # (2) event loop bindings (prevents "Event loop is closed" in tests)
-            # (3) sockets/file descriptors. close() is deprecated & leaves dangling refs
-            await self._client.aclose()
-            self._client = None
-            Logger.base.info('🔌 [KVROCKS] Client disconnected')
+        """Close connection for current event loop"""
+        loop_id = id(asyncio.get_running_loop())
+        async with self._lock:
+            if client := self._clients.pop(loop_id, None):
+                await client.aclose()
 
-        if self._pool:
-            await self._pool.aclose()
-            self._pool = None
-            Logger.base.info('🔌 [KVROCKS] Pool closed')
-
-        self._loop = None
+    async def disconnect_all(self):
+        """Close all connections (shutdown only)"""
+        async with self._lock:
+            for loop_id, client in list(self._clients.items()):
+                try:
+                    await client.aclose()
+                except Exception as e:
+                    Logger.base.warning(f'⚠️ [KVROCKS] Error closing {loop_id}: {e}')
+            self._clients.clear()
 
 
 # 全域單例

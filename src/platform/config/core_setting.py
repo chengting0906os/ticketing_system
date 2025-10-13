@@ -42,9 +42,12 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True  # Verify connection health before use
 
     # Database Connection Pool Configuration (asyncpg - for bulk operations)
-    ASYNCPG_POOL_MIN_SIZE: int = 5  # Minimum connections in pool
-    ASYNCPG_POOL_MAX_SIZE: int = 50  # Maximum connections in pool
+    ASYNCPG_POOL_MIN_SIZE: int = 10  # Minimum connections in pool
+    ASYNCPG_POOL_MAX_SIZE: int = 100  # Maximum connections in pool
     ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
+    ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
+    ASYNCPG_POOL_TIMEOUT: float = 10.0  # Connection acquire timeout (10s)
+    ASYNCPG_POOL_MAX_QUERIES: int = 50000  # Max queries per connection
 
     @property
     def DATABASE_URL_ASYNC(self) -> str:
@@ -96,9 +99,9 @@ class Settings(BaseSettings):
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks 也用 Redis 協議
 
     # Kvrocks Connection Pool Configuration
-    KVROCKS_POOL_MAX_CONNECTIONS: int = 50  # Max connections in pool
-    KVROCKS_POOL_SOCKET_TIMEOUT: int = 5  # Socket read/write timeout (seconds)
-    KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT: int = 5  # Connection timeout (seconds)
+    KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool
+    KVROCKS_POOL_SOCKET_TIMEOUT: int = 10  # Socket read/write timeout (seconds)
+    KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT: int = 10  # Connection timeout (seconds)
     KVROCKS_POOL_SOCKET_KEEPALIVE: bool = True  # Enable TCP keepalive
     KVROCKS_POOL_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval (seconds)
 
