@@ -214,7 +214,7 @@ func main() {
 
 		clientPool[i] = &http.Client{
 			Jar:       jar,
-			Timeout:   60 * time.Second,
+			Timeout:   600 * time.Second,
 			Transport: transport,
 		}
 	}

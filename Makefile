@@ -253,17 +253,19 @@ ltb:  ## 🔨 Build Go load test binary
 ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
 	@cd script/go_client && ./loadtest -requests 10 -concurrency 5 -clients 5
 
-.PHONY: ltt
-lts:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
+.PHONY: lts
+lts:  ## 🧪 Small load test (10 requests, 10 workers, 10 clients)
 	@cd script/go_client && ./loadtest -requests 50 -concurrency 5 -clients 5
 
-.PHONY: ltq
-ltq:  ## ⚡ Quick load test (2 processes × 250 requests, 25 workers each)
-	@echo "🚀 Starting 2 parallel load test processes..."
+.PHONY: ltm
+ltm:  ## ⚡ Medium load test (2 processes × 250 requests, 25 workers each)
 	@cd script/go_client && \
 		./loadtest -requests 250 -concurrency 25 -clients 25 & \
-		wait
-	@echo "✅ All parallel load tests completed"
+
+.PHONY: ltl
+ltl:  ## ⚡ Large load test (2 processes × 250 requests, 25 workers each)
+	@cd script/go_client && \
+		./loadtest -requests 10000 -concurrency 50 -clients 50 & \
 
 .PHONY: ltf
 ltf:  ## 💪 Full load test (50K requests, 100 workers, 100 clients)
