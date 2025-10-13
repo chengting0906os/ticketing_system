@@ -11,6 +11,7 @@ Kafka Reset Script
 注意：此腳本不會影響 Kvrocks 狀態（seat_reservation 和 event_ticketing）
 """
 
+import shutil
 import subprocess
 import time
 from typing import List
@@ -45,13 +46,17 @@ class KafkaReset:
         return False
 
     def run_kafka_command(self, command: List[str]) -> bool:
-        """執行 Kafka 命令（自動偵測環境）"""
-        if self.in_container:
-            # 容器內：直接執行 Kafka 命令
-            full_command = command
-        else:
-            # 宿主機：透過 docker exec 執行
-            full_command = ['docker', 'exec', self.kafka_container] + command
+        """執行 Kafka 命令（需要 docker 命令可用）"""
+        # Kafka CLI tools are only in kafka containers, always use docker exec
+        # Check if docker command is available
+        if shutil.which('docker') is None:
+            Logger.base.error(
+                '❌ Docker command not found. This script must be run on host machine '
+                'or in a container with docker socket mounted.'
+            )
+            return False
+
+        full_command = ['docker', 'exec', self.kafka_container] + command
 
         try:
             result = subprocess.run(full_command, capture_output=True, text=True, timeout=30)
