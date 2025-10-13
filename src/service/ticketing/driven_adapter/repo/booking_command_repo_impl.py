@@ -168,7 +168,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
     @Logger.io
     async def link_tickets_to_booking(self, *, booking_id: int, ticket_ids: list[int]) -> None:
         """
-        Write booking-ticket associations to booking_ticket table using batch insert
+        Write booking-ticket associations to booking_ticket_mapping table using batch insert
 
         Args:
             booking_id: Booking ID
@@ -182,7 +182,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             records = [(booking_id, ticket_id) for ticket_id in ticket_ids]
             await conn.executemany(
                 """
-                INSERT INTO booking_ticket (booking_id, ticket_id)
+                INSERT INTO booking_ticket_mapping (booking_id, ticket_id)
                 VALUES ($1, $2)
                 """,
                 records,
@@ -191,7 +191,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
     @Logger.io
     async def get_ticket_ids_by_booking_id(self, *, booking_id: int) -> list[int]:
         """
-        Get ticket IDs linked to a booking from booking_ticket association table
+        Get ticket IDs linked to a booking from booking_ticket_mapping association table
 
         Args:
             booking_id: Booking ID
@@ -203,7 +203,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             rows = await conn.fetch(
                 """
                 SELECT ticket_id
-                FROM booking_ticket
+                FROM booking_ticket_mapping
                 WHERE booking_id = $1
                 """,
                 booking_id,

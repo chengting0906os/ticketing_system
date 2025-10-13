@@ -42,14 +42,7 @@ class BookingModel(Base):
     )
     tickets: Mapped[list['TicketModel']] = relationship(
         'TicketModel',
-        secondary='booking_ticket',
+        secondary='booking_ticket_mapping',
         back_populates='bookings',
         lazy='selectin',
     )
-
-
-class BookingTicketModel(Base):
-    __tablename__ = 'booking_ticket'
-
-    booking_id: Mapped[int] = mapped_column(Integer, ForeignKey('booking.id'), primary_key=True)
-    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey('ticket.id'), primary_key=True)

@@ -312,7 +312,7 @@ def verify_booking_contains_tickets_with_seats(
         """
         SELECT t.id, t.section, t.subsection, t.row_number, t.seat_number
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         """,
         {'booking_id': booking_id},
@@ -352,7 +352,7 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
         """
         SELECT t.id, t.status
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         """,
         {'booking_id': booking_id},
@@ -379,7 +379,7 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
         """
         SELECT t.id, t.seat_number, t.section, t.subsection, t.row_number, t.seat_number as seat
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         ORDER BY t.section, t.subsection, t.row_number, t.seat_number
         """,
@@ -420,7 +420,7 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
         """
         SELECT DISTINCT t.row_number
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         """,
         {'booking_id': booking_id},
@@ -462,7 +462,7 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         """,
         {'booking_id': booking_id},
@@ -486,7 +486,7 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t
-        JOIN booking_ticket bt ON t.id = bt.ticket_id
+        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
         WHERE bt.booking_id = :booking_id
         """,
         {'booking_id': booking_id},

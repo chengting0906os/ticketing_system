@@ -45,7 +45,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         """
         Convert BookingModel to Booking entity
 
-        Note: ticket_ids are managed via booking_ticket association table,
+        Note: ticket_ids are managed via booking_ticket_mapping association table,
         not stored in the Booking entity itself.
         """
         return Booking(
@@ -202,14 +202,16 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
-        """Get all tickets for a booking by querying the booking_ticket association table"""
-        from src.service.ticketing.driven_adapter.model.booking_model import BookingTicketModel
+        """Get all tickets for a booking by querying the booking_ticket_mapping association table"""
+        from src.service.ticketing.driven_adapter.model.booking_ticket_mapping_model import (
+            BookingTicketMappingModel,
+        )
 
         async with self._get_session() as session:
             # Query the association table to get ticket IDs for this booking
             result = await session.execute(
-                select(BookingTicketModel.ticket_id).where(
-                    BookingTicketModel.booking_id == booking_id
+                select(BookingTicketMappingModel.ticket_id).where(
+                    BookingTicketMappingModel.booking_id == booking_id
                 )
             )
             ticket_ids = [row[0] for row in result.all()]

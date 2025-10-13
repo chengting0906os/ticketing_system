@@ -10,7 +10,8 @@ from sqlalchemy import engine_from_config, pool
 sys.path.append(str(Path(__file__).parents[3]))
 
 # Import your models and database configuration
-from src.service.ticketing.driven_adapter.model.booking_model import BookingModel, BookingTicketModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.booking_model import BookingModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model.booking_ticket_mapping_model import BookingTicketMappingModel  # noqa: F401
 from src.service.ticketing.driven_adapter.model.event_model import EventModel  # noqa: F401
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel  # noqa: F401
 from src.platform.config.core_setting import settings

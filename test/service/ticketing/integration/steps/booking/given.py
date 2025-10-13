@@ -68,7 +68,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
             )
             # Link ticket to booking
             execute_sql_statement(
-                'INSERT INTO booking_ticket (booking_id, ticket_id) VALUES (:booking_id, :ticket_id)',
+                'INSERT INTO booking_ticket_mapping (booking_id, ticket_id) VALUES (:booking_id, :ticket_id)',
                 {'booking_id': booking_id, 'ticket_id': ticket_id},
             )
 
@@ -315,7 +315,7 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                 # Link ticket to booking
                 execute_sql_statement(
                     """
-                    INSERT INTO booking_ticket (booking_id, ticket_id)
+                    INSERT INTO booking_ticket_mapping (booking_id, ticket_id)
                     VALUES (:booking_id, :ticket_id)
                     """,
                     {
