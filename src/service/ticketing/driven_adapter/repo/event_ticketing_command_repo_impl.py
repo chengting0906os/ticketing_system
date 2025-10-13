@@ -491,3 +491,46 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                 f'🎯 [SEAT-TO-TICKET] Batch converted {len(ticket_ids)}/{len(seat_identifiers)} seats (1 query)'
             )
             return ticket_ids
+
+    @Logger.io
+    async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
+        """
+        根據票券 ID 獲取票券詳細資訊 (支援 command 操作的查詢輔助方法)
+
+        此方法使用 asyncpg 直接查詢，避免 SQLAlchemy session 管理問題
+        """
+        if not ticket_ids:
+            return []
+
+        async with (await get_asyncpg_pool()).acquire() as conn:
+            # 使用 ANY() 批量查詢
+            rows = await conn.fetch(
+                """
+                SELECT id, event_id, section, subsection, row_number, seat_number,
+                       price, status, buyer_id, created_at, updated_at
+                FROM ticket
+                WHERE id = ANY($1::int[])
+                ORDER BY id
+                """,
+                ticket_ids,
+            )
+
+            tickets = []
+            for row in rows:
+                ticket = Ticket(
+                    id=row['id'],
+                    event_id=row['event_id'],
+                    section=row['section'],
+                    subsection=row['subsection'],
+                    row=row['row_number'],
+                    seat=row['seat_number'],
+                    price=row['price'],
+                    status=TicketStatus(row['status']),
+                    buyer_id=row['buyer_id'],
+                    created_at=row['created_at'],
+                    updated_at=row['updated_at'],
+                )
+                tickets.append(ticket)
+
+            Logger.base.info(f'🎫 [CMD-QUERY] Fetched {len(tickets)} tickets for price calculation')
+            return tickets

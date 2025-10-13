@@ -1,17 +1,26 @@
-from fastapi import Depends
-
-from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
-from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
+from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
+from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class UpdateBookingToFailedUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    """
+    Update booking status to FAILED
 
-    @classmethod
-    def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+    Dependencies:
+    - booking_query_repo: For reading booking state
+    - booking_command_repo: For updating booking status
+    """
+
+    def __init__(
+        self,
+        *,
+        booking_query_repo: IBookingQueryRepo,
+        booking_command_repo: IBookingCommandRepo,
+    ):
+        self.booking_query_repo = booking_query_repo
+        self.booking_command_repo = booking_command_repo
 
     @Logger.io
     async def execute(
@@ -28,31 +37,27 @@ class UpdateBookingToFailedUseCase:
         Returns:
             更新後的訂單，若失敗則返回 None
         """
-        async with self.uow:
-            # 查詢訂單
-            booking = await self.uow.booking_query_repo.get_by_id(booking_id=booking_id)
-            if not booking:
-                Logger.base.error(f'❌ 找不到訂單: booking_id={booking_id}')
-                return None
+        # 查詢訂單
+        booking = await self.booking_query_repo.get_by_id(booking_id=booking_id)
+        if not booking:
+            Logger.base.error(f'❌ 找不到訂單: booking_id={booking_id}')
+            return None
 
-            # 驗證所有權
-            if booking.buyer_id != buyer_id:
-                Logger.base.error(
-                    f'❌ 訂單所有者不符: booking.buyer_id={booking.buyer_id}, event.buyer_id={buyer_id}'
-                )
-                return None
-
-            # 標記為失敗狀態
-            failed_booking = booking.mark_as_failed()  # type: ignore
-            updated_booking = await self.uow.booking_command_repo.update_status_to_failed(
-                booking=failed_booking
+        # 驗證所有權
+        if booking.buyer_id != buyer_id:
+            Logger.base.error(
+                f'❌ 訂單所有者不符: booking.buyer_id={booking.buyer_id}, event.buyer_id={buyer_id}'
             )
+            return None
 
-            # UoW commits!
-            await self.uow.commit()
+        # 標記為失敗狀態
+        failed_booking = booking.mark_as_failed()  # type: ignore
+        updated_booking = await self.booking_command_repo.update_status_to_failed(
+            booking=failed_booking
+        )
 
-            Logger.base.info(f'✅ 訂單已標記為失敗: booking_id={booking_id}, error={error_message}')
-            return updated_booking
+        Logger.base.info(f'✅ 訂單已標記為失敗: booking_id={booking_id}, error={error_message}')
+        return updated_booking
 
     @Logger.io
     async def update_to_failed(self, booking: Booking) -> Booking:
@@ -61,10 +66,8 @@ class UpdateBookingToFailedUseCase:
 
         TODO: 逐步遷移到 execute() 方法
         """
-        async with self.uow:
-            failed_booking = booking.mark_as_failed()  # type: ignore
-            updated_booking = await self.uow.booking_command_repo.update_status_to_failed(
-                booking=failed_booking
-            )
-            await self.uow.commit()
-            return updated_booking
+        failed_booking = booking.mark_as_failed()  # type: ignore
+        updated_booking = await self.booking_command_repo.update_status_to_failed(
+            booking=failed_booking
+        )
+        return updated_booking

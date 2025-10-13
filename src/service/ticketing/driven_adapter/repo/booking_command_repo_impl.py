@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
 if TYPE_CHECKING:
@@ -274,3 +275,46 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
                     )
 
                 return self._row_to_entity(booking_row)
+
+    @Logger.io
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+        """
+        查詢 booking 關聯的 tickets（用於 command 操作）
+
+        Args:
+            booking_id: Booking ID
+
+        Returns:
+            List of ticket references with full details
+        """
+        async with (await get_asyncpg_pool()).acquire() as conn:
+            # Join booking_ticket_mapping and ticket tables to get full ticket details
+            rows = await conn.fetch(
+                """
+                SELECT t.id, t.event_id, t.section, t.subsection, t.row_number, t.seat_number,
+                       t.price, t.status, t.created_at, t.updated_at
+                FROM ticket t
+                INNER JOIN booking_ticket_mapping btm ON t.id = btm.ticket_id
+                WHERE btm.booking_id = $1
+                ORDER BY t.id
+                """,
+                booking_id,
+            )
+
+            tickets = []
+            for row in rows:
+                ticket = TicketRef(
+                    event_id=row['event_id'],
+                    section=row['section'],
+                    subsection=row['subsection'],
+                    row=row['row_number'],
+                    seat=row['seat_number'],
+                    price=row['price'],
+                    status=row['status'],
+                    id=row['id'],
+                    created_at=row['created_at'],
+                    updated_at=row['updated_at'],
+                )
+                tickets.append(ticket)
+
+            return tickets

@@ -85,9 +85,6 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
     """
 
     def __init__(self, session: AsyncSession):
-        self.session = session
-
-    async def __aenter__(self):
         from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
             IBookingCommandRepoImpl,
         )
@@ -101,20 +98,24 @@ class SqlAlchemyUnitOfWork(AbstractUnitOfWork):
             EventTicketingQueryRepoImpl,
         )
 
-        # Create repositories with shared session
+        self.session = session
+
+        # Create repositories immediately (needed for FastAPI depends() which runs before __aenter__)
+        # Note: Command repos use asyncpg (no session), Query repos use SQLAlchemy (with session)
+
         # Booking repos
-        self.booking_command_repo = IBookingCommandRepoImpl()
-        self.booking_command_repo.session = self.session
+        self.booking_command_repo = IBookingCommandRepoImpl()  # asyncpg, no session
         self.booking_query_repo = BookingQueryRepoImpl(session_factory=None)
         self.booking_query_repo.session = self.session  # Inject session for UoW mode
 
-        # Event/Ticket command repo uses raw SQL with asyncpg (no session needed)
-        self.event_ticketing_command_repo = EventTicketingCommandRepoImpl()
+        # Event/Ticket repos
+        self.event_ticketing_command_repo = EventTicketingCommandRepoImpl()  # asyncpg, no session
         self.event_ticketing_query_repo = EventTicketingQueryRepoImpl(
             session_factory=None  # type: ignore
         )
         self.event_ticketing_query_repo.session = self.session  # type: ignore
 
+    async def __aenter__(self):
         return await super().__aenter__()
 
     async def __aexit__(self, *args):

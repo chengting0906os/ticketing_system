@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
+from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
 
 
 if TYPE_CHECKING:
@@ -21,6 +22,19 @@ class IBookingCommandRepo(ABC):
 
         Returns:
             Booking entity or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+        """
+        查詢 booking 關聯的 tickets（用於 command 操作）
+
+        Args:
+            booking_id: Booking ID
+
+        Returns:
+            List of ticket references
         """
         pass
 

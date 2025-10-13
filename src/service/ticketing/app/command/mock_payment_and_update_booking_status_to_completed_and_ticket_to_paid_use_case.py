@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import Depends
 
 from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
@@ -14,12 +15,19 @@ from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
-    def __init__(self, uow: AbstractUnitOfWork):
-        self.uow = uow
+    def __init__(
+        self,
+        *,
+        booking_command_repo: IBookingCommandRepo,
+    ):
+        self.booking_command_repo = booking_command_repo
 
     @classmethod
     def depends(cls, uow: AbstractUnitOfWork = Depends(get_unit_of_work)):
-        return cls(uow=uow)
+        # For FastAPI endpoint compatibility
+        return cls(
+            booking_command_repo=uow.booking_command_repo,
+        )
 
     @Logger.io
     async def pay_booking(self, booking_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
@@ -28,40 +36,37 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         if not card_number:
             raise DomainError('Card number is required for payment')
 
-        async with self.uow:
-            # Get the existing booking
-            booking = await self.uow.booking_query_repo.get_by_id(booking_id=booking_id)
-            if not booking:
-                raise NotFoundError('Booking not found')
+        # Get the existing booking
+        booking = await self.booking_command_repo.get_by_id(booking_id=booking_id)
+        if not booking:
+            raise NotFoundError('Booking not found')
 
-            # Validate booking ownership and status
-            if booking.buyer_id != buyer_id:
-                raise ForbiddenError('Only the buyer can pay for this booking')
+        # Validate booking ownership and payment eligibility (domain logic)
+        if booking.buyer_id != buyer_id:
+            raise ForbiddenError('Only the buyer can pay for this booking')
 
-            if booking.status == BookingStatus.COMPLETED:
-                raise DomainError('Booking already paid')
-            elif booking.status == BookingStatus.CANCELLED:
-                raise DomainError('Cannot pay for cancelled booking')
-            elif booking.status != BookingStatus.PENDING_PAYMENT:
-                raise DomainError('Booking is not in a payable state')
+        # Use domain method to validate payment eligibility
+        booking.validate_can_be_paid()
 
-            # Get reserved tickets first (before transaction)
-            reserved_tickets = await self.uow.booking_query_repo.get_tickets_by_booking_id(
-                booking_id=booking_id
-            )
+        # Get reserved tickets first (before transaction)
+        reserved_tickets = await self.booking_command_repo.get_tickets_by_booking_id(
+            booking_id=booking_id
+        )
 
-            # Extract ticket IDs for status update
-            ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
+        # Extract ticket IDs for status update
+        ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
 
-            # Process payment - atomically update booking AND tickets in single transaction
-            completed_booking = booking.mark_as_completed()
-            updated_booking = await self.uow.booking_command_repo.complete_booking_and_mark_tickets_sold_atomically(
+        # Process payment - atomically update booking AND tickets in single transaction
+        completed_booking = booking.mark_as_completed()
+        updated_booking = (
+            await self.booking_command_repo.complete_booking_and_mark_tickets_sold_atomically(
                 booking=completed_booking, ticket_ids=ticket_ids
             )
+        )
 
-            Logger.base.info(
-                f'💳 [PAYMENT] Atomically completed booking {booking_id} and marked {len(ticket_ids)} tickets as SOLD'
-            )
+        Logger.base.info(
+            f'💳 [PAYMENT] Atomically completed booking {booking_id} and marked {len(ticket_ids)} tickets as SOLD'
+        )
 
         # Publish domain event after successful commit
         if reserved_tickets:

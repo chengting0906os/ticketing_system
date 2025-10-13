@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import settings
-from src.platform.database.unit_of_work import SqlAlchemyUnitOfWork
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -43,6 +42,15 @@ from src.service.ticketing.app.command.update_booking_status_to_failed_use_case 
 )
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+)
+from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
+    IBookingCommandRepoImpl,
+)
+from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
+    BookingQueryRepoImpl,
+)
+from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
+    EventTicketingCommandRepoImpl,
 )
 
 
@@ -376,18 +384,23 @@ class TicketingMqConsumer:
         """
         Async handler for pending payment and reserved
 
-        Note: Repository uses asyncpg (raw SQL) and doesn't need SQLAlchemy session.
-        UoW is created without session - repositories manage their own connections.
+        Note: Repositories use asyncpg and manage their own connections.
+        Use case directly depends on repositories, no UoW needed.
         """
+
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reserved_seats = message.get('reserved_seats', [])
 
-        # Create UoW without session (repositories use asyncpg directly)
-        uow = SqlAlchemyUnitOfWork(session=None)  # type: ignore
+        # Create repositories (all use asyncpg, no session management needed)
+        booking_command_repo = IBookingCommandRepoImpl()
+        event_ticketing_command_repo = EventTicketingCommandRepoImpl()
 
-        # Create and execute use case
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=uow)
+        # Create and execute use case with direct repository injection
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+            booking_command_repo=booking_command_repo,
+            event_ticketing_command_repo=event_ticketing_command_repo,
+        )
         await use_case.execute(
             booking_id=booking_id or 0,
             buyer_id=buyer_id or 0,
@@ -423,18 +436,22 @@ class TicketingMqConsumer:
         """
         Async handler for failed booking
 
-        Note: Repository uses asyncpg (raw SQL) and doesn't need SQLAlchemy session.
-        UoW is created without session - repositories manage their own connections.
+        Note: Repositories use asyncpg and manage their own connections.
+        Use case directly depends on repositories, no UoW needed.
         """
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         reason = message.get('error_message', 'Unknown')
 
-        # Create UoW without session (repositories use asyncpg directly)
-        uow = SqlAlchemyUnitOfWork(session=None)  # type: ignore
+        # Create repositories (they manage their own asyncpg connections)
+        booking_command_repo = IBookingCommandRepoImpl()
+        booking_query_repo = BookingQueryRepoImpl()
 
-        # Create and execute use case
-        use_case = UpdateBookingToFailedUseCase(uow=uow)
+        # Create and execute use case with direct repository injection
+        use_case = UpdateBookingToFailedUseCase(
+            booking_query_repo=booking_query_repo,
+            booking_command_repo=booking_command_repo,
+        )
         await use_case.execute(
             booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
         )

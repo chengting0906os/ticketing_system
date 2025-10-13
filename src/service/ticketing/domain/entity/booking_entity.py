@@ -155,11 +155,40 @@ class Booking:
         return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
 
     @Logger.io
+    def validate_can_be_paid(self) -> None:
+        """
+        驗證訂單是否可以支付（Domain 層驗證邏輯）
+
+        Raises:
+            DomainError: 當訂單狀態不允許支付時
+        """
+        if self.status == BookingStatus.COMPLETED:
+            raise DomainError('Booking already paid')
+        elif self.status == BookingStatus.CANCELLED:
+            raise DomainError('Cannot pay for cancelled booking')
+        elif self.status != BookingStatus.PENDING_PAYMENT:
+            raise DomainError('Booking is not in a payable state')
+
+    @Logger.io
     def mark_as_completed(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.COMPLETED, paid_at=now, updated_at=now)
 
     @Logger.io
     def cancel(self) -> 'Booking':
+        """
+        取消訂單（Domain 驗證）
+
+        Raises:
+            DomainError: 當訂單狀態不允許取消時
+        """
+        # Domain 規則：只有 PROCESSING 或 PENDING_PAYMENT 狀態可以取消
+        if self.status == BookingStatus.COMPLETED:
+            raise DomainError('Cannot cancel completed booking')
+        elif self.status == BookingStatus.CANCELLED:
+            raise DomainError('Booking already cancelled')
+        elif self.status == BookingStatus.FAILED:
+            raise DomainError('Cannot cancel failed booking')
+
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.CANCELLED, updated_at=now)

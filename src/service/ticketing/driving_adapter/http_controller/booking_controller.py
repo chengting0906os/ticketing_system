@@ -8,7 +8,7 @@ from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
 )
 from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case import (
-    CancelBookingUseCase,
+    UpdateBookingToCancelledUseCase,
 )
 from src.service.ticketing.app.query.get_booking_use_case import GetBookingUseCase
 from src.service.ticketing.app.query.list_bookings_use_case import ListBookingsUseCase
@@ -94,13 +94,17 @@ async def get_booking(
 async def cancel_booking(
     booking_id: int,
     current_user: UserEntity = Depends(require_buyer),
-    use_case: CancelBookingUseCase = Depends(CancelBookingUseCase.depends),
+    use_case: UpdateBookingToCancelledUseCase = Depends(UpdateBookingToCancelledUseCase.depends),
 ):
-    result = await use_case.cancel_booking(
+    # Use case will raise exceptions for validation errors (Fail Fast)
+    booking = await use_case.execute(
         booking_id=booking_id,
         buyer_id=current_user.id or 0,
     )
-    return CancelReservationResponse(**result)
+    return CancelReservationResponse(
+        status=booking.status.value,
+        cancelled_tickets=booking.quantity,
+    )
 
 
 @router.post('/{booking_id}/pay')

@@ -18,7 +18,7 @@ from src.service.ticketing.app.command.update_booking_status_to_pending_payment_
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Ticket, TicketStatus
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
-from test.service.ticketing.unit.test_helpers import StubUnitOfWork
+from test.service.ticketing.unit.test_helpers import RepositoryMocks
 
 
 class TestUpdateBookingToPendingPayment:
@@ -79,12 +79,15 @@ class TestUpdateBookingToPendingPayment:
         Then: total_price = 3000
         """
         # Given
-        stub_uow = StubUnitOfWork(
+        repo_mocks = RepositoryMocks(
             booking=existing_booking,
             tickets=reserved_tickets,
             ticket_ids=[101, 102],
         )
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=stub_uow)
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+            booking_command_repo=repo_mocks.booking_command_repo,
+            event_ticketing_command_repo=repo_mocks.event_ticketing_command_repo,
+        )
 
         # When
         result = await use_case.execute(
@@ -97,7 +100,6 @@ class TestUpdateBookingToPendingPayment:
         assert result.total_price == 3000
         assert result.status == BookingStatus.PENDING_PAYMENT
         assert result.seat_positions == ['A-1-1-1', 'A-1-1-2']
-        assert stub_uow.committed
 
     @pytest.mark.asyncio
     async def test_execution_order(self, existing_booking, reserved_tickets):
@@ -113,22 +115,21 @@ class TestUpdateBookingToPendingPayment:
         """
         # Given: Track call order
         call_order = []
-        stub_uow = StubUnitOfWork(
+        repo_mocks = RepositoryMocks(
             booking=existing_booking,
             tickets=reserved_tickets,
             ticket_ids=[101, 102],
         )
 
         # Override methods to track call order
-        original_get_booking = stub_uow.booking_command_repo.get_by_id
+        original_get_booking = repo_mocks.booking_command_repo.get_by_id
         original_get_ticket_ids = (
-            stub_uow.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers
+            repo_mocks.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers
         )
-        original_update_tickets = stub_uow.event_ticketing_command_repo.update_tickets_status
-        original_get_tickets = stub_uow.event_ticketing_query_repo.get_tickets_by_ids
-        original_update_booking = stub_uow.booking_command_repo.update_status_to_pending_payment
-        original_link_tickets = stub_uow.booking_command_repo.link_tickets_to_booking
-        original_commit = stub_uow.commit
+        original_update_tickets = repo_mocks.event_ticketing_command_repo.update_tickets_status
+        original_get_tickets = repo_mocks.event_ticketing_query_repo.get_tickets_by_ids
+        original_update_booking = repo_mocks.booking_command_repo.update_status_to_pending_payment
+        original_link_tickets = repo_mocks.booking_command_repo.link_tickets_to_booking
 
         async def track_get_booking(*args, **kwargs):
             call_order.append('get_booking')
@@ -160,29 +161,27 @@ class TestUpdateBookingToPendingPayment:
             call_order.append('link_tickets')
             return await original_link_tickets(*args, **kwargs)
 
-        async def track_commit(*args, **kwargs):
-            call_order.append('commit')
-            return await original_commit(*args, **kwargs)
-
-        stub_uow.booking_command_repo.get_by_id = AsyncMock(side_effect=track_get_booking)
-        stub_uow.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers = AsyncMock(
+        repo_mocks.booking_command_repo.get_by_id = AsyncMock(side_effect=track_get_booking)
+        repo_mocks.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers = AsyncMock(
             side_effect=track_get_ticket_ids
         )
-        stub_uow.event_ticketing_command_repo.update_tickets_status = AsyncMock(
+        repo_mocks.event_ticketing_command_repo.update_tickets_status = AsyncMock(
             side_effect=track_update_tickets
         )
-        stub_uow.event_ticketing_query_repo.get_tickets_by_ids = AsyncMock(
+        repo_mocks.event_ticketing_command_repo.get_tickets_by_ids = AsyncMock(
             side_effect=track_get_tickets
         )
-        stub_uow.booking_command_repo.update_status_to_pending_payment = AsyncMock(
+        repo_mocks.booking_command_repo.update_status_to_pending_payment = AsyncMock(
             side_effect=track_update_booking
         )
-        stub_uow.booking_command_repo.link_tickets_to_booking = AsyncMock(
+        repo_mocks.booking_command_repo.link_tickets_to_booking = AsyncMock(
             side_effect=track_link_tickets
         )
-        stub_uow.commit = AsyncMock(side_effect=track_commit)
 
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=stub_uow)
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+            booking_command_repo=repo_mocks.booking_command_repo,
+            event_ticketing_command_repo=repo_mocks.event_ticketing_command_repo,
+        )
 
         # When
         await use_case.execute(
@@ -191,7 +190,7 @@ class TestUpdateBookingToPendingPayment:
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
         )
 
-        # Then: 驗證執行順序
+        # Then: 驗證執行順序（asyncpg autocommit，不再需要明確 commit）
         expected_order = [
             'get_booking',
             'get_ticket_ids',
@@ -199,7 +198,6 @@ class TestUpdateBookingToPendingPayment:
             'get_tickets_for_price',
             'update_booking',
             'link_tickets',
-            'commit',
         ]
         assert call_order == expected_order
 
@@ -213,8 +211,11 @@ class TestUpdateBookingToPendingPayment:
         Then: 拋出 NotFoundError
         """
         # Given
-        stub_uow = StubUnitOfWork(booking=None)  # 不存在的 booking
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=stub_uow)
+        repo_mocks = RepositoryMocks(booking=None)  # 不存在的 booking
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+            booking_command_repo=repo_mocks.booking_command_repo,
+            event_ticketing_command_repo=repo_mocks.event_ticketing_command_repo,
+        )
 
         # When/Then
         with pytest.raises(NotFoundError, match='Booking not found'):
@@ -234,8 +235,11 @@ class TestUpdateBookingToPendingPayment:
         Then: 拋出 ForbiddenError
         """
         # Given
-        stub_uow = StubUnitOfWork(booking=existing_booking)
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(uow=stub_uow)
+        repo_mocks = RepositoryMocks(booking=existing_booking)
+        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+            booking_command_repo=repo_mocks.booking_command_repo,
+            event_ticketing_command_repo=repo_mocks.event_ticketing_command_repo,
+        )
 
         # When/Then
         with pytest.raises(ForbiddenError, match='Booking owner mismatch'):

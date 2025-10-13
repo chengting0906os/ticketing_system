@@ -123,3 +123,18 @@ class IEventTicketingCommandRepo(ABC):
             票券 ID 列表
         """
         pass
+
+    @abstractmethod
+    async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
+        """
+        根據票券 ID 獲取票券詳細資訊
+
+        此方法用於支援寫入操作（如計算訂單總價），屬於 command repo 的查詢輔助方法
+
+        Args:
+            ticket_ids: 票券 ID 列表
+
+        Returns:
+            票券列表
+        """
+        pass
