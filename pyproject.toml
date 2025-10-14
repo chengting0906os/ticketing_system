@@ -137,12 +137,13 @@ reportInvalidTypeForm = false
 search-path = [
     ".",
     "test",
-    "deployment/cdk",
     ".venv/lib/python3.13/site-packages",
 ]
 site-package-path = [".venv/lib/python3.13/site-packages"]
-# Only check src/ and test/ for fast type checking (excludes slow AWS CDK modules)
+# Only check src/ and test/ for fast type checking, excluding CDK-related directories
 project-includes = ["src", "test"]
+# Exclude both deployment/ and test/deployment/ (CDK has slow JSII bindings)
+project-excludes = ["deployment/", "test/deployment/"]
 
 [tool.pyrefly.errors]
 missing-attribute = false
