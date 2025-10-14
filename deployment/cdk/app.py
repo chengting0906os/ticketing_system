@@ -11,6 +11,7 @@ import aws_cdk as cdk
 from stacks.api_gateway_stack import ApiGatewayStack
 from stacks.database_stack import DatabaseStack
 from stacks.load_balancer_stack import LoadBalancerStack, LoadBalancerStackForLocalStack
+from stacks.msk_stack import MSKStack
 
 app = cdk.App()
 
@@ -33,7 +34,18 @@ if not is_localstack:
         description='RDS PostgreSQL database for Ticketing System',
     )
 
-    # 2. Load Balancer Stack (ALB)
+    # 2. MSK Stack (Amazon Managed Streaming for Apache Kafka)
+    # Note: Comment out this stack if you want to keep using docker-compose Kafka during development
+    msk_stack = MSKStack(
+        app,
+        'TicketingMSKStack',
+        vpc=db_stack.database.vpc,  # Reuse VPC from database stack
+        env=env,
+        description='Amazon MSK cluster for event-driven messaging',
+    )
+    msk_stack.add_dependency(db_stack)
+
+    # 3. Load Balancer Stack (ALB)
     lb_stack = LoadBalancerStack(
         app,
         'TicketingLoadBalancerStack',
@@ -44,7 +56,7 @@ if not is_localstack:
     # Ensure database is created before load balancer
     lb_stack.add_dependency(db_stack)
 
-    # 3. API Gateway Stack (optional - can use ALB directly)
+    # 4. API Gateway Stack (optional - can use ALB directly)
     # Note: In production, you might choose ALB OR API Gateway, not both
     # Keeping both for flexibility during migration
     api_stack = ApiGatewayStack(
@@ -56,6 +68,7 @@ if not is_localstack:
 
     print('✅ Deploying to AWS:')
     print('   - Database Stack: RDS PostgreSQL')
+    print('   - MSK Stack: Amazon Managed Streaming for Apache Kafka')
     print('   - Load Balancer Stack: Application Load Balancer')
     print('   - API Gateway Stack: REST API')
 
