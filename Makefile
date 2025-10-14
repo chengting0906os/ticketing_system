@@ -305,48 +305,52 @@ k6-stress:  ## 💪 k6 stress test
 	@k6 run script/k6/stress-test.js
 
 # ==============================================================================
-# 🌩️ AWS CDK (API GATEWAY)
+# 🌩️ AWS CDK DEPLOYMENT
 # ==============================================================================
 
-.PHONY: lsu
-lsu:  ## 🌩️ Start LocalStack
-	@docker-compose up -d localstack
-	@echo "⏳ Waiting for LocalStack..."
-	@sleep 10
-	@echo "✅ LocalStack ready at http://localhost:4566"
+.PHONY: cdk-synth
+cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
+	@echo "🔍 Synthesizing CDK stack..."
+	@CDK_DEFAULT_ACCOUNT=123456789012 \
+		CDK_DEFAULT_REGION=us-east-1 \
+		uv run cdk synth --no-lookups
+	@echo "✅ CDK synthesis completed!"
 
-.PHONY: lsd
-lsd:  ## 🛑 Stop LocalStack
-	@docker-compose stop localstack
+.PHONY: cdk-diff
+cdk-diff:  ## 📊 Show differences between deployed and local stack
+	@echo "📊 Comparing stack differences..."
+	@CDK_DEFAULT_ACCOUNT=123456789012 \
+		CDK_DEFAULT_REGION=us-east-1 \
+		uv run cdk diff
 
-.PHONY: cdk-bootstrap
-cdk-bootstrap:  ## 🏗️ Bootstrap CDK (first time only)
-	@cd deployment/cdk && \
-		AWS_ACCESS_KEY_ID=test \
-		AWS_SECRET_ACCESS_KEY=test \
-		AWS_DEFAULT_REGION=us-east-1 \
-		uv run cdklocal bootstrap
+.PHONY: cdk-deploy-dev
+cdk-deploy-dev:  ## 🚀 Deploy to development environment
+	@echo "🚀 Deploying to AWS development environment..."
+	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
+	@uv run cdk deploy --all --require-approval never
+	@echo "✅ Deployment completed!"
 
-.PHONY: cdk-deploy
-cdk-deploy:  ## 🚀 Deploy API Gateway
-	@cd deployment/cdk && \
-		AWS_ACCESS_KEY_ID=test \
-		AWS_SECRET_ACCESS_KEY=test \
-		AWS_DEFAULT_REGION=us-east-1 \
-		uv run cdklocal deploy --require-approval never
-	@echo "✅ API Gateway deployed!"
-	@echo "   🌐 Endpoint: http://localhost:8000"
-	@echo "   📋 Test: make cdk-test"
+.PHONY: cdk-deploy-loadtest
+cdk-deploy-loadtest:  ## 🧪 Deploy loadtest stack only (Fargate Spot 32GB)
+	@echo "🧪 Deploying loadtest infrastructure..."
+	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
+	@uv run cdk deploy TicketingLoadTestStack --require-approval never
+	@echo "✅ Loadtest stack deployed!"
+	@echo "📋 Next: Use ECS Console or AWS CLI to run tasks"
 
-.PHONY: cdk-test
-cdk-test:  ## 🧪 Test API Gateway
-	@API_ID=$$(AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis --query 'items[?name==`Ticketing System API`].id' --output text 2>/dev/null); \
-	if [ -n "$$API_ID" ]; then \
-		echo "✅ Testing API $$API_ID"; \
-		curl -s "http://localhost:4566/restapis/$$API_ID/prod/_user_request_/api/event" | python3 -m json.tool | head -15; \
-	else \
-		echo "❌ API not found. Run 'make cdk-deploy' first"; \
-	fi
+.PHONY: cdk-destroy
+cdk-destroy:  ## 💣 Destroy all CDK stacks (WARNING: irreversible)
+	@echo "⚠️  WARNING: This will destroy all AWS resources!"
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@uv run cdk destroy --all
+	@echo "✅ All stacks destroyed"
+
+.PHONY: cdk-ls
+cdk-ls:  ## 📋 List all CDK stacks
+	@CDK_DEFAULT_ACCOUNT=123456789012 \
+		CDK_DEFAULT_REGION=us-east-1 \
+		uv run cdk list
 
 # ==============================================================================
 # 🌊 KAFKA
@@ -391,8 +395,8 @@ help:
 	@echo "⚡ LOAD TESTING"
 	@echo "  ltb, ltq, ltf, k6-smoke, k6-load, k6-stress"
 	@echo ""
-	@echo "🌩️  CDK (API Gateway)"
-	@echo "  lsu, lsd, cdk-bootstrap, cdk-deploy, cdk-test"
+	@echo "🌩️  AWS CDK DEPLOYMENT"
+	@echo "  cdk-synth, cdk-diff, cdk-deploy-dev, cdk-deploy-loadtest, cdk-destroy, cdk-ls"
 	@echo ""
 	@echo "🌊 KAFKA"
 	@echo "  ka, ks"

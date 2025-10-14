@@ -10,7 +10,6 @@ import aws_cdk as cdk
 
 from stacks.api_gateway_stack import ApiGatewayStack
 from stacks.aurora_stack import AuroraStack
-from stacks.database_stack import DatabaseStack
 from stacks.ecs_stack import ECSStack
 from stacks.kvrocks_stack import KvrocksStack
 from stacks.load_balancer_stack import LoadBalancerStack, LoadBalancerStackForLocalStack
@@ -30,46 +29,36 @@ env = cdk.Environment(
 
 # ============= AWS Production Deployment (10000 TPS) =============
 if not is_localstack:
-    # 1. Database Stack (Legacy RDS - kept for backward compatibility)
-    # Consider migrating to Aurora stack for better scalability
-    db_stack = DatabaseStack(
-        app,
-        'TicketingDatabaseStack',
-        env=env,
-        description='[Legacy] RDS PostgreSQL database for Ticketing System',
-    )
-
-    # 1b. Aurora Serverless v2 Stack (Recommended for production)
+    # 1. Aurora Serverless v2 Stack (Database + VPC)
     # 1 writer + 1 reader, auto-scaling 2-64 ACU for 10000 TPS
+    # Creates VPC that will be shared by all other stacks
     aurora_stack = AuroraStack(
         app,
         'TicketingAuroraStack',
-        vpc=db_stack.database.vpc,  # Reuse VPC from database stack
         env=env,
         description='Aurora Serverless v2 PostgreSQL cluster (1 writer + 1 reader)',
     )
-    aurora_stack.add_dependency(db_stack)
 
     # 2. MSK Stack (Amazon Managed Streaming for Apache Kafka)
     # 3-node cluster for event-driven messaging
     msk_stack = MSKStack(
         app,
         'TicketingMSKStack',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         env=env,
         description='Amazon MSK cluster for event-driven messaging',
     )
-    msk_stack.add_dependency(db_stack)
+    msk_stack.add_dependency(aurora_stack)
 
     # 3. ECS Cluster (Create first for Kvrocks to use)
     # Shared cluster for both microservices and Kvrocks
     from aws_cdk import aws_ecs as ecs
 
     shared_cluster = ecs.Cluster(
-        db_stack,  # Create within database stack for VPC access
+        aurora_stack,  # Create within Aurora stack for VPC access
         'SharedECSCluster',
         cluster_name='ticketing-shared-cluster',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         container_insights=True,
     )
 
@@ -78,12 +67,12 @@ if not is_localstack:
     kvrocks_stack = KvrocksStack(
         app,
         'TicketingKvrocksStack',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         cluster=shared_cluster,
         env=env,
         description='Kvrocks cluster with Sentinel (1 master + 2 replicas)',
     )
-    kvrocks_stack.add_dependency(db_stack)
+    kvrocks_stack.add_dependency(aurora_stack)
 
     # 5. ECS Fargate Stack (Microservices)
     # ticketing-service + seat-reservation-service
@@ -91,7 +80,7 @@ if not is_localstack:
     ecs_stack = ECSStack(
         app,
         'TicketingECSStack',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         aurora_security_group=aurora_stack.db_security_group,
         msk_security_group=msk_stack.security_group,
         kvrocks_security_group=kvrocks_stack.kvrocks_security_group,
@@ -108,18 +97,18 @@ if not is_localstack:
     lb_stack = LoadBalancerStack(
         app,
         'TicketingLoadBalancerStack',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         env=env,
         description='[Optional] Additional Load Balancer (ECS already has ALB)',
     )
-    lb_stack.add_dependency(db_stack)
+    lb_stack.add_dependency(aurora_stack)
 
     # 7. Load Test Stack (optional - for performance testing)
     # Fargate Spot with 32GB RAM for running high-concurrency Go load tests
     loadtest_stack = LoadTestStack(
         app,
         'TicketingLoadTestStack',
-        vpc=db_stack.database.vpc,
+        vpc=aurora_stack.vpc,
         alb_dns=ecs_stack.alb.load_balancer_dns_name,
         env=env,
         description='[Optional] Load test runner on Fargate Spot (32GB RAM)',

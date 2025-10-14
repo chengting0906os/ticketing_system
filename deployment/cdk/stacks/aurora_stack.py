@@ -38,7 +38,7 @@ class AuroraStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        vpc: ec2.IVpc,
+        vpc: ec2.IVpc | None = None,
         **kwargs,
     ) -> None:
         """
@@ -47,10 +47,20 @@ class AuroraStack(Stack):
         Args:
             scope: CDK app scope
             construct_id: Stack identifier
-            vpc: VPC to deploy Aurora cluster (shared with ECS and other services)
+            vpc: Optional VPC to deploy Aurora cluster. If not provided, creates a new VPC.
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        # ============= VPC =============
+        # Create VPC if not provided (for standalone deployment)
+        if vpc is None:
+            vpc = ec2.Vpc(
+                self,
+                'TicketingVpc',
+                max_azs=2,  # Use 2 availability zones for high availability
+                nat_gateways=1,  # NAT Gateway for private subnets
+            )
 
         # ============= Security Group =============
         # Allow PostgreSQL traffic from application services

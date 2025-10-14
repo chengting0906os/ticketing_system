@@ -105,7 +105,7 @@ class KvrocksStack(Stack):
             encrypted=True,
             lifecycle_policy=efs.LifecyclePolicy.AFTER_14_DAYS,  # Move to IA after 14 days
             performance_mode=efs.PerformanceMode.GENERAL_PURPOSE,
-            removal_policy=RemovalPolicy.SNAPSHOT,  # Keep data on stack deletion
+            removal_policy=RemovalPolicy.RETAIN,  # Keep data on stack deletion
         )
 
         # Access point for Kvrocks data

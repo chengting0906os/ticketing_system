@@ -212,22 +212,8 @@ class ECSStack(Stack):
             ),
         )
 
-        # Allow ticketing service to access Aurora, MSK, Kvrocks
-        aurora_security_group.add_ingress_rule(
-            peer=ticketing_service.connections.security_groups[0],
-            connection=ec2.Port.tcp(5432),
-            description='Ticketing service to Aurora',
-        )
-        msk_security_group.add_ingress_rule(
-            peer=ticketing_service.connections.security_groups[0],
-            connection=ec2.Port.tcp_range(9092, 9098),
-            description='Ticketing service to MSK',
-        )
-        kvrocks_security_group.add_ingress_rule(
-            peer=ticketing_service.connections.security_groups[0],
-            connection=ec2.Port.tcp(6666),
-            description='Ticketing service to Kvrocks',
-        )
+        # Security groups for Aurora, MSK, Kvrocks already allow VPC traffic
+        # No need to modify them here (prevents cyclic dependencies)
 
         # Auto-scaling for ticketing service
         ticketing_scaling = ticketing_service.auto_scale_task_count(
@@ -313,22 +299,8 @@ class ECSStack(Stack):
             ),
         )
 
-        # Allow reservation service to access Aurora, MSK, Kvrocks
-        aurora_security_group.add_ingress_rule(
-            peer=reservation_service.connections.security_groups[0],
-            connection=ec2.Port.tcp(5432),
-            description='Reservation service to Aurora',
-        )
-        msk_security_group.add_ingress_rule(
-            peer=reservation_service.connections.security_groups[0],
-            connection=ec2.Port.tcp_range(9092, 9098),
-            description='Reservation service to MSK',
-        )
-        kvrocks_security_group.add_ingress_rule(
-            peer=reservation_service.connections.security_groups[0],
-            connection=ec2.Port.tcp(6666),
-            description='Reservation service to Kvrocks',
-        )
+        # Security groups for Aurora, MSK, Kvrocks already allow VPC traffic
+        # No need to modify them here (prevents cyclic dependencies)
 
         # Auto-scaling for reservation service
         reservation_scaling = reservation_service.auto_scale_task_count(
