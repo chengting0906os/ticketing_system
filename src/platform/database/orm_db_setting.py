@@ -206,6 +206,7 @@ async def create_db_and_tables():
     """Create database tables if they don't exist"""
     try:
         current_engine = get_engine()
+        # pyrefly: ignore  # missing-attribute
         async with current_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     except Exception as e:

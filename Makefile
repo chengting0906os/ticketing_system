@@ -213,7 +213,7 @@ drk:  ## 🌊 Reset Kafka in Docker
 
 .PHONY: tdt
 tdt:  ## 🧪 Run tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/ --ignore=test/service/e2e -v
+	@docker-compose exec ticketing-service uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker

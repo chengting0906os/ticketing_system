@@ -313,6 +313,7 @@ class SeatReservationConsumer:
         )
 
         # 執行預訂邏輯（拋出異常會被 on_processing_error 捕獲）
+        # pyrefly: ignore  # missing-attribute
         result = self.portal.call(self._handle_reservation_async, message)
 
         # 記錄成功的預訂
@@ -356,6 +357,7 @@ class SeatReservationConsumer:
             released_seats = []
             for seat_id in seat_positions:
                 request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
+                # pyrefly: ignore  # missing-attribute
                 result = self.portal.call(self.release_seat_use_case.execute, request)
 
                 if result.success:
@@ -411,6 +413,7 @@ class SeatReservationConsumer:
                 timestamp=message.get('timestamp', ''),
             )
 
+            # pyrefly: ignore  # missing-attribute
             result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
 
             if result.success:

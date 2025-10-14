@@ -108,6 +108,7 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: unit",
     "integration: integration",
+    "cdk: CDK infrastructure tests",
     "e2e",
     "asyncio: mark test as async",
     "bdd: BDD scenario test",
@@ -134,11 +135,7 @@ reportMissingImports = false
 reportInvalidTypeForm = false
 
 [tool.pyrefly]
-search-path = [
-    ".",
-    "test",
-    ".venv/lib/python3.13/site-packages",
-]
+search-path = [".", "test", ".venv/lib/python3.13/site-packages"]
 site-package-path = [".venv/lib/python3.13/site-packages"]
 # Only check src/ and test/ for fast type checking, excluding CDK-related directories
 project-includes = ["src", "test"]

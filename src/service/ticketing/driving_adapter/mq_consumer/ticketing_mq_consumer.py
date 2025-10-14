@@ -371,6 +371,7 @@ class TicketingMqConsumer:
             )
 
             # Use portal to call async function (ensures proper async context)
+            # pyrefly: ignore  # missing-attribute
             self.portal.call(self._handle_pending_payment_and_reserved_async, message)
 
             Logger.base.info(
@@ -425,6 +426,7 @@ class TicketingMqConsumer:
             )
 
             # Use portal to call async function (ensures proper async context)
+            # pyrefly: ignore  # missing-attribute
             self.portal.call(self._handle_failed_async, message)
 
             Logger.base.info(f'✅ [BOOKING-FAILED] Completed: {booking_id}')

@@ -52,6 +52,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
         """Publish BookingPaidEvent to ticket completion topic"""
+        # pyrefly: ignore  # missing-attribute
         topic = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=event.event_id)
 
         Logger.base.info(
@@ -72,6 +73,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     @Logger.io
     async def publish_booking_cancelled(self, *, event: BookingCancelledEvent) -> None:
         """Publish BookingCancelledEvent to seat release topic"""
+        # pyrefly: ignore  # missing-attribute
         topic = KafkaTopicBuilder.ticket_release_seats(event_id=event.event_id)
 
         Logger.base.info(
