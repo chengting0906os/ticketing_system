@@ -235,37 +235,6 @@ services:
       - loki
 
   # =============================================================================
-  # API Gateway (LocalStack - AWS Simulation)
-  # =============================================================================
-
-  localstack:
-    image: localstack/localstack:latest
-    container_name: localstack
-    ports:
-      - "8000:4566" # API Gateway endpoint (external:internal)
-      - "4566:4566" # LocalStack Gateway (all AWS services)
-      - "4510-4559:4510-4559" # External services port range
-    environment:
-      - SERVICES=apigateway,lambda,iam,s3,ssm,cloudformation
-      - DEBUG=1
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - LAMBDA_EXECUTOR=docker
-      - LAMBDA_REMOTE_DOCKER=false
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      # Note: Bash scripts removed - use AWS CDK for infrastructure management
-      # Old approach: ./localstack:/etc/localstack/init/ready.d
-      # New approach: make cdk-deploy (Python-based Infrastructure as Code)
-      - localstack_data:/var/lib/localstack
-    networks:
-      - ticketing-network
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # =============================================================================
   # Microservices Architecture
   # Each service has its own API + Consumer following Bounded Context principle
   # =============================================================================
@@ -440,7 +409,6 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
-  localstack_data:
 
 
 networks:
