@@ -49,12 +49,12 @@ psql:  ## 🐘 Connect to PostgreSQL
 # ==============================================================================
 
 .PHONY: test
-test:  ## 🧪 Run unit tests
-	@uv run pytest test/ --ignore=test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
+test:  ## 🧪 Run unit tests (excludes CDK and E2E)
+	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-verbose
-test-verbose:  ## 🧪 Run tests with output (-vs)
-	@uv run pytest test/ --ignore=test/service/e2e -vs $(filter-out $@,$(MAKECMDGOALS))
+test-verbose:  ## 🧪 Run tests with output (-vs, excludes CDK and E2E)
+	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -vs $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-e2e
 test-e2e:  ## 🧪 Run E2E tests
@@ -63,6 +63,11 @@ test-e2e:  ## 🧪 Run E2E tests
 .PHONY: test-bdd
 test-bdd:  ## 🧪 Run BDD tests (Gherkin)
 	@uv run pytest test/features/ -v $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: test-cdk
+test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
+	@echo "⚠️  Warning: CDK tests are CPU intensive and may take 1-2 minutes"
+	@uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 %:
 	@:
@@ -212,8 +217,12 @@ drk:  ## 🌊 Reset Kafka in Docker
 	@echo "✅ Kafka reset completed"
 
 .PHONY: tdt
-tdt:  ## 🧪 Run tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v
+tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra)
+	@docker-compose exec ticketing-service uv run pytest test/ \
+		--ignore=test/service/e2e \
+		--ignore=test/deployment \
+		--ignore=test/infrastructure \
+		-v
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
@@ -226,10 +235,11 @@ tdinfra:  ## 🏗️ Run infrastructure tests in Docker
 	@echo "✅ Infrastructure tests complete!"
 
 .PHONY: tdci
-tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e)
+tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 	@docker-compose exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/infrastructure \
+		--ignore=test/deployment \
 		-m "not api and not infra and not e2e" \
 		-v
 

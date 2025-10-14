@@ -51,7 +51,7 @@ def msk_stack():
 # ==============================================================================
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_cluster_created(msk_stack):
     """
     Unit: Verify MSK cluster resource is created with correct configuration.
@@ -77,7 +77,7 @@ def test_msk_cluster_created(msk_stack):
     )
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_replication_settings(msk_stack):
     """
     Unit: Verify replication settings match docker-compose configuration.
@@ -104,7 +104,7 @@ def test_msk_replication_settings(msk_stack):
     )
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_security_configuration(msk_stack):
     """
     Unit: Verify security configuration (TLS + IAM auth).
@@ -129,7 +129,7 @@ def test_msk_security_configuration(msk_stack):
     template.resource_count_is('AWS::EC2::SecurityGroup', 1)
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_security_group_rules(msk_stack):
     """
     Unit: Verify security group allows correct Kafka ports.
@@ -159,7 +159,7 @@ def test_msk_security_group_rules(msk_stack):
     )
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_monitoring_enabled(msk_stack):
     """
     Unit: Verify enhanced monitoring is enabled.
@@ -174,7 +174,7 @@ def test_msk_monitoring_enabled(msk_stack):
     )
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_storage_configuration(msk_stack):
     """
     Unit: Verify broker storage configuration.
@@ -205,7 +205,7 @@ def test_msk_storage_configuration(msk_stack):
 # ==============================================================================
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_outputs_exported(msk_stack):
     """
     Unit: Verify CloudFormation outputs are exported.
@@ -240,7 +240,7 @@ def test_msk_outputs_exported(msk_stack):
 # ==============================================================================
 
 
-@pytest.mark.unit
+@pytest.mark.cdk
 def test_msk_config_matches_docker_compose(msk_stack):
     """
     Unit: Verify MSK configuration matches docker-compose settings.

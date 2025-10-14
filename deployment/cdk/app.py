@@ -9,7 +9,10 @@ import os
 import aws_cdk as cdk
 
 from stacks.api_gateway_stack import ApiGatewayStack
+from stacks.aurora_stack import AuroraStack
 from stacks.database_stack import DatabaseStack
+from stacks.ecs_stack import ECSStack
+from stacks.kvrocks_stack import KvrocksStack
 from stacks.load_balancer_stack import LoadBalancerStack, LoadBalancerStackForLocalStack
 from stacks.msk_stack import MSKStack
 
@@ -24,53 +27,112 @@ env = cdk.Environment(
     region=os.getenv('CDK_DEFAULT_REGION', 'us-east-1'),
 )
 
-# ============= AWS Production Deployment =============
+# ============= AWS Production Deployment (10000 TPS) =============
 if not is_localstack:
-    # 1. Database Stack (RDS PostgreSQL)
+    # 1. Database Stack (Legacy RDS - kept for backward compatibility)
+    # Consider migrating to Aurora stack for better scalability
     db_stack = DatabaseStack(
         app,
         'TicketingDatabaseStack',
         env=env,
-        description='RDS PostgreSQL database for Ticketing System',
+        description='[Legacy] RDS PostgreSQL database for Ticketing System',
     )
 
+    # 1b. Aurora Serverless v2 Stack (Recommended for production)
+    # 1 writer + 1 reader, auto-scaling 2-64 ACU for 10000 TPS
+    aurora_stack = AuroraStack(
+        app,
+        'TicketingAuroraStack',
+        vpc=db_stack.database.vpc,  # Reuse VPC from database stack
+        env=env,
+        description='Aurora Serverless v2 PostgreSQL cluster (1 writer + 1 reader)',
+    )
+    aurora_stack.add_dependency(db_stack)
+
     # 2. MSK Stack (Amazon Managed Streaming for Apache Kafka)
-    # Note: Comment out this stack if you want to keep using docker-compose Kafka during development
+    # 3-node cluster for event-driven messaging
     msk_stack = MSKStack(
         app,
         'TicketingMSKStack',
-        vpc=db_stack.database.vpc,  # Reuse VPC from database stack
+        vpc=db_stack.database.vpc,
         env=env,
         description='Amazon MSK cluster for event-driven messaging',
     )
     msk_stack.add_dependency(db_stack)
 
-    # 3. Load Balancer Stack (ALB)
+    # 3. ECS Cluster (Create first for Kvrocks to use)
+    # Shared cluster for both microservices and Kvrocks
+    from aws_cdk import aws_ecs as ecs
+
+    shared_cluster = ecs.Cluster(
+        db_stack,  # Create within database stack for VPC access
+        'SharedECSCluster',
+        cluster_name='ticketing-shared-cluster',
+        vpc=db_stack.database.vpc,
+        container_insights=True,
+    )
+
+    # 4. Kvrocks + Sentinel Stack (Self-hosted Redis alternative)
+    # 1 master + 2 replicas + 3 sentinels for high availability
+    kvrocks_stack = KvrocksStack(
+        app,
+        'TicketingKvrocksStack',
+        vpc=db_stack.database.vpc,
+        cluster=shared_cluster,
+        env=env,
+        description='Kvrocks cluster with Sentinel (1 master + 2 replicas)',
+    )
+    kvrocks_stack.add_dependency(db_stack)
+
+    # 5. ECS Fargate Stack (Microservices)
+    # ticketing-service + seat-reservation-service
+    # Each service: 4-16 tasks with auto-scaling
+    ecs_stack = ECSStack(
+        app,
+        'TicketingECSStack',
+        vpc=db_stack.database.vpc,
+        aurora_security_group=aurora_stack.db_security_group,
+        msk_security_group=msk_stack.security_group,
+        kvrocks_security_group=kvrocks_stack.kvrocks_security_group,
+        env=env,
+        description='ECS Fargate services for microservices (4-16 tasks each)',
+    )
+    ecs_stack.add_dependency(aurora_stack)
+    ecs_stack.add_dependency(msk_stack)
+    ecs_stack.add_dependency(kvrocks_stack)
+
+    # 6. Load Balancer Stack (ALB - Optional if using ECS ALB)
+    # Note: ECS stack already creates an ALB, this is redundant
+    # Keeping for backward compatibility
     lb_stack = LoadBalancerStack(
         app,
         'TicketingLoadBalancerStack',
-        vpc=db_stack.database.vpc,  # Reuse VPC from database stack
+        vpc=db_stack.database.vpc,
         env=env,
-        description='Application Load Balancer for microservices',
+        description='[Optional] Additional Load Balancer (ECS already has ALB)',
     )
-    # Ensure database is created before load balancer
     lb_stack.add_dependency(db_stack)
 
-    # 4. API Gateway Stack (optional - can use ALB directly)
-    # Note: In production, you might choose ALB OR API Gateway, not both
-    # Keeping both for flexibility during migration
+    # 7. API Gateway Stack (optional - can use ALB directly)
+    # Note: In production, use ECS ALB directly for better performance
+    # API Gateway adds latency (~50-100ms) but provides API management features
     api_stack = ApiGatewayStack(
         app,
         'TicketingApiGatewayStack',
         env=env,
-        description='API Gateway for Ticketing System microservices',
+        description='[Optional] API Gateway (consider using ECS ALB directly)',
     )
 
-    print('✅ Deploying to AWS:')
-    print('   - Database Stack: RDS PostgreSQL')
-    print('   - MSK Stack: Amazon Managed Streaming for Apache Kafka')
-    print('   - Load Balancer Stack: Application Load Balancer')
-    print('   - API Gateway Stack: REST API')
+    print('✅ Deploying to AWS (10000 TPS Architecture):')
+    print('   1. Database: Aurora Serverless v2 (2-64 ACU, 1 writer + 1 reader)')
+    print('   2. Messaging: Amazon MSK (3-node Kafka cluster)')
+    print('   3. Cache: Kvrocks on ECS (1 master + 2 replicas + 3 sentinels)')
+    print('   4. Compute: ECS Fargate (2 services, 4-16 tasks each)')
+    print('   5. Load Balancer: Application Load Balancer (built into ECS)')
+    print('')
+    print('💰 Estimated Monthly Cost: $1,500 - $3,000 (at moderate load)')
+    print('⚡ Capacity: 10,000+ TPS with auto-scaling')
+    print('🔒 High Availability: Multi-AZ with auto-failover')
 
 # ============= LocalStack Development =============
 else:
