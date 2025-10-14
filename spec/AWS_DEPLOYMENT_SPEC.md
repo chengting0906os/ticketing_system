@@ -4,38 +4,32 @@
 
 ## Architecture
 
-```
-                    Internet
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-          ▼                         ▼
-    ┌──────────┐             ┌──────────┐
-    │   API    │             │   ALB    │
-    │ Gateway  │             │          │
-    │(Optional)│             │(Default) │
-    └─────┬────┘             └────┬─────┘
-          │                       │
-          └───────────┬───────────┘
-                      │
-        ┌─────────────┴──────────────┐
-        │                            │
-        ▼                            ▼
-┌──────────────┐            ┌──────────────┐
-│ Ticketing    │            │ Seat         │
-│ Service      │◄──────────►│ Reservation  │
-│ (ECS)        │   Kafka    │ Service (ECS)│
-│ 4-16 tasks   │            │ 4-16 tasks   │
-└───┬──────────┘            └──────┬───────┘
-    │                              │
-    └──┬──────────┬────────────┬───┘
-       │          │            │
-       ▼          ▼            ▼
-   ┌───────┐  ┌──────┐   ┌────────┐
-   │Aurora │  │ MSK  │   │Kvrocks │
-   │2-64ACU│  │Kafka │   │1M+2R+3S│
-   │1W + 1R│  │3-node│   │        │
-   └───────┘  └──────┘   └────────┘
+```text
+                 Internet
+                    │
+                    ▼
+              ┌─────────┐
+              │   ALB   │
+              └────┬────┘
+                   │
+     ┌─────────────┴─────────────┐
+     │                           │
+     ▼                           ▼
+┌────────────┐          ┌────────────────┐
+│ Ticketing  │◄────────►│ Seat           │
+│ Service    │  Kafka   │ Reservation    │
+│ (ECS)      │          │ Service (ECS)  │
+│ 4-16 tasks │          │ 4-16 tasks     │
+└─────┬──────┘          └──────┬─────────┘
+      │                        │
+      └──┬──────────┬──────────┘
+         │          │          │
+         ▼          ▼          ▼
+    ┌───────┐  ┌──────┐  ┌────────┐
+    │Aurora │  │ MSK  │  │Kvrocks │
+    │2-64ACU│  │Kafka │  │1M+2R+3S│
+    │1W+1R  │  │3-node│  │        │
+    └───────┘  └──────┘  └────────┘
 ```
 
 ## Components
@@ -46,7 +40,7 @@
 | **Amazon MSK** | 3×kafka.m5.large | $300-$500 | Kafka cluster |
 | **ECS Fargate** | 2 services×(4-16 tasks) | $400-$1,600 | Microservices |
 | **Kvrocks on ECS** | 1M+2R+3S | $100-$200 | Redis cache |
-| **ALB / API Gateway** | - | $25-$50 | Routing |
+| **ALB** | - | $16-$25 | Load balancing |
 | **EFS** | Persistent storage | $30-$100 | Kvrocks data |
 | **Secrets Manager** | - | $5-$10 | Credentials |
 | **CloudWatch** | Logs + Metrics | $50-$100 | Monitoring |
@@ -115,9 +109,8 @@ uv run cdk deploy TicketingKvrocksStack
 # 4. ECS Services
 uv run cdk deploy TicketingECSStack
 
-# 5. API Gateway (Optional - adds 50-100ms latency)
-# Recommended: Use ECS ALB directly for better performance
-uv run cdk deploy TicketingApiGatewayStack
+# 5. Load Test Runner (Optional - for performance testing)
+uv run cdk deploy TicketingLoadTestStack
 ```
 
 ### One-Command Deploy (Not recommended for first time)
@@ -127,34 +120,28 @@ uv run cdk deploy TicketingApiGatewayStack
 uv run cdk deploy --all --require-approval never
 ```
 
-## API Gateway vs ALB
+## ALB Path-Based Routing
 
-### API Gateway (Optional)
+ALB automatically routes requests to the correct service based on URL path:
 
-- **Pros**: API management, throttling, caching, API keys
-- **Cons**: +50-100ms latency, higher cost
-- **Use when**: Need API versioning, rate limiting, or API marketplace
-
-**Routes**:
-
-```
-POST /api/user/register     → ticketing-service:8000
-POST /api/user/login        → ticketing-service:8000
-GET  /api/event             → ticketing-service:8000
-POST /api/booking           → ticketing-service:8000
-POST /api/reservation       → seat-reservation-service:8000
+```text
+Internet → ALB (port 80/443)
+              │
+              ├─ /api/user/*        → ticketing-service:8000
+              ├─ /api/event/*       → ticketing-service:8000
+              ├─ /api/booking/*     → ticketing-service:8000
+              └─ /api/reservation/* → seat-reservation-service:8000
 ```
 
-### ALB (Recommended)
+**Example Requests**:
 
-- **Pros**: Lower latency, better performance, integrated with ECS
-- **Cons**: Less API management features
-- **Use when**: Performance is priority (most cases)
+```bash
+# All requests go to same ALB endpoint
+curl https://alb-xxx.elb.amazonaws.com/api/user/login
+# → Routes to ticketing-service
 
-**Routes**:
-
-```
-/* → ECS Target Group → Auto-routes to services
+curl https://alb-xxx.elb.amazonaws.com/api/reservation/123
+# → Routes to seat-reservation-service
 ```
 
 ## Environment Variables
@@ -179,38 +166,11 @@ SERVICE_DISCOVERY_NAMESPACE=ticketing.local
 
 ## Verification
 
-### Health Check
-
 ```bash
-# Via ALB
-curl http://<alb-dns>/health
+# Health check
+curl http://<alb-dns>/api/user/health
 
-# Via API Gateway
-curl https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/api/user/health
-
-# Expected response
-{
-  "status": "healthy",
-  "services": {
-    "ticketing": "ok",
-    "reservation": "ok"
-  }
-}
-```
-
-### Database
-
-```bash
-psql -h <aurora-writer-endpoint> -U ticketing_admin -d ticketing_system_db
-SELECT version();
-```
-
-### ECS Tasks
-
-```bash
-aws ecs describe-services \
-  --cluster ticketing-cluster \
-  --services ticketing-service seat-reservation-service
+# Expected: {"status": "ok"}
 ```
 
 ## Monitoring
@@ -270,6 +230,77 @@ aws ecs execute-command \
   --command "redis-cli -p 26666 SENTINEL masters"
 ```
 
+## Load Testing
+
+### Deploy Prerequisites
+
+Build and push the loadtest Docker image:
+
+```bash
+# Build loadtest image (from go_client directory)
+cd script/go_client
+docker build -t loadtest-runner:latest .
+
+# Tag and push to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+docker tag loadtest-runner:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/loadtest-runner:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/loadtest-runner:latest
+```
+
+### Run Load Test
+
+```bash
+# Get task definition ARN from stack outputs
+TASK_DEF=$(aws cloudformation describe-stacks \
+  --stack-name TicketingLoadTestStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`TaskDefinitionArn`].OutputValue' \
+  --output text)
+
+# Get cluster name
+CLUSTER=$(aws cloudformation describe-stacks \
+  --stack-name TicketingLoadTestStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' \
+  --output text)
+
+# Run load test (adjust parameters as needed)
+aws ecs run-task \
+  --cluster $CLUSTER \
+  --task-definition $TASK_DEF \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}" \
+  --overrides '{
+    "containerOverrides": [{
+      "name": "loadtest",
+      "command": [
+        "./loadtest",
+        "-requests", "50000",
+        "-concurrency", "500",
+        "-clients", "10",
+        "-event", "1",
+        "-mode", "best_available",
+        "-quantity", "2"
+      ]
+    }]
+  }'
+```
+
+### View Results
+
+```bash
+# Get results bucket name
+BUCKET=$(aws cloudformation describe-stacks \
+  --stack-name TicketingLoadTestStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ResultsBucket`].OutputValue' \
+  --output text)
+
+# List test runs
+aws s3 ls s3://$BUCKET/
+
+# Download latest results
+aws s3 cp s3://$BUCKET/<timestamp>/ ./results/ --recursive
+```
+
 ## Cleanup
 
 ⚠️ **WARNING**: This deletes all data!
@@ -281,8 +312,16 @@ uv run cdk destroy --all
 # Manual cleanup
 aws ecr delete-repository --repository-name ticketing-service --force
 aws ecr delete-repository --repository-name seat-reservation-service --force
-aws s3 rb s3://<bucket-name> --force
+aws ecr delete-repository --repository-name loadtest-runner --force
+aws s3 rb s3://<results-bucket> --force
 ```
+
+## Related Documentation
+
+- [Load Test Tool](../script/go_client/README.md) - Detailed loadtest usage
+- [Test Specification](TEST_SPEC.md) - Testing strategy
+- [Kafka Specification](KAFKA_SPEC.md) - Event-driven architecture
+- [Kvrocks Specification](KVROCKS_SPEC.md) - Caching layer
 
 ## References
 

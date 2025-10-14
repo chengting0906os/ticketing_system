@@ -14,6 +14,7 @@ from stacks.database_stack import DatabaseStack
 from stacks.ecs_stack import ECSStack
 from stacks.kvrocks_stack import KvrocksStack
 from stacks.load_balancer_stack import LoadBalancerStack, LoadBalancerStackForLocalStack
+from stacks.loadtest_stack import LoadTestStack
 from stacks.msk_stack import MSKStack
 
 app = cdk.App()
@@ -113,15 +114,17 @@ if not is_localstack:
     )
     lb_stack.add_dependency(db_stack)
 
-    # 7. API Gateway Stack (optional - can use ALB directly)
-    # Note: In production, use ECS ALB directly for better performance
-    # API Gateway adds latency (~50-100ms) but provides API management features
-    api_stack = ApiGatewayStack(
+    # 7. Load Test Stack (optional - for performance testing)
+    # Fargate Spot with 32GB RAM for running high-concurrency Go load tests
+    loadtest_stack = LoadTestStack(
         app,
-        'TicketingApiGatewayStack',
+        'TicketingLoadTestStack',
+        vpc=db_stack.database.vpc,
+        alb_dns=ecs_stack.alb.load_balancer_dns_name,
         env=env,
-        description='[Optional] API Gateway (consider using ECS ALB directly)',
+        description='[Optional] Load test runner on Fargate Spot (32GB RAM)',
     )
+    loadtest_stack.add_dependency(ecs_stack)
 
     print('✅ Deploying to AWS (10000 TPS Architecture):')
     print('   1. Database: Aurora Serverless v2 (2-64 ACU, 1 writer + 1 reader)')
