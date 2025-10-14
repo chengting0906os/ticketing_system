@@ -24,27 +24,28 @@ class TestKvrocksClientAsyncPooling:
         try:
             redis_client = await client.connect()
 
+            # Verify client is stored in the clients dict (per event loop)
+            import asyncio
+
+            loop_id = id(asyncio.get_running_loop())
+            assert loop_id in client._clients
+            assert client._clients[loop_id] == redis_client
+
             # Verify pool exists and is correct type
-            assert client._pool is not None
-            assert isinstance(client._pool, AsyncConnectionPool)
+            pool = redis_client.connection_pool
+            assert pool is not None
+            assert isinstance(pool, AsyncConnectionPool)
 
             # Verify pool configuration
-            assert client._pool.max_connections == settings.KVROCKS_POOL_MAX_CONNECTIONS
+            assert pool.max_connections == settings.KVROCKS_POOL_MAX_CONNECTIONS
+            assert pool.connection_kwargs['socket_timeout'] == settings.KVROCKS_POOL_SOCKET_TIMEOUT
             assert (
-                client._pool.connection_kwargs['socket_timeout']
-                == settings.KVROCKS_POOL_SOCKET_TIMEOUT
-            )
-            assert (
-                client._pool.connection_kwargs['socket_connect_timeout']
+                pool.connection_kwargs['socket_connect_timeout']
                 == settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT
             )
             assert (
-                client._pool.connection_kwargs['socket_keepalive']
-                == settings.KVROCKS_POOL_SOCKET_KEEPALIVE
+                pool.connection_kwargs['socket_keepalive'] == settings.KVROCKS_POOL_SOCKET_KEEPALIVE
             )
-
-            # Verify client is using the pool
-            assert redis_client.connection_pool == client._pool
 
             # Test actual operation
             await redis_client.ping()
