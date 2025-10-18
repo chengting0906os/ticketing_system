@@ -257,9 +257,51 @@ async def clean_kvrocks():
 
 @pytest.fixture(autouse=True, scope='function')
 async def clean_database():
-    """Clean all database tables before each test"""
+    """
+    Clean all database tables and dispose DB engines after each test
+
+    Critical for test isolation - prevents connection pool exhaustion by:
+    1. Cleaning tables before test
+    2. Disposing SQLAlchemy engines after test (releases all connections)
+    3. Closing asyncpg pool after test
+    """
     await clean_all_tables()
     yield
+
+    # Cleanup: Dispose engines to release all DB connections
+    # Important: Each pytest-xdist worker has its own process, so this cleanup
+    # only affects the current worker's engines, not other workers
+    from src.platform.database.orm_db_setting import _engine_manager
+    from src.platform.database.asyncpg_setting import close_asyncpg_pool
+    import asyncio
+
+    # Get current event loop ID to ensure we only clean up this loop's resources
+    try:
+        current_loop = asyncio.get_running_loop()
+        current_loop_id = id(current_loop)
+    except RuntimeError:
+        current_loop_id = None
+
+    # Dispose SQLAlchemy engines if they belong to current loop
+    if current_loop_id and _engine_manager._loop and id(_engine_manager._loop) == current_loop_id:
+        if _engine_manager._write_engine is not None:
+            await _engine_manager._write_engine.dispose()
+            _engine_manager._write_engine = None
+            _engine_manager._write_session_maker = None
+
+        if _engine_manager._read_engine is not None:
+            await _engine_manager._read_engine.dispose()
+            _engine_manager._read_engine = None
+            _engine_manager._read_session_maker = None
+
+        # Reset loop tracking
+        _engine_manager._loop = None
+
+    # Close asyncpg pool for current loop only
+    try:
+        await close_asyncpg_pool()
+    except Exception:
+        pass  # Ignore if no pool exists
 
 
 # =============================================================================
