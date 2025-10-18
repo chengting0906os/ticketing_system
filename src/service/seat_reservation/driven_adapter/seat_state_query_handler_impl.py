@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
 
 
 # Get key prefix from environment for test isolation

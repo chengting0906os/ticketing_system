@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status
 
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )

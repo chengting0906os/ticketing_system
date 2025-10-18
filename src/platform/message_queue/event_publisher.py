@@ -13,7 +13,7 @@ from quixstreams import Application
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
-from src.shared_kernel.domain.domain_event import MqDomainEvent
+from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
 
 # 全域 Quix Application 實例

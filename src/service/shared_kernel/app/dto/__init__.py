@@ -1,6 +1,6 @@
 """Shared Kernel DTOs - Application Layer"""
 
-from src.shared_kernel.app.dto.seat_command_dto import (
+from src.service.shared_kernel.app.dto.seat_command_dto import (
     ReleaseSeatRequest,
     ReleaseSeatResult,
     ReleaseSeatsBatchRequest,
