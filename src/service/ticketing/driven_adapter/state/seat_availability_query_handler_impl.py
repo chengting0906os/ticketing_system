@@ -4,28 +4,34 @@ Seat Availability Query Handler Implementation
 座位可用性查詢處理器實作 - Adapter for ticketing service to query seat state
 """
 
+import os
+
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
-)
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
 )
+
+
+# Key prefix for Kvrocks (matches seat_reservation service convention)
+_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+
+
+def _make_key(key: str) -> str:
+    """Add prefix to key for environment isolation"""
+    return f'{_KEY_PREFIX}{key}'
 
 
 class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     """
     座位可用性查詢處理器實作
 
-    職責：橋接 ticketing service 和 seat_reservation service 的查詢操作
-    使用 SeatStateQueryHandlerImpl 來獲取座位狀態統計
+    職責：直接查詢 Kvrocks 獲取座位狀態統計
+    不依賴 seat_reservation service 的實現類，保持服務邊界清晰
     """
 
-    def __init__(self):
-        self._seat_state_query_handler = SeatStateQueryHandlerImpl()
-
-    @Logger.io
+    # @Logger.io
     async def check_subsection_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> bool:
@@ -36,13 +42,13 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
         )
 
         try:
-            # Get all subsection statistics
-            all_stats = await self._seat_state_query_handler.list_all_subsection_status(
-                event_id=event_id
-            )
+            # Query Kvrocks directly for single subsection stats (efficient - O(1) vs O(N))
+            client = await kvrocks_client.connect()
 
+            # Direct key query - no need to scan all subsections
             section_id = f'{section}-{subsection}'
-            stats = all_stats.get(section_id)
+            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+            stats = await client.hgetall(stats_key)  # type: ignore
 
             if not stats:
                 Logger.base.warning(
@@ -50,8 +56,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
                 )
                 raise NotFoundError(f'Section {section_id} not found')
 
-            available_count = stats.get('available', 0)
-
+            available_count = int(stats.get('available', 0))
             has_enough = available_count >= required_quantity
 
             if has_enough:
