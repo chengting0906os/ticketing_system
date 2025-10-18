@@ -228,7 +228,13 @@ async def clean_kvrocks():
     except Exception:
         pass  # Ignore if no client exists for current loop
 
-    # 2. Clean Kvrocks data using sync client
+    # 2. Initialize async client for current event loop
+    try:
+        await kvrocks_client.initialize()
+    except Exception:
+        pass  # Ignore if already initialized
+
+    # 3. Clean Kvrocks data using sync client
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
     sync_client = kvrocks_client_sync.connect()
     keys: list[str] = sync_client.keys(f'{key_prefix}*')  # type: ignore
@@ -237,12 +243,12 @@ async def clean_kvrocks():
 
     yield
 
-    # 3. Cleanup after test
+    # 4. Cleanup after test
     keys_after: list[str] = sync_client.keys(f'{key_prefix}*')  # type: ignore
     if keys_after:
         sync_client.delete(*keys_after)
 
-    # 4. Reset async client again (per-event-loop cleanup)
+    # 5. Reset async client again (per-event-loop cleanup)
     try:
         await kvrocks_client.disconnect()
     except Exception:

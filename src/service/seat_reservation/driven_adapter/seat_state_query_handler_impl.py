@@ -48,7 +48,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         """從 Redis 獲取 section 配置"""
         from src.platform.exception.exceptions import NotFoundError
 
-        client = await kvrocks_client.connect()
+        # Get client from initialized pool (no await needed)
+        client = kvrocks_client.get_client()
         config_key = _make_key(f'section_config:{event_id}:{section_id}')
         config = await client.hgetall(config_key)  # type: ignore
 
@@ -63,7 +64,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         Logger.base.info(f'🔍 [QUERY] Getting states for {len(seat_ids)} seats')
 
         seat_states = {}
-        client = await kvrocks_client.connect()
+        # Get client from initialized pool (no await needed)
+        client = kvrocks_client.get_client()
 
         for seat_id in seat_ids:
             parts = seat_id.split('-')
@@ -118,7 +120,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         """獲取活動所有 subsection 的統計資訊"""
         Logger.base.info(f'📊 [QUERY] Listing all subsection status for event {event_id}')
 
-        client = await kvrocks_client.connect()
+        # Get client from initialized pool (no await needed)
+        client = kvrocks_client.get_client()
 
         # Get all section IDs from index
         index_key = _make_key(f'event_sections:{event_id}')
@@ -166,7 +169,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         total_rows = config['rows']
         seats_per_row = config['seats_per_row']
 
-        client = await kvrocks_client.connect()
+        # Get client from initialized pool (no await needed)
+        client = kvrocks_client.get_client()
         bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
 
         all_seats = []

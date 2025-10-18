@@ -79,6 +79,66 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
     return asyncpg_pools[loop_id]
 
 
+async def warmup_asyncpg_pool() -> int:
+    """
+    Warmup asyncpg pool by pre-creating connections up to MAX_SIZE
+
+    This eliminates "connect" spans during request handling by forcing
+    the pool to expand to its full capacity at startup time.
+
+    Strategy:
+    1. Acquire all MAX_SIZE connections from pool (blocking)
+    2. Release them all back to pool
+    3. All connections now in warm pool ready for immediate use
+
+    Returns:
+        Number of connections warmed up
+    """
+    pool = await get_asyncpg_pool()
+    connections = []
+
+    try:
+        Logger.base.info(
+            f'🔥 [Pool Warmup] Starting warmup (target={settings.ASYNCPG_POOL_MAX_SIZE})...'
+        )
+
+        # Acquire connections up to MAX_SIZE
+        for i in range(settings.ASYNCPG_POOL_MAX_SIZE):
+            try:
+                conn = await pool.acquire(timeout=5.0)
+                connections.append(conn)
+                Logger.base.debug(
+                    f'   ✓ Created connection {i + 1}/{settings.ASYNCPG_POOL_MAX_SIZE}'
+                )
+            except asyncio.TimeoutError:
+                Logger.base.warning(f'   ⚠️  Pool warmup timeout at {i + 1} connections')
+                break
+            except Exception as e:
+                Logger.base.error(f'   ❌ Pool warmup error: {e}')
+                break
+
+        # Release all connections back to pool
+        for conn in connections:
+            await pool.release(conn)
+
+        Logger.base.info(
+            f'✅ [Pool Warmup] Completed: {len(connections)} connections ready '
+            f'(size={pool.get_size()}, idle={pool.get_idle_size()})'
+        )
+
+        return len(connections)
+
+    except Exception as e:
+        Logger.base.error(f'❌ [Pool Warmup] Failed: {e}')
+        # Release any acquired connections on error
+        for conn in connections:
+            try:
+                await pool.release(conn)
+            except Exception:
+                pass
+        raise
+
+
 async def close_asyncpg_pool():
     """
     Close the asyncpg connection pool for the current event loop

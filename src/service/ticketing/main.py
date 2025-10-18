@@ -13,7 +13,11 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.config.di import container
-from src.platform.database.asyncpg_setting import close_all_asyncpg_pools, get_asyncpg_pool
+from src.platform.database.asyncpg_setting import (
+    close_all_asyncpg_pools,
+    get_asyncpg_pool,
+    warmup_asyncpg_pool,
+)
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
 from src.platform.observability.tracing import TracingConfig
@@ -78,6 +82,26 @@ async def start_ticketing_consumer() -> None:
             with start_blocking_portal() as portal:
                 consumer.set_portal(portal)
 
+                # Initialize Kvrocks client for this event loop (consumer's event loop)
+                try:
+                    portal.call(kvrocks_client.initialize)  # type: ignore
+                    Logger.base.info('📡 [Consumer] Kvrocks initialized for consumer event loop')
+                except Exception as e:
+                    Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
+                    raise
+
+                # Initialize and warmup asyncpg pool for consumer event loop
+                try:
+                    portal.call(get_asyncpg_pool)  # type: ignore[arg-type]
+                    Logger.base.info(
+                        '🏊 [Consumer] Asyncpg pool initialized for consumer event loop'
+                    )
+                    portal.call(warmup_asyncpg_pool)  # type: ignore[arg-type]
+                    Logger.base.info('🔥 [Consumer] Asyncpg pool warmed up for consumer event loop')
+                except Exception as e:
+                    Logger.base.error(f'❌ [Consumer] Failed to initialize asyncpg pool: {e}')
+                    raise
+
                 # Mock signal handlers to avoid "signal only works in main thread" error
                 original_signal = signal.signal
 
@@ -90,6 +114,11 @@ async def start_ticketing_consumer() -> None:
                     consumer.start()  # Direct call - start() is now sync
                 finally:
                     signal.signal = original_signal
+                    # Cleanup Kvrocks connection for this event loop
+                    try:
+                        portal.call(kvrocks_client.disconnect)  # type: ignore
+                    except Exception:
+                        pass
 
         await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
 
@@ -135,13 +164,17 @@ async def lifespan(_app: FastAPI):
     tracing.instrument_redis()
     Logger.base.info('📊 [Ticketing Service] Redis instrumentation configured')
 
-    # Connect to Kvrocks
-    await kvrocks_client.connect()
-    Logger.base.info('📡 [Ticketing Service] Kvrocks connected')
+    # Initialize Kvrocks connection pool (fail-fast)
+    await kvrocks_client.initialize()
+    Logger.base.info('📡 [Ticketing Service] Kvrocks initialized')
 
     # Initialize asyncpg connection pool (eager initialization)
     await get_asyncpg_pool()
     Logger.base.info('🏊 [Ticketing Service] Asyncpg pool initialized')
+
+    # Warmup pool to eliminate "connect" spans during request handling
+    await warmup_asyncpg_pool()
+    Logger.base.info('🔥 [Ticketing Service] Asyncpg pool warmed up to MAX_SIZE')
 
     # Start Kafka consumer
     consumer_task = anyio.create_task_group()

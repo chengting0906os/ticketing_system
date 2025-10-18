@@ -12,6 +12,7 @@ from src.platform.config.di import cleanup, container, setup
 from src.platform.database.db_setting import create_db_and_tables
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
 )
@@ -48,6 +49,8 @@ async def lifespan(app: FastAPI):
     # Startup
     import os
 
+    Logger.base.info('🚀 Starting application...')
+
     if os.getenv('SKIP_DB_INIT', '').lower() not in ('true', '1'):
         await create_db_and_tables()
     setup()
@@ -69,14 +72,25 @@ async def lifespan(app: FastAPI):
         ]
     )
 
+    # Initialize Kvrocks connection pool during startup (fail-fast)
+    await kvrocks_client.initialize()
+    Logger.base.info('✅ Application startup complete')
+
     yield
+
+    # Shutdown
+    Logger.base.info('🛑 Shutting down application...')
+
+    try:
+        await kvrocks_client.disconnect_all()
+        Logger.base.info('📡 Kvrocks connections closed')
+    except Exception as e:
+        Logger.base.warning(f'⚠️ Error closing Kvrocks: {e}')
 
     try:
         cleanup()
     except Exception as e:
-        # Log but don't fail the shutdown
-
-        Logger.base.warning(f'Error during cleanup: {e}')
+        Logger.base.warning(f'⚠️ Error during cleanup: {e}')
 
 
 app = FastAPI(

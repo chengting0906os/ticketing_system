@@ -31,17 +31,31 @@ class KvrocksClient:
     - FastAPI service: runs in main event loop
     - MQ Consumer: runs in separate event loop via start_blocking_portal()
     - Each loop gets its own connection pool for isolation
+
+    Usage:
+        # In startup (lifespan):
+        await kvrocks_client.initialize()
+
+        # In request handlers/use cases:
+        client = kvrocks_client.get_client()
+        await client.get("key")
     """
 
     def __init__(self):
         self._clients: dict[int, Redis] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self) -> Redis:
-        """Get or create Redis client for current event loop"""
+    async def initialize(self) -> Redis:
+        """
+        Initialize connection pool for current event loop (call during startup).
+
+        Creates connection pool and verifies connectivity.
+        Subsequent calls return existing pool (idempotent).
+        """
         loop_id = id(asyncio.get_running_loop())
 
         if loop_id in self._clients:
+            Logger.base.info(f'📡 [KVROCKS] Pool already exists for loop {loop_id}')
             return self._clients[loop_id]
 
         async with self._lock:
@@ -59,9 +73,44 @@ class KvrocksClient:
                 health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
             )
             self._clients[loop_id] = Redis.from_pool(pool)
-            Logger.base.info(f'📡 [KVROCKS] Connected loop {loop_id}')
+            Logger.base.info(f'📡 [KVROCKS] Connection pool created for loop {loop_id}')
+
+            # Verify connection with a ping (fail-fast)
+            try:
+                await self._clients[loop_id].ping()
+                Logger.base.info(f'✅ [KVROCKS] Connection verified for loop {loop_id}')
+            except Exception as e:
+                # Clean up failed connection
+                await self._clients[loop_id].aclose()
+                del self._clients[loop_id]
+                Logger.base.error(f'❌ [KVROCKS] Connection failed for loop {loop_id}: {e}')
+                raise
 
         return self._clients[loop_id]
+
+    def get_client(self) -> Redis:
+        """
+        Get Redis client from pool (non-async, fast).
+
+        Must call initialize() first during startup, otherwise raises RuntimeError.
+        Use this method in request handlers and use cases.
+        """
+        loop_id = id(asyncio.get_running_loop())
+
+        if loop_id not in self._clients:
+            raise RuntimeError(
+                f'Kvrocks client not initialized for loop {loop_id}. '
+                'Call await kvrocks_client.initialize() during startup.'
+            )
+
+        return self._clients[loop_id]
+
+    async def connect(self) -> Redis:
+        """
+        Legacy method for backward compatibility.
+        Prefer initialize() in startup and get_client() in handlers.
+        """
+        return await self.initialize()
 
     async def disconnect(self):
         """Close connection for current event loop"""
@@ -69,6 +118,7 @@ class KvrocksClient:
         async with self._lock:
             if client := self._clients.pop(loop_id, None):
                 await client.aclose()
+                Logger.base.info(f'📡 [KVROCKS] Connection closed for loop {loop_id}')
 
     async def disconnect_all(self):
         """Close all connections (shutdown only)"""
@@ -76,6 +126,7 @@ class KvrocksClient:
             for loop_id, client in list(self._clients.items()):
                 try:
                     await client.aclose()
+                    Logger.base.info(f'📡 [KVROCKS] Connection closed for loop {loop_id}')
                 except Exception as e:
                     Logger.base.warning(f'⚠️ [KVROCKS] Error closing {loop_id}: {e}')
             self._clients.clear()

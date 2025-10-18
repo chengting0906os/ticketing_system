@@ -52,7 +52,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
         """從 Redis 獲取 section 配置信息"""
         try:
-            client = await kvrocks_client.connect()
+            client = kvrocks_client.get_client()
             config_key = _make_key(f'section_config:{event_id}:{section_id}')
             config = await client.hgetall(config_key)  # type: ignore
 
@@ -87,7 +87,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         """
         Logger.base.info(f'🎯 [CMD] Reserving seats (mode={mode}) for booking {booking_id}')
 
-        client = await kvrocks_client.connect()
+        client = kvrocks_client.get_client()
 
         if mode == 'manual':
             # Manual mode: 準備指定座位的參數
@@ -282,7 +282,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         seats_per_row = config['seats_per_row']
 
         # Call Lua script in best_available mode
-        client = await kvrocks_client.connect()
+        client = kvrocks_client.get_client()
         args = [
             _KEY_PREFIX,
             str(event_id),
@@ -360,7 +360,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             seats_per_row = config['seats_per_row']
             seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
 
-            client = await kvrocks_client.connect()
+            client = kvrocks_client.get_client()
             bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
             offset = seat_index * 2
 
@@ -394,7 +394,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             seats_per_row = config['seats_per_row']
             seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
 
-            client = await kvrocks_client.connect()
+            client = kvrocks_client.get_client()
             bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
             meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
             offset = seat_index * 2

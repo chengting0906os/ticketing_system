@@ -218,6 +218,16 @@ async def main():
     print('🌱 Starting data seeding...')
     print('=' * 50)
 
+    # Initialize Kvrocks connection pool before seeding
+    from src.platform.state.kvrocks_client import kvrocks_client
+
+    try:
+        await kvrocks_client.initialize()
+        print('📡 Kvrocks connection pool initialized')
+    except Exception as e:
+        print(f'❌ Failed to initialize Kvrocks: {e}')
+        exit(1)
+
     try:
         # 使用單一 session 來處理所有數據操作
         # async_session_maker is a function that returns a sessionmaker
@@ -251,6 +261,13 @@ async def main():
     except Exception as e:
         print(f'❌ Seeding failed: {e}')
         exit(1)
+    finally:
+        # Cleanup Kvrocks connection
+        try:
+            await kvrocks_client.disconnect_all()
+            print('📡 Kvrocks connections closed')
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

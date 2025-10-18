@@ -62,6 +62,14 @@ async def start_seat_reservation_consumer() -> None:
             with start_blocking_portal() as portal:
                 consumer.set_portal(portal)
 
+                # Initialize Kvrocks client for this event loop (consumer's event loop)
+                try:
+                    portal.call(kvrocks_client.initialize)  # type: ignore
+                    Logger.base.info('📡 [Consumer] Kvrocks initialized for consumer event loop')
+                except Exception as e:
+                    Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
+                    raise
+
                 # Mock signal handlers to avoid "signal only works in main thread" error
                 original_signal = signal.signal
 
@@ -74,6 +82,11 @@ async def start_seat_reservation_consumer() -> None:
                         consumer.kafka_app.run()
                 finally:
                     signal.signal = original_signal
+                    # Cleanup Kvrocks connection for this event loop
+                    try:
+                        portal.call(kvrocks_client.disconnect)  # type: ignore
+                    except Exception:
+                        pass
 
         await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
 
@@ -103,9 +116,9 @@ async def lifespan(_app: FastAPI):
     tracing.instrument_redis()
     Logger.base.info('📊 [Seat Reservation Service] Redis instrumentation configured')
 
-    # Connect to Kvrocks
-    await kvrocks_client.connect()
-    Logger.base.info('📡 [Seat Reservation Service] Kvrocks connected')
+    # Initialize Kvrocks connection pool (fail-fast)
+    await kvrocks_client.initialize()
+    Logger.base.info('📡 [Seat Reservation Service] Kvrocks initialized')
 
     # Start Kafka consumer
     consumer_task = anyio.create_task_group()

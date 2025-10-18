@@ -10,8 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.platform.exception.exceptions import NotFoundError
+from src.service.ticketing.driven_adapter.state import seat_availability_query_handler_impl
 from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
     SeatAvailabilityQueryHandlerImpl,
+)
+
+# Centralized mock target to avoid hardcoding throughout tests
+KVROCKS_CLIENT_MOCK_TARGET = (
+    f'{seat_availability_query_handler_impl.__name__}.kvrocks_client.get_client'
 )
 
 
@@ -74,7 +80,7 @@ class TestCheckSubsectionAvailability:
 
         # When
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             result = await handler.check_subsection_availability(
@@ -98,7 +104,7 @@ class TestCheckSubsectionAvailability:
 
         # When
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             result = await handler.check_subsection_availability(
@@ -117,7 +123,7 @@ class TestCheckSubsectionAvailability:
 
         # When
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             await handler.check_subsection_availability(
@@ -140,7 +146,7 @@ class TestCheckSubsectionAvailability:
 
         # When/Then
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             with pytest.raises(NotFoundError, match='Section Z-99 not found'):
@@ -157,7 +163,7 @@ class TestCheckSubsectionAvailability:
 
         # When
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             result = await handler.check_subsection_availability(
@@ -178,7 +184,7 @@ class TestCheckSubsectionAvailability:
 
         # When
         with patch(
-            'src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl.kvrocks_client.connect',
+            KVROCKS_CLIENT_MOCK_TARGET,
             return_value=mock_kvrocks_client,
         ):
             result = await handler.check_subsection_availability(

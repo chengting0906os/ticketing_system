@@ -125,8 +125,8 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                     'error': 'No seats generated from config',
                 }
 
-            # Step 2: 連接 Kvrocks
-            client = await kvrocks_client.connect()
+            # Step 2: 獲取 Kvrocks client (from initialized pool)
+            client = kvrocks_client.get_client()
 
             # Step 3: 準備 Lua 腳本參數
             args = [_KEY_PREFIX, str(event_id)]

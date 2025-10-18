@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     # Database Connection Pool Configuration (asyncpg - for bulk operations)
     # Per worker: 20 connections max (matches SQLAlchemy)
     # 8 workers × 20 = 160 total (within PostgreSQL limit of 200)
-    ASYNCPG_POOL_MIN_SIZE: int = 5  # Minimum connections in pool (per event loop)
-    ASYNCPG_POOL_MAX_SIZE: int = 20  # Maximum connections in pool (per event loop)
+    ASYNCPG_POOL_MIN_SIZE: int = 20  # Minimum connections in pool (per event loop)
+    ASYNCPG_POOL_MAX_SIZE: int = 50  # Maximum connections in pool (per event loop)
     ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
     ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
     ASYNCPG_POOL_TIMEOUT: float = 2.0  # Connection acquire timeout (2s - fail fast)

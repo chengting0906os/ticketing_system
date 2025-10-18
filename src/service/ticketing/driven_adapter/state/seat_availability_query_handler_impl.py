@@ -6,6 +6,7 @@ Seat Availability Query Handler Implementation
 
 import os
 
+from async_lru import alru_cache
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import NotFoundError
@@ -31,34 +32,61 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
     職責：直接查詢 Kvrocks 獲取座位狀態統計
     不依賴 seat_reservation service 的實現類，保持服務邊界清晰
+
+    Cache Strategy:
+    - Uses async-lru with 0.5s TTL to reduce Kvrocks load
+    - Automatically manages cache lifecycle and expiration
     """
 
     def __init__(self):
         self.tracer = trace.get_tracer(__name__)
 
+    @alru_cache(maxsize=128, ttl=0.5)
+    async def _get_available_count(self, event_id: int, section: str, subsection: int) -> int:
+        """
+        Query Kvrocks for available seat count (cached with 0.5s TTL)
+
+        Cache key includes all parameters (event_id, section, subsection) to ensure
+        different sections/subsections have separate cache entries.
+
+        Args:
+            event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
+
+        Returns:
+            Available seat count
+
+        Raises:
+            NotFoundError: If section not found
+        """
+        section_id = f'{section}-{subsection}'
+        client = kvrocks_client.get_client()
+        stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+        stats = await client.hgetall(stats_key)  # type: ignore
+
+        if not stats:
+            Logger.base.warning(
+                f'⚠️  [AVAILABILITY CHECK] Section {section_id} not found for event {event_id}'
+            )
+            raise NotFoundError(f'Section {section_id} not found')
+
+        return int(stats.get('available', 0))
+
     # @Logger.io
     async def check_subsection_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> bool:
-        """檢查指定 subsection 是否有足夠的可用座位"""
+        """
+        檢查指定 subsection 是否有足夠的可用座位
+
+        Uses async-lru cache (0.5s TTL) to reduce Kvrocks load on high-frequency queries
+        """
         with self.tracer.start_as_current_span('kvrocks.check_availability') as span:
-            section_id = f'{section}-{subsection}'
-
             try:
-                # Query Kvrocks directly for single subsection stats (efficient - O(1) vs O(N))
-                client = await kvrocks_client.connect()
-
-                # Direct key query - no need to scan all subsections
-                stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-                stats = await client.hgetall(stats_key)  # type: ignore
-
-                if not stats:
-                    Logger.base.warning(
-                        f'⚠️  [AVAILABILITY CHECK] Section {section_id} not found for event {event_id}'
-                    )
-                    raise NotFoundError(f'Section {section_id} not found')
-
-                available_count = int(stats.get('available', 0))
+                # Query with automatic caching (0.5s TTL via @alru_cache)
+                # Cache key: (event_id, section, subsection) - ensures different sections cached separately
+                available_count = await self._get_available_count(event_id, section, subsection)
                 has_enough = available_count >= required_quantity
 
                 span.set_attribute('available_count', available_count)
