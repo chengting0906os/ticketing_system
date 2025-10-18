@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True  # Verify connection health before use
 
     # Database Connection Pool Configuration (asyncpg - for bulk operations)
-    ASYNCPG_POOL_MIN_SIZE: int = 10  # Minimum connections in pool
-    ASYNCPG_POOL_MAX_SIZE: int = 100  # Maximum connections in pool
+    ASYNCPG_POOL_MIN_SIZE: int = 100  # Minimum connections in pool
+    ASYNCPG_POOL_MAX_SIZE: int = 200  # Maximum connections in pool
     ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
     ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
     ASYNCPG_POOL_TIMEOUT: float = 10.0  # Connection acquire timeout (10s)

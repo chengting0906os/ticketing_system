@@ -24,7 +24,6 @@ from src.platform.config.core_setting import settings
 
 # Global connection pools per event loop
 asyncpg_pools: dict[int, asyncpg.Pool] = {}
-asyncpg_lock = asyncio.Lock()
 
 
 async def get_asyncpg_pool() -> asyncpg.Pool:
@@ -39,36 +38,34 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
     Each event loop gets its own pool to prevent connection errors when
     multiple services (FastAPI + MQ Consumer) run concurrently.
 
+    Note: Pool is created eagerly at application startup to avoid race conditions.
+    This function should only be called during startup or if pool already exists.
+
     Returns:
         asyncpg.Pool: Connection pool for high-performance operations
     """
     current_loop = asyncio.get_running_loop()
     loop_id = id(current_loop)
 
-    # Fast path: pool already exists for this loop
+    # Fast path: pool already exists for this loop (99.9% of calls)
     if loop_id in asyncpg_pools:
         return asyncpg_pools[loop_id]
 
-    # Slow path: create new pool (thread-safe)
-    async with asyncpg_lock:
-        # Double-check after acquiring lock
-        if loop_id in asyncpg_pools:
-            return asyncpg_pools[loop_id]
+    # Slow path: create new pool (should only happen at startup)
+    # Convert SQLAlchemy URL to asyncpg format
+    dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
 
-        # Convert SQLAlchemy URL to asyncpg format
-        dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
+    pool = await asyncpg.create_pool(
+        dsn,
+        min_size=settings.ASYNCPG_POOL_MIN_SIZE,
+        max_size=settings.ASYNCPG_POOL_MAX_SIZE,
+        command_timeout=settings.ASYNCPG_POOL_COMMAND_TIMEOUT,
+        max_inactive_connection_lifetime=settings.ASYNCPG_POOL_MAX_INACTIVE_LIFETIME,
+        timeout=settings.ASYNCPG_POOL_TIMEOUT,
+        max_queries=settings.ASYNCPG_POOL_MAX_QUERIES,  # default is 50000
+    )
 
-        pool = await asyncpg.create_pool(
-            dsn,
-            min_size=settings.ASYNCPG_POOL_MIN_SIZE,
-            max_size=settings.ASYNCPG_POOL_MAX_SIZE,
-            command_timeout=settings.ASYNCPG_POOL_COMMAND_TIMEOUT,
-            max_inactive_connection_lifetime=settings.ASYNCPG_POOL_MAX_INACTIVE_LIFETIME,
-            timeout=settings.ASYNCPG_POOL_TIMEOUT,
-            max_queries=settings.ASYNCPG_POOL_MAX_QUERIES,  # default is 50000
-        )
-
-        asyncpg_pools[loop_id] = pool
+    asyncpg_pools[loop_id] = pool
 
     return asyncpg_pools[loop_id]
 
@@ -83,11 +80,10 @@ async def close_asyncpg_pool():
     current_loop = asyncio.get_running_loop()
     loop_id = id(current_loop)
 
-    async with asyncpg_lock:
-        if loop_id in asyncpg_pools:
-            pool = asyncpg_pools[loop_id]
-            await pool.close()
-            del asyncpg_pools[loop_id]
+    if loop_id in asyncpg_pools:
+        pool = asyncpg_pools[loop_id]
+        await pool.close()
+        del asyncpg_pools[loop_id]
 
 
 async def close_all_asyncpg_pools():
@@ -97,10 +93,9 @@ async def close_all_asyncpg_pools():
     Warning: Only call this during application shutdown.
     Do not call from within an active event loop that has connections.
     """
-    async with asyncpg_lock:
-        for _, pool in list(asyncpg_pools.items()):
-            try:
-                await pool.close()
-            except Exception:
-                pass  # Ignore errors during shutdown
-        asyncpg_pools.clear()
+    for _, pool in list(asyncpg_pools.items()):
+        try:
+            await pool.close()
+        except Exception:
+            pass  # Ignore errors during shutdown
+    asyncpg_pools.clear()

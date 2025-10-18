@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.config.di import container
+from src.platform.database.asyncpg_setting import close_all_asyncpg_pools, get_asyncpg_pool
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
 from src.platform.observability.tracing import TracingConfig
@@ -138,6 +139,10 @@ async def lifespan(_app: FastAPI):
     await kvrocks_client.connect()
     Logger.base.info('📡 [Ticketing Service] Kvrocks connected')
 
+    # Initialize asyncpg connection pool (eager initialization)
+    await get_asyncpg_pool()
+    Logger.base.info('🏊 [Ticketing Service] Asyncpg pool initialized')
+
     # Start Kafka consumer
     consumer_task = anyio.create_task_group()
     await consumer_task.__aenter__()
@@ -154,6 +159,10 @@ async def lifespan(_app: FastAPI):
     # Stop consumer
     consumer_task.cancel_scope.cancel()
     await consumer_task.__aexit__(None, None, None)
+
+    # Close asyncpg pools
+    await close_all_asyncpg_pools()
+    Logger.base.info('🏊 [Ticketing Service] Asyncpg pools closed')
 
     # Disconnect Kvrocks
     await kvrocks_client.disconnect()
