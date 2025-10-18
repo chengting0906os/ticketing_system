@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, List
 
+from opentelemetry import trace
+
 from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
@@ -23,7 +25,7 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
     """
 
     def __init__(self):
-        pass  # No session needed for raw SQL approach
+        self.tracer = trace.get_tracer(__name__)
 
     @staticmethod
     def _row_to_entity(row) -> Booking:
@@ -66,32 +68,37 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
 
             return self._row_to_entity(row)
 
-    @Logger.io
     async def create(self, *, booking: Booking) -> Booking:
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO booking (
-                    buyer_id, event_id, section, subsection, quantity,
-                    total_price, seat_selection_mode, seat_positions, status
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                RETURNING id, buyer_id, event_id, section, subsection, quantity,
-                          total_price, seat_selection_mode, seat_positions, status,
-                          created_at, updated_at, paid_at
-                """,
-                booking.buyer_id,
-                booking.event_id,
-                booking.section,
-                booking.subsection,
-                booking.quantity,
-                booking.total_price,
-                booking.seat_selection_mode,
-                booking.seat_positions,
-                booking.status.value,
-            )
+        with self.tracer.start_as_current_span('db.booking.create') as span:
+            # Add span attributes for better observability
 
-            return self._row_to_entity(row)
+            async with (await get_asyncpg_pool()).acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO booking (
+                        buyer_id, event_id, section, subsection, quantity,
+                        total_price, seat_selection_mode, seat_positions, status
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING id, buyer_id, event_id, section, subsection, quantity,
+                              total_price, seat_selection_mode, seat_positions, status,
+                              created_at, updated_at, paid_at
+                    """,
+                    booking.buyer_id,
+                    booking.event_id,
+                    booking.section,
+                    booking.subsection,
+                    booking.quantity,
+                    booking.total_price,
+                    booking.seat_selection_mode,
+                    booking.seat_positions,
+                    booking.status.value,
+                )
+
+                created_booking = self._row_to_entity(row)
+                if created_booking.id is not None:
+                    span.set_attribute('booking.id', created_booking.id)
+                return created_booking
 
     @Logger.io
     async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:

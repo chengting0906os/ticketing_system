@@ -1,7 +1,9 @@
 import asyncio
 from typing import List
+
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
+from opentelemetry import trace
 
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
@@ -35,6 +37,7 @@ class CreateBookingUseCase:
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
+        self.tracer = trace.get_tracer(__name__)
 
     @classmethod
     @inject
@@ -92,45 +95,46 @@ class CreateBookingUseCase:
         Raises:
             DomainError: If seat availability check fails or creation fails
         """
-        # Fail Fast: Check seat availability before creating booking
-        has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            required_quantity=quantity,
-        )
-
-        if not has_enough_seats:
-            raise DomainError(
-                f'Insufficient seats available in section {section}-{subsection}', 400
+        with self.tracer.start_as_current_span('use_case.create_booking'):
+            # Fail Fast: Check seat availability before creating booking
+            has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                required_quantity=quantity,
             )
 
-        # Use domain entity's create method which contains all validation logic
-        booking = Booking.create(
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            seat_positions=seat_positions,
-            quantity=quantity,
-        )
+            if not has_enough_seats:
+                raise DomainError(
+                    f'Insufficient seats available in section {section}-{subsection}', 400
+                )
 
-        # Create booking directly (no UoW, repository handles transaction)
-        try:
-            created_booking = await self.booking_command_repo.create(booking=booking)
-            # Logger.base.info(
-            #     f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
-            # )
-        except Exception as e:
-            raise DomainError(f'Failed to create booking: {e}', 400)
+            # Use domain entity's create method which contains all validation logic
+            booking = Booking.create(
+                buyer_id=buyer_id,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                seat_selection_mode=seat_selection_mode,
+                seat_positions=seat_positions,
+                quantity=quantity,
+            )
 
-        # Publish domain event after successful creation (using abstraction)
-        # SAGA pattern: If downstream fails, compensating events will be triggered
-        # Fire-and-forget: Don't block response waiting for event publishing
-        booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
-        asyncio.create_task(
-            self.event_publisher.publish_booking_created(event=booking_created_event)
-        )
+            # Create booking directly (no UoW, repository handles transaction)
+            try:
+                created_booking = await self.booking_command_repo.create(booking=booking)
+                # Logger.base.info(
+                #     f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
+                # )
+            except Exception as e:
+                raise DomainError(f'Failed to create booking: {e}', 400)
 
-        return created_booking
+            # Publish domain event after successful creation (using abstraction)
+            # SAGA pattern: If downstream fails, compensating events will be triggered
+            # Fire-and-forget: Don't block response waiting for event publishing
+            booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
+            asyncio.create_task(
+                self.event_publisher.publish_booking_created(event=booking_created_event)
+            )
+
+            return created_booking

@@ -5,6 +5,8 @@ Concrete adapter that implements IBookingEventPublisher using Kafka/Quix Streams
 Handles infrastructure concerns like topic naming and event serialization.
 """
 
+from opentelemetry import trace
+
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
@@ -25,6 +27,9 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     - Partition key strategy (using booking_id)
     - Event serialization (delegated to publish_domain_event)
     """
+
+    def __init__(self):
+        self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
