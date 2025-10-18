@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -18,8 +18,8 @@ class BookingModel(Base):
     __tablename__ = 'booking'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey('user.id'))
-    event_id: Mapped[int] = mapped_column(Integer, ForeignKey('event.id'))
+    buyer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    event_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     section: Mapped[str] = mapped_column(String(10), nullable=False)
     subsection: Mapped[int] = mapped_column(Integer, nullable=False)
     seat_positions: Mapped[Optional[list]] = mapped_column(ARRAY(String), nullable=True)
@@ -35,14 +35,25 @@ class BookingModel(Base):
     )
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Relationships
-    buyer: Mapped['UserModel'] = relationship('UserModel', foreign_keys=[buyer_id], lazy='selectin')
+    buyer: Mapped['UserModel'] = relationship(
+        'UserModel',
+        primaryjoin='BookingModel.buyer_id == foreign(UserModel.id)',
+        foreign_keys='[BookingModel.buyer_id]',
+        viewonly=True,
+        lazy='selectin',
+    )
     event: Mapped['EventModel'] = relationship(
-        'EventModel', foreign_keys=[event_id], lazy='selectin'
+        'EventModel',
+        primaryjoin='BookingModel.event_id == foreign(EventModel.id)',
+        foreign_keys='[BookingModel.event_id]',
+        viewonly=True,
+        lazy='selectin',
     )
     tickets: Mapped[list['TicketModel']] = relationship(
         'TicketModel',
         secondary='booking_ticket_mapping',
-        back_populates='bookings',
+        primaryjoin='BookingModel.id == foreign(booking_ticket_mapping.c.booking_id)',
+        secondaryjoin='TicketModel.id == foreign(booking_ticket_mapping.c.ticket_id)',
+        viewonly=True,
         lazy='selectin',
     )

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -16,14 +16,14 @@ class TicketModel(Base):
     __tablename__ = 'ticket'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    event_id: Mapped[int] = mapped_column(Integer, ForeignKey('event.id'), nullable=False)
+    event_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     section: Mapped[str] = mapped_column(String(10), nullable=False)
     subsection: Mapped[int] = mapped_column(Integer, nullable=False)
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     seat_number: Mapped[int] = mapped_column(Integer, nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)
-    buyer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('user.id'), nullable=True)
+    buyer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     reserved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -35,7 +35,9 @@ class TicketModel(Base):
     bookings: Mapped[list['BookingModel']] = relationship(
         'BookingModel',
         secondary='booking_ticket_mapping',
-        back_populates='tickets',
+        primaryjoin='TicketModel.id == foreign(booking_ticket_mapping.c.ticket_id)',
+        secondaryjoin='BookingModel.id == foreign(booking_ticket_mapping.c.booking_id)',
+        viewonly=True,
         lazy='selectin',
     )
 
