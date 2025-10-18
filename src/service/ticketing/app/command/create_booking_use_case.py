@@ -4,9 +4,9 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
 from src.platform.config.di import Container
-from src.platform.database.unit_of_work import AbstractUnitOfWork, get_unit_of_work
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
@@ -16,14 +16,23 @@ from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class CreateBookingUseCase:
+    """
+    Create booking use case - SAGA pattern with direct repository injection
+
+    Dependencies:
+    - booking_command_repo: For creating booking
+    - event_publisher: For publishing domain events
+    - seat_availability_handler: For checking seat availability
+    """
+
     def __init__(
         self,
         *,
-        uow: AbstractUnitOfWork,
+        booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
     ):
-        self.uow = uow
+        self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
 
@@ -31,7 +40,9 @@ class CreateBookingUseCase:
     @inject
     def depends(
         cls,
-        uow: AbstractUnitOfWork = Depends(get_unit_of_work),
+        booking_command_repo: IBookingCommandRepo = Depends(
+            Provide[Container.booking_command_repo]
+        ),
         event_publisher: IBookingEventPublisher = Depends(
             Provide[Container.booking_event_publisher]
         ),
@@ -40,7 +51,7 @@ class CreateBookingUseCase:
         ),
     ):
         return cls(
-            uow=uow,
+            booking_command_repo=booking_command_repo,
             event_publisher=event_publisher,
             seat_availability_handler=seat_availability_handler,
         )
@@ -57,6 +68,30 @@ class CreateBookingUseCase:
         seat_positions: List[str],
         quantity: int,
     ) -> Booking:
+        """
+        Create booking with SAGA pattern - immediate commit with compensating events
+
+        Flow:
+        1. Validate seat availability (Fail Fast)
+        2. Create booking entity with domain logic
+        3. Persist booking to database
+        4. Publish domain event for downstream processing
+
+        Args:
+            buyer_id: ID of the buyer
+            event_id: ID of the event
+            section: Section identifier (e.g., 'A', 'B')
+            subsection: Subsection number
+            seat_selection_mode: 'specific' or 'best_available'
+            seat_positions: List of seat identifiers (for specific mode)
+            quantity: Number of seats to book
+
+        Returns:
+            Created booking entity
+
+        Raises:
+            DomainError: If seat availability check fails or creation fails
+        """
         # Fail Fast: Check seat availability before creating booking
         has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
             event_id=event_id,
@@ -81,16 +116,17 @@ class CreateBookingUseCase:
             quantity=quantity,
         )
 
-        async with self.uow:
-            try:
-                created_booking = await self.uow.booking_command_repo.create(booking=booking)
-            except Exception as e:
-                raise DomainError(f'{e}', 400)
+        # Create booking directly (no UoW, repository handles transaction)
+        try:
+            created_booking = await self.booking_command_repo.create(booking=booking)
+            Logger.base.info(
+                f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
+            )
+        except Exception as e:
+            raise DomainError(f'Failed to create booking: {e}', 400)
 
-            # UoW commits the transaction
-            await self.uow.commit()
-
-        # Publish domain event after successful commit (using abstraction)
+        # Publish domain event after successful creation (using abstraction)
+        # SAGA pattern: If downstream fails, compensating events will be triggered
         booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
         await self.event_publisher.publish_booking_created(event=booking_created_event)
 
