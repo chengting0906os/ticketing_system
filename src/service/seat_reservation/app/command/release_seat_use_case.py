@@ -3,29 +3,14 @@ Release Seat Use Case
 座位釋放用例
 """
 
-from dataclasses import dataclass
-
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
-    ISeatStateCommandHandler,
+from src.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.shared_kernel.app.dto import (
+    ReleaseSeatRequest,
+    ReleaseSeatResult,
+    ReleaseSeatsBatchRequest,
+    ReleaseSeatsBatchResult,
 )
-
-
-@dataclass
-class ReleaseSeatRequest:
-    """座位釋放請求"""
-
-    seat_id: str
-    event_id: int
-
-
-@dataclass
-class ReleaseSeatResult:
-    """座位釋放結果"""
-
-    success: bool
-    seat_id: str
-    error_message: str = ''
 
 
 class ReleaseSeatUseCase:
@@ -36,7 +21,7 @@ class ReleaseSeatUseCase:
 
     @Logger.io
     async def execute(self, request: ReleaseSeatRequest) -> ReleaseSeatResult:
-        """執行座位釋放"""
+        """執行單一座位釋放"""
         try:
             Logger.base.info(f'🔓 [RELEASE-SEAT] Releasing seat {request.seat_id}')
 
@@ -61,4 +46,56 @@ class ReleaseSeatUseCase:
             Logger.base.error(f'❌ [RELEASE-SEAT] {error_msg}')
             return ReleaseSeatResult(
                 success=False, seat_id=request.seat_id, error_message=error_msg
+            )
+
+    @Logger.io
+    async def execute_batch(self, request: ReleaseSeatsBatchRequest) -> ReleaseSeatsBatchResult:
+        """
+        執行批次座位釋放 - Performance optimization
+
+        Releases multiple seats in a SINGLE operation instead of N sequential calls.
+        This reduces portal overhead and improves throughput significantly.
+        """
+        try:
+            Logger.base.info(
+                f'🔓 [RELEASE-SEATS-BATCH] Releasing {len(request.seat_ids)} seats in batch'
+            )
+
+            # Single call to release all seats
+            results = await self.seat_state_handler.release_seats(
+                seat_ids=request.seat_ids, event_id=request.event_id
+            )
+
+            # Separate successful and failed seats
+            successful_seats = [seat_id for seat_id, success in results.items() if success]
+            failed_seats = [seat_id for seat_id, success in results.items() if not success]
+            error_messages = {
+                seat_id: f'Failed to release seat {seat_id}' for seat_id in failed_seats
+            }
+
+            Logger.base.info(
+                f'✅ [RELEASE-SEATS-BATCH] Released {len(successful_seats)}/{len(request.seat_ids)} seats'
+            )
+
+            if failed_seats:
+                Logger.base.warning(
+                    f'⚠️  [RELEASE-SEATS-BATCH] {len(failed_seats)} seats failed: {failed_seats}'
+                )
+
+            return ReleaseSeatsBatchResult(
+                successful_seats=successful_seats,
+                failed_seats=failed_seats,
+                total_released=len(successful_seats),
+                error_messages=error_messages,
+            )
+
+        except Exception as e:
+            error_msg = f'Error releasing batch of seats: {str(e)}'
+            Logger.base.error(f'❌ [RELEASE-SEATS-BATCH] {error_msg}')
+            # All seats failed
+            return ReleaseSeatsBatchResult(
+                successful_seats=[],
+                failed_seats=request.seat_ids,
+                total_released=0,
+                error_messages={seat_id: error_msg for seat_id in request.seat_ids},
             )

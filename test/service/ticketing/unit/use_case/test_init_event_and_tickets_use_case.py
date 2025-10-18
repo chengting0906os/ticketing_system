@@ -19,7 +19,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     Event,
     EventTicketingAggregate,
 )
-from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum import EventStatus
 
 
 class TestCreateEventKafkaSetup:

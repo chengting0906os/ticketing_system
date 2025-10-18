@@ -9,7 +9,7 @@ import os
 from typing import Dict, List
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.shared_kernel.app.interface.i_kafka_config_service import (
+from src.service.ticketing.app.interface.i_kafka_config_service import (
     IKafkaConfigService,
 )
 

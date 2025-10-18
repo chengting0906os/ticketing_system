@@ -8,7 +8,7 @@ from typing import Dict
 
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_mq_infra_orchestrator import IMqInfraOrchestrator
-from src.service.ticketing.shared_kernel.app.interface.i_kafka_config_service import (
+from src.service.ticketing.app.interface.i_kafka_config_service import (
     IKafkaConfigService,
 )
 

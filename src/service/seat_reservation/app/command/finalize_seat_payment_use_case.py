@@ -6,9 +6,7 @@ Finalize Seat Payment Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
-    ISeatStateCommandHandler,
-)
+from src.shared_kernel.app.interface import ISeatStateCommandHandler
 
 
 @dataclass
@@ -41,7 +39,7 @@ class FinalizeSeatPaymentUseCase:
         try:
             Logger.base.info(f'💰 [FINALIZE-SEAT] Finalizing payment for seat {request.seat_id}')
 
-            success = self.seat_state_handler.finalize_payment(
+            success = await self.seat_state_handler.finalize_payment(
                 seat_id=request.seat_id,
                 event_id=request.event_id,
                 timestamp=request.timestamp,

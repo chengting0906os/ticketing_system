@@ -57,8 +57,8 @@ class Container(containers.DeclarativeContainer):
     # Configuration
     config_service = providers.Singleton(Settings)
 
-    # Database
-    database = providers.Singleton(Database, db_url=config_service.provided.DATABASE_URL_ASYNC)
+    # Database (uses AsyncEngineManager with settings from config_service)
+    database = providers.Singleton(Database, read_only=False)
 
     # Infrastructure services
     kafka_service = providers.Singleton(KafkaConfigService)

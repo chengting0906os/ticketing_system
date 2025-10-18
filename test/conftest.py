@@ -44,6 +44,19 @@ test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 # =============================================================================
+# Database Connection Pool Configuration for Tests
+# =============================================================================
+# Override pool settings to prevent connection exhaustion during parallel testing
+# With 10 workers × (1 write + 1 read) × (2 pool + 2 overflow) = 80 connections
+# Plus asyncpg: 10 workers × 5 min = 50 connections
+# Total: 130 connections (within PostgreSQL's 200 limit)
+os.environ['DB_POOL_SIZE_WRITE'] = '2'
+os.environ['DB_POOL_SIZE_READ'] = '2'
+os.environ['DB_POOL_MAX_OVERFLOW'] = '2'
+os.environ['ASYNCPG_POOL_MIN_SIZE'] = '5'
+os.environ['ASYNCPG_POOL_MAX_SIZE'] = '10'
+
+# =============================================================================
 # Import Application and Test Components
 # =============================================================================
 # Import all BDD steps and service fixtures through consolidated modules

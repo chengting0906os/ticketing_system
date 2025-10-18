@@ -24,7 +24,7 @@ from src.service.ticketing.app.interface.i_mq_infra_orchestrator import IMqInfra
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
 )
-from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum.event_status import EventStatus
 
 
 class CreateEventAndTicketsUseCase:

@@ -1,7 +1,8 @@
 """
-Seat State Query Handler Interface
+Seat State Query Handler Interface - Shared Kernel
 
 座位狀態查詢處理器接口 - CQRS Query Side
+供 Ticketing 和 Seat Reservation 兩個 bounded context 使用
 """
 
 from abc import ABC, abstractmethod
@@ -29,7 +30,6 @@ class ISeatStateQueryHandler(ABC):
         """
         pass
 
-    @abstractmethod
     @abstractmethod
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """

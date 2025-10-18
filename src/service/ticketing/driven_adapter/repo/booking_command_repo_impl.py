@@ -6,7 +6,7 @@ from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
-from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
+from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 if TYPE_CHECKING:

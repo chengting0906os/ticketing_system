@@ -23,7 +23,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 )
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum.event_status import EventStatus
 
 
 class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):

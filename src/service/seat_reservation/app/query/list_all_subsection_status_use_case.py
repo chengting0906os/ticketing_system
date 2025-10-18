@@ -7,9 +7,7 @@ from dataclasses import dataclass
 from typing import List
 
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_query_handler import (
-    ISeatStateQueryHandler,
-)
+from src.shared_kernel.app.interface import ISeatStateQueryHandler
 
 
 @dataclass

@@ -1,7 +1,8 @@
 """
-Seat State Command Handler Interface
+Seat State Command Handler Interface - Shared Kernel
 
 座位狀態命令處理器接口 - CQRS Command Side
+供 Ticketing 和 Seat Reservation 兩個 bounded context 使用
 """
 
 from abc import ABC, abstractmethod

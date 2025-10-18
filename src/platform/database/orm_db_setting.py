@@ -19,8 +19,9 @@ Configuration:
 
 import asyncio
 from contextlib import asynccontextmanager
-import logging
 from typing import AsyncGenerator, Optional
+
+from src.platform.logging.loguru_io import Logger
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -31,9 +32,6 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from src.platform.config.core_setting import settings
-
-
-logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -83,7 +81,7 @@ class AsyncEngineManager:
         # If loop changed, dispose old engines and create new ones
         if self._loop is not current_loop:
             if self._write_engine is not None or self._read_engine is not None:
-                logger.warning('🔄 [DB] Event loop changed, disposing old engines...')
+                Logger.base.warning('🔄 [DB] Event loop changed, disposing old engines...')
                 # Note: We can't await dispose() here since this is a sync method
                 # The engines will be garbage collected, which is safe
                 self._write_engine = None
@@ -91,7 +89,7 @@ class AsyncEngineManager:
                 self._write_session_maker = None
                 self._read_session_maker = None
 
-            logger.info(f'🔗 [DB] Creating engines for event loop {id(current_loop)}')
+            Logger.base.info(f'🔗 [DB] Creating engines for event loop {id(current_loop)}')
             self._write_engine = self._create_write_engine()
             self._read_engine = self._create_read_engine()
             self._loop = current_loop
@@ -215,9 +213,9 @@ async def create_db_and_tables():
             keyword in error_msg
             for keyword in ['already exists', 'duplicate key', 'unique constraint']
         ):
-            logger.info('Tables already exist, skipping creation')
+            Logger.base.info('Tables already exist, skipping creation')
         else:
-            logger.error(f'Error creating tables: {e}')
+            Logger.base.error(f'Error creating tables: {e}')
             raise
 
 
@@ -263,35 +261,33 @@ async def get_async_read_session() -> AsyncGenerator[AsyncSession, None]:
 
 class Database:
     """
-    Database class for dependency injection pattern
+    Database class for dependency injection pattern using AsyncEngineManager
 
-    Each Database instance manages its own engine and session factory.
-    Prefer this over global engine/session_maker for better testability.
+    Delegates to AsyncEngineManager for event-loop-aware engine management
+    and read-write separation support.
     """
 
-    def __init__(self, db_url: str) -> None:
-        self._engine = create_async_engine(
-            db_url,
-            echo=False,
-            future=True,
-            pool_size=100,
-            max_overflow=100,
-            pool_timeout=30,
-            pool_recycle=3600,
-            pool_pre_ping=True,
-        )
-        self._session_factory = async_sessionmaker(
-            self._engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-        )
+    def __init__(self, *, read_only: bool = False) -> None:
+        """
+        Initialize Database with engine manager
+
+        Args:
+            read_only: If True, use read replica engine; otherwise use write engine
+        """
+        self._read_only = read_only
+        self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
         """
         Context manager for database sessions
 
+        Uses AsyncEngineManager to get event-loop-aware session maker.
+        Supports read-write separation based on read_only flag.
+
         Note: Automatically handles rollback on exception
         """
-        async with self._session_factory() as session:
+        # Get session maker from global engine manager (event-loop-aware)
+        session_maker = get_session_maker(read_only=self._read_only)
+        async with session_maker() as session:
             yield session

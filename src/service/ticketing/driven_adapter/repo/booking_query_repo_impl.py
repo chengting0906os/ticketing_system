@@ -11,8 +11,8 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
-from src.service.ticketing.shared_kernel.domain.enum.ticket_status import TicketStatus
-from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
+from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingQueryRepoImpl(IBookingQueryRepo):

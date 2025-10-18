@@ -20,8 +20,8 @@ from typing import Dict, List, Optional
 import attrs
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.shared_kernel.domain.enum.ticket_status import TicketStatus
-from src.service.ticketing.shared_kernel.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
+from src.service.ticketing.domain.enum.event_status import EventStatus
 
 
 @attrs.define

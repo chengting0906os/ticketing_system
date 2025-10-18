@@ -30,7 +30,7 @@ from src.platform.metrics.ticketing_metrics import metrics
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
-from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatRequest
+from src.shared_kernel.app.dto import ReleaseSeatsBatchRequest
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
 
 
@@ -354,24 +354,34 @@ class SeatReservationConsumer:
             return {'success': False, 'error': error_msg, 'sent_to_dlq': True}
 
         try:
-            released_seats = []
-            for seat_id in seat_positions:
-                request = ReleaseSeatRequest(seat_id=seat_id, event_id=self.event_id)
-                # pyrefly: ignore  # missing-attribute
-                result = self.portal.call(self.release_seat_use_case.execute, request)
+            # PERFORMANCE OPTIMIZATION: Release all seats in a SINGLE batch call
+            # instead of N sequential calls to reduce portal overhead
+            Logger.base.info(
+                f'🔓 [RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats in batch{partition_info}'
+            )
 
-                if result.success:
-                    Logger.base.info(f'🔓 [RELEASE-{self.instance_id}] {seat_id}{partition_info}')
-                    released_seats.append(seat_id)
-                else:
-                    Logger.base.warning(
-                        f'⚠️ [RELEASE-{self.instance_id}] Failed to release {seat_id}: {result.error_message}'
-                    )
+            batch_request = ReleaseSeatsBatchRequest(
+                seat_ids=seat_positions, event_id=self.event_id
+            )
+            # pyrefly: ignore  # missing-attribute
+            result = self.portal.call(self.release_seat_use_case.execute_batch, batch_request)
+
+            # Log results
+            if result.successful_seats:
+                Logger.base.info(
+                    f'✅ [RELEASE-{self.instance_id}] Released {result.total_released}/{len(seat_positions)} seats'
+                )
+
+            if result.failed_seats:
+                Logger.base.warning(
+                    f'⚠️ [RELEASE-{self.instance_id}] Failed to release {len(result.failed_seats)} seats: {result.failed_seats}'
+                )
 
             return {
                 'success': True,
-                'released_seats': released_seats,
-                'total_released': len(released_seats),
+                'released_seats': result.successful_seats,
+                'failed_seats': result.failed_seats,
+                'total_released': result.total_released,
             }
 
         except Exception as e:

@@ -9,9 +9,7 @@ from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
-    ISeatStateCommandHandler,
-)
+from src.shared_kernel.app.interface import ISeatStateCommandHandler
 from src.service.seat_reservation.driven_adapter.lua_script import RESERVE_SEATS_SCRIPT
 
 

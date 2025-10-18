@@ -18,7 +18,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
     Ticket,
 )
-from src.service.ticketing.shared_kernel.domain.enum.ticket_status import TicketStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 class IEventTicketingCommandRepo(ABC):

@@ -8,9 +8,7 @@ from typing import List, Optional
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.interface.i_seat_state_command_handler import (
-    ISeatStateCommandHandler,
-)
+from src.shared_kernel.app.interface import ISeatStateCommandHandler
 from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )

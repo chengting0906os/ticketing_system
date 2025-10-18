@@ -9,9 +9,7 @@ from typing import Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.seat_reservation.app.interface.i_seat_state_query_handler import (
-    ISeatStateQueryHandler,
-)
+from src.shared_kernel.app.interface import ISeatStateQueryHandler
 
 
 # Get key prefix from environment for test isolation
@@ -159,7 +157,14 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
     async def list_all_subsection_seats(
         self, event_id: int, section: str, subsection: int
     ) -> List[Dict]:
-        """獲取指定 subsection 的所有座位（包括 available, reserved, sold）"""
+        """
+        獲取指定 subsection 的所有座位（包括 available, reserved, sold）
+
+        Performance optimization:
+        - Uses GETRANGE to fetch entire bitfield in ONE Redis call (instead of 2N getbit calls)
+        - Uses pipeline to batch fetch all row metadata
+        - Reduces Redis calls from 2000+ to just 2-3 for a 20×50 section
+        """
         Logger.base.info(
             f'📊 [QUERY] Listing all seats for event {event_id}, section {section}-{subsection}'
         )
@@ -168,25 +173,51 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         config = await self._get_section_config(event_id, section_id)
         total_rows = config['rows']
         seats_per_row = config['seats_per_row']
+        total_seats = total_rows * seats_per_row
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
         bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
 
-        all_seats = []
+        # OPTIMIZATION 1: Fetch entire bitfield in ONE call (instead of 2N getbit calls)
+        # Each seat uses 2 bits, so we need (total_seats * 2) bits = (total_seats / 4) bytes
+        bytes_needed = (total_seats * 2 + 7) // 8  # Round up to nearest byte
+        bitfield_bytes = await client.getrange(bf_key, 0, bytes_needed - 1)  # type: ignore
 
+        # Handle case where bitfield doesn't exist yet (returns None or empty bytes)
+        if not bitfield_bytes:
+            bitfield_bytes = b''  # Empty bytes, all seats will be 'available'
+
+        # OPTIMIZATION 2: Batch fetch all row metadata with pipeline
+        pipe = client.pipeline()
         for row in range(1, total_rows + 1):
             meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
-            prices = await client.hgetall(meta_key)  # type: ignore
+            pipe.hgetall(meta_key)
+        all_prices = await pipe.execute()
+
+        # Build seat list from bitfield bytes
+        all_seats = []
+        for row in range(1, total_rows + 1):
+            # Get price metadata for this row (from batched results)
+            prices = all_prices[row - 1] or {}
 
             for seat_num in range(1, seats_per_row + 1):
                 seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
-                offset = seat_index * 2
+                bit_offset = seat_index * 2
 
-                # Read status from bitfield
-                bit0 = await client.getbit(bf_key, offset)
-                bit1 = await client.getbit(bf_key, offset + 1)
-                status_value = bit0 * 2 + bit1
+                # Extract 2 bits from bitfield_bytes
+                byte_index = bit_offset // 8
+                bit_position = 7 - (bit_offset % 8)  # Redis stores bits MSB first
+
+                if byte_index < len(bitfield_bytes):
+                    byte_value = bitfield_bytes[byte_index]
+                    # Extract bit0 and bit1
+                    bit0 = (byte_value >> bit_position) & 1
+                    bit1 = (byte_value >> (bit_position - 1)) & 1 if bit_position > 0 else 0
+                    status_value = bit0 * 2 + bit1
+                else:
+                    # Seat not initialized yet, default to available (00)
+                    status_value = 0
 
                 seat_identifier = f'{section}-{subsection}-{row}-{seat_num}'
                 all_seats.append(
@@ -201,5 +232,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                     }
                 )
 
-        Logger.base.info(f'✅ [QUERY] Retrieved {len(all_seats)} seats for section {section_id}')
+        Logger.base.info(
+            f'✅ [QUERY] Retrieved {len(all_seats)} seats for section {section_id} '
+            f'(optimized: 2 Redis calls instead of {total_seats * 2})'
+        )
         return all_seats

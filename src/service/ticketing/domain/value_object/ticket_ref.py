@@ -3,7 +3,7 @@ from typing import Optional
 
 import attrs
 
-from src.service.ticketing.shared_kernel.domain.enum.ticket_status import TicketStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 @attrs.define

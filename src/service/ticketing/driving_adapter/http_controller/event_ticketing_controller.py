@@ -4,9 +4,7 @@ from fastapi import APIRouter, Depends, status
 
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
-)
+from src.shared_kernel.app.interface import ISeatStateQueryHandler
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
@@ -63,6 +61,11 @@ async def create_event(
 async def get_event(
     event_id: int,
     use_case: GetEventUseCase = Depends(GetEventUseCase.depends),
+    seat_query_handler: ISeatStateQueryHandler = Depends(
+        lambda: __import__(
+            'src.platform.config.di', fromlist=['container']
+        ).container.seat_state_query_handler()
+    ),
 ) -> EventResponse:
     event_aggregate = await use_case.get_by_id(event_id=event_id)
 
@@ -72,8 +75,7 @@ async def get_event(
     # Extract event entity for better readability
     event = event_aggregate.event
 
-    # Get seat availability stats from Kvrocks
-    seat_query_handler = SeatStateQueryHandlerImpl()
+    # Get seat availability stats from Kvrocks via shared_kernel interface
     seat_stats = await seat_query_handler.list_all_subsection_status(event_id=event_id)
 
     # Merge seat availability into seating_config

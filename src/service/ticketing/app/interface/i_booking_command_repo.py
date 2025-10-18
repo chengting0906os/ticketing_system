@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
-from src.service.ticketing.shared_kernel.domain.value_object.ticket_ref import TicketRef
+from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 if TYPE_CHECKING:
