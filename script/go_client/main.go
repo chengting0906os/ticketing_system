@@ -462,60 +462,91 @@ func generateBookingRequest(reqNum int, config *Config) BookingCreateRequest {
 }
 
 func sendBookingRequestWithTiming(client *http.Client, host string, req BookingCreateRequest, metrics *Metrics) (bool, []string) {
-	body, _ := json.Marshal(req)
+	const maxRetries = 5
+	const baseDelay = 100 * time.Millisecond
 
-	// Debug: Check cookies before sending booking request
-	bookingURL := host + "/api/booking"
-	httpReq, _ := http.NewRequest("POST", bookingURL, bytes.NewBuffer(body))
-	httpReq.Header.Set("Content-Type", "application/json")
+	var lastStatusCode int
+	var lastBody []byte
 
-	if client.Jar != nil {
-		cookies := client.Jar.Cookies(httpReq.URL)
-		if len(cookies) == 0 {
-			fmt.Printf("⚠️  No cookies found for booking request to %s\n", bookingURL)
-		} else {
-			// Manually add cookies to request for debugging
-			for _, cookie := range cookies {
-				httpReq.AddCookie(cookie)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Exponential backoff: 100ms, 200ms, 400ms
+		if attempt > 0 {
+			backoff := baseDelay * time.Duration(1<<uint(attempt-1))
+			time.Sleep(backoff)
+		}
+
+		body, _ := json.Marshal(req)
+
+		// Debug: Check cookies before sending booking request
+		bookingURL := host + "/api/booking"
+		httpReq, _ := http.NewRequest("POST", bookingURL, bytes.NewBuffer(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		if client.Jar != nil {
+			cookies := client.Jar.Cookies(httpReq.URL)
+			if len(cookies) == 0 {
+				fmt.Printf("⚠️  No cookies found for booking request to %s\n", bookingURL)
+			} else {
+				// Manually add cookies to request for debugging
+				for _, cookie := range cookies {
+					httpReq.AddCookie(cookie)
+				}
 			}
 		}
-	}
 
-	// Record timing JUST before actual HTTP send
-	sendTime := time.Now()
-	if metrics.firstSendTime.Load() == nil {
-		metrics.firstSendTime.Store(sendTime)
-	}
-	metrics.lastSendTime.Store(sendTime)
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		fmt.Printf("❌ Request error: %v\n", err)
-		return false, nil
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	// Debug: Print first few failures
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		fmt.Printf("⚠️  Status %d: %s\n", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Consider 201 Created as success
-	if resp.StatusCode == http.StatusCreated {
-		var bookingResp BookingResponse
-		if err := json.Unmarshal(bodyBytes, &bookingResp); err == nil {
-			return true, bookingResp.SeatIDs
+		// Record timing JUST before actual HTTP send (only on first attempt)
+		if attempt == 0 {
+			sendTime := time.Now()
+			if metrics.firstSendTime.Load() == nil {
+				metrics.firstSendTime.Store(sendTime)
+			}
+			metrics.lastSendTime.Store(sendTime)
 		}
-		return true, nil
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			if attempt < maxRetries {
+				fmt.Printf("⚠️  Attempt %d/%d failed with error: %v, retrying...\n", attempt+1, maxRetries+1, err)
+				continue
+			}
+			fmt.Printf("❌ Request error after %d attempts: %v\n", maxRetries+1, err)
+			return false, nil
+		}
+
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		lastStatusCode = resp.StatusCode
+		lastBody = bodyBytes
+
+		// Success cases - don't retry
+		if resp.StatusCode == http.StatusCreated {
+			var bookingResp BookingResponse
+			if err := json.Unmarshal(bodyBytes, &bookingResp); err == nil {
+				return true, bookingResp.SeatIDs
+			}
+			return true, nil
+		}
+
+		if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
+			return true, nil
+		}
+
+		// Client errors (4xx) - don't retry except 429 (rate limit)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+			fmt.Printf("⚠️  Client error %d: %s (not retrying)\n", resp.StatusCode, string(bodyBytes))
+			return false, nil
+		}
+
+		// Server errors (5xx) or rate limit (429) - retry
+		if attempt < maxRetries {
+			fmt.Printf("⚠️  Attempt %d/%d failed with status %d, retrying...\n", attempt+1, maxRetries+1, resp.StatusCode)
+			continue
+		}
 	}
 
-	// 202 Accepted or 200 OK might be used for pending bookings
-	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
-		return true, nil
-	}
-
+	// All retries exhausted
+	fmt.Printf("❌ Request failed after %d attempts. Last status: %d, body: %s\n", maxRetries+1, lastStatusCode, string(lastBody))
 	return false, nil
 }
 
