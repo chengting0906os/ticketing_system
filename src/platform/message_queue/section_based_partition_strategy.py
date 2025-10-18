@@ -1,15 +1,19 @@
 """
-Section-Based Partition Strategy
-區域集中式 Partition 分配策略
+Subsection-Based Partition Strategy
+子區域集中式 Partition 分配策略
 
-每個區域(A,B,C...)的所有座位分配到同一個 partition
-- A區 5000張 → partition-0
-- B區 5000張 → partition-1
-- C區 5000張 → partition-2
+每個子區域(A-1, A-2, B-1...)的所有座位分配到同一個 partition
+使用順序映射保證 1:1 對應，無 hash collision
+- A-1 區 500張 → partition-0
+- A-2 區 500張 → partition-1
+- A-3 區 500張 → partition-2
+- B-1 區 500張 → partition-10
 ...
+- J-10 區 500張 → partition-99
+
+50000張票分100個subsection，每個subsection獨立一個partition
 """
 
-import hashlib
 from typing import Dict
 
 from src.platform.logging.loguru_io import Logger
@@ -19,96 +23,136 @@ from .kafka_constant_builder import PartitionKeyBuilder
 
 class SectionBasedPartitionStrategy:
     """
-    區域集中式 Partition 策略
+    子區域集中式 Partition 策略
 
     優勢：
-    1. 同區域座位在同一 partition，查詢效率極高
+    1. 同 subsection 座位在同一 partition，查詢效率極高
     2. Kvrocks State 局部性好，cache hit rate 高
     3. 座位選擇邏輯簡單，無需跨 partition 協調
-    4. 區域內座位預訂的原子性保證
+    4. Subsection 內座位預訂的原子性保證
+    5. 更細粒度的分區，提升並發處理能力
     """
 
-    def __init__(self, total_partitions: int = 10):
+    def __init__(self, total_partitions: int = 100):
         self.total_partitions = total_partitions
-        self._section_partition_cache: Dict[str, int] = {}
+        self._subsection_partition_cache: Dict[str, int] = {}
 
     @Logger.io
-    def get_partition_for_section(self, section: str, event_id: int) -> int:
+    def get_partition_for_subsection(self, section: str, subsection: int, event_id: int) -> int:
         """
-        為指定區域分配固定的 partition
+        為指定子區域分配固定的 partition
 
-        使用字母順序映射：A→0, B→1, C→2, D→3, E→4...
-        - 相同區域永遠分配到相同 partition
-        - 簡單直觀的映射關係，便於調試和監控
+        使用順序映射將 section-subsection 組合映射到 partition
+        - A-1 → 0, A-2 → 1, ..., A-10 → 9
+        - B-1 → 10, B-2 → 11, ..., B-10 → 19
+        - ...
+        - J-1 → 90, J-2 → 91, ..., J-10 → 99
+        - 保證每個 subsection 獨佔一個 partition，無碰撞
+
+        Args:
+            section: 區域名稱 (e.g., 'A')
+            subsection: 子區域編號 (e.g., 1, 2, 3)
+            event_id: 活動 ID
+
+        Returns:
+            Partition number (0 to total_partitions-1)
         """
-        cache_key = f'{event_id}-{section}'
+        cache_key = f'{event_id}-{section}-{subsection}'
 
-        if cache_key not in self._section_partition_cache:
-            # 使用字母順序直接映射到 partition
-            # A→0, B→1, C→2, D→3, E→4, F→5, G→6, H→7, I→8, J→9
-            if len(section) == 1 and section.isalpha():
-                # 單字母區域：直接使用字母順序
-                partition = ord(section.upper()) - ord('A')
-                partition = partition % self.total_partitions
-            else:
-                # 非單字母區域：使用哈希（向後兼容）
-                hash_input = f'{event_id}-{section}'
-                section_hash = hashlib.md5(hash_input.encode()).hexdigest()
-                partition = int(section_hash[:8], 16) % self.total_partitions
+        if cache_key not in self._subsection_partition_cache:
+            # 將 section 字母轉換為索引：A=0, B=1, ..., J=9
+            section_index = ord(section.upper()) - ord('A')
 
-            self._section_partition_cache[cache_key] = partition
+            # 計算 partition：section_index * 10 + (subsection - 1)
+            # A-1 → 0*10 + 0 = 0
+            # A-2 → 0*10 + 1 = 1
+            # B-1 → 1*10 + 0 = 10
+            # J-10 → 9*10 + 9 = 99
+            partition = section_index * 10 + (subsection - 1)
 
-        return self._section_partition_cache[cache_key]
+            self._subsection_partition_cache[cache_key] = partition
+            Logger.base.debug(f'📍 [PARTITION] {section}-{subsection} → partition-{partition}')
+
+        return self._subsection_partition_cache[cache_key]
 
     @Logger.io
     def generate_partition_key(
         self, section: str, subsection: int, row: int, seat: int, event_id: int
     ) -> str:
         """
-        生成區域集中式的 partition key
-        使用統一的 PartitionKeyBuilder
+        生成子區域集中式的 partition key
+        使用 section-subsection 組合決定 partition
+
+        Args:
+            section: 區域名稱 (e.g., 'A')
+            subsection: 子區域編號 (e.g., 1, 2, 3)
+            row: 排數 (未使用，但保留以保持接口一致)
+            seat: 座位數 (未使用，但保留以保持接口一致)
+            event_id: 活動 ID
+
+        Returns:
+            Partition key 格式: "event-{event_id}-section-{section}-{subsection}-partition-{partition}"
         """
-        partition = self.get_partition_for_section(section, event_id)
+        partition = self.get_partition_for_subsection(section, subsection, event_id)
+        # 使用 section-subsection 組合作為 key 的一部分
+        section_id = f'{section}-{subsection}'
         return PartitionKeyBuilder.section_based(
-            event_id=event_id, section=section, partition_number=partition
+            event_id=event_id, section=section_id, partition_number=partition
         )
 
     @Logger.io
     def get_section_partition_mapping(self, sections: list, event_id: int) -> Dict[str, int]:
         """
-        返回所有區域的 partition 映射關係
+        返回所有子區域的 partition 映射關係
         用於監控和調試
+
+        Note: 現在返回的是 subsection 級別的映射 (e.g., "A-1" → 0)
         """
         mapping = {}
         for section in sections:
             section_name = section.get('name', str(section))
-            mapping[section_name] = self.get_partition_for_section(section_name, event_id)
+            # 遍歷每個 subsection
+            for subsection_data in section.get('subsections', []):
+                subsection_num = subsection_data.get('number', 1)
+                subsection_id = f'{section_name}-{subsection_num}'
+                mapping[subsection_id] = self.get_partition_for_subsection(
+                    section_name, subsection_num, event_id
+                )
         return mapping
 
     @Logger.io
     def calculate_expected_load(self, seating_config: Dict, event_id: int) -> Dict[int, Dict]:
         """
         計算每個 partition 的預期負載
-        返回：{partition_id: {"sections": [section_names], "estimated_seats": count}}
+        返回：{partition_id: {"subsections": [subsection_ids], "estimated_seats": count}}
+
+        Note: 現在基於 subsection 級別計算負載
         """
         partition_loads = {}
         sections = seating_config.get('sections', [])
 
         for section in sections:
             section_name = section['name']
-            partition = self.get_partition_for_section(section_name, event_id)
 
-            # 計算該區域的座位數量
-            seat_count = 0
-            for subsection in section.get('subsections', []):
-                rows = subsection.get('rows', 0)
-                seats_per_row = subsection.get('seats_per_row', 0)
-                seat_count += rows * seats_per_row
+            # 遍歷每個 subsection
+            for subsection_data in section.get('subsections', []):
+                subsection_num = subsection_data.get('number', 1)
+                subsection_id = f'{section_name}-{subsection_num}'
 
-            if partition not in partition_loads:
-                partition_loads[partition] = {'sections': [], 'estimated_seats': 0}
+                # 獲取此 subsection 的 partition
+                partition = self.get_partition_for_subsection(
+                    section_name, subsection_num, event_id
+                )
 
-            partition_loads[partition]['sections'].append(section_name)
-            partition_loads[partition]['estimated_seats'] += seat_count
+                # 計算該 subsection 的座位數量
+                rows = subsection_data.get('rows', 0)
+                seats_per_row = subsection_data.get('seats_per_row', 0)
+                seat_count = rows * seats_per_row
+
+                if partition not in partition_loads:
+                    partition_loads[partition] = {'subsections': [], 'estimated_seats': 0}
+
+                partition_loads[partition]['subsections'].append(subsection_id)
+                partition_loads[partition]['estimated_seats'] += seat_count
 
         return partition_loads

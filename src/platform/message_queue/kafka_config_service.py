@@ -35,7 +35,7 @@ class KafkaConfigService(IKafkaConfigService):
     3. Event-specific consumers
     """
 
-    def __init__(self, total_partitions: int = 10):
+    def __init__(self, total_partitions: int = 100):
         self.total_partitions = total_partitions
         self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
 
@@ -175,20 +175,22 @@ class KafkaConfigService(IKafkaConfigService):
         loads = self.partition_strategy.calculate_expected_load(seating_config, event_id)
 
         # 記錄映射關係
-        Logger.base.info('🗺️ [KAFKA_CONFIG] Section-to-Partition Mapping:')
-        for section, partition in mapping.items():
-            Logger.base.info(f'   {section} 區 → Partition {partition}')
+        Logger.base.info('🗺️ [KAFKA_CONFIG] Subsection-to-Partition Mapping:')
+        for subsection, partition in mapping.items():
+            Logger.base.info(f'   {subsection} → Partition {partition}')
 
         # 記錄負載分佈
         Logger.base.info('⚖️ [KAFKA_CONFIG] Partition Load Distribution:')
         total_seats = 0
         for partition_id in sorted(loads.keys()):
             load_info = loads[partition_id]
-            sections_str = ', '.join(load_info['sections'])
+            subsections_str = ', '.join(load_info['subsections'])
             seat_count = load_info['estimated_seats']
             total_seats += seat_count
 
-            Logger.base.info(f'   Partition {partition_id}: {seat_count:,} seats ({sections_str})')
+            Logger.base.info(
+                f'   Partition {partition_id}: {seat_count:,} seats ({subsections_str})'
+            )
 
         Logger.base.info(f'📈 [KAFKA_CONFIG] Total seats: {total_seats:,}')
 
