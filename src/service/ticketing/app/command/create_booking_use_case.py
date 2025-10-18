@@ -119,9 +119,9 @@ class CreateBookingUseCase:
         # Create booking directly (no UoW, repository handles transaction)
         try:
             created_booking = await self.booking_command_repo.create(booking=booking)
-            Logger.base.info(
-                f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
-            )
+            # Logger.base.info(
+            #     f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
+            # )
         except Exception as e:
             raise DomainError(f'Failed to create booking: {e}', 400)
 
