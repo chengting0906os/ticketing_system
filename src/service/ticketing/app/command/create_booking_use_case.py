@@ -1,5 +1,5 @@
+import asyncio
 from typing import List
-
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
@@ -127,7 +127,10 @@ class CreateBookingUseCase:
 
         # Publish domain event after successful creation (using abstraction)
         # SAGA pattern: If downstream fails, compensating events will be triggered
+        # Fire-and-forget: Don't block response waiting for event publishing
         booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
-        await self.event_publisher.publish_booking_created(event=booking_created_event)
+        asyncio.create_task(
+            self.event_publisher.publish_booking_created(event=booking_created_event)
+        )
 
         return created_booking

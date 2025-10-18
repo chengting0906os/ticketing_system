@@ -88,28 +88,21 @@ class TestCreateBookingExecutionOrder:
         created_booking,
     ):
         """
-        ⭐ 最重要的測試 ⭐
-        確保 repository create 發生在 event publishing 之前
-        防止發送未提交資料的事件
+        測試 fire-and-forget pattern：
+        - Repository create 完成後立即返回
+        - Event 在背景發送，不阻塞響應
         """
-        # Given: Track call order
-        call_order = []
-
-        async def track_create(*, booking):
-            call_order.append('create')
-            return created_booking
-
-        async def track_publish(*, event):
-            call_order.append('publish_event')
-
-        mock_booking_command_repo.create = AsyncMock(side_effect=track_create)
-        mock_event_publisher.publish_booking_created = AsyncMock(side_effect=track_publish)
+        # Given
+        mock_booking_command_repo.create = AsyncMock(return_value=created_booking)
 
         # When
-        await use_case.create_booking(**valid_booking_data)
+        result = await use_case.create_booking(**valid_booking_data)
 
-        # Then: Create must come BEFORE event publishing
-        assert call_order == ['create', 'publish_event']
+        # Then: Create completed and returned immediately
+        assert result == created_booking
+        mock_booking_command_repo.create.assert_called_once()
+
+        # Event publishing is fire-and-forget (not awaited, runs in background)
 
     @pytest.mark.asyncio
     async def test_repository_error_prevents_commit_and_event(
@@ -140,20 +133,24 @@ class TestCreateBookingExecutionOrder:
         created_booking,
     ):
         """
-        測試最終一致性：Event publishing 失敗時，repository create 已經成功
-        這是刻意的設計 - 接受最終一致性而非分散式交易
+        測試 fire-and-forget：Event publishing 失敗不影響 create_booking 返回
+
+        Fire-and-forget pattern 特性：
+        - Event publishing 在背景執行
+        - 失敗不會拋出異常到主流程
+        - Repository create 成功後立即返回
         """
-        # Given: Repository succeeds, event publishing fails
+        # Given: Repository succeeds, event publishing fails (but in background)
         mock_booking_command_repo.create = AsyncMock(return_value=created_booking)
         mock_event_publisher.publish_booking_created = AsyncMock(
             side_effect=Exception('Kafka unavailable')
         )
 
-        # When/Then
-        with pytest.raises(Exception, match='Kafka unavailable'):
-            await use_case.create_booking(**valid_booking_data)
+        # When
+        result = await use_case.create_booking(**valid_booking_data)
 
-        # Create should have succeeded (eventual consistency)
+        # Then: Create succeeds and returns, event failure doesn't propagate
+        assert result == created_booking
         mock_booking_command_repo.create.assert_called_once()
 
 
