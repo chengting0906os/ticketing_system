@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from src.platform.config.di import container
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
+from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.command import (
     create_booking_use_case,
@@ -100,6 +101,11 @@ async def lifespan(_app: FastAPI):
     # Startup
     Logger.base.info('🚀 [Ticketing Service] Starting up...')
 
+    # Setup OpenTelemetry tracing
+    tracing = TracingConfig(service_name='ticketing-service')
+    tracing.setup()
+    Logger.base.info('📊 [Ticketing Service] OpenTelemetry tracing configured')
+
     # Wire dependency injection
     wire_modules = [
         create_booking_use_case,
@@ -120,7 +126,13 @@ async def lifespan(_app: FastAPI):
     # Initialize database
     engine = get_engine()
     if engine:
-        Logger.base.info('🗄️  [Ticketing Service] Database engine ready')
+        # Auto-instrument SQLAlchemy
+        tracing.instrument_sqlalchemy(engine=engine)
+        Logger.base.info('🗄️  [Ticketing Service] Database engine ready + instrumented')
+
+    # Auto-instrument Redis/Kvrocks
+    tracing.instrument_redis()
+    Logger.base.info('📊 [Ticketing Service] Redis instrumentation configured')
 
     # Connect to Kvrocks
     await kvrocks_client.connect()
@@ -146,6 +158,10 @@ async def lifespan(_app: FastAPI):
     # Disconnect Kvrocks
     await kvrocks_client.disconnect()
 
+    # Shutdown tracing (flush remaining spans)
+    tracing.shutdown()
+    Logger.base.info('📊 [Ticketing Service] Tracing shutdown complete')
+
     # Unwire DI
     container.unwire()
 
@@ -159,6 +175,10 @@ app = FastAPI(
     version='1.0.0',
     lifespan=lifespan,
 )
+
+# Auto-instrument FastAPI (must be done before mounting routes)
+tracing_config = TracingConfig(service_name='ticketing-service')
+tracing_config.instrument_fastapi(app=app)
 
 # Mount static files
 app.mount('/static', StaticFiles(directory='static'), name='static')

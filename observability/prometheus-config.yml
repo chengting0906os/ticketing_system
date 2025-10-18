@@ -23,6 +23,13 @@ scrape_configs:
           - 'kafka3:9103'
     scrape_interval: 5s
 
+  # Jaeger metrics (分散式追蹤監控)
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
 # 告警規則 (暫時移除，按需添加)
 # rule_files:
 #   - "alert_rules.yml"

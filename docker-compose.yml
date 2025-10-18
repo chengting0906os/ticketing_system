@@ -387,16 +387,20 @@ services:
   # =============================================================================
 
   jaeger:
-    image: jaegertracing/all-in-one:1.65
+    image: jaegertracing/all-in-one:1.74.0
     container_name: jaeger
     ports:
       - "6831:6831/udp" # Jaeger agent UDP (Thrift compact protocol)
       - "16686:16686" # Jaeger UI
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP HTTP receiver
+      - "14269:14269" # Admin/metrics port
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       LOG_LEVEL: "debug"
+      # Metrics configuration
+      METRICS_BACKEND: "prometheus"
+      METRICS_HTTP_ROUTE: "/metrics"
     networks:
       - ticketing-network
     restart: unless-stopped

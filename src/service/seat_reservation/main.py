@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from src.platform.config.di import container
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
+from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
@@ -86,10 +87,21 @@ async def lifespan(_app: FastAPI):
     # Startup
     Logger.base.info('🚀 [Seat Reservation Service] Starting up...')
 
+    # Setup OpenTelemetry tracing
+    tracing = TracingConfig(service_name='seat-reservation-service')
+    tracing.setup()
+    Logger.base.info('📊 [Seat Reservation Service] OpenTelemetry tracing configured')
+
     # Initialize database
     engine = get_engine()
     if engine:
-        Logger.base.info('🗄️  [Seat Reservation Service] Database engine ready')
+        # Auto-instrument SQLAlchemy
+        tracing.instrument_sqlalchemy(engine=engine)
+        Logger.base.info('🗄️  [Seat Reservation Service] Database engine ready + instrumented')
+
+    # Auto-instrument Redis/Kvrocks
+    tracing.instrument_redis()
+    Logger.base.info('📊 [Seat Reservation Service] Redis instrumentation configured')
 
     # Connect to Kvrocks
     await kvrocks_client.connect()
@@ -115,6 +127,10 @@ async def lifespan(_app: FastAPI):
     # Disconnect Kvrocks
     await kvrocks_client.disconnect()
 
+    # Shutdown tracing (flush remaining spans)
+    tracing.shutdown()
+    Logger.base.info('📊 [Seat Reservation Service] Tracing shutdown complete')
+
     Logger.base.info('👋 [Seat Reservation Service] Shutdown complete')
 
 
@@ -125,6 +141,10 @@ app = FastAPI(
     version='1.0.0',
     lifespan=lifespan,
 )
+
+# Auto-instrument FastAPI (must be done before mounting routes)
+tracing_config = TracingConfig(service_name='seat-reservation-service')
+tracing_config.instrument_fastapi(app=app)
 
 # Include routers
 app.include_router(seat_reservation_router)
