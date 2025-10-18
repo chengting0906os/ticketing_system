@@ -91,7 +91,7 @@ class Container(containers.DeclarativeContainer):
 
     # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
-    seat_state_query_handler = providers.Factory(SeatStateQueryHandlerImpl)
+    seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
     seat_state_command_handler = providers.Factory(SeatStateCommandHandlerImpl)
 
     # Ticketing Service - Init State Handler
@@ -99,8 +99,8 @@ class Container(containers.DeclarativeContainer):
         InitEventAndTicketsStateHandlerImpl,
     )
 
-    # Ticketing Service - Seat Availability Query Handler
-    seat_availability_query_handler = providers.Factory(
+    # Ticketing Service - Seat Availability Query Handler (Singleton for shared cache)
+    seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
     )
 

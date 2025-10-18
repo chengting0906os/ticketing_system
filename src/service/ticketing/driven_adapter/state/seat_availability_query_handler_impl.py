@@ -2,11 +2,18 @@
 Seat Availability Query Handler Implementation
 
 座位可用性查詢處理器實作 - Adapter for ticketing service to query seat state
+
+Cache Strategy (Polling-based):
+- Loads all seat stats into memory on startup
+- Background task polls Kvrocks every 0.5s to refresh cache
+- check_subsection_availability() reads from in-memory cache (no Kvrocks query)
+- Eventually consistent (max 0.5s staleness)
 """
 
 import os
+from typing import Dict
 
-from async_lru import alru_cache
+import anyio
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import NotFoundError
@@ -28,141 +35,146 @@ def _make_key(key: str) -> str:
 
 class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     """
-    Seat Availability Query Handler - Pre-booking validation to reduce DB writes
+    Seat Availability Query Handler - Pre-booking validation with polling-based cache
 
     Purpose:
     - Check seat availability BEFORE creating booking records
     - Fail fast when insufficient seats available
     - Reduce unnecessary DB INSERT operations for doomed bookings
 
-    Cache Strategy (In-Memory):
-    - Uses @alru_cache with 1.0s TTL per instance
-    - Per-instance cache acceptable because:
-      1. Pre-booking check tolerates 1s data staleness
-      2. Read-heavy workload (many checks per actual booking)
-      3. Dramatically reduces Kvrocks query load
-      4. Prevents DB writes for obviously failed requests
+    Cache Strategy (Polling-based):
+    - Singleton instance with shared in-memory cache
+    - Background task polls Kvrocks every 0.5s to refresh all seat stats
+    - check_subsection_availability() reads from cache (no Kvrocks query)
+    - Eventually consistent (max 0.5s staleness)
 
     Trade-off:
-    - Cache may be slightly stale (1s max)
-    - But prevents thousands of failed INSERT attempts
-    - Better to occasionally reject valid request than allow doomed ones
+    - Cache may be slightly stale (0.5s max)
+    - But dramatically reduces Kvrocks query load
+    - Self-healing: Even if data is stale, it syncs within 0.5s
     """
 
     def __init__(self):
         self.tracer = trace.get_tracer(__name__)
+        self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
-    @alru_cache(maxsize=512, ttl=1.0)
-    async def _get_available_count_cached(
-        self, event_id: int, section: str, subsection: int
-    ) -> int:
-        """
-        Query Kvrocks for available seat count (in-memory cached with 1.0s TTL)
-
-        Note: This is per-instance cache. Each scaled instance has its own cache.
-        """
-        section_id = f'{section}-{subsection}'
+    async def _fetch_all_stats(self, event_id: int) -> Dict[str, Dict]:
+        """Fetch all subsection stats from Kvrocks"""
         client = kvrocks_client.get_client()
-        stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-        stats = await client.hgetall(stats_key)  # type: ignore
+        index_key = _make_key(f'event_sections:{event_id}')
+        section_ids = await client.zrange(index_key, 0, -1)  # type: ignore
 
-        if not stats:
-            Logger.base.warning(
-                f'⚠️  [AVAILABILITY CHECK] Section {section_id} not found for event {event_id}'
-            )
-            raise NotFoundError(f'Section {section_id} not found')
+        if not section_ids:
+            return {}
 
-        Logger.base.debug(
-            f'🔍 [CACHE MISS] Fetched from Kvrocks: event={event_id}, '
-            f'section={section}-{subsection}, available={stats.get("available", 0)}'
-        )
-        return int(stats.get('available', 0))
+        pipe = client.pipeline()
+        for section_id in section_ids:
+            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+            pipe.hgetall(stats_key)
 
-    async def _get_available_count(self, event_id: int, section: str, subsection: int) -> int:
-        """
-        Query available seat count with cache hit/miss logging
+        results = await pipe.execute()
 
-        Args:
-            event_id: Event ID
-            section: Section name (e.g., "A")
-            subsection: Subsection number (e.g., 1)
+        all_stats = {}
+        for section_id, stats in zip(section_ids, results, strict=False):
+            if stats:
+                all_stats[section_id] = {
+                    'section_id': stats.get('section_id'),
+                    'event_id': int(stats.get('event_id', 0)),
+                    'available': int(stats.get('available', 0)),
+                    'reserved': int(stats.get('reserved', 0)),
+                    'sold': int(stats.get('sold', 0)),
+                    'total': int(stats.get('total', 0)),
+                }
 
-        Returns:
-            Available seat count
+        return all_stats
 
-        Raises:
-            NotFoundError: If section not found
-        """
-        # Check cache info before call
-        cache_info_before = self._get_available_count_cached.cache_info()
+    async def _get_all_event_ids(self) -> list[int]:
+        """Get all event IDs from Kvrocks"""
+        client = kvrocks_client.get_client()
+        # Scan for all event_sections:* keys
+        keys = await client.keys(_make_key('event_sections:*'))  # type: ignore
+        event_ids = []
+        for key in keys:
+            # Extract event_id from key like "event_sections:1"
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            event_id_str = key_str.replace(_KEY_PREFIX, '').replace('event_sections:', '')
+            if event_id_str.isdigit():
+                event_ids.append(int(event_id_str))
+        return event_ids
 
-        # Call cached function
-        result = await self._get_available_count_cached(event_id, section, subsection)
+    async def _refresh_all_caches(self) -> None:
+        """Refresh cache for all events (no lock, eventual consistency)"""
+        try:
+            event_ids = await self._get_all_event_ids()
 
-        # Check cache info after call to detect hit/miss
-        cache_info_after = self._get_available_count_cached.cache_info()
+            for event_id in event_ids:
+                stats = await self._fetch_all_stats(event_id)
+                self._cache[event_id] = stats
 
-        if cache_info_after.hits > cache_info_before.hits:
+            total_sections = sum(len(sections) for sections in self._cache.values())
             Logger.base.debug(
-                f'💾 [CACHE HIT] event={event_id}, section={section}-{subsection}, '
-                f'available={result} | hits={cache_info_after.hits}, '
-                f'misses={cache_info_after.misses}'
+                f'💾 [CACHE] Refreshed {len(event_ids)} events, {total_sections} sections'
             )
+        except Exception as e:
+            Logger.base.error(f'❌ [CACHE] Refresh failed: {e}')
 
-        return result
+    async def start_polling(self) -> None:
+        """Start background polling for all events (0.5s interval)"""
+        Logger.base.info('🔄 [POLLING] Starting seat availability cache polling')
+        await self._refresh_all_caches()
 
-    # @Logger.io
+        while True:
+            await anyio.sleep(0.5)
+            await self._refresh_all_caches()
+
     async def check_subsection_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> bool:
-        """
-        Pre-booking validation: Check if subsection has sufficient available seats
+        """Check if subsection has sufficient seats (cache with Kvrocks fallback)"""
+        with self.tracer.start_as_current_span('cache.check_availability') as span:
+            section_id = f'{section}-{subsection}'
 
-        This is a GUARD CHECK before creating booking records in DB.
-        Purpose: Fail fast to avoid unnecessary DB INSERT for requests that will fail anyway.
+            # Try cache first
+            event_cache = self._cache.get(event_id)
+            if event_cache:
+                stats = event_cache.get(section_id)
+                if stats:
+                    available_count = stats['available']
+                    has_enough = available_count >= required_quantity
+                    span.set_attribute('cache_hit', True)
+                    span.set_attribute('available_count', available_count)
+                    span.set_attribute('has_enough', has_enough)
 
-        Why 1s cache is acceptable:
-        - This is a pre-check, not the final reservation (which happens in seat_reservation service)
-        - Even with stale cache:
-          * False negative (reject valid request): Rare, user retries
-          * False positive (allow doomed request): Will fail later in actual reservation
-        - Prevents massive DB write load from obviously failed requests
-        - Trade-off: Slightly stale data vs thousands of prevented failed INSERTs
+                    if has_enough:
+                        Logger.base.info(f'✅ [CACHE HIT] {available_count} >= {required_quantity}')
+                    else:
+                        Logger.base.warning(
+                            f'❌ [CACHE HIT] {available_count} < {required_quantity}'
+                        )
 
-        Args:
-            event_id: Event ID
-            section: Section name (e.g., "A")
-            subsection: Subsection number (e.g., 1)
-            required_quantity: Number of seats requested
+                    return has_enough
 
-        Returns:
-            True if sufficient seats available (or cache says so), False otherwise
-        """
-        with self.tracer.start_as_current_span('kvrocks.check_availability') as span:
-            try:
-                # Query with in-memory caching (1.0s TTL via @alru_cache)
-                # Note: Per-instance cache - each scaled instance has its own
-                available_count = await self._get_available_count(event_id, section, subsection)
-                has_enough = available_count >= required_quantity
+            # Fallback: query Kvrocks (for tests or before polling starts)
+            Logger.base.debug(f'💾 [CACHE MISS] Querying Kvrocks for event {event_id}')
+            span.set_attribute('cache_hit', False)
 
-                span.set_attribute('available_count', available_count)
-                span.set_attribute('has_enough', has_enough)
+            client = kvrocks_client.get_client()
+            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+            stats = await client.hgetall(stats_key)  # type: ignore
 
-                if has_enough:
-                    Logger.base.info(
-                        f'✅ [AVAILABILITY CHECK] Sufficient seats: {available_count} available, '
-                        f'{required_quantity} required'
-                    )
-                else:
-                    Logger.base.warning(
-                        f'❌ [AVAILABILITY CHECK] Insufficient seats: {available_count} available, '
-                        f'{required_quantity} required'
-                    )
+            if not stats:
+                Logger.base.warning(f'⚠️ [AVAILABILITY] Section {section_id} not found')
+                raise NotFoundError(f'Section {section_id} not found')
 
-                return has_enough
+            available_count = int(stats.get('available', 0))
+            has_enough = available_count >= required_quantity
 
-            except NotFoundError:
-                raise
-            except Exception as e:
-                Logger.base.error(f'❌ [AVAILABILITY CHECK] Error checking availability: {e}')
-                raise
+            span.set_attribute('available_count', available_count)
+            span.set_attribute('has_enough', has_enough)
+
+            if has_enough:
+                Logger.base.info(f'✅ [KVROCKS] {available_count} >= {required_quantity}')
+            else:
+                Logger.base.warning(f'❌ [KVROCKS] {available_count} < {required_quantity}')
+
+            return has_enough

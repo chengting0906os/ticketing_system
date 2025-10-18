@@ -182,6 +182,11 @@ async def lifespan(_app: FastAPI):
     consumer_task.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
     Logger.base.info('📨 [Ticketing Service] Message queue consumer started')
 
+    # Start seat availability cache polling
+    seat_availability_handler = container.seat_availability_query_handler()
+    consumer_task.start_soon(seat_availability_handler.start_polling)  # type: ignore[arg-type]
+    Logger.base.info('🔄 [Ticketing Service] Seat availability polling started')
+
     Logger.base.info('✅ [Ticketing Service] Startup complete')
 
     yield

@@ -2,10 +2,17 @@
 Seat State Query Handler Implementation
 
 座位狀態查詢處理器實作 - CQRS Query Side
+
+Cache Strategy (Polling-based):
+- Background task polls Kvrocks every 0.5s to refresh all seat stats
+- Query methods can optionally read from in-memory cache
+- Eventually consistent (max 0.5s staleness)
 """
 
 import os
 from typing import Dict, List, Optional
+
+import anyio
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -34,7 +41,14 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
     座位狀態查詢處理器實作 (CQRS Query)
 
     職責：只負責讀取操作，不修改狀態
+
+    Cache Strategy:
+    - Singleton with shared in-memory cache
+    - Background polling refreshes all event stats every 0.5s
     """
+
+    def __init__(self):
+        self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
     @staticmethod
     def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
@@ -152,6 +166,43 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         Logger.base.info(f'✅ [QUERY] Retrieved {len(all_stats)} subsection stats')
         return all_stats
+
+    async def _get_all_event_ids(self) -> list[int]:
+        """Get all event IDs from Kvrocks"""
+        client = kvrocks_client.get_client()
+        keys = await client.keys(_make_key('event_sections:*'))  # type: ignore
+        event_ids = []
+        for key in keys:
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            event_id_str = key_str.replace(_KEY_PREFIX, '').replace('event_sections:', '')
+            if event_id_str.isdigit():
+                event_ids.append(int(event_id_str))
+        return event_ids
+
+    async def _refresh_all_caches(self) -> None:
+        """Refresh cache for all events (no lock, eventual consistency)"""
+        try:
+            event_ids = await self._get_all_event_ids()
+
+            for event_id in event_ids:
+                stats = await self.list_all_subsection_status(event_id)
+                self._cache[event_id] = stats
+
+            total_sections = sum(len(sections) for sections in self._cache.values())
+            Logger.base.debug(
+                f'💾 [CACHE] Refreshed {len(event_ids)} events, {total_sections} sections'
+            )
+        except Exception as e:
+            Logger.base.error(f'❌ [CACHE] Refresh failed: {e}')
+
+    async def start_polling(self) -> None:
+        """Start background polling for all events (0.5s interval)"""
+        Logger.base.info('🔄 [POLLING] Starting seat state cache polling')
+        await self._refresh_all_caches()
+
+        while True:
+            await anyio.sleep(0.5)
+            await self._refresh_all_caches()
 
     @Logger.io
     async def list_all_subsection_seats(
