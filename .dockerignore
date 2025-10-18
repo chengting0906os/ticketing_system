@@ -79,3 +79,41 @@ temp/
 # OS
 Thumbs.db
 .DS_Store
+
+# Tests (not needed in production image)
+test/
+tests/
+*.feature
+
+# CDK and deployment files
+deployment/
+cdk.out/
+cdk.context.json
+cdk.json
+
+# Scripts (not needed in production runtime)
+script/
+
+# Observability configs
+observability/
+
+# Static files
+static/
+
+# Knowledge base
+knowledge_base/
+
+# Spec documents
+spec/
+
+# Environment files (use Secrets Manager instead)
+.env*
+!.env.example
+
+# Make and shell scripts
+Makefile
+*.sh
+
+# Cookies and credentials
+cookies.txt
+credentials.json

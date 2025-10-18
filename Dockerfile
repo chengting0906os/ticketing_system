@@ -58,11 +58,14 @@ CMD ["uv", "run", "granian", "src.main:app", \
 
 FROM base AS production
 
-# Install only production dependencies
+# Install only production dependencies (no dev tools!)
 RUN uv sync --no-dev
 
-# Copy application code
-COPY . .
+# Copy only application code (exclude tests, logs, etc.)
+# Use .dockerignore to exclude unnecessary files
+COPY src/ ./src/
+COPY alembic.ini ./
+COPY pyproject.toml ./
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
