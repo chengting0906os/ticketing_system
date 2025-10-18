@@ -43,14 +43,6 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
         """檢查指定 subsection 是否有足夠的可用座位"""
         with self.tracer.start_as_current_span('kvrocks.check_availability') as span:
             section_id = f'{section}-{subsection}'
-            span.set_attribute('event.id', event_id)
-            span.set_attribute('section', section_id)
-            span.set_attribute('required_quantity', required_quantity)
-
-            Logger.base.info(
-                f'🔍 [AVAILABILITY CHECK] Checking {section}-{subsection} '
-                f'for event {event_id}, need {required_quantity} seats'
-            )
 
             try:
                 # Query Kvrocks directly for single subsection stats (efficient - O(1) vs O(N))

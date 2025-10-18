@@ -22,13 +22,25 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "config_file=/etc/postgresql/postgresql.conf"
+      - "max_connections=500"
+      - "-c"
+      - "shared_buffers=2GB"
+      - "-c"
+      - "effective_cache_size=8GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "max_wal_size=2GB"
+      - "-c"
+      - "min_wal_size=1GB"
+
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
-      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U py_arch_lab" ]
       interval: 5s

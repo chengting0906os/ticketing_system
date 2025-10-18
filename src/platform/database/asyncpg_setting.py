@@ -20,6 +20,7 @@ import asyncio
 import asyncpg
 
 from src.platform.config.core_setting import settings
+from src.platform.logging.loguru_io import Logger
 
 
 # Global connection pools per event loop
@@ -49,7 +50,14 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
 
     # Fast path: pool already exists for this loop (99.9% of calls)
     if loop_id in asyncpg_pools:
-        return asyncpg_pools[loop_id]
+        pool = asyncpg_pools[loop_id]
+        # Log pool stats for debugging
+
+        Logger.base.debug(
+            f'📊 [Pool Stats] size={pool.get_size()}, free={pool.get_idle_size()}, '
+            f'max={pool.get_max_size()}, min={pool.get_min_size()}'
+        )
+        return pool
 
     # Slow path: create new pool (should only happen at startup)
     # Convert SQLAlchemy URL to asyncpg format
@@ -63,6 +71,7 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
         max_inactive_connection_lifetime=settings.ASYNCPG_POOL_MAX_INACTIVE_LIFETIME,
         timeout=settings.ASYNCPG_POOL_TIMEOUT,
         max_queries=settings.ASYNCPG_POOL_MAX_QUERIES,  # default is 50000
+        loop=current_loop,  # Explicitly bind pool to this event loop
     )
 
     asyncpg_pools[loop_id] = pool

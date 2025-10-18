@@ -7,7 +7,6 @@ from opentelemetry import trace
 
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
-from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
@@ -59,7 +58,7 @@ class CreateBookingUseCase:
             seat_availability_handler=seat_availability_handler,
         )
 
-    @Logger.io
+    # @Logger.io
     async def create_booking(
         self,
         *,
@@ -120,12 +119,9 @@ class CreateBookingUseCase:
                 quantity=quantity,
             )
 
-            # Create booking directly (no UoW, repository handles transaction)
             try:
                 created_booking = await self.booking_command_repo.create(booking=booking)
-                # Logger.base.info(
-                #     f'📝 [BOOKING] Created booking {created_booking.id} for buyer {buyer_id}'
-                # )
+
             except Exception as e:
                 raise DomainError(f'Failed to create booking: {e}', 400)
 

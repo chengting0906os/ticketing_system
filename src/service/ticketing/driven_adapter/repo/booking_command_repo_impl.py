@@ -70,8 +70,6 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
 
     async def create(self, *, booking: Booking) -> Booking:
         with self.tracer.start_as_current_span('db.booking.create') as span:
-            # Add span attributes for better observability
-
             async with (await get_asyncpg_pool()).acquire() as conn:
                 row = await conn.fetchrow(
                     """
