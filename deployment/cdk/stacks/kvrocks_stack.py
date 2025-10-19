@@ -77,7 +77,7 @@ class KvrocksStack(Stack):
             'KvrocksSecurityGroup',
             vpc=vpc,
             description='Security group for Kvrocks cluster',
-            allow_all_outbound=True,  # Allow Kvrocks replication and Sentinel communication
+            allow_all_outbound=True,  # Allow outbound connections for health checks
         )
 
         # Allow Redis protocol port (6666) from within VPC
@@ -87,12 +87,8 @@ class KvrocksStack(Stack):
             description='Kvrocks Redis protocol port',
         )
 
-        # Allow Sentinel port (26666) for sentinel-to-sentinel communication
-        self.kvrocks_security_group.add_ingress_rule(
-            peer=self.kvrocks_security_group,
-            connection=ec2.Port.tcp(26666),
-            description='Sentinel communication port',
-        )
+        # Note: Sentinel port (26666) removed - single master configuration
+        # No inter-instance communication needed
 
         # ============= EFS Security Group =============
         # Security group for EFS mount targets
@@ -280,7 +276,7 @@ class KvrocksStack(Stack):
             self,
             'ConnectionInfo',
             value='Direct connection to master: kvrocks-master.ticketing.local:6666',
-            description='Client connection info (single master, no sentinel)',
+            description='Kvrocks connection endpoint (single master)',
         )
 
         # Store references

@@ -79,15 +79,15 @@ if not is_localstack:
         container_insights=True,
     )
 
-    # 4. Kvrocks + Sentinel Stack (Self-hosted Redis alternative)
-    # 1 master + 2 replicas + 3 sentinels for high availability
+    # 4. Kvrocks Stack (Self-hosted Redis alternative)
+    # Single master configuration for cost optimization
     kvrocks_stack = KvrocksStack(
         app,
         'TicketingKvrocksStack',
         vpc=aurora_stack.vpc,
         cluster=shared_cluster,
         env=env,
-        description='Kvrocks cluster with Sentinel (1 master + 2 replicas)',
+        description='Kvrocks single master on ECS with EFS persistence',
     )
     kvrocks_stack.add_dependency(aurora_stack)
 
@@ -123,7 +123,7 @@ if not is_localstack:
     print('✅ Deploying to AWS (10000 TPS Architecture):')
     print('   1. Database: Aurora Serverless v2 (2-64 ACU, single master)')
     print('   2. Messaging: Amazon MSK (3-broker Kafka cluster with KRaft)')
-    print('   3. Cache: Kvrocks on ECS (1 master + 2 replicas + 3 sentinels)')
+    print('   3. Cache: Kvrocks on ECS (single master with EFS persistence)')
     print('   4. Compute: ECS Fargate (2 services, 4-16 tasks each)')
     print('   5. Load Balancer: Application Load Balancer (built into ECS)')
     print('')
