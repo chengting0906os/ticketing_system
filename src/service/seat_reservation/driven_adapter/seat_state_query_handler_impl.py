@@ -197,7 +197,10 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     async def start_polling(self) -> None:
         """Start background polling for all events (0.5s interval)"""
-        Logger.base.info('🔄 [POLLING] Starting seat state cache polling')
+        # Initialize Kvrocks for this event loop (must succeed, otherwise polling is useless)
+        await kvrocks_client.initialize()
+        Logger.base.info('🔄 [POLLING] Starting seat state cache polling (Kvrocks ready)')
+
         await self._refresh_all_caches()
 
         while True:
