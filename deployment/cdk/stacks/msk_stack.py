@@ -155,10 +155,13 @@ delete.topic.enable=true
 
             # Store cluster reference and extract outputs
             self.cluster = provisioned_cluster
-            # Use GetAtt to retrieve bootstrap brokers at deployment time
-            bootstrap_tls = provisioned_cluster.get_att('BootstrapBrokerStringTls').to_string()
-            bootstrap_iam = provisioned_cluster.get_att('BootstrapBrokerStringSaslIam').to_string()
             cluster_arn = provisioned_cluster.attr_arn
+
+            # Note: BootstrapBrokerStringTls attribute doesn't exist in CloudFormation schema
+            # Use placeholder values - actual values must be retrieved via AWS CLI after deployment:
+            # aws kafka get-bootstrap-brokers --cluster-arn <cluster-arn> --region us-west-2
+            bootstrap_tls = 'Run: aws kafka get-bootstrap-brokers --cluster-arn ' + cluster_arn
+            bootstrap_iam = 'Run: aws kafka get-bootstrap-brokers --cluster-arn ' + cluster_arn
 
         elif cluster_type == 'SERVERLESS':
             # Option 2: Serverless Cluster
