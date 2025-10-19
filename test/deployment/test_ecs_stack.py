@@ -13,11 +13,14 @@ import aws_cdk.assertions as assertions
 import pytest
 
 
-class TestableECSStack(cdk.Stack):
+class ECSStackForTesting(cdk.Stack):
     """
     Wrapper stack for testing that contains VPC, security groups, and ECS resources.
 
     This avoids cross-stack reference issues by keeping everything in one stack.
+
+    Note: Renamed from TestableECSStack to avoid pytest collection warning
+    (pytest treats classes starting with 'Test' as test classes)
     """
 
     def __init__(self, scope, construct_id, **kwargs):
@@ -333,7 +336,7 @@ def ecs_stack():
     """
     app = cdk.App()
 
-    stack = TestableECSStack(
+    stack = ECSStackForTesting(
         app,
         'TestECSStack',
         env=cdk.Environment(account='123456789012', region='us-west-2'),

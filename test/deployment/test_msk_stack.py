@@ -177,10 +177,10 @@ def test_msk_monitoring_enabled(msk_stack):
 @pytest.mark.cdk
 def test_msk_storage_configuration(msk_stack):
     """
-    Unit: Verify broker storage configuration.
+    Unit: Verify broker storage configuration (cost-optimized).
 
     This tests:
-    - 100GB EBS volume per broker
+    - 10GB EBS volume per broker (minimal for development/testing)
     - Provisioned throughput disabled (cost savings)
     """
     template = assertions.Template.from_stack(msk_stack)
@@ -191,7 +191,7 @@ def test_msk_storage_configuration(msk_stack):
             'BrokerNodeGroupInfo': {
                 'StorageInfo': {
                     'EBSStorageInfo': {
-                        'VolumeSize': 100,
+                        'VolumeSize': 10,  # Minimal storage for cost optimization
                         'ProvisionedThroughput': {'Enabled': False},
                     }
                 }

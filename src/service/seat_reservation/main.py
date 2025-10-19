@@ -120,11 +120,30 @@ async def lifespan(_app: FastAPI):
     await kvrocks_client.initialize()
     Logger.base.info('📡 [Seat Reservation Service] Kvrocks initialized')
 
-    # Start Kafka consumer
-    consumer_task = anyio.create_task_group()
-    await consumer_task.__aenter__()
-    consumer_task.start_soon(start_seat_reservation_consumer)  # type: ignore[arg-type]
-    Logger.base.info('📨 [Seat Reservation Service] Message queue consumer started')
+    # Start Kafka consumer (graceful failure if Kafka unavailable)
+    import os
+
+    enable_kafka = os.getenv('ENABLE_KAFKA', 'true').lower() in ('true', '1')
+
+    if enable_kafka:
+        try:
+            consumer_task = anyio.create_task_group()
+            await consumer_task.__aenter__()
+            consumer_task.start_soon(start_seat_reservation_consumer)  # type: ignore[arg-type]
+            Logger.base.info('📨 [Seat Reservation Service] Message queue consumer started')
+        except Exception as e:
+            Logger.base.warning(
+                f'⚠️  [Seat Reservation Service] Kafka unavailable at startup: {e}'
+                '\n   Continuing without Kafka - messaging features disabled'
+            )
+            # Create empty task group for cleanup consistency
+            consumer_task = anyio.create_task_group()
+            await consumer_task.__aenter__()
+    else:
+        Logger.base.info('⏭️  [Seat Reservation Service] Kafka disabled (ENABLE_KAFKA=false)')
+        # Create empty task group for cleanup consistency
+        consumer_task = anyio.create_task_group()
+        await consumer_task.__aenter__()
 
     # Start seat state cache polling
     seat_state_handler = container.seat_state_query_handler()

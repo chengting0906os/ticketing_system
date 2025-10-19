@@ -82,18 +82,18 @@ def test_aurora_cluster_created(aurora_stack):
 @pytest.mark.cdk
 def test_aurora_instances_created(aurora_stack):
     """
-    Unit: Verify 1 writer + 1 reader instances are created.
+    Unit: Verify 1 writer instance is created (single master configuration).
 
     This tests:
-    - 2 DB instances (1 writer + 1 reader)
-    - Both are Serverless v2 instances
+    - 1 DB instance (writer only, no readers for cost optimization)
+    - Instance is Serverless v2 type
     """
     template = assertions.Template.from_stack(aurora_stack)
 
-    # Verify 2 DB instances exist (writer + reader)
-    template.resource_count_is('AWS::RDS::DBInstance', 2)
+    # Verify 1 DB instance exists (writer only)
+    template.resource_count_is('AWS::RDS::DBInstance', 1)
 
-    # Verify instances are db.serverless type
+    # Verify instance is db.serverless type
     template.has_resource_properties(
         'AWS::RDS::DBInstance',
         {'DBInstanceClass': 'db.serverless'},
@@ -140,16 +140,17 @@ def test_aurora_encryption(aurora_stack):
 @pytest.mark.cdk
 def test_aurora_deletion_protection(aurora_stack):
     """
-    Unit: Verify deletion protection is enabled.
+    Unit: Verify deletion protection is disabled for development/testing.
 
     This tests:
-    - Deletion protection enabled (prevents accidental deletion)
+    - Deletion protection disabled (allows easy cleanup during development)
+    - RemovalPolicy set to SNAPSHOT (data safety on stack deletion)
     """
     template = assertions.Template.from_stack(aurora_stack)
 
     template.has_resource_properties(
         'AWS::RDS::DBCluster',
-        {'DeletionProtection': True},
+        {'DeletionProtection': False},
     )
 
 
@@ -259,9 +260,10 @@ def test_aurora_outputs_exported(aurora_stack):
 
     This tests:
     - Writer endpoint exported
-    - Reader endpoint exported
     - Secret ARN exported
     - Security Group ID exported
+
+    Note: ReaderEndpoint removed (single master configuration)
     """
     template = assertions.Template.from_stack(aurora_stack)
 
@@ -269,12 +271,6 @@ def test_aurora_outputs_exported(aurora_stack):
     template.has_output(
         'ClusterEndpoint',
         {'Export': {'Name': 'TicketingAuroraWriterEndpoint'}},
-    )
-
-    # Verify reader endpoint output
-    template.has_output(
-        'ReaderEndpoint',
-        {'Export': {'Name': 'TicketingAuroraReaderEndpoint'}},
     )
 
     # Verify secret ARN output

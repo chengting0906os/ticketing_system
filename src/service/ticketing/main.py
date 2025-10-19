@@ -176,11 +176,30 @@ async def lifespan(_app: FastAPI):
     await warmup_asyncpg_pool()
     Logger.base.info('🔥 [Ticketing Service] Asyncpg pool warmed up to MAX_SIZE')
 
-    # Start Kafka consumer
-    consumer_task = anyio.create_task_group()
-    await consumer_task.__aenter__()
-    consumer_task.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
-    Logger.base.info('📨 [Ticketing Service] Message queue consumer started')
+    # Start Kafka consumer (graceful failure if Kafka unavailable)
+    import os
+
+    enable_kafka = os.getenv('ENABLE_KAFKA', 'true').lower() in ('true', '1')
+
+    if enable_kafka:
+        try:
+            consumer_task = anyio.create_task_group()
+            await consumer_task.__aenter__()
+            consumer_task.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
+            Logger.base.info('📨 [Ticketing Service] Message queue consumer started')
+        except Exception as e:
+            Logger.base.warning(
+                f'⚠️  [Ticketing Service] Kafka unavailable at startup: {e}'
+                '\n   Continuing without Kafka - messaging features disabled'
+            )
+            # Create empty task group for cleanup consistency
+            consumer_task = anyio.create_task_group()
+            await consumer_task.__aenter__()
+    else:
+        Logger.base.info('⏭️  [Ticketing Service] Kafka disabled (ENABLE_KAFKA=false)')
+        # Create empty task group for cleanup consistency
+        consumer_task = anyio.create_task_group()
+        await consumer_task.__aenter__()
 
     # Start seat availability cache polling
     seat_availability_handler = container.seat_availability_query_handler()

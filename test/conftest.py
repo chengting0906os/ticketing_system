@@ -84,11 +84,11 @@ env_file = '.env' if Path('.env').exists() else '.env.example'
 load_dotenv(env_file)
 
 DB_CONFIG = {
-    'user': os.getenv('POSTGRES_USER'),
-    'password': os.getenv('POSTGRES_PASSWORD'),
-    'host': os.getenv('POSTGRES_SERVER'),
-    'port': os.getenv('POSTGRES_PORT'),
-    'test_db': os.environ['POSTGRES_DB'],
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+    'host': os.getenv('POSTGRES_SERVER', 'localhost'),
+    'port': os.getenv('POSTGRES_PORT', '5432'),
+    'test_db': os.getenv('POSTGRES_DB', 'ticketing_system'),
 }
 TEST_DATABASE_URL = (
     f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}'

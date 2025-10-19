@@ -63,17 +63,19 @@ def kvrocks_stack():
 @pytest.mark.cdk
 def test_kvrocks_security_group_created(kvrocks_stack):
     """
-    Unit: Verify security group is created for Kvrocks cluster.
+    Unit: Verify security groups are created for Kvrocks (single master configuration).
 
     This tests:
-    - Security group exists
+    - Kvrocks security group exists (for master)
+    - EFS security group exists (for persistent storage)
     - Redis port (6666) ingress rule
-    - Sentinel port (26666) ingress rule
+
+    Note: Sentinel port (26666) removed (single master, no replicas)
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify security group exists
-    template.resource_count_is('AWS::EC2::SecurityGroup', 1)
+    # Verify 2 security groups exist (Kvrocks + EFS)
+    template.resource_count_is('AWS::EC2::SecurityGroup', 2)
 
     # Verify Redis protocol port (6666)
     template.has_resource_properties(
@@ -81,16 +83,6 @@ def test_kvrocks_security_group_created(kvrocks_stack):
         {
             'SecurityGroupIngress': assertions.Match.array_with(
                 [assertions.Match.object_like({'FromPort': 6666, 'ToPort': 6666})]
-            )
-        },
-    )
-
-    # Verify Sentinel port (26666)
-    template.has_resource_properties(
-        'AWS::EC2::SecurityGroup',
-        {
-            'SecurityGroupIngress': assertions.Match.array_with(
-                [assertions.Match.object_like({'FromPort': 26666, 'ToPort': 26666})]
             )
         },
     )
@@ -160,28 +152,25 @@ def test_efs_access_point_created(kvrocks_stack):
 @pytest.mark.cdk
 def test_iam_roles_created(kvrocks_stack):
     """
-    Unit: Verify IAM roles for Kvrocks tasks.
+    Unit: Verify IAM roles for Kvrocks master task (single master configuration).
 
     This tests:
     - Task execution role (for pulling images, writing logs)
-    - Task role (for application to access AWS services)
+    - Task role (for application to access AWS services, EFS)
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify IAM roles exist (at least 2: execution + task)
-    # Note: May be more if Sentinel has separate roles
-    roles_count = len(
-        [
-            r
-            for r in template.find_resources('AWS::IAM::Role').values()
-            if 'Kvrocks' in r['Properties'].get('RoleName', '')
-            or any(
-                'ecs-tasks.amazonaws.com' in p.get('Service', [''])[0]
-                for p in r['Properties'].get('AssumeRolePolicyDocument', {}).get('Statement', [])
-            )
-        ]
-    )
-    assert roles_count >= 2, 'Should have at least task execution and task roles'
+    # Verify IAM roles exist (2 roles: execution + task for master only)
+    roles = template.find_resources('AWS::IAM::Role')
+    ecs_roles = [
+        r
+        for r in roles.values()
+        if any(
+            stmt.get('Principal', {}).get('Service') == 'ecs-tasks.amazonaws.com'
+            for stmt in r['Properties'].get('AssumeRolePolicyDocument', {}).get('Statement', [])
+        )
+    ]
+    assert len(ecs_roles) == 2, f'Expected 2 IAM roles (task + execution), found {len(ecs_roles)}'
 
 
 # ==============================================================================
@@ -192,25 +181,25 @@ def test_iam_roles_created(kvrocks_stack):
 @pytest.mark.cdk
 def test_kvrocks_master_service_created(kvrocks_stack):
     """
-    Unit: Verify Kvrocks master service is created.
+    Unit: Verify Kvrocks master service is created (single master configuration).
 
     This tests:
-    - Master task definition (1 vCPU, 2GB RAM)
+    - Master task definition (4 vCPU, 8GB RAM for 10000 TPS)
     - Master service created
-    - Desired count: 1 task (only 1 master)
+    - Desired count: 1 task (only 1 master, no replicas)
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify ECS services exist (at least 3: master + replicas + sentinels)
-    template.resource_count_is('AWS::ECS::Service', 3)
+    # Verify ECS service exists (1 service: master only, no replicas or sentinels)
+    template.resource_count_is('AWS::ECS::Service', 1)
 
     # Verify task definition with correct resources
-    # Note: All tasks use same resources (1 vCPU, 2GB RAM)
+    # Note: Single master uses higher resources (4 vCPU, 8GB RAM)
     template.has_resource_properties(
         'AWS::ECS::TaskDefinition',
         {
-            'Cpu': '1024',  # 1 vCPU
-            'Memory': '2048',  # 2GB RAM
+            'Cpu': '4096',  # 4 vCPU
+            'Memory': '8192',  # 8GB RAM
         },
     )
 
@@ -288,18 +277,17 @@ def test_kvrocks_master_volume_mount(kvrocks_stack):
 @pytest.mark.cdk
 def test_kvrocks_replica_service_created(kvrocks_stack):
     """
-    Unit: Verify Kvrocks replica services are created.
+    Unit: Verify Kvrocks replica service is NOT created (single master configuration).
 
     This tests:
-    - Replica task definition exists
-    - Replica service exists
-    - Desired count: 2 tasks (2 replicas)
+    - Only 1 service exists (master only, no replicas for cost optimization)
+
+    Note: Replicas removed in single master configuration
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Already verified in test_kvrocks_master_service_created
-    # 3 services total: 1 master + 1 replica service (2 tasks) + 1 sentinel service (3 tasks)
-    template.resource_count_is('AWS::ECS::Service', 3)
+    # Single master configuration: 1 service only (no replicas, no sentinels)
+    template.resource_count_is('AWS::ECS::Service', 1)
 
 
 # ==============================================================================
@@ -310,35 +298,37 @@ def test_kvrocks_replica_service_created(kvrocks_stack):
 @pytest.mark.cdk
 def test_sentinel_service_created(kvrocks_stack):
     """
-    Unit: Verify Sentinel service is created for automatic failover.
+    Unit: Verify Sentinel service is NOT created (single master configuration).
 
     This tests:
-    - Sentinel task definition exists
-    - Sentinel service exists
-    - Desired count: 3 tasks (quorum = 2)
+    - No sentinel service (single master, no automatic failover)
+    - Only 1 task definition (master only)
+
+    Note: Sentinel removed in single master configuration
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify 3 services exist (already checked above)
-    template.resource_count_is('AWS::ECS::Service', 3)
+    # Verify 1 service exists (master only, no sentinels)
+    template.resource_count_is('AWS::ECS::Service', 1)
 
-    # Verify at least 3 task definitions (master, replica, sentinel)
-    template.resource_count_is('AWS::ECS::TaskDefinition', 3)
+    # Verify 1 task definition (master only, no sentinel)
+    template.resource_count_is('AWS::ECS::TaskDefinition', 1)
 
 
 @pytest.mark.cdk
 def test_sentinel_container_configuration(kvrocks_stack):
     """
-    Unit: Verify Sentinel container is configured correctly.
+    Unit: Verify Sentinel is NOT configured (single master configuration).
 
     This tests:
-    - Sentinel image
-    - Port 26666 for Sentinel protocol
+    - No port 26666 (Sentinel port removed)
+    - Only port 6666 (Kvrocks master port)
+
+    Note: Sentinel removed in single master configuration
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify container uses Redis image for Sentinel
-    # Note: Sentinel can use redis:alpine or redis:latest with --sentinel flag
+    # Verify Kvrocks uses port 6666 (not 26666)
     template.has_resource_properties(
         'AWS::ECS::TaskDefinition',
         {
@@ -347,7 +337,7 @@ def test_sentinel_container_configuration(kvrocks_stack):
                     assertions.Match.object_like(
                         {
                             'PortMappings': assertions.Match.array_with(
-                                [assertions.Match.object_like({'ContainerPort': 26666})]
+                                [assertions.Match.object_like({'ContainerPort': 6666})]
                             )
                         }
                     )
@@ -391,28 +381,30 @@ def test_kvrocks_outputs_exported(kvrocks_stack):
     Unit: Verify CloudFormation outputs are exported for other stacks.
 
     This tests:
-    - Master service name exported
-    - Sentinel service name exported
-    - Security Group ID exported
+    - Master service name output exists (no export for single master)
+    - EFS file system ID exported
+    - Connection info exported
+
+    Note: Sentinel outputs removed (single master configuration)
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify master service output
+    # Verify master service output (without Export for simplicity)
     template.has_output(
         'KvrocksMasterServiceName',
-        {'Export': {'Name': 'TicketingKvrocksMasterServiceName'}},
+        {'Description': 'Kvrocks master service name'},
     )
 
-    # Verify sentinel service output
+    # Verify EFS file system output
     template.has_output(
-        'SentinelServiceName',
-        {'Export': {'Name': 'TicketingSentinelServiceName'}},
+        'EFSFileSystemId',
+        {'Description': 'EFS file system ID for Kvrocks data'},
     )
 
-    # Verify security group output
+    # Verify connection info output
     template.has_output(
-        'KvrocksSecurityGroupId',
-        {'Export': {'Name': 'TicketingKvrocksSecurityGroupId'}},
+        'ConnectionInfo',
+        {'Description': 'Kvrocks connection endpoint (single master)'},
     )
 
 
@@ -424,23 +416,25 @@ def test_kvrocks_outputs_exported(kvrocks_stack):
 @pytest.mark.cdk
 def test_kvrocks_high_availability_setup(kvrocks_stack):
     """
-    Unit: Verify high availability configuration.
+    Unit: Verify single master configuration (no HA for cost optimization).
 
     This tests:
-    - 1 master + 2 replicas (3 total Kvrocks instances)
-    - 3 Sentinels for quorum (quorum = 2)
+    - 1 master only (no replicas, no sentinels)
     - EFS for data persistence
+    - 1 task definition (master only)
+
+    Note: HA removed in single master configuration
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify 3 services (master, replica, sentinel)
-    template.resource_count_is('AWS::ECS::Service', 3)
+    # Verify 1 service (master only, no replicas, no sentinels)
+    template.resource_count_is('AWS::ECS::Service', 1)
 
     # Verify EFS for persistence
     template.resource_count_is('AWS::EFS::FileSystem', 1)
 
-    # Verify 3 task definitions (1 for master, 1 for replica, 1 for sentinel)
-    template.resource_count_is('AWS::ECS::TaskDefinition', 3)
+    # Verify 1 task definition (master only)
+    template.resource_count_is('AWS::ECS::TaskDefinition', 1)
 
 
 # ==============================================================================
@@ -451,27 +445,28 @@ def test_kvrocks_high_availability_setup(kvrocks_stack):
 @pytest.mark.cdk
 def test_kvrocks_capacity_for_10000_tps(kvrocks_stack):
     """
-    Unit: Verify Kvrocks capacity supports 10000 TPS target.
+    Unit: Verify Kvrocks capacity supports 10000 TPS target (single master).
 
     This tests:
-    - 3 Kvrocks instances (1 master + 2 replicas)
-    - Each instance: 1 vCPU + 2GB RAM
-    - Kvrocks can handle 50000+ ops/sec per instance
+    - 1 Kvrocks master instance (no replicas)
+    - Instance: 4 vCPU + 8GB RAM (sufficient for 50000+ ops/sec)
     - 10000 TPS is well within capacity
+
+    Note: Single master with higher resources instead of multiple small instances
     """
     template = assertions.Template.from_stack(kvrocks_stack)
 
-    # Verify task resources (1 vCPU, 2GB RAM per instance)
+    # Verify task resources (4 vCPU, 8GB RAM for single master)
     template.has_resource_properties(
         'AWS::ECS::TaskDefinition',
         {
-            'Cpu': '1024',  # 1 vCPU
-            'Memory': '2048',  # 2GB RAM
+            'Cpu': '4096',  # 4 vCPU
+            'Memory': '8192',  # 8GB RAM
         },
     )
 
-    # Verify 3 services for HA (master + replica + sentinel)
-    template.resource_count_is('AWS::ECS::Service', 3)
+    # Verify 1 service (master only, no replicas, no sentinels)
+    template.resource_count_is('AWS::ECS::Service', 1)
 
 
 if __name__ == '__main__':
