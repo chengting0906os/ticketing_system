@@ -28,7 +28,7 @@ def kvrocks_stack():
     stack = cdk.Stack(
         app,
         'TestKvrocksStack',
-        env=cdk.Environment(account='123456789012', region='us-east-1'),
+        env=cdk.Environment(account='123456789012', region='us-west-2'),
     )
 
     # Create VPC in the same stack
@@ -49,7 +49,7 @@ def kvrocks_stack():
         'KvrocksStack',
         vpc=vpc,
         cluster=cluster,
-        env=cdk.Environment(account='123456789012', region='us-east-1'),
+        env=cdk.Environment(account='123456789012', region='us-west-2'),
     )
 
     return kvrocks

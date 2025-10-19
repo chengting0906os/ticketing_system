@@ -336,7 +336,7 @@ def ecs_stack():
     stack = TestableECSStack(
         app,
         'TestECSStack',
-        env=cdk.Environment(account='123456789012', region='us-east-1'),
+        env=cdk.Environment(account='123456789012', region='us-west-2'),
     )
 
     return stack

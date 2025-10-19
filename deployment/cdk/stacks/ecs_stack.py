@@ -10,9 +10,12 @@ Architecture:
 - Integration with Aurora, MSK, and Kvrocks
 
 Performance (10000 TPS target):
-- Each service: 4-16 tasks (auto-scaling)
-- Each task: 2 vCPU + 4GB RAM
-- Total capacity: 8-32 vCPU, 16-64GB RAM
+- Ticketing Service: 4-16 tasks (auto-scaling)
+  - Each task: 8 vCPU + 16GB RAM + 16 workers
+  - Total capacity: 32-128 vCPU, 64-256GB RAM
+- Seat Reservation Service: 4-16 tasks (auto-scaling)
+  - Each task: 2 vCPU + 4GB RAM
+  - Total capacity: 8-32 vCPU, 16-64GB RAM
 """
 
 from aws_cdk import (
@@ -160,12 +163,23 @@ class ECSStack(Stack):
             )
         )
 
+        # Grant access to X-Ray for ADOT Collector to send traces
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    'xray:PutTraceSegments',
+                    'xray:PutTelemetryRecords',
+                ],
+                resources=['*'],
+            )
+        )
+
         # ============= Ticketing Service =============
         ticketing_task_def = ecs.FargateTaskDefinition(
             self,
             'TicketingTaskDef',
-            memory_limit_mib=4096,  # 4GB RAM
-            cpu=2048,  # 2 vCPU
+            memory_limit_mib=16384,  # 16GB RAM (8 vCPU requires min 16GB)
+            cpu=8192,  # 8 vCPU (2x worker count for I/O-bound workload)
             execution_role=execution_role,
             task_role=task_role,
         )
@@ -180,6 +194,10 @@ class ECSStack(Stack):
             environment={
                 'SERVICE_NAME': 'ticketing-service',
                 'LOG_LEVEL': 'INFO',
+                'WORKERS': '16',  # 16 workers for 8 vCPU (2x CPU, balanced for I/O + CPU)
+                # OpenTelemetry - Send to ADOT Collector sidecar (localhost:4317)
+                'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
+                'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
             },
             # Secrets will be injected from Secrets Manager at runtime
             health_check=ecs.HealthCheck(
@@ -193,6 +211,48 @@ class ECSStack(Stack):
 
         ticketing_container.add_port_mappings(
             ecs.PortMapping(container_port=8000, protocol=ecs.Protocol.TCP)
+        )
+
+        # Add ADOT Collector sidecar to forward traces to X-Ray
+        adot_container = ticketing_task_def.add_container(
+            'ADOTCollector',
+            image=ecs.ContainerImage.from_registry(
+                'public.ecr.aws/aws-observability/aws-otel-collector:latest'
+            ),
+            logging=ecs.LogDriver.aws_logs(
+                stream_prefix='adot-collector',
+                log_retention=logs.RetentionDays.ONE_WEEK,
+            ),
+            environment={
+                'AOT_CONFIG_CONTENT': """
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 50
+
+exporters:
+  awsxray:
+    region: ${AWS::Region}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awsxray]
+"""
+            },
+            memory_reservation_mib=256,  # Reserve 256MB for ADOT
+        )
+
+        adot_container.add_port_mappings(
+            ecs.PortMapping(container_port=4317, protocol=ecs.Protocol.TCP)
         )
 
         # Create Fargate service for ticketing
@@ -268,6 +328,9 @@ class ECSStack(Stack):
             environment={
                 'SERVICE_NAME': 'seat-reservation-service',
                 'LOG_LEVEL': 'INFO',
+                # OpenTelemetry - Send to ADOT Collector sidecar (localhost:4317)
+                'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
+                'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
             },
             health_check=ecs.HealthCheck(
                 command=['CMD-SHELL', 'curl -f http://localhost:8001/health || exit 1'],
@@ -280,6 +343,48 @@ class ECSStack(Stack):
 
         reservation_container.add_port_mappings(
             ecs.PortMapping(container_port=8001, protocol=ecs.Protocol.TCP)
+        )
+
+        # Add ADOT Collector sidecar for seat-reservation-service
+        reservation_adot_container = reservation_task_def.add_container(
+            'ADOTCollector',
+            image=ecs.ContainerImage.from_registry(
+                'public.ecr.aws/aws-observability/aws-otel-collector:latest'
+            ),
+            logging=ecs.LogDriver.aws_logs(
+                stream_prefix='adot-collector-reservation',
+                log_retention=logs.RetentionDays.ONE_WEEK,
+            ),
+            environment={
+                'AOT_CONFIG_CONTENT': """
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 50
+
+exporters:
+  awsxray:
+    region: ${AWS::Region}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awsxray]
+"""
+            },
+            memory_reservation_mib=256,  # Reserve 256MB for ADOT
+        )
+
+        reservation_adot_container.add_port_mappings(
+            ecs.PortMapping(container_port=4317, protocol=ecs.Protocol.TCP)
         )
 
         # Create Fargate service for seat reservation

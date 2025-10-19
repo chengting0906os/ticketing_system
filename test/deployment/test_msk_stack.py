@@ -28,7 +28,7 @@ def msk_stack():
     stack = cdk.Stack(
         app,
         'TestMSKStack',
-        env=cdk.Environment(account='123456789012', region='us-east-1'),
+        env=cdk.Environment(account='123456789012', region='us-west-2'),
     )
 
     # Create VPC in the same stack
@@ -40,7 +40,7 @@ def msk_stack():
         app,
         'MSKStack',
         vpc=vpc,
-        env=cdk.Environment(account='123456789012', region='us-east-1'),
+        env=cdk.Environment(account='123456789012', region='us-west-2'),
     )
 
     return msk

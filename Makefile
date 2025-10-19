@@ -1,6 +1,10 @@
 # Ticketing System - Simplified Makefile
 ALEMBIC_CONFIG = alembic.ini
 
+# AWS Configuration (can be overridden via environment variables)
+AWS_REGION ?= us-west-2
+AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "unknown")
+
 # ==============================================================================
 # 🚀 QUICK START
 # ==============================================================================
@@ -312,7 +316,7 @@ k6-stress:  ## 💪 k6 stress test
 cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
 	@echo "🔍 Synthesizing CDK stack..."
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
-		CDK_DEFAULT_REGION=us-east-1 \
+		CDK_DEFAULT_REGION=us-west-2 \
 		uv run cdk synth --no-lookups
 	@echo "✅ CDK synthesis completed!"
 
@@ -320,11 +324,21 @@ cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
 cdk-diff:  ## 📊 Show differences between deployed and local stack
 	@echo "📊 Comparing stack differences..."
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
-		CDK_DEFAULT_REGION=us-east-1 \
+		CDK_DEFAULT_REGION=us-west-2 \
 		uv run cdk diff
 
+.PHONY: deploy
+deploy:  ## 🚀 One-click deployment (infrastructure + Docker images + health check)
+	@echo "🚀 Starting one-click deployment..."
+	@./deployment/deploy-all.sh
+
+.PHONY: destroy
+destroy:  ## 💣 One-click shutdown (delete all AWS resources to stop billing)
+	@echo "💣 Starting one-click shutdown..."
+	@./deployment/destroy-all.sh
+
 .PHONY: cdk-deploy-dev
-cdk-deploy-dev:  ## 🚀 Deploy to development environment
+cdk-deploy-dev:  ## 🏗️ Deploy CDK infrastructure only (no Docker images)
 	@echo "🚀 Deploying to AWS development environment..."
 	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
 	@uv run cdk deploy --all --require-approval never
@@ -339,7 +353,7 @@ cdk-deploy-loadtest:  ## 🧪 Deploy loadtest stack only (Fargate Spot 32GB)
 	@echo "📋 Next: Use ECS Console or AWS CLI to run tasks"
 
 .PHONY: cdk-destroy
-cdk-destroy:  ## 💣 Destroy all CDK stacks (WARNING: irreversible)
+cdk-destroy:  ## 🗑️ Destroy CDK stacks only (use 'make destroy' for complete cleanup)
 	@echo "⚠️  WARNING: This will destroy all AWS resources!"
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
@@ -349,8 +363,82 @@ cdk-destroy:  ## 💣 Destroy all CDK stacks (WARNING: irreversible)
 .PHONY: cdk-ls
 cdk-ls:  ## 📋 List all CDK stacks
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
-		CDK_DEFAULT_REGION=us-east-1 \
+		CDK_DEFAULT_REGION=us-west-2 \
 		uv run cdk list
+
+# ==============================================================================
+# 📊 MONITORING
+# ==============================================================================
+
+.PHONY: monitor mon
+monitor mon:  ## 📊 Monitor all ECS services (ticketing, seat-reservation, kvrocks)
+	@echo "📊 Monitoring all ECS services..."
+	@./script/monitor/all_services.sh
+
+.PHONY: monitor-service mons
+monitor-service mons:  ## 📊 Monitor single ECS service (usage: make monitor-service SERVICE=ticketing-service)
+	@SERVICE=${SERVICE:-ticketing-service}; \
+	echo "📊 Monitoring ECS service: $$SERVICE"; \
+	./script/monitor/ecs_realtime.sh ticketing-cluster $$SERVICE
+
+
+# ==============================================================================
+# 🐳 AWS ECR (Elastic Container Registry)
+# ==============================================================================
+
+.PHONY: ecr-push-all
+ecr-push-all:  ## 🚀 Build and push all services to ECR (production)
+	@echo "🚀 Building and pushing all services to ECR (production)..."
+	@./deployment/script/ecr-push.sh production all
+
+.PHONY: ecr-push-ticketing
+ecr-push-ticketing:  ## 🎫 Build and push ticketing service to ECR (production)
+	@echo "🎫 Building and pushing ticketing-service to ECR (production)..."
+	@./deployment/script/ecr-push.sh production ticketing
+
+.PHONY: ecr-push-reservation
+ecr-push-reservation:  ## 🪑 Build and push seat-reservation service to ECR (production)
+	@echo "🪑 Building and pushing seat-reservation-service to ECR (production)..."
+	@./deployment/script/ecr-push.sh production seat-reservation
+
+.PHONY: ecr-push-staging
+ecr-push-staging:  ## 🧪 Build and push all services to ECR (staging)
+	@echo "🧪 Building and pushing all services to ECR (staging)..."
+	@./deployment/script/ecr-push.sh staging all
+
+.PHONY: ecr-push-dev
+ecr-push-dev:  ## 🔧 Build and push all services to ECR (development)
+	@echo "🔧 Building and pushing all services to ECR (development)..."
+	@./deployment/script/ecr-push.sh development all
+
+.PHONY: ecr-login
+ecr-login:  ## 🔐 Login to AWS ECR
+	@echo "🔐 Logging in to AWS ECR..."
+	@aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+	@echo "✅ ECR login successful"
+
+.PHONY: ecr-list
+ecr-list:  ## 📋 List Docker images in ECR repositories
+	@echo "📋 Images in ticketing-service repository:"
+	@aws ecr list-images --repository-name ticketing-service --region $(AWS_REGION) --output table || echo "Repository not found"
+	@echo ""
+	@echo "📋 Images in seat-reservation-service repository:"
+	@aws ecr list-images --repository-name seat-reservation-service --region $(AWS_REGION) --output table || echo "Repository not found"
+
+.PHONY: ecr-cleanup
+ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
+	@echo "🧹 Cleaning up old ECR images..."
+	@echo "⚠️  This will keep only the last 10 images per environment tag"
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@for repo in ticketing-service seat-reservation-service; do \
+		echo "Cleaning $$repo..."; \
+		aws ecr list-images --repository-name $$repo --region $(AWS_REGION) \
+			--query 'imageIds[?type(imageTag)!=`null`]|sort_by(@, &imageTag)|[0:-10].[imageDigest]' \
+			--output text | xargs -I {} aws ecr batch-delete-image \
+			--repository-name $$repo --region $(AWS_REGION) --image-ids imageDigest={} || true; \
+	done
+	@echo "✅ Cleanup completed"
 
 # ==============================================================================
 # 🌊 KAFKA
@@ -397,6 +485,9 @@ help:
 	@echo ""
 	@echo "🌩️  AWS CDK DEPLOYMENT"
 	@echo "  cdk-synth, cdk-diff, cdk-deploy-dev, cdk-deploy-loadtest, cdk-destroy, cdk-ls"
+	@echo ""
+	@echo "📊 AWS ECS MONITORING"
+	@echo "  monitor-ecs, monitor-all"
 	@echo ""
 	@echo "🌊 KAFKA"
 	@echo "  ka, ks"

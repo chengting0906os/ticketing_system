@@ -60,7 +60,7 @@ brew install awscli  # macOS
 aws configure
 # Access Key ID: your-key
 # Secret Access Key: your-secret
-# Region: us-east-1
+# Region: us-west-2
 # Output format: json
 ```
 
@@ -68,24 +68,24 @@ aws configure
 
 ```bash
 # Login to ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+aws ecr get-login-password --region us-west-2 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com
 
 # Build & push ticketing-service
 docker build -t ticketing-service:latest -f Dockerfile.ticketing .
-docker tag ticketing-service:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ticketing-service:latest
-docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ticketing-service:latest
+docker tag ticketing-service:latest <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/ticketing-service:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/ticketing-service:latest
 
 # Build & push seat-reservation-service
 docker build -t seat-reservation-service:latest -f Dockerfile.reservation .
-docker tag seat-reservation-service:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/seat-reservation-service:latest
-docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/seat-reservation-service:latest
+docker tag seat-reservation-service:latest <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/seat-reservation-service:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/seat-reservation-service:latest
 ```
 
 ### 3. CDK Bootstrap
 
 ```bash
-uv run cdk bootstrap aws://<ACCOUNT_ID>/us-east-1
+uv run cdk bootstrap aws://<ACCOUNT_ID>/us-west-2
 ```
 
 ## Deployment Steps
@@ -242,10 +242,10 @@ cd script/go_client
 docker build -t loadtest-runner:latest .
 
 # Tag and push to ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-docker tag loadtest-runner:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/loadtest-runner:latest
-docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/loadtest-runner:latest
+aws ecr get-login-password --region us-west-2 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com
+docker tag loadtest-runner:latest <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/loadtest-runner:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-west-2.amazonaws.com/loadtest-runner:latest
 ```
 
 ### Run Load Test

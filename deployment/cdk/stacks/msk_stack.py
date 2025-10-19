@@ -101,7 +101,6 @@ socket.request.max.bytes=104857600
 # Log settings
 log.retention.hours=168
 log.segment.bytes=1073741824
-log.retention.check.interval.ms=300000
 
 # Topic settings
 auto.create.topics.enable=true
@@ -123,7 +122,7 @@ delete.topic.enable=true
                 'MSKCluster',
                 cluster_name='ticketing-system-kafka',
                 kafka_version='3.5.1',
-                number_of_broker_nodes=3,
+                number_of_broker_nodes=3,  # 3 AZs × 1 broker per AZ (KRaft quorum)
                 broker_node_group_info=msk.CfnCluster.BrokerNodeGroupInfoProperty(
                     instance_type='kafka.m5.large',
                     client_subnets=[subnet.subnet_id for subnet in vpc.private_subnets],

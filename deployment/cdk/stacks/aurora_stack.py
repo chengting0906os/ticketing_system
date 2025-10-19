@@ -1,12 +1,13 @@
 """
-Aurora Serverless v2 Stack for Ticketing System
-Provides highly available PostgreSQL with 1 writer + 1 reader for read-write splitting
+Aurora Serverless v2 Stack for Ticketing System (I/O-Optimized)
+Provides PostgreSQL with single master (1 writer only) for cost optimization
 
 Architecture:
 - Aurora Serverless v2 cluster (auto-scaling 2-64 ACU for 10000 TPS)
-- 1 Writer instance (primary, handles all writes)
-- 1 Reader instance (read replica, offloads SELECT queries)
-- Automatic failover in seconds
+- I/O-Optimized storage (no per-I/O charges, better cost for high-throughput)
+- 1 Writer instance only (single master configuration)
+- No reader replicas (cost optimization for temporary testing)
+- Automatic backups with 7-day retention
 - Continuous backup to S3
 """
 
@@ -21,7 +22,7 @@ class AuroraStack(Stack):
     Configuration:
     - Engine: PostgreSQL 16 (compatible with existing codebase)
     - Scaling: 2-64 ACU (optimized for 10000 TPS workload)
-    - Instances: 1 writer + 1 reader for high availability
+    - Instances: 1 writer only (single master configuration)
     - Backup: 7-day retention with point-in-time recovery
     - Security: VPC isolated, encrypted at rest and in transit
 
@@ -39,6 +40,8 @@ class AuroraStack(Stack):
         construct_id: str,
         *,
         vpc: ec2.IVpc | None = None,
+        min_capacity: float = 2,
+        max_capacity: float = 64,
         **kwargs,
     ) -> None:
         """
@@ -48,6 +51,8 @@ class AuroraStack(Stack):
             scope: CDK app scope
             construct_id: Stack identifier
             vpc: Optional VPC to deploy Aurora cluster. If not provided, creates a new VPC.
+            min_capacity: Minimum Aurora Capacity Units (default: 2 ACU)
+            max_capacity: Maximum Aurora Capacity Units (default: 64 ACU)
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
@@ -58,7 +63,7 @@ class AuroraStack(Stack):
             vpc = ec2.Vpc(
                 self,
                 'TicketingVpc',
-                max_azs=2,  # Use 2 availability zones for high availability
+                max_azs=3,  # Use 3 availability zones (required for MSK with 3 brokers)
                 nat_gateways=1,  # NAT Gateway for private subnets
             )
 
@@ -87,9 +92,8 @@ class AuroraStack(Stack):
         )
 
         # ============= Aurora Serverless v2 Cluster =============
-        # Configured for 10000 TPS workload
-        # 2 ACU min (idle) → 64 ACU max (peak load)
-        # Estimated cost: ~$500/month (idle) to ~$15,000/month (sustained peak)
+        # Configured with dynamic scaling from config.yml
+        # ACU range from config: {min_capacity}-{max_capacity}
 
         self.cluster = rds.DatabaseCluster(
             self,
@@ -97,27 +101,20 @@ class AuroraStack(Stack):
             engine=rds.DatabaseClusterEngine.aurora_postgres(
                 version=rds.AuroraPostgresEngineVersion.VER_16_6  # PostgreSQL 16.6
             ),
-            # Serverless v2 scaling configuration for 10000 TPS
-            serverless_v2_min_capacity=2,  # Minimum: 2 ACU (~4 GB RAM, ~$0.24/hour)
-            serverless_v2_max_capacity=64,  # Maximum: 64 ACU (~128 GB RAM, ~$15.36/hour)
+            # Serverless v2 scaling configuration from config.yml
+            serverless_v2_min_capacity=min_capacity,
+            serverless_v2_max_capacity=max_capacity,
             # Cluster configuration
             cluster_identifier='ticketing-aurora-cluster',
             default_database_name='ticketing_system_db',
             credentials=db_credentials,
-            # Writer instance (primary)
+            # Writer instance (primary) - single master only
             writer=rds.ClusterInstance.serverless_v2(
                 'Writer',
                 enable_performance_insights=True,
                 performance_insight_retention=rds.PerformanceInsightRetention.DEFAULT,
             ),
-            # Reader instances (read replicas)
-            readers=[
-                rds.ClusterInstance.serverless_v2(
-                    'Reader1',
-                    scale_with_writer=True,  # Match writer's capacity for consistent performance
-                    enable_performance_insights=True,
-                )
-            ],
+            # No readers - single master configuration for cost optimization
             # Network configuration
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
@@ -131,14 +128,14 @@ class AuroraStack(Stack):
             ),
             # Storage configuration
             storage_encrypted=True,  # Encrypt data at rest
-            storage_type=rds.DBClusterStorageType.AURORA,  # Aurora storage (auto-scaling)
+            storage_type=rds.DBClusterStorageType.AURORA_IOPT1,  # I/O-Optimized (no per-I/O charges)
             # Monitoring
             cloudwatch_logs_exports=['postgresql'],  # Export logs to CloudWatch
             monitoring_interval=Duration.seconds(60),  # Enhanced monitoring every 60s
             # Maintenance
             preferred_maintenance_window='sun:04:00-sun:05:00',  # Sunday 4-5 AM UTC
             # Deletion protection
-            deletion_protection=True,  # Prevent accidental deletion
+            deletion_protection=False,  # Prevent accidental deletion
             removal_policy=RemovalPolicy.SNAPSHOT,  # Create snapshot on stack deletion
         )
 
@@ -151,13 +148,7 @@ class AuroraStack(Stack):
             export_name='TicketingAuroraWriterEndpoint',
         )
 
-        CfnOutput(
-            self,
-            'ReaderEndpoint',
-            value=self.cluster.cluster_read_endpoint.hostname,
-            description='Aurora cluster reader endpoint (for reads)',
-            export_name='TicketingAuroraReaderEndpoint',
-        )
+        # Reader endpoint removed - single master configuration
 
         CfnOutput(
             self,

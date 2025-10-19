@@ -1,24 +1,24 @@
 """
-Kvrocks on ECS with Sentinel High Availability Stack
-Self-hosted Redis-compatible storage with automatic failover
+Simplified Kvrocks on ECS Stack
+Self-hosted Redis-compatible storage (single master configuration)
 
 Architecture:
-- 1 Master + 2 Replicas (Kvrocks instances)
-- 3 Sentinel instances for automatic failover
+- 1 Master only (no replicas, no sentinels)
 - EFS for persistent storage
 - Redis protocol compatible (drop-in replacement)
 
-High Availability:
-- Sentinel monitors master health
-- Auto-promotes replica to master on failure
-- Client-side discovery via Sentinel
-- Typically 10-30 second failover time
+Performance (10000 TPS target):
+- Kvrocks can handle 50000+ ops/sec per instance
+- 10000 TPS is well within capacity
+- Single instance is sufficient for testing/development
 
 Why Kvrocks over ElastiCache?
-- 70% cost savings ($50 vs $200/month for similar capacity)
+- 90% cost savings ($24 vs $200/month)
 - RocksDB backend (better for large datasets)
 - Full control over configuration
 - Matches docker-compose dev environment
+
+Note: This is a simplified setup without HA for performance testing.
 """
 
 from aws_cdk import (
@@ -36,18 +36,16 @@ from constructs import Construct
 
 class KvrocksStack(Stack):
     """
-    Kvrocks + Sentinel cluster on ECS Fargate
+    Simplified Kvrocks on ECS Fargate (Single Master)
 
     Configuration (10000 TPS target):
-    - 3 Kvrocks instances (1 master + 2 replicas)
-    - 3 Sentinel instances (quorum = 2)
-    - Each instance: 1 vCPU + 2GB RAM
+    - 1 Kvrocks master instance
+    - 4 vCPU + 8GB RAM (handles 50,000+ ops/sec)
     - EFS for persistent storage (data survives container restarts)
 
     Performance:
     - Kvrocks can handle 50000+ ops/sec per instance
     - 10000 TPS is well within capacity
-    - Sentinel adds <1ms latency for failover detection
 
     See also: KVROCKS_SPEC.md for client configuration
     """
@@ -96,12 +94,30 @@ class KvrocksStack(Stack):
             description='Sentinel communication port',
         )
 
+        # ============= EFS Security Group =============
+        # Security group for EFS mount targets
+        efs_security_group = ec2.SecurityGroup(
+            self,
+            'EFSSecurityGroup',
+            vpc=vpc,
+            description='Security group for EFS mount targets',
+            allow_all_outbound=False,
+        )
+
+        # Allow NFS traffic from Kvrocks containers
+        efs_security_group.add_ingress_rule(
+            peer=self.kvrocks_security_group,
+            connection=ec2.Port.tcp(2049),
+            description='NFS access from Kvrocks containers',
+        )
+
         # ============= EFS File System =============
         # Persistent storage for Kvrocks data
         file_system = efs.FileSystem(
             self,
             'KvrocksEFS',
             vpc=vpc,
+            security_group=efs_security_group,
             encrypted=True,
             lifecycle_policy=efs.LifecyclePolicy.AFTER_14_DAYS,  # Move to IA after 14 days
             performance_mode=efs.PerformanceMode.GENERAL_PURPOSE,
@@ -123,6 +139,23 @@ class KvrocksStack(Stack):
             assumed_by=iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
         )
 
+        # Grant EFS mount permissions to task role (needed for EFS IAM auth)
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    'elasticfilesystem:ClientMount',
+                    'elasticfilesystem:ClientWrite',
+                    'elasticfilesystem:ClientRootAccess',
+                ],
+                resources=[file_system.file_system_arn],
+                conditions={
+                    'StringEquals': {
+                        'elasticfilesystem:AccessPointArn': access_point.access_point_arn
+                    }
+                },
+            )
+        )
+
         # ============= Task Execution Role =============
         execution_role = iam.Role(
             self,
@@ -135,12 +168,32 @@ class KvrocksStack(Stack):
             ],
         )
 
+        # Grant EFS mount permissions to execution role
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    'elasticfilesystem:ClientMount',
+                    'elasticfilesystem:ClientWrite',
+                    'elasticfilesystem:ClientRootAccess',
+                ],
+                resources=[file_system.file_system_arn],
+                conditions={
+                    'StringEquals': {
+                        'elasticfilesystem:AccessPointArn': access_point.access_point_arn
+                    }
+                },
+            )
+        )
+
+        # Note: EFS File System Policy would be ideal but CDK doesn't provide a construct
+        # The IAM permissions on Task Role + Execution Role should be sufficient
+
         # ============= Kvrocks Master Task Definition =============
         kvrocks_master_task = ecs.FargateTaskDefinition(
             self,
             'KvrocksMasterTask',
-            memory_limit_mib=2048,  # 2GB RAM
-            cpu=1024,  # 1 vCPU
+            memory_limit_mib=8192,  # 8GB RAM (sufficient for high-throughput caching)
+            cpu=4096,  # 4 vCPU (handles 10000+ TPS easily)
             task_role=task_role,
             execution_role=execution_role,
             volumes=[
@@ -201,107 +254,11 @@ class KvrocksStack(Stack):
             cluster=cluster,
             task_definition=kvrocks_master_task,
             desired_count=1,  # Only 1 master
+            min_healthy_percent=70,  # Keep 70% healthy during deployments
+            max_healthy_percent=200,  # Allow double capacity during rollout
             enable_execute_command=True,  # Allow debugging via ECS Exec
             security_groups=[self.kvrocks_security_group],
             service_name='kvrocks-master',
-        )
-
-        # ============= Kvrocks Replica Task Definitions =============
-        # We need 2 replicas, each needs its own task definition to replicate from master
-        # In production, you'd configure replication via kvrocks.conf or SLAVEOF command
-
-        kvrocks_replica_task = ecs.FargateTaskDefinition(
-            self,
-            'KvrocksReplicaTask',
-            memory_limit_mib=2048,
-            cpu=1024,
-            task_role=task_role,
-            execution_role=execution_role,
-        )
-
-        kvrocks_replica_container = kvrocks_replica_task.add_container(
-            'KvrocksReplica',
-            image=ecs.ContainerImage.from_registry('apache/kvrocks:latest'),
-            logging=ecs.LogDriver.aws_logs(
-                stream_prefix='kvrocks-replica',
-                log_retention=logs.RetentionDays.ONE_WEEK,
-            ),
-            environment={
-                'KVROCKS_BIND': '0.0.0.0',
-                'KVROCKS_PORT': '6666',
-                # Note: In production, set SLAVEOF to master service discovery name
-                # 'KVROCKS_SLAVEOF': 'kvrocks-master.ticketing.local 6666',
-            },
-            command=[
-                'kvrocks',
-                '--bind',
-                '0.0.0.0',
-                '--port',
-                '6666',
-                # Add --slaveof flag after service discovery is set up
-            ],
-        )
-
-        kvrocks_replica_container.add_port_mappings(
-            ecs.PortMapping(container_port=6666, protocol=ecs.Protocol.TCP)
-        )
-
-        # Create 2 replica services
-        kvrocks_replica_service = ecs.FargateService(
-            self,
-            'KvrocksReplicaService',
-            cluster=cluster,
-            task_definition=kvrocks_replica_task,
-            desired_count=2,  # 2 replicas
-            enable_execute_command=True,
-            security_groups=[self.kvrocks_security_group],
-            service_name='kvrocks-replica',
-        )
-
-        # ============= Sentinel Task Definition =============
-        sentinel_task = ecs.FargateTaskDefinition(
-            self,
-            'SentinelTask',
-            memory_limit_mib=512,  # 512MB RAM (Sentinel is lightweight)
-            cpu=256,  # 0.25 vCPU
-            task_role=task_role,
-            execution_role=execution_role,
-        )
-
-        sentinel_container = sentinel_task.add_container(
-            'Sentinel',
-            image=ecs.ContainerImage.from_registry(
-                'redis:7-alpine'
-            ),  # Use Redis image for Sentinel
-            logging=ecs.LogDriver.aws_logs(
-                stream_prefix='sentinel', log_retention=logs.RetentionDays.ONE_WEEK
-            ),
-            command=[
-                'redis-sentinel',
-                '/etc/redis/sentinel.conf',
-                # Sentinel configuration will be provided via EFS or ConfigMap
-            ],
-            environment={
-                'SENTINEL_QUORUM': '2',  # Need 2 out of 3 sentinels to agree
-                'SENTINEL_DOWN_AFTER': '5000',  # 5 seconds to detect failure
-                'SENTINEL_FAILOVER_TIMEOUT': '10000',  # 10 seconds failover timeout
-            },
-        )
-
-        sentinel_container.add_port_mappings(
-            ecs.PortMapping(container_port=26666, protocol=ecs.Protocol.TCP)
-        )
-
-        # Create 3 Sentinel services (quorum = 2)
-        sentinel_service = ecs.FargateService(
-            self,
-            'SentinelService',
-            cluster=cluster,
-            task_definition=sentinel_task,
-            desired_count=3,  # 3 Sentinels for quorum
-            enable_execute_command=True,
-            security_groups=[self.kvrocks_security_group],
-            service_name='kvrocks-sentinel',
         )
 
         # ============= Outputs =============
@@ -314,20 +271,6 @@ class KvrocksStack(Stack):
 
         CfnOutput(
             self,
-            'KvrocksReplicaServiceName',
-            value=kvrocks_replica_service.service_name,
-            description='Kvrocks replica service name',
-        )
-
-        CfnOutput(
-            self,
-            'SentinelServiceName',
-            value=sentinel_service.service_name,
-            description='Sentinel service name',
-        )
-
-        CfnOutput(
-            self,
             'EFSFileSystemId',
             value=file_system.file_system_id,
             description='EFS file system ID for Kvrocks data',
@@ -336,12 +279,10 @@ class KvrocksStack(Stack):
         CfnOutput(
             self,
             'ConnectionInfo',
-            value='Use Sentinel endpoints to discover current master: sentinel://sentinel-1:26666,sentinel-2:26666,sentinel-3:26666',
-            description='Client connection info (use Sentinel for automatic failover)',
+            value='Direct connection to master: kvrocks-master.ticketing.local:6666',
+            description='Client connection info (single master, no sentinel)',
         )
 
         # Store references
         self.master_service = kvrocks_master_service
-        self.replica_service = kvrocks_replica_service
-        self.sentinel_service = sentinel_service
         self.file_system = file_system
