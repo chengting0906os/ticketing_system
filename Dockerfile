@@ -64,8 +64,10 @@ RUN uv sync --no-dev
 # Copy only application code (exclude tests, logs, etc.)
 # Use .dockerignore to exclude unnecessary files
 COPY src/ ./src/
+COPY static/ ./static/
 COPY alembic.ini ./
 COPY pyproject.toml ./
+# .env.example not needed - using AWS Secrets Manager for all configs
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \

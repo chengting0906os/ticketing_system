@@ -97,8 +97,8 @@ script/
 # Observability configs
 observability/
 
-# Static files
-static/
+# Static files (needed for FastAPI StaticFiles)
+# static/
 
 # Knowledge base
 knowledge_base/
