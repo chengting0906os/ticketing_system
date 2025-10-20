@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
 
 from opentelemetry import trace
@@ -172,60 +173,17 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             return self._row_to_entity(row)
 
     @Logger.io
-    async def link_tickets_to_booking(self, *, booking_id: int, ticket_ids: list[int]) -> None:
-        """
-        Write booking-ticket associations to booking_ticket_mapping table using batch insert
-
-        Args:
-            booking_id: Booking ID
-            ticket_ids: List of ticket IDs to link
-        """
-        if not ticket_ids:
-            return
-
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            # Batch insert using executemany
-            records = [(booking_id, ticket_id) for ticket_id in ticket_ids]
-            await conn.executemany(
-                """
-                INSERT INTO booking_ticket_mapping (booking_id, ticket_id)
-                VALUES ($1, $2)
-                """,
-                records,
-            )
-
-    @Logger.io
-    async def get_ticket_ids_by_booking_id(self, *, booking_id: int) -> list[int]:
-        """
-        Get ticket IDs linked to a booking from booking_ticket_mapping association table
-
-        Args:
-            booking_id: Booking ID
-
-        Returns:
-            List of ticket IDs
-        """
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT ticket_id
-                FROM booking_ticket_mapping
-                WHERE booking_id = $1
-                """,
-                booking_id,
-            )
-            return [row['ticket_id'] for row in rows]
-
-    @Logger.io
     async def complete_booking_and_mark_tickets_sold_atomically(
         self, *, booking: Booking, ticket_ids: list[int]
     ) -> Booking:
         """
-        Atomically update booking to COMPLETED and mark tickets as SOLD in single transaction
+        Atomically update booking to COMPLETED and mark tickets as SOLD using CTE
 
-        This method combines two operations that must succeed or fail together:
+        Uses Common Table Expression (CTE) to combine two operations in a single atomic statement:
         1. Update booking status to COMPLETED with paid_at timestamp
         2. Update all tickets to SOLD status
+
+        PostgreSQL guarantees atomicity per statement - entire CTE succeeds or fails together.
 
         Args:
             booking: Booking entity with COMPLETED status and paid_at set
@@ -234,57 +192,56 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
         Returns:
             Updated booking entity
         """
-        from datetime import timezone
+
+        now = datetime.now(timezone.utc)
 
         async with (await get_asyncpg_pool()).acquire() as conn:
-            async with conn.transaction():
-                # 1. Update booking to COMPLETED
-                booking_row = await conn.fetchrow(
-                    """
+            # Use CTE to atomically update booking and tickets in a single statement
+            booking_row = await conn.fetchrow(
+                """
+                WITH updated_tickets AS (
+                    UPDATE ticket
+                    SET status = 'sold',
+                        updated_at = $1
+                    WHERE id = ANY($2::int[])
+                    RETURNING id
+                ),
+                updated_booking AS (
                     UPDATE booking
-                    SET status = $1,
-                        updated_at = $2,
-                        paid_at = $3
-                    WHERE id = $4
+                    SET status = $3,
+                        updated_at = $4,
+                        paid_at = $5
+                    WHERE id = $6
                     RETURNING id, buyer_id, event_id, section, subsection, quantity,
                               total_price, seat_selection_mode, seat_positions, status,
                               created_at, updated_at, paid_at
-                    """,
-                    booking.status.value,
-                    booking.updated_at,
-                    booking.paid_at,
-                    booking.id,
                 )
+                SELECT * FROM updated_booking
+                """,
+                now,
+                ticket_ids if ticket_ids else [],
+                booking.status.value,
+                booking.updated_at,
+                booking.paid_at,
+                booking.id,
+            )
 
-                if not booking_row:
-                    raise ValueError(f'Booking with id {booking.id} not found')
+            if not booking_row:
+                raise ValueError(f'Booking with id {booking.id} not found')
 
-                # 2. Update tickets to SOLD (if any)
-                if ticket_ids:
-                    from datetime import datetime
+            Logger.base.info(
+                f'💳 [ATOMIC_PAY] Updated booking {booking.id} to COMPLETED and {len(ticket_ids)} tickets to SOLD'
+            )
 
-                    now = datetime.now(timezone.utc)
-                    await conn.execute(
-                        """
-                        UPDATE ticket
-                        SET status = 'sold',
-                            updated_at = $1
-                        WHERE id = ANY($2::int[])
-                        """,
-                        now,
-                        ticket_ids,
-                    )
-
-                    Logger.base.info(
-                        f'💳 [ATOMIC_PAY] Updated booking {booking.id} to COMPLETED and {len(ticket_ids)} tickets to SOLD'
-                    )
-
-                return self._row_to_entity(booking_row)
+            return self._row_to_entity(booking_row)
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
         """
         查詢 booking 關聯的 tickets（用於 command 操作）
+
+        Uses booking's event_id, section, subsection, and seat_positions to find matching tickets
+        via the unique constraint (event_id, section, subsection, row_number, seat_number)
 
         Args:
             booking_id: Booking ID
@@ -293,17 +250,36 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             List of ticket references with full details
         """
         async with (await get_asyncpg_pool()).acquire() as conn:
-            # Join booking_ticket_mapping and ticket tables to get full ticket details
+            # First, get booking info
+            booking_row = await conn.fetchrow(
+                """
+                SELECT event_id, section, subsection, seat_positions
+                FROM booking
+                WHERE id = $1
+                """,
+                booking_id,
+            )
+
+            if not booking_row or not booking_row['seat_positions']:
+                return []
+
+            # Query tickets using booking's info and seat_positions
+            # seat_positions format: ["1-1", "1-2"] (row-seat)
             rows = await conn.fetch(
                 """
                 SELECT t.id, t.event_id, t.section, t.subsection, t.row_number, t.seat_number,
                        t.price, t.status, t.created_at, t.updated_at
                 FROM ticket t
-                INNER JOIN booking_ticket_mapping btm ON t.id = btm.ticket_id
-                WHERE btm.booking_id = $1
+                WHERE t.event_id = $1
+                  AND t.section = $2
+                  AND t.subsection = $3
+                  AND (t.row_number || '-' || t.seat_number) = ANY($4::text[])
                 ORDER BY t.id
                 """,
-                booking_id,
+                booking_row['event_id'],
+                booking_row['section'],
+                booking_row['subsection'],
+                booking_row['seat_positions'],
             )
 
             tickets = []

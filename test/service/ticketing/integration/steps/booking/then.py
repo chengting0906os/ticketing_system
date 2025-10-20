@@ -307,15 +307,36 @@ def verify_booking_contains_tickets_with_seats(
     if booking_status == 'processing':
         return
 
-    # Query database to get tickets associated with this booking using the new ticket_ids array
+    # First get booking info to know which tickets to query
+    booking_result = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+
+    assert booking_result, f'Booking {booking_id} not found'
+    booking_data = booking_result[0]
+
+    # Query tickets using booking's seat_positions
     result = execute_sql_statement(
         """
         SELECT t.id, t.section, t.subsection, t.row_number, t.seat_number
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 
@@ -347,15 +368,35 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
     if booking_status == 'processing':
         return
 
-    # Query database to get tickets associated with this booking using the new ticket_ids array
+    # Get booking info
+    booking_result = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+    assert booking_result, f'Booking {booking_id} not found'
+    booking_data = booking_result[0]
+
+    # Query tickets using booking's seat_positions
     result = execute_sql_statement(
         """
         SELECT t.id, t.status
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 
@@ -374,16 +415,36 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
-    # Query database to get tickets associated with this booking with their seat info using the new ticket_ids array
+    # Get booking info
+    booking_result = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+    assert booking_result, f'Booking {booking_id} not found'
+    booking_data = booking_result[0]
+
+    # Query tickets using booking's seat_positions
     result = execute_sql_statement(
         """
         SELECT t.id, t.seat_number, t.section, t.subsection, t.row_number, t.seat_number as seat
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         ORDER BY t.section, t.subsection, t.row_number, t.seat_number
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 
@@ -415,15 +476,35 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
     booking_id = booking_state['booking']['id']
     event_id = booking_state['event_id']
 
-    # Get the row number of seats in this booking using the new ticket_ids array
+    # Get booking info
+    booking_info = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+    assert booking_info, f'Booking {booking_id} not found'
+    booking_data = booking_info[0]
+
+    # Get the row number of seats in this booking
     booking_result = execute_sql_statement(
         """
         SELECT DISTINCT t.row_number
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 
@@ -457,15 +538,35 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
-    # Query database to get tickets associated with this booking
+    # Get booking info
+    booking_info = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+    assert booking_info, f'Booking {booking_id} not found'
+    booking_data = booking_info[0]
+
+    # Query tickets count using booking's seat_positions
     result = execute_sql_statement(
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 
@@ -481,15 +582,35 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
-    # Query database to get tickets associated with this booking
+    # Get booking info
+    booking_info = execute_sql_statement(
+        """
+        SELECT event_id, section, subsection, seat_positions
+        FROM booking
+        WHERE id = :booking_id
+        """,
+        {'booking_id': booking_id},
+        fetch=True,
+    )
+    assert booking_info, f'Booking {booking_id} not found'
+    booking_data = booking_info[0]
+
+    # Query tickets count using booking's seat_positions
     result = execute_sql_statement(
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t
-        JOIN booking_ticket_mapping bt ON t.id = bt.ticket_id
-        WHERE bt.booking_id = :booking_id
+        WHERE t.event_id = :event_id
+          AND t.section = :section
+          AND t.subsection = :subsection
+          AND (t.row_number || '-' || t.seat_number) = ANY(:seat_positions::text[])
         """,
-        {'booking_id': booking_id},
+        {
+            'event_id': booking_data['event_id'],
+            'section': booking_data['section'],
+            'subsection': booking_data['subsection'],
+            'seat_positions': booking_data['seat_positions'],
+        },
         fetch=True,
     )
 

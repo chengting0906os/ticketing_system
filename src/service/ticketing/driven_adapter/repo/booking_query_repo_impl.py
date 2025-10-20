@@ -65,7 +65,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         )
 
     @staticmethod
-    def _to_booking_dict(db_booking: BookingModel) -> dict:
+    def _to_booking_dict(db_booking: BookingModel, tickets_data: list | None = None) -> dict:
         # Safely access event relationship if loaded
         event_name = 'Unknown Event'
         seller_name = 'Unknown Seller'
@@ -82,25 +82,9 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         if hasattr(db_booking, '__dict__') and 'buyer' in db_booking.__dict__ and db_booking.buyer:
             buyer_name = db_booking.buyer.name  # pyright: ignore[reportAttributeAccessIssue]
 
-        # Convert tickets relationship to dict format (already loaded via lazy='selectin')
-        tickets_data = []
-        if (
-            hasattr(db_booking, '__dict__')
-            and 'tickets' in db_booking.__dict__
-            and db_booking.tickets
-        ):
-            tickets_data = [
-                {
-                    'id': ticket.id,
-                    'section': ticket.section,
-                    'subsection': ticket.subsection,
-                    'row': ticket.row_number,
-                    'seat': ticket.seat_number,
-                    'price': ticket.price,
-                    'status': ticket.status,
-                }
-                for ticket in db_booking.tickets  # pyright: ignore[reportAttributeAccessIssue]
-            ]
+        # Use tickets_data passed from caller (queried via get_tickets_by_booking_id)
+        if tickets_data is None:
+            tickets_data = []
 
         return {
             'id': db_booking.id,
@@ -153,7 +137,22 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             if not db_booking:
                 return None
 
-            return BookingQueryRepoImpl._to_booking_dict(db_booking)
+            # Query tickets using seat_positions
+            tickets = await self.get_tickets_by_booking_id(booking_id=booking_id)
+            tickets_data = [
+                {
+                    'id': ticket.id,
+                    'section': ticket.section,
+                    'subsection': ticket.subsection,
+                    'row': ticket.row,
+                    'seat': ticket.seat,
+                    'price': ticket.price,
+                    'status': ticket.status.value,
+                }
+                for ticket in tickets
+            ]
+
+            return BookingQueryRepoImpl._to_booking_dict(db_booking, tickets_data=tickets_data)
 
     @Logger.io
     async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
@@ -175,7 +174,27 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             result = await session.execute(query.order_by(BookingModel.id))
             db_bookings = result.scalars().all()
 
-            return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
+            # Query tickets for each booking
+            bookings_with_tickets = []
+            for db_booking in db_bookings:
+                tickets = await self.get_tickets_by_booking_id(booking_id=db_booking.id)
+                tickets_data = [
+                    {
+                        'id': ticket.id,
+                        'section': ticket.section,
+                        'subsection': ticket.subsection,
+                        'row': ticket.row,
+                        'seat': ticket.seat,
+                        'price': ticket.price,
+                        'status': ticket.status.value,
+                    }
+                    for ticket in tickets
+                ]
+                bookings_with_tickets.append(
+                    BookingQueryRepoImpl._to_booking_dict(db_booking, tickets_data=tickets_data)
+                )
+
+            return bookings_with_tickets
 
     @Logger.io(truncate_content=True)  # type: ignore
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
@@ -198,30 +217,78 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             result = await session.execute(query.order_by(BookingModel.id))
             db_bookings = result.scalars().all()
 
-            return [BookingQueryRepoImpl._to_booking_dict(db_booking) for db_booking in db_bookings]
+            # Query tickets for each booking
+            bookings_with_tickets = []
+            for db_booking in db_bookings:
+                tickets = await self.get_tickets_by_booking_id(booking_id=db_booking.id)
+                tickets_data = [
+                    {
+                        'id': ticket.id,
+                        'section': ticket.section,
+                        'subsection': ticket.subsection,
+                        'row': ticket.row,
+                        'seat': ticket.seat,
+                        'price': ticket.price,
+                        'status': ticket.status.value,
+                    }
+                    for ticket in tickets
+                ]
+                bookings_with_tickets.append(
+                    BookingQueryRepoImpl._to_booking_dict(db_booking, tickets_data=tickets_data)
+                )
+
+            return bookings_with_tickets
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
-        """Get all tickets for a booking by querying the booking_ticket_mapping association table"""
-        from src.service.ticketing.driven_adapter.model.booking_ticket_mapping_model import (
-            BookingTicketMappingModel,
-        )
+        """
+        Get all tickets for a booking using seat_positions
 
+        Uses booking's event_id, section, subsection, and seat_positions to find matching tickets
+        via the unique constraint (event_id, section, subsection, row_number, seat_number)
+        """
         async with self._get_session() as session:
-            # Query the association table to get ticket IDs for this booking
+            # First get booking info
             result = await session.execute(
-                select(BookingTicketMappingModel.ticket_id).where(
-                    BookingTicketMappingModel.booking_id == booking_id
-                )
+                select(
+                    BookingModel.event_id,
+                    BookingModel.section,
+                    BookingModel.subsection,
+                    BookingModel.seat_positions,
+                ).where(BookingModel.id == booking_id)
             )
-            ticket_ids = [row[0] for row in result.all()]
+            booking_row = result.first()
 
-            if not ticket_ids:
+            if not booking_row or not booking_row.seat_positions:
                 return []
 
-            # Then get the tickets by their IDs
+            # Build conditions to match tickets
+            # seat_positions format: ["1-1", "1-2"] means row-seat pairs
+            conditions = []
+            for seat_pos in booking_row.seat_positions:
+                try:
+                    row_num, seat_num = seat_pos.split('-')
+                    conditions.append(
+                        (TicketModel.row_number == int(row_num))
+                        & (TicketModel.seat_number == int(seat_num))
+                    )
+                except (ValueError, AttributeError):
+                    # Skip invalid seat position format
+                    continue
+
+            if not conditions:
+                return []
+
+            # Query tickets
+            from sqlalchemy import or_
+
             result = await session.execute(
-                select(TicketModel).where(TicketModel.id.in_(ticket_ids))
+                select(TicketModel).where(
+                    TicketModel.event_id == booking_row.event_id,
+                    TicketModel.section == booking_row.section,
+                    TicketModel.subsection == booking_row.subsection,
+                    or_(*conditions),
+                )
             )
             db_tickets = result.scalars().all()
 

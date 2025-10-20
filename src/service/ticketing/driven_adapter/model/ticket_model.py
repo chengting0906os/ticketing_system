@@ -1,15 +1,11 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from src.platform.database.db_setting import Base
-
-
-if TYPE_CHECKING:
-    from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
 
 
 class TicketModel(Base):
@@ -30,15 +26,6 @@ class TicketModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-    bookings: Mapped[list['BookingModel']] = relationship(
-        'BookingModel',
-        secondary='booking_ticket_mapping',
-        primaryjoin='TicketModel.id == foreign(booking_ticket_mapping.c.ticket_id)',
-        secondaryjoin='BookingModel.id == foreign(booking_ticket_mapping.c.booking_id)',
-        viewonly=True,
-        lazy='selectin',
     )
 
     __table_args__ = (

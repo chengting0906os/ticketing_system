@@ -98,10 +98,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             booking=pending_booking
         )
 
-        # 4. 寫入 booking_ticket 關聯表
-        if ticket_ids:
-            await self.booking_command_repo.link_tickets_to_booking(
-                booking_id=booking_id, ticket_ids=ticket_ids
-            )
+        # Note: No need to write to booking_ticket_mapping anymore
+        # Tickets are linked via booking.seat_positions which contains seat identifiers
 
         return updated_booking

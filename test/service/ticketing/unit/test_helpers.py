@@ -55,11 +55,10 @@ class RepositoryMocks:
         # Booking command repo
         self.booking_command_repo = AsyncMock()
         self.booking_command_repo.get_by_id = AsyncMock(return_value=booking)
-        self.booking_command_repo.get_ticket_ids_by_booking_id = AsyncMock(return_value=ticket_ids)
+        self.booking_command_repo.get_tickets_by_booking_id = AsyncMock(return_value=tickets)
         self.booking_command_repo.update_status_to_pending_payment = AsyncMock(
             side_effect=self._update_booking
         )
-        self.booking_command_repo.link_tickets_to_booking = AsyncMock()
 
         # Event ticketing command repo
         self.event_ticketing_command_repo = AsyncMock()

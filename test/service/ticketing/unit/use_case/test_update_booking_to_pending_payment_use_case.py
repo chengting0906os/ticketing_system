@@ -129,7 +129,6 @@ class TestUpdateBookingToPendingPayment:
         original_update_tickets = repo_mocks.event_ticketing_command_repo.update_tickets_status
         original_get_tickets = repo_mocks.event_ticketing_query_repo.get_tickets_by_ids
         original_update_booking = repo_mocks.booking_command_repo.update_status_to_pending_payment
-        original_link_tickets = repo_mocks.booking_command_repo.link_tickets_to_booking
 
         async def track_get_booking(*args, **kwargs):
             call_order.append('get_booking')
@@ -157,10 +156,6 @@ class TestUpdateBookingToPendingPayment:
             assert booking.seat_positions == ['A-1-1-1', 'A-1-1-2']
             return result
 
-        async def track_link_tickets(*args, **kwargs):
-            call_order.append('link_tickets')
-            return await original_link_tickets(*args, **kwargs)
-
         repo_mocks.booking_command_repo.get_by_id = AsyncMock(side_effect=track_get_booking)
         repo_mocks.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers = AsyncMock(
             side_effect=track_get_ticket_ids
@@ -173,9 +168,6 @@ class TestUpdateBookingToPendingPayment:
         )
         repo_mocks.booking_command_repo.update_status_to_pending_payment = AsyncMock(
             side_effect=track_update_booking
-        )
-        repo_mocks.booking_command_repo.link_tickets_to_booking = AsyncMock(
-            side_effect=track_link_tickets
         )
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
@@ -191,13 +183,13 @@ class TestUpdateBookingToPendingPayment:
         )
 
         # Then: 驗證執行順序（asyncpg autocommit，不再需要明確 commit）
+        # Note: No longer need to link tickets to booking mapping table
         expected_order = [
             'get_booking',
             'get_ticket_ids',
             'update_tickets',
             'get_tickets_for_price',
             'update_booking',
-            'link_tickets',
         ]
         assert call_order == expected_order
 

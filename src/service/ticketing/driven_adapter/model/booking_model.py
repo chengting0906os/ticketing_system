@@ -10,7 +10,6 @@ from src.platform.database.db_setting import Base
 
 if TYPE_CHECKING:
     from src.service.ticketing.driven_adapter.model.event_model import EventModel
-    from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
     from src.service.ticketing.driven_adapter.model.user_model import UserModel
 
 
@@ -46,14 +45,6 @@ class BookingModel(Base):
         'EventModel',
         primaryjoin='BookingModel.event_id == foreign(EventModel.id)',
         foreign_keys='[BookingModel.event_id]',
-        viewonly=True,
-        lazy='selectin',
-    )
-    tickets: Mapped[list['TicketModel']] = relationship(
-        'TicketModel',
-        secondary='booking_ticket_mapping',
-        primaryjoin='BookingModel.id == foreign(booking_ticket_mapping.c.booking_id)',
-        secondaryjoin='TicketModel.id == foreign(booking_ticket_mapping.c.ticket_id)',
         viewonly=True,
         lazy='selectin',
     )

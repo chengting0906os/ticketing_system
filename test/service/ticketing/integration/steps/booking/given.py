@@ -57,6 +57,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     )
 
     ticket_ids = []
+    seat_positions = []
     if available_tickets:
         for ticket in available_tickets:
             ticket_id = ticket['id']
@@ -66,11 +67,24 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
                 "UPDATE ticket SET status = 'reserved', buyer_id = :buyer_id WHERE id = :ticket_id",
                 {'buyer_id': buyer_id, 'ticket_id': ticket_id},
             )
-            # Link ticket to booking
-            execute_sql_statement(
-                'INSERT INTO booking_ticket_mapping (booking_id, ticket_id) VALUES (:booking_id, :ticket_id)',
-                {'booking_id': booking_id, 'ticket_id': ticket_id},
+
+            # Get ticket's row and seat number to build seat_positions
+            ticket_info = execute_sql_statement(
+                'SELECT row_number, seat_number FROM ticket WHERE id = :ticket_id',
+                {'ticket_id': ticket_id},
+                fetch=True,
             )
+            if ticket_info:
+                row_num = ticket_info[0]['row_number']
+                seat_num = ticket_info[0]['seat_number']
+                seat_positions.append(f'{row_num}-{seat_num}')
+
+    # Update booking with seat_positions
+    if seat_positions:
+        execute_sql_statement(
+            'UPDATE booking SET seat_positions = :seat_positions WHERE id = :booking_id',
+            {'booking_id': booking_id, 'seat_positions': seat_positions},
+        )
 
     booking_state['booking'] = {'id': booking_id, 'status': 'pending_payment', 'event_id': event_id}
     booking_state['buyer_id'] = buyer_id
@@ -292,9 +306,14 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
         # Create tickets if ticket_ids provided
         if 'ticket_ids' in booking_data:
             ticket_ids = [int(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
+            seat_positions = []
+
             for idx, ticket_id in enumerate(ticket_ids):
                 # Create ticket - map booking status to ticket status
                 ticket_status = 'sold' if status == 'paid' else 'reserved'
+                row_number = 1
+                seat_number = idx + 1
+
                 execute_sql_statement(
                     """
                     INSERT INTO ticket (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
@@ -305,24 +324,29 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                         'event_id': event_id,
                         'section': section,
                         'subsection': subsection,
-                        'row_number': 1,
-                        'seat_number': idx + 1,
+                        'row_number': row_number,
+                        'seat_number': seat_number,
                         'price': 1000,
                         'status': ticket_status,
                         'buyer_id': buyer_id,
                     },
                 )
-                # Link ticket to booking
-                execute_sql_statement(
-                    """
-                    INSERT INTO booking_ticket_mapping (booking_id, ticket_id)
-                    VALUES (:booking_id, :ticket_id)
-                    """,
-                    {
-                        'booking_id': booking_id,
-                        'ticket_id': ticket_id,
-                    },
-                )
+
+                # Build seat_positions list (format: "row-seat")
+                seat_positions.append(f'{row_number}-{seat_number}')
+
+            # Update booking with seat_positions
+            execute_sql_statement(
+                """
+                UPDATE booking
+                SET seat_positions = :seat_positions
+                WHERE id = :booking_id
+                """,
+                {
+                    'booking_id': booking_id,
+                    'seat_positions': seat_positions,
+                },
+            )
 
 
 @given('bookings exist:')

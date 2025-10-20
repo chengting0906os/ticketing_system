@@ -75,23 +75,18 @@ class UpdateBookingToCancelledUseCase:
             booking=cancelled_booking
         )
 
-        # 查詢關聯的 ticket_ids
-        ticket_ids = await self.booking_command_repo.get_ticket_ids_by_booking_id(
-            booking_id=booking_id
-        )
+        # 查詢關聯的 tickets（透過 seat_positions）
+        tickets = await self.booking_command_repo.get_tickets_by_booking_id(booking_id=booking_id)
+        ticket_ids = [ticket.id for ticket in tickets if ticket.id]
 
-        # 取得座位位置資訊（用於釋放 Kvrocks 座位）
-        seat_positions = []
-        if ticket_ids:
-            tickets = await self.event_ticketing_query_repo.get_tickets_by_ids(
-                ticket_ids=ticket_ids
-            )
-            seat_positions = [
-                ticket.seat_identifier for ticket in tickets if ticket.seat_identifier
-            ]
-            Logger.base.info(
-                f'🎫 [CANCEL] Found {len(seat_positions)} seat positions: {seat_positions}'
-            )
+        # 取得座位位置資訊（從 tickets 建構完整的 seat identifiers）
+        # Format: section-subsection-row-seat (e.g., "A-1-1-1")
+        seat_positions = [
+            f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}' for ticket in tickets
+        ]
+        Logger.base.info(
+            f'🎫 [CANCEL] Found {len(seat_positions)} seat positions: {seat_positions}'
+        )
 
         # 發送 BookingCancelledEvent 到 Kafka（釋放 Kvrocks 座位）
         if ticket_ids:
