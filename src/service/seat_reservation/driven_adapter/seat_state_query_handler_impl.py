@@ -120,7 +120,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         return seat_states
 
     @Logger.io
-    @Logger.io
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """獲取座位價格"""
         seat_states = await self.get_seat_states([seat_id], event_id)
@@ -130,7 +129,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
     @Logger.io
     async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
         """獲取活動所有 subsection 的統計資訊"""
-        Logger.base.info(f'📊 [QUERY] Listing all subsection status for event {event_id}')
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
@@ -164,7 +162,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                     'updated_at': int(stats.get('updated_at', 0)),
                 }
 
-        Logger.base.info(f'✅ [QUERY] Retrieved {len(all_stats)} subsection stats')
         return all_stats
 
     async def _get_all_event_ids(self) -> list[int]:

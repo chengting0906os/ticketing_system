@@ -107,9 +107,7 @@ async def warmup_asyncpg_pool() -> int:
             try:
                 conn = await pool.acquire(timeout=5.0)
                 connections.append(conn)
-                Logger.base.debug(
-                    f'   ✓ Created connection {i + 1}/{settings.ASYNCPG_POOL_MAX_SIZE}'
-                )
+
             except asyncio.TimeoutError:
                 Logger.base.warning(f'   ⚠️  Pool warmup timeout at {i + 1} connections')
                 break
