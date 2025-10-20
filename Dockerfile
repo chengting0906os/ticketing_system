@@ -65,6 +65,7 @@ RUN uv sync --no-dev
 # Use .dockerignore to exclude unnecessary files
 COPY src/ ./src/
 COPY static/ ./static/
+COPY deployment/config.yml ./deployment/config.yml
 COPY alembic.ini ./
 COPY pyproject.toml ./
 # .env.example not needed - using AWS Secrets Manager for all configs
