@@ -49,9 +49,6 @@ from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import 
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
     BookingQueryRepoImpl,
 )
-from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
-    EventTicketingCommandRepoImpl,
-)
 
 
 class KafkaConfig:
@@ -395,19 +392,31 @@ class TicketingMqConsumer:
         buyer_id = message.get('buyer_id')
         reserved_seats = message.get('reserved_seats', [])
 
-        # Create repositories (all use asyncpg, no session management needed)
+        # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
+        # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
+        # Atomic CTE expects: ['1-3', '1-4']
+        seat_identifiers = []
+        for seat_id in reserved_seats:
+            parts = seat_id.split('-')
+            if len(parts) == 4:  # section-subsection-row-seat
+                row_seat = f'{parts[2]}-{parts[3]}'  # Extract row-seat only
+                seat_identifiers.append(row_seat)
+            else:
+                Logger.base.warning(
+                    f'⚠️ [BOOKING+TICKET] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
+                )
+
+        # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = IBookingCommandRepoImpl()
-        event_ticketing_command_repo = EventTicketingCommandRepoImpl()
 
         # Create and execute use case with direct repository injection
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
-            event_ticketing_command_repo=event_ticketing_command_repo,
         )
         await use_case.execute(
             booking_id=booking_id or 0,
             buyer_id=buyer_id or 0,
-            seat_identifiers=reserved_seats,
+            seat_identifiers=seat_identifiers,
         )
 
     @Logger.io

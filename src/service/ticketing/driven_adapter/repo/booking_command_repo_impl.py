@@ -7,6 +7,7 @@ from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
@@ -234,6 +235,218 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
             )
 
             return self._row_to_entity(booking_row)
+
+    @Logger.io
+    async def reserve_tickets_and_update_booking_atomically(
+        self,
+        *,
+        booking_id: int,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_identifiers: list[str],
+    ) -> tuple[Booking, List[TicketRef], int]:
+        """
+        Atomically reserve tickets and update booking using CTE with idempotency check.
+
+        Idempotency: If booking status is not 'processing', returns existing data (likely duplicate event).
+
+        Single SQL statement performs:
+        1. Validate booking exists, buyer owns it, and check status
+        2. Update tickets to RESERVED status with buyer_id (only if status = 'processing')
+        3. Calculate total price from updated tickets
+        4. Update booking to PENDING_PAYMENT with total_price and seat_positions
+
+        Performance: 1 database round-trip vs 5 separate queries.
+        """
+        now = datetime.now(timezone.utc)
+
+        async with (await get_asyncpg_pool()).acquire() as conn:
+            # First check booking status for idempotency
+            booking_check = await conn.fetchrow(
+                """
+                SELECT id, buyer_id, event_id, section, subsection, quantity,
+                       total_price, seat_selection_mode, seat_positions, status,
+                       created_at, updated_at, paid_at
+                FROM booking
+                WHERE id = $1 AND buyer_id = $2
+                """,
+                booking_id,
+                buyer_id,
+            )
+
+            if not booking_check:
+                raise ValueError(f'Booking {booking_id} not found or buyer mismatch')
+
+            # Idempotency check: if not PROCESSING, this is likely a duplicate event
+            if booking_check['status'] != 'processing':
+                Logger.base.warning(
+                    f'⚠️  [IDEMPOTENCY] Booking {booking_id} status is {booking_check["status"]}, '
+                    f'not "processing" - skipping update (likely duplicate Kafka event)'
+                )
+                # Return existing booking and tickets
+                existing_booking = self._row_to_entity(booking_check)
+                existing_tickets = await self.get_tickets_by_booking_id(booking_id=booking_id)
+                return (existing_booking, existing_tickets, booking_check['total_price'])
+
+            # Debug: Check ticket availability before atomic update
+            debug_tickets = await conn.fetch(
+                """
+                SELECT row_number, seat_number, status, buyer_id
+                FROM ticket
+                WHERE event_id = $1 AND section = $2 AND subsection = $3
+                  AND (row_number || '-' || seat_number) = ANY($4::text[])
+                LIMIT 5
+                """,
+                event_id,
+                section,
+                subsection,
+                seat_identifiers,
+            )
+            if debug_tickets:
+                Logger.base.info(
+                    f'🔍 [DEBUG] Found {len(debug_tickets)} matching tickets before update: '
+                    f'{[(t["row_number"], t["seat_number"], t["status"], t["buyer_id"]) for t in debug_tickets]}'
+                )
+            else:
+                Logger.base.warning(
+                    f'⚠️ [DEBUG] No matching tickets found for seat_identifiers={seat_identifiers} '
+                    f'(event={event_id}, section={section}, subsection={subsection})'
+                )
+
+            # Status is PROCESSING - proceed with atomic update
+            result = await conn.fetch(
+                """
+                WITH validated_booking AS (
+                    -- Step 1: Verify booking exists and buyer owns it (already validated above)
+                    SELECT id, buyer_id, event_id, section, subsection, quantity,
+                           total_price, seat_selection_mode, seat_positions, status,
+                           created_at, updated_at, paid_at
+                    FROM booking
+                    WHERE id = $1 AND buyer_id = $2 AND status = 'processing'
+                ),
+                updated_tickets AS (
+                    -- Step 2: Reserve tickets and calculate price
+                    UPDATE ticket
+                    SET status = 'reserved',
+                        buyer_id = $2,
+                        updated_at = $3,
+                        reserved_at = $3
+                    WHERE event_id = $4
+                      AND section = $5
+                      AND subsection = $6
+                      AND (row_number || '-' || seat_number) = ANY($7::text[])
+                      AND status = 'available'
+                    RETURNING id, event_id, section, subsection, row_number, seat_number,
+                              price, status, buyer_id, created_at, updated_at, reserved_at
+                ),
+                price_calculation AS (
+                    -- Step 3: Calculate total price from reserved tickets
+                    SELECT COALESCE(SUM(price), 0) as total_price,
+                           COUNT(*) as ticket_count
+                    FROM updated_tickets
+                ),
+                updated_booking AS (
+                    -- Step 4: Update booking with calculated price and seat positions
+                    UPDATE booking
+                    SET status = 'pending_payment',
+                        total_price = (SELECT total_price FROM price_calculation),
+                        seat_positions = $7,
+                        updated_at = $3
+                    WHERE id = $1
+                      AND EXISTS (SELECT 1 FROM validated_booking)
+                    RETURNING id, buyer_id, event_id, section, subsection, quantity,
+                              total_price, seat_selection_mode, seat_positions, status,
+                              created_at, updated_at, paid_at
+                )
+                -- Return both booking and tickets info
+                SELECT
+                    'booking' as type,
+                    b.id, b.buyer_id, b.event_id, b.section, b.subsection, b.quantity,
+                    b.total_price, b.seat_selection_mode, b.seat_positions, b.status,
+                    b.created_at, b.updated_at, b.paid_at,
+                    NULL::int as ticket_id, NULL::int as row_number, NULL::int as seat_number,
+                    NULL::int as price, NULL::text as ticket_status, NULL::timestamp as reserved_at,
+                    (SELECT ticket_count FROM price_calculation) as ticket_count
+                FROM updated_booking b
+                UNION ALL
+                SELECT
+                    'ticket' as type,
+                    NULL, NULL, t.event_id, t.section, t.subsection, NULL,
+                    NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL,
+                    t.id, t.row_number, t.seat_number,
+                    t.price, t.status, t.reserved_at,
+                    NULL
+                FROM updated_tickets t
+                """,
+                booking_id,
+                buyer_id,
+                now,
+                event_id,
+                section,
+                subsection,
+                seat_identifiers,
+            )
+
+            if not result:
+                raise ValueError(f'Booking {booking_id} not found or buyer mismatch')
+
+            # Separate booking and ticket rows
+            booking_row = None
+            ticket_rows = []
+            ticket_count = 0
+
+            for row in result:
+                if row['type'] == 'booking':
+                    booking_row = row
+                    ticket_count = row['ticket_count'] or 0
+                else:
+                    ticket_rows.append(row)
+
+            if not booking_row:
+                raise ValueError(f'Failed to update booking {booking_id}')
+
+            # Verify ticket count matches
+            if ticket_count != len(seat_identifiers):
+                Logger.base.warning(
+                    f'⚠️ [ATOMIC] Ticket count mismatch: found {ticket_count} available tickets for {len(seat_identifiers)} seat identifiers '
+                    f'(booking_id={booking_id}, section={section}, subsection={subsection}). '
+                    f'This usually means tickets were already reserved (idempotency) or not available.'
+                )
+                raise ValueError(
+                    f'Found {ticket_count} available tickets for {len(seat_identifiers)} seat identifiers'
+                )
+
+            # Convert to entities
+            updated_booking = self._row_to_entity(booking_row)
+            total_price = booking_row['total_price']
+
+            reserved_tickets = []
+            for row in ticket_rows:
+                ticket = TicketRef(
+                    event_id=row['event_id'],
+                    section=row['section'],
+                    subsection=row['subsection'],
+                    row=row['row_number'],
+                    seat=row['seat_number'],
+                    price=row['price'],
+                    status=TicketStatus(row['ticket_status']),
+                    buyer_id=buyer_id,
+                    id=row['ticket_id'],
+                    created_at=row['created_at'],
+                    updated_at=now,
+                    reserved_at=row['reserved_at'],
+                )
+                reserved_tickets.append(ticket)
+
+            Logger.base.info(
+                f'🚀 [ATOMIC] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
+                f'to PENDING_PAYMENT (total: {total_price}) in 1 DB round-trip'
+            )
+
+            return (updated_booking, reserved_tickets, total_price)
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:

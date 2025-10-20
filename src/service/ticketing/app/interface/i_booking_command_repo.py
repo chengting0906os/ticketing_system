@@ -69,3 +69,41 @@ class IBookingCommandRepo(ABC):
             Updated booking entity
         """
         pass
+
+    @abstractmethod
+    async def reserve_tickets_and_update_booking_atomically(
+        self,
+        *,
+        booking_id: int,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_identifiers: list[str],
+    ) -> tuple[Booking, list[TicketRef], int]:
+        """
+        Atomically reserve tickets and update booking in a single CTE operation.
+
+        This method performs 3 operations in ONE database round-trip using PostgreSQL CTE:
+        1. Query and validate tickets by seat_identifiers
+        2. Update tickets status to RESERVED and set buyer_id
+        3. Update booking status to PENDING_PAYMENT with total_price and seat_positions
+
+        Performance: Reduces 5 database round-trips to 1 by using CTE.
+
+        Args:
+            booking_id: Booking ID to update
+            buyer_id: Buyer ID for ownership verification
+            event_id: Event ID for ticket lookup
+            section: Section for ticket lookup
+            subsection: Subsection for ticket lookup
+            seat_identifiers: List of seat identifiers (format: "row-seat" like ["1-1", "1-2"])
+
+        Returns:
+            tuple of (updated_booking, reserved_tickets, total_price)
+
+        Raises:
+            ValueError: If booking not found or ticket count mismatch
+            ForbiddenError: If buyer_id doesn't match booking owner
+        """
+        pass
