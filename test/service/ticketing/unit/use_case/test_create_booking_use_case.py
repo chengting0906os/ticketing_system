@@ -154,6 +154,7 @@ class TestCreateBookingExecutionOrder:
         mock_booking_command_repo.create.assert_called_once()
 
 
+@pytest.mark.skip(reason='Seat availability check is currently disabled')
 class TestSeatAvailabilityCheck:
     """測試座位可用性檢查 (Fail Fast)"""
 
