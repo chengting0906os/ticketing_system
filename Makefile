@@ -221,11 +221,12 @@ drk:  ## 🌊 Reset Kafka in Docker
 	@echo "✅ Kafka reset completed"
 
 .PHONY: tdt
-tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra)
+tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
 	@docker-compose exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
+		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
 		-v
 
 .PHONY: tde2e

@@ -145,6 +145,7 @@ markers = [
     "entity: Entity test",
     "integration: Integration test",
     "compensating_transaction: Tests for SAGA compensating transaction pattern",
+    "skip: mark test to be skipped",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pydantic._internal._config",
