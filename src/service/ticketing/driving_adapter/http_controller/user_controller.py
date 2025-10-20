@@ -13,7 +13,7 @@ from src.service.ticketing.app.interface.i_user_command_repo import IUserCommand
 from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 from src.service.ticketing.app.query.user_query_use_case import UserUseCase
 from src.service.ticketing.domain.entity.user_entity import UserEntity
-from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import AuthService
+from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
 from src.service.ticketing.driving_adapter.schema.user_schema import (
     CreateUserRequest,
     LoginRequest,
@@ -28,11 +28,16 @@ router = APIRouter()
 
 @inject
 async def get_current_user(
-    user_query_repo: IUserQueryRepo = Depends(Provide[Container.user_query_repo]),
-    jwt_auth: AuthService = Depends(Provide[Container.jwt_auth]),
+    jwt_auth: JwtAuth = Depends(Provide[Container.jwt_auth]),
     token: Optional[str] = Cookie(None, alias='fastapiusersauth'),
 ) -> UserEntity:
-    return await jwt_auth.get_current_user(user_query_repo, token)
+    """
+    Get current user from JWT token (stateless, no DB query)
+
+    This function is synchronous despite being marked async for FastAPI compatibility.
+    No actual async operations are performed.
+    """
+    return jwt_auth.get_current_user_info_from_jwt(token)
 
 
 @router.post('', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -67,7 +72,7 @@ async def login(
     response: Response,
     request: LoginRequest,
     user_query_repo: IUserQueryRepo = Depends(Provide[Container.user_query_repo]),
-    jwt_auth: AuthService = Depends(Provide[Container.jwt_auth]),
+    jwt_auth: JwtAuth = Depends(Provide[Container.jwt_auth]),
 ):
     user_entity = await jwt_auth.authenticate_user(
         user_query_repo=user_query_repo,

@@ -3,8 +3,6 @@ Seat Reservation Controller
 處理座位預訂相關的 API 端點，包括實時狀態更新
 """
 
-# from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import require_buyer_or_seller
-# from src.service.ticketing.domain.entity.user_entity import UserEntity
 import asyncio
 import json
 

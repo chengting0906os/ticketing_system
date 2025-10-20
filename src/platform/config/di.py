@@ -50,7 +50,7 @@ from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_han
 from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
     SeatAvailabilityQueryHandlerImpl,
 )
-from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import AuthService
+from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
 
 
 class Container(containers.DeclarativeContainer):
@@ -83,7 +83,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Auth service
-    jwt_auth = providers.Singleton(AuthService)
+    jwt_auth = providers.Singleton(JwtAuth)
 
     # Message Queue Publishers
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)

@@ -9,12 +9,11 @@ from fastapi import HTTPException, status
 import jwt
 
 from src.platform.config.core_setting import settings
-from src.service.ticketing.app.query.user_query_use_case import UserUseCase
-from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
+from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 
 
-class AuthService:
+class JwtAuth:
     def __init__(self):
         self.secret = settings.SECRET_KEY.get_secret_value()
         self.algorithm = settings.ALGORITHM
@@ -50,29 +49,35 @@ class AuthService:
 
         return validated_user
 
-    async def get_current_user(
-        self, user_query_repo: IUserQueryRepo, token: Optional[str]
-    ) -> UserEntity:
+    def get_current_user_info_from_jwt(self, token: Optional[str]) -> UserEntity:
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated'
             )
 
-        # 解碼 token
+        # 解碼 token，取得所有用戶資訊
         payload = self.decode_jwt_token(token)
-        user_id = payload.get('user_id')
 
-        if not user_id:
+        # 驗證必要欄位
+        user_id = payload.get('user_id')
+        email = payload.get('email')
+        name = payload.get('name')
+        role = payload.get('role')
+        is_active = payload.get('is_active')
+
+        if not user_id or not email or not name or not role or is_active is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
-        # 取得用戶 - 創建 UserUseCase 實例並注入 user_query_repo
-        use_case = UserUseCase(user_query_repo=user_query_repo)
-        user_entity = await use_case.get_user_by_id(user_id)
+        # 從 JWT payload 重建 UserEntity（不查 DB）
+        user_entity = UserEntity(
+            id=user_id,
+            email=email,
+            name=name,
+            role=UserRole(role),
+            is_active=is_active,
+        )
 
-        # 驗證用戶
-        if not user_entity:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User not found')
-
+        # 驗證用戶狀態（基於 JWT payload）
         if not user_entity.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User is inactive')
 
