@@ -109,27 +109,27 @@ delete.topic.enable=true
         )
 
         # ============= MSK Cluster =============
-        # TODO(human): Choose ONE cluster type (cannot coexist - different bootstrap servers)
-        # Set cluster_type to either 'PROVISIONED' or 'SERVERLESS'
-        cluster_type = 'PROVISIONED'  # Change to 'SERVERLESS' if needed
+        # Using Provisioned with smallest instance type for cost optimization
+        # kafka.t3.small: 2 vCPU, 2GB RAM, ~$60-80/month for 3 brokers
+        cluster_type = 'PROVISIONED'
 
         if cluster_type == 'PROVISIONED':
             # Option 1: Provisioned Cluster
             # Best for: Predictable workloads, consistent throughput, cost control
-            # Cost: ~$300-500/month for kafka.m5.large × 3
+            # Cost: ~$60-80/month for kafka.t3.small × 3 (cheapest option)
             provisioned_cluster = msk.CfnCluster(
                 self,
                 'MSKCluster',
                 cluster_name='ticketing-system-kafka',
-                kafka_version='3.5.1',
-                number_of_broker_nodes=3,  # 3 AZs × 1 broker per AZ (KRaft quorum)
+                kafka_version='4.1.0',
+                number_of_broker_nodes=3,  # 3 AZs × 1 broker per AZ
                 broker_node_group_info=msk.CfnCluster.BrokerNodeGroupInfoProperty(
-                    instance_type='kafka.m5.large',
+                    instance_type='kafka.t3.small',  # Smallest instance: 2 vCPU, 2GB RAM
                     client_subnets=[subnet.subnet_id for subnet in vpc.private_subnets],
                     security_groups=[self.security_group.security_group_id],
                     storage_info=msk.CfnCluster.StorageInfoProperty(
                         ebs_storage_info=msk.CfnCluster.EBSStorageInfoProperty(
-                            volume_size=100,  # 100 GB per broker
+                            volume_size=10,  # Minimal storage: 10 GB per broker
                             provisioned_throughput=msk.CfnCluster.ProvisionedThroughputProperty(
                                 enabled=False  # Disable for cost savings
                             ),

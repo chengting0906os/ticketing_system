@@ -11,7 +11,17 @@ Architecture:
 - Continuous backup to S3
 """
 
-from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, aws_ec2 as ec2, aws_rds as rds
+from aws_cdk import (
+    CfnOutput,
+    Duration,
+    RemovalPolicy,
+    Stack,
+    aws_ec2 as ec2,
+    aws_ecs as ecs,
+    aws_elasticloadbalancingv2 as elbv2,
+    aws_rds as rds,
+    aws_servicediscovery as servicediscovery,
+)
 from constructs import Construct
 
 
@@ -173,5 +183,73 @@ class AuroraStack(Stack):
             export_name='TicketingAuroraSecurityGroupId',
         )
 
+        # ============= Service Discovery Namespace =============
+        # Private DNS namespace for service-to-service communication
+        # Created here because Aurora is the first stack, making it available to all other stacks
+        self.namespace = servicediscovery.PrivateDnsNamespace(
+            self,
+            'ServiceDiscovery',
+            name='ticketing.local',
+            vpc=vpc,
+            description='Service discovery for ticketing system microservices',
+        )
+
+        CfnOutput(
+            self,
+            'ServiceDiscoveryNamespace',
+            value=self.namespace.namespace_name,
+            description='Service Discovery namespace for internal DNS',
+            export_name='TicketingServiceDiscoveryNamespace',
+        )
+
+        # ============= ECS Cluster (Shared Infrastructure) =============
+        # Shared cluster for all microservices
+        self.ecs_cluster = ecs.Cluster(
+            self,
+            'ECSCluster',
+            cluster_name='ticketing-cluster',
+            vpc=vpc,
+            container_insights=True,
+        )
+
+        CfnOutput(
+            self,
+            'ECSClusterName',
+            value=self.ecs_cluster.cluster_name,
+            description='ECS Cluster name for microservices',
+            export_name='TicketingECSClusterName',
+        )
+
+        # ============= Application Load Balancer (Shared Infrastructure) =============
+        # Shared ALB for all HTTP services
+        self.alb = elbv2.ApplicationLoadBalancer(
+            self,
+            'ALB',
+            vpc=vpc,
+            internet_facing=True,
+            load_balancer_name='ticketing-alb',
+        )
+
+        # ALB listener with default 404 response
+        self.alb_listener = self.alb.add_listener(
+            'HttpListener',
+            port=80,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            default_action=elbv2.ListenerAction.fixed_response(
+                status_code=404,
+                content_type='application/json',
+                message_body='{"error": "Not Found"}',
+            ),
+        )
+
+        CfnOutput(
+            self,
+            'ALBEndpoint',
+            value=f'http://{self.alb.load_balancer_dns_name}',
+            description='Application Load Balancer endpoint',
+            export_name='TicketingALBEndpoint',
+        )
+
         # Store references for other stacks
         self.vpc = vpc
+        self.cluster_endpoint = self.cluster.cluster_endpoint.hostname

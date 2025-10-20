@@ -21,6 +21,7 @@ Performance (10000 TPS target):
 from aws_cdk import (
     CfnOutput,
     Duration,
+    SecretValue,
     Stack,
     aws_ec2 as ec2,
     aws_ecr as ecr,
@@ -28,6 +29,7 @@ from aws_cdk import (
     aws_elasticloadbalancingv2 as elbv2,
     aws_iam as iam,
     aws_logs as logs,
+    aws_secretsmanager as secretsmanager,
     aws_servicediscovery as servicediscovery,
 )
 from constructs import Construct
@@ -56,9 +58,11 @@ class ECSStack(Stack):
         construct_id: str,
         *,
         vpc: ec2.IVpc,
+        aurora_cluster_endpoint: str,
+        aurora_cluster_secret: secretsmanager.ISecret,
         aurora_security_group: ec2.ISecurityGroup,
-        msk_security_group: ec2.ISecurityGroup,
         kvrocks_security_group: ec2.ISecurityGroup,
+        namespace: servicediscovery.IPrivateDnsNamespace,
         **kwargs,
     ) -> None:
         """
@@ -68,12 +72,37 @@ class ECSStack(Stack):
             scope: CDK app scope
             construct_id: Stack identifier
             vpc: VPC for ECS tasks
+            aurora_cluster_endpoint: Aurora cluster endpoint for database connection
+            aurora_cluster_secret: Aurora secret containing auto-generated credentials
             aurora_security_group: Aurora security group (for database access)
-            msk_security_group: MSK security group (for Kafka access)
             kvrocks_security_group: Kvrocks security group (for cache access)
+            namespace: Service Discovery namespace (from Aurora Stack)
             **kwargs: Additional stack properties
+
+        Note: MSK security group removed - MSK Serverless manages its own security
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        # ============= Secrets Manager =============
+        # Create a single secret containing all sensitive application secrets (JWT keys only)
+        # Database password comes from Aurora's auto-generated secret
+        app_secrets = secretsmanager.Secret(
+            self,
+            'AppSecrets',
+            description='Sensitive configuration for Ticketing System (JWT keys)',
+            secret_object_value={
+                'SECRET_KEY': SecretValue.unsafe_plain_text(
+                    'of8uBXD-S4KJKvu7-C4KVUSxQICl8fg5eMDXVtvBFPw'
+                ),
+                'RESET_PASSWORD_TOKEN_SECRET': SecretValue.unsafe_plain_text(
+                    'FLcN0V9DQazw3YJI0yQOa84AkwPRQQlWt_3xYo0Rvv8'
+                ),
+                'VERIFICATION_TOKEN_SECRET': SecretValue.unsafe_plain_text(
+                    'NowtYFO5QY5w1dYfVl4whZpCXB12MTBaq9L9OHu08XU'
+                ),
+                'ALGORITHM': SecretValue.unsafe_plain_text('HS256'),
+            },
+        )
 
         # ============= ECS Cluster =============
         cluster = ecs.Cluster(
@@ -106,29 +135,21 @@ class ECSStack(Stack):
         )
 
         # ============= Service Discovery Namespace =============
-        # Private DNS namespace for service-to-service communication
-        namespace = servicediscovery.PrivateDnsNamespace(
-            self,
-            'ServiceDiscovery',
-            name='ticketing.local',
-            vpc=vpc,
-            description='Service discovery for ticketing system',
-        )
+        # Note: namespace is now passed from Aurora Stack (created there for all stacks to use)
 
-        # ============= ECR Repositories =============
-        # Container image repositories
-        ticketing_repo = ecr.Repository(
+        # ============= ECR Repositories (Import Existing) =============
+        # Import pre-existing ECR repositories (created by deploy-all.sh or manually)
+        # Use from_repository_name to reference existing repos instead of creating new ones
+        ticketing_repo = ecr.Repository.from_repository_name(
             self,
             'TicketingServiceRepo',
             repository_name='ticketing-service',
-            image_scan_on_push=True,  # Scan for vulnerabilities
         )
 
-        reservation_repo = ecr.Repository(
+        reservation_repo = ecr.Repository.from_repository_name(
             self,
             'ReservationServiceRepo',
             repository_name='seat-reservation-service',
-            image_scan_on_push=True,
         )
 
         # ============= Task Execution Role =============
@@ -187,6 +208,11 @@ class ECSStack(Stack):
         ticketing_container = ticketing_task_def.add_container(
             'TicketingContainer',
             image=ecs.ContainerImage.from_ecr_repository(ticketing_repo, tag='latest'),
+            command=[
+                'sh',
+                '-c',
+                'uv run granian src.service.ticketing.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
+            ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='ticketing',
                 log_retention=logs.RetentionDays.ONE_WEEK,
@@ -198,10 +224,39 @@ class ECSStack(Stack):
                 # OpenTelemetry - Send to ADOT Collector sidecar (localhost:4317)
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
+                # Database (Aurora PostgreSQL)
+                'POSTGRES_SERVER': aurora_cluster_endpoint,
+                'POSTGRES_DB': 'ticketing_system_db',  # Match Aurora default_database_name
+                'POSTGRES_PORT': '5432',
+                # Kvrocks (Service Discovery DNS)
+                'KVROCKS_HOST': 'kvrocks-master.ticketing.local',
+                'KVROCKS_PORT': '6666',
+                # Kafka MSK (disabled until MSK deployed)
+                'ENABLE_KAFKA': 'false',  # Set to 'true' after MSK is ready
+                'KAFKA_BOOTSTRAP_SERVERS': 'localhost:9092',  # TODO: Update with MSK endpoints
+                # JWT Authentication - Non-sensitive configuration
+                'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
+                'REFRESH_TOKEN_EXPIRE_DAYS': '7',
             },
-            # Secrets will be injected from Secrets Manager at runtime
+            # Sensitive secrets injected from AWS Secrets Manager at runtime
+            secrets={
+                # JWT keys from application secrets
+                'SECRET_KEY': ecs.Secret.from_secrets_manager(app_secrets, 'SECRET_KEY'),
+                'RESET_PASSWORD_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
+                    app_secrets, 'RESET_PASSWORD_TOKEN_SECRET'
+                ),
+                'VERIFICATION_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
+                    app_secrets, 'VERIFICATION_TOKEN_SECRET'
+                ),
+                'ALGORITHM': ecs.Secret.from_secrets_manager(app_secrets, 'ALGORITHM'),
+                # Database credentials from Aurora auto-generated secret
+                'POSTGRES_USER': ecs.Secret.from_secrets_manager(aurora_cluster_secret, 'username'),
+                'POSTGRES_PASSWORD': ecs.Secret.from_secrets_manager(
+                    aurora_cluster_secret, 'password'
+                ),
+            },
             health_check=ecs.HealthCheck(
-                command=['CMD-SHELL', 'curl -f http://localhost:8000/health || exit 1'],
+                command=['CMD-SHELL', 'curl -f http://localhost:8100/health || exit 1'],
                 interval=Duration.seconds(30),
                 timeout=Duration.seconds(5),
                 retries=3,
@@ -210,7 +265,7 @@ class ECSStack(Stack):
         )
 
         ticketing_container.add_port_mappings(
-            ecs.PortMapping(container_port=8000, protocol=ecs.Protocol.TCP)
+            ecs.PortMapping(container_port=8100, protocol=ecs.Protocol.TCP)
         )
 
         # Add ADOT Collector sidecar to forward traces to X-Ray
@@ -224,6 +279,7 @@ class ECSStack(Stack):
                 log_retention=logs.RetentionDays.ONE_WEEK,
             ),
             environment={
+                'AWS_REGION': 'us-west-2',  # Set region for ADOT Collector
                 'AOT_CONFIG_CONTENT': """
 receivers:
   otlp:
@@ -238,7 +294,7 @@ processors:
 
 exporters:
   awsxray:
-    region: ${AWS::Region}
+    region: us-west-2
 
 service:
   pipelines:
@@ -246,7 +302,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [awsxray]
-"""
+""",
             },
             memory_reservation_mib=256,  # Reserve 256MB for ADOT
         )
@@ -290,7 +346,7 @@ service:
         # Add ticketing service to ALB
         listener.add_targets(
             'TicketingTargets',
-            port=8000,
+            port=8100,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[ticketing_service],
             health_check=elbv2.HealthCheck(
@@ -321,6 +377,11 @@ service:
         reservation_container = reservation_task_def.add_container(
             'ReservationContainer',
             image=ecs.ContainerImage.from_ecr_repository(reservation_repo, tag='latest'),
+            command=[
+                'sh',
+                '-c',
+                'uv run granian src.service.seat_reservation.main:app --interface asgi --host 0.0.0.0 --port 8200 --workers 4',
+            ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='reservation',
                 log_retention=logs.RetentionDays.ONE_WEEK,
@@ -331,9 +392,39 @@ service:
                 # OpenTelemetry - Send to ADOT Collector sidecar (localhost:4317)
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
+                # Database (Aurora PostgreSQL)
+                'POSTGRES_SERVER': aurora_cluster_endpoint,
+                'POSTGRES_DB': 'ticketing_system_db',  # Match Aurora default_database_name
+                'POSTGRES_PORT': '5432',
+                # Kvrocks (Service Discovery DNS)
+                'KVROCKS_HOST': 'kvrocks-master.ticketing.local',
+                'KVROCKS_PORT': '6666',
+                # Kafka MSK (disabled until MSK deployed)
+                'ENABLE_KAFKA': 'false',  # Set to 'true' after MSK is ready
+                'KAFKA_BOOTSTRAP_SERVERS': 'localhost:9092',  # TODO: Update with MSK endpoints
+                # JWT Authentication - Non-sensitive configuration
+                'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
+                'REFRESH_TOKEN_EXPIRE_DAYS': '7',
+            },
+            # Sensitive secrets injected from AWS Secrets Manager at runtime
+            secrets={
+                # JWT keys from application secrets
+                'SECRET_KEY': ecs.Secret.from_secrets_manager(app_secrets, 'SECRET_KEY'),
+                'RESET_PASSWORD_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
+                    app_secrets, 'RESET_PASSWORD_TOKEN_SECRET'
+                ),
+                'VERIFICATION_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
+                    app_secrets, 'VERIFICATION_TOKEN_SECRET'
+                ),
+                'ALGORITHM': ecs.Secret.from_secrets_manager(app_secrets, 'ALGORITHM'),
+                # Database credentials from Aurora auto-generated secret
+                'POSTGRES_USER': ecs.Secret.from_secrets_manager(aurora_cluster_secret, 'username'),
+                'POSTGRES_PASSWORD': ecs.Secret.from_secrets_manager(
+                    aurora_cluster_secret, 'password'
+                ),
             },
             health_check=ecs.HealthCheck(
-                command=['CMD-SHELL', 'curl -f http://localhost:8001/health || exit 1'],
+                command=['CMD-SHELL', 'curl -f http://localhost:8200/health || exit 1'],
                 interval=Duration.seconds(30),
                 timeout=Duration.seconds(5),
                 retries=3,
@@ -342,7 +433,7 @@ service:
         )
 
         reservation_container.add_port_mappings(
-            ecs.PortMapping(container_port=8001, protocol=ecs.Protocol.TCP)
+            ecs.PortMapping(container_port=8200, protocol=ecs.Protocol.TCP)
         )
 
         # Add ADOT Collector sidecar for seat-reservation-service
@@ -356,6 +447,7 @@ service:
                 log_retention=logs.RetentionDays.ONE_WEEK,
             ),
             environment={
+                'AWS_REGION': 'us-west-2',  # Set region for ADOT Collector
                 'AOT_CONFIG_CONTENT': """
 receivers:
   otlp:
@@ -370,7 +462,7 @@ processors:
 
 exporters:
   awsxray:
-    region: ${AWS::Region}
+    region: us-west-2
 
 service:
   pipelines:
@@ -378,7 +470,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [awsxray]
-"""
+""",
             },
             memory_reservation_mib=256,  # Reserve 256MB for ADOT
         )
@@ -421,7 +513,7 @@ service:
         # Add reservation service to ALB
         listener.add_targets(
             'ReservationTargets',
-            port=8001,
+            port=8200,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[reservation_service],
             health_check=elbv2.HealthCheck(path='/health', interval=Duration.seconds(30)),

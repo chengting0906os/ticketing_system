@@ -11,10 +11,11 @@ import aws_cdk as cdk
 import yaml
 
 from stacks.aurora_stack import AuroraStack
-from stacks.ecs_stack import ECSStack
 from stacks.kvrocks_stack import KvrocksStack
 from stacks.loadtest_stack import LoadTestStack
 from stacks.msk_stack import MSKStack
+from stacks.reservation_service_stack import ReservationServiceStack
+from stacks.ticketing_service_stack import TicketingServiceStack
 
 app = cdk.App()
 
@@ -67,58 +68,64 @@ if not is_localstack:
     )
     msk_stack.add_dependency(aurora_stack)
 
-    # 3. ECS Cluster (Create first for Kvrocks to use)
-    # Shared cluster for both microservices and Kvrocks
-    from aws_cdk import aws_ecs as ecs
-
-    shared_cluster = ecs.Cluster(
-        aurora_stack,  # Create within Aurora stack for VPC access
-        'SharedECSCluster',
-        cluster_name='ticketing-shared-cluster',
-        vpc=aurora_stack.vpc,
-        container_insights=True,
-    )
-
-    # 4. Kvrocks Stack (Self-hosted Redis alternative)
+    # 3. Kvrocks Stack (Self-hosted Redis alternative)
     # Single master configuration for cost optimization
     kvrocks_stack = KvrocksStack(
         app,
         'TicketingKvrocksStack',
         vpc=aurora_stack.vpc,
-        cluster=shared_cluster,
+        cluster=aurora_stack.ecs_cluster,
+        namespace=aurora_stack.namespace,
         env=env,
         description='Kvrocks single master on ECS with EFS persistence',
     )
     kvrocks_stack.add_dependency(aurora_stack)
 
-    # 5. ECS Fargate Stack (Microservices)
-    # ticketing-service + seat-reservation-service
-    # Each service: 4-16 tasks with auto-scaling
-    ecs_stack = ECSStack(
+    # 4. Ticketing Service Stack (Independent deployment)
+    ticketing_stack = TicketingServiceStack(
         app,
-        'TicketingECSStack',
+        'TicketingServiceStack',
         vpc=aurora_stack.vpc,
-        aurora_security_group=aurora_stack.db_security_group,
-        msk_security_group=msk_stack.security_group,
-        kvrocks_security_group=kvrocks_stack.kvrocks_security_group,
+        ecs_cluster=aurora_stack.ecs_cluster,
+        alb_listener=aurora_stack.alb_listener,
+        aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
+        aurora_cluster_secret=aurora_stack.cluster.secret,
+        namespace=aurora_stack.namespace,
+        config=config,
         env=env,
-        description='ECS Fargate services for microservices (4-16 tasks each)',
+        description=f'Ticketing Service on ECS Fargate ({config["ecs"]["min_tasks"]}-{config["ecs"]["max_tasks"]} tasks)',
     )
-    ecs_stack.add_dependency(aurora_stack)
-    ecs_stack.add_dependency(msk_stack)
-    ecs_stack.add_dependency(kvrocks_stack)
+    ticketing_stack.add_dependency(aurora_stack)
+    ticketing_stack.add_dependency(kvrocks_stack)
+
+    # 5. Seat Reservation Service Stack (Independent deployment)
+    reservation_stack = ReservationServiceStack(
+        app,
+        'ReservationServiceStack',
+        vpc=aurora_stack.vpc,
+        ecs_cluster=aurora_stack.ecs_cluster,
+        alb_listener=aurora_stack.alb_listener,
+        aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
+        aurora_cluster_secret=aurora_stack.cluster.secret,
+        namespace=aurora_stack.namespace,
+        config=config,
+        env=env,
+        description=f'Seat Reservation Service on ECS Fargate ({config["ecs"]["min_tasks"]}-{config["ecs"]["max_tasks"]} tasks)',
+    )
+    reservation_stack.add_dependency(aurora_stack)
+    reservation_stack.add_dependency(kvrocks_stack)
 
     # 6. Load Test Stack (optional - for performance testing)
-    # Fargate Spot with 32GB RAM for running high-concurrency Go load tests
     loadtest_stack = LoadTestStack(
         app,
         'TicketingLoadTestStack',
         vpc=aurora_stack.vpc,
-        alb_dns=ecs_stack.alb.load_balancer_dns_name,
+        alb_dns=aurora_stack.alb.load_balancer_dns_name,
         env=env,
         description='[Optional] Load test runner on Fargate Spot (32GB RAM)',
     )
-    loadtest_stack.add_dependency(ecs_stack)
+    loadtest_stack.add_dependency(ticketing_stack)
+    loadtest_stack.add_dependency(reservation_stack)
 
     print('✅ Deploying to AWS (10000 TPS Architecture):')
     print('   1. Database: Aurora Serverless v2 (2-64 ACU, single master)')

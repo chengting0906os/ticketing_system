@@ -30,6 +30,7 @@ from aws_cdk import (
     aws_efs as efs,
     aws_iam as iam,
     aws_logs as logs,
+    aws_servicediscovery as servicediscovery,
 )
 from constructs import Construct
 
@@ -57,6 +58,7 @@ class KvrocksStack(Stack):
         *,
         vpc: ec2.IVpc,
         cluster: ecs.ICluster,
+        namespace: servicediscovery.IPrivateDnsNamespace,
         **kwargs,
     ) -> None:
         """
@@ -67,6 +69,7 @@ class KvrocksStack(Stack):
             construct_id: Stack identifier
             vpc: VPC for Kvrocks deployment
             cluster: ECS cluster to deploy Kvrocks tasks
+            namespace: Service Discovery namespace for DNS registration
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
@@ -220,15 +223,7 @@ class KvrocksStack(Stack):
                 'KVROCKS_MAXCLIENTS': '10000',
                 'KVROCKS_TIMEOUT': '300',
             },
-            command=[
-                'kvrocks',
-                '--bind',
-                '0.0.0.0',
-                '--port',
-                '6666',
-                '--dir',
-                '/var/lib/kvrocks/data',
-            ],
+            # Remove command - use default Kvrocks entrypoint with env vars
         )
 
         kvrocks_master_container.add_port_mappings(
@@ -243,7 +238,7 @@ class KvrocksStack(Stack):
             )
         )
 
-        # Create Kvrocks master service
+        # Create Kvrocks master service with Service Discovery
         kvrocks_master_service = ecs.FargateService(
             self,
             'KvrocksMasterService',
@@ -255,6 +250,11 @@ class KvrocksStack(Stack):
             enable_execute_command=True,  # Allow debugging via ECS Exec
             security_groups=[self.kvrocks_security_group],
             service_name='kvrocks-master',
+            cloud_map_options=ecs.CloudMapOptions(
+                name='kvrocks-master',
+                cloud_map_namespace=namespace,
+                dns_record_type=servicediscovery.DnsRecordType.A,
+            ),
         )
 
         # ============= Outputs =============
