@@ -1,4 +1,3 @@
-from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking
@@ -21,7 +20,14 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
 
     @Logger.io
     async def execute(
-        self, *, booking_id: int, buyer_id: int, seat_identifiers: list[str]
+        self,
+        *,
+        booking_id: int,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_identifiers: list[str],
     ) -> Booking:
         """
         Atomically reserve tickets and update booking to PENDING_PAYMENT (1 DB round-trip)
@@ -29,6 +35,9 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
         Args:
             booking_id: Booking ID
             buyer_id: Buyer ID
+            event_id: Event ID
+            section: Section identifier
+            subsection: Subsection number
             seat_identifiers: Seat identifiers (e.g., ['A-1-1-1', 'A-1-1-2'])
 
         Returns:
@@ -39,19 +48,6 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             ForbiddenError: Booking ownership mismatch
             ValueError: Invalid seat identifiers or ticket availability
         """
-        # Quick validation - Fail Fast
-        booking = await self.booking_command_repo.get_by_id(booking_id=booking_id)
-        if not booking:
-            raise NotFoundError(f'Booking not found: booking_id={booking_id}')
-
-        if booking.buyer_id != buyer_id:
-            raise ForbiddenError(
-                f'Booking owner mismatch: booking.buyer_id={booking.buyer_id}, buyer_id={buyer_id}'
-            )
-
-        if not seat_identifiers:
-            raise ValueError('seat_identifiers cannot be empty')
-
         # Use atomic operation: reserve tickets + update booking in 1 DB round-trip
         # This replaces 5 separate queries with a single CTE
         (
@@ -61,9 +57,9 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
         ) = await self.booking_command_repo.reserve_tickets_and_update_booking_atomically(
             booking_id=booking_id,
             buyer_id=buyer_id,
-            event_id=booking.event_id,
-            section=booking.section,
-            subsection=booking.subsection,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
             seat_identifiers=seat_identifiers,
         )
 

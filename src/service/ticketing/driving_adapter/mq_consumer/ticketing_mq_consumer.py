@@ -299,6 +299,7 @@ class TicketingMqConsumer:
             return {'success': False, 'error': str(e)}
 
     async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
+        Logger.base.info(f'🔧 [BOOKING+TICKET] Handling async message: {message} ')
         """
         Async handler for pending payment and reserved
 
@@ -308,7 +309,19 @@ class TicketingMqConsumer:
 
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
+        event_id = message.get('event_id')
         reserved_seats = message.get('reserved_seats', [])
+
+        # Extract section and subsection from first seat
+        # Seat format: 'section-subsection-row-seat' (e.g., 'A-1-1-3')
+        section = None
+        subsection = None
+        if reserved_seats:
+            first_seat = reserved_seats[0]
+            parts = first_seat.split('-')
+            if len(parts) == 4:
+                section = parts[0]
+                subsection = int(parts[1])
 
         # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
         # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
@@ -334,6 +347,9 @@ class TicketingMqConsumer:
         await use_case.execute(
             booking_id=booking_id or 0,
             buyer_id=buyer_id or 0,
+            event_id=event_id or 0,
+            section=section or '',
+            subsection=subsection or 0,
             seat_identifiers=seat_identifiers,
         )
 
