@@ -148,21 +148,6 @@ CREATE TABLE IF NOT EXISTS "ticket" (
 -- Index for buyer queries (my tickets)
 CREATE INDEX IF NOT EXISTS tickets_buyer_id_idx ON "ticket" (buyer_id);
 
--- ============================================================================
--- MATERIALIZED VIEW: tickets_by_buyer
--- ============================================================================
--- Optimized view for "Get all my tickets" query
--- Denormalized with event info for display
--- ============================================================================
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS tickets_by_buyer AS
-    SELECT *
-    FROM "ticket"
-    WHERE buyer_id IS NOT NULL
-      AND event_id IS NOT NULL
-      AND section IS NOT NULL
-      AND subsection IS NOT NULL
-      AND row_number IS NOT NULL
-      AND seat_number IS NOT NULL
-    PRIMARY KEY (buyer_id, event_id, section, subsection, row_number, seat_number)
-    WITH CLUSTERING ORDER BY (event_id ASC, section ASC, subsection ASC, row_number ASC, seat_number ASC);
+-- Note: Removed tickets_by_buyer materialized view (not used by application code)
+-- The application queries the ticket table directly using buyer_id index
+-- Removing MV eliminates write amplification and storage overhead

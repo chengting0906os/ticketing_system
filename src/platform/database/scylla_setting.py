@@ -1,13 +1,28 @@
 """
-ScyllaDB connection pool management
+ScyllaDB session management with multi-event-loop support
 
-This module provides async ScyllaDB operations using scylla-driver
-with connection pooling optimized for ScyllaDB's shard-per-core architecture.
+Architecture:
+┌─────────────────────────────────────────────────────────────┐
+│ Application Layer: scylla_sessions dict                     │
+│ - One Session per event loop (for FastAPI + MQ Consumer)   │
+│ - Prevents "session was closed" errors                      │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Session Layer: Cluster.connect()                            │
+│ - Session manages connections to all nodes                  │
+│ - Connection pool automatically managed by driver           │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Driver Layer: Cassandra Python Driver Internals             │
+│ - Automatic per-node connection pools                       │
+│ - Shard-aware routing (one connection per shard)           │
+│ - Protocol v4: up to 32K concurrent requests/connection    │
+└─────────────────────────────────────────────────────────────┘
 
-Multi-Event-Loop Support:
-- Maintains separate sessions per event loop
-- Supports concurrent services (FastAPI + MQ Consumer)
-- Prevents "session was closed" errors from event loop mismatch
+Note: scylla_sessions is NOT a connection pool, it's event loop isolation.
+      The actual connection pooling is handled by the Cassandra driver automatically.
 
 Usage:
     session = await get_scylla_session()
@@ -25,7 +40,8 @@ from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 
 
-# Global sessions per event loop
+# Session registry per event loop (NOT a connection pool)
+# Actual connection pooling is managed by the Cassandra driver at Session level
 scylla_sessions: dict[int, Session] = {}
 
 
@@ -73,8 +89,7 @@ def _create_cluster() -> Cluster:
         auth_provider=auth_provider,
         protocol_version=4,  # CQL native protocol v4
         compression=True,  # Enable LZ4 compression
-        # Connection pooling (one per shard for optimal performance)
-        executor_threads=8,  # Thread pool size for async operations
+        # Connection pooling (automatic per-shard connections)
         # Timeouts
         connect_timeout=settings.SCYLLA_CONNECT_TIMEOUT,
         control_connection_timeout=settings.SCYLLA_CONTROL_TIMEOUT,
