@@ -38,13 +38,13 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
 
 
 async def create_init_users() -> int:
-    """創建初始測試用戶 (12 users total)
+    """創建初始測試用戶 (1 seller + 25 buyers for distributed partition testing)
 
     Returns:
         int: seller_id
     """
     try:
-        print('👥 Creating 12 users (1 seller + 1 buyer + 10 load test)...')
+        print('👥 Creating 26 users (1 seller + 25 buyers)...')
 
         user_repo = UserCommandRepoScyllaImpl()
         password_hasher = BcryptPasswordHasher()
@@ -62,31 +62,25 @@ async def create_init_users() -> int:
         created_seller = await user_repo.create(seller)
         print(f'   ✅ Created seller: ID={created_seller.id}, Email={created_seller.email}')
 
-        # 2. 創建 buyer
-        buyer = UserEntity(
-            email='b@t.com',
-            name='init buyer',
-            role=UserRole.BUYER,
-            is_active=True,
-            is_superuser=False,
-            is_verified=True,
-        )
-        buyer.set_password('P@ssw0rd', password_hasher)
-        created_buyer = await user_repo.create(buyer)
-        print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
+        # 2. 創建 25 個 buyers (用於測試 partition 分散)
+        print('   🔄 Creating 25 buyers for distributed partition testing...')
+        for i in range(1, 26):
+            buyer = UserEntity(
+                email=f'buyer_{i}@test.com',
+                name=f'Buyer {i}',
+                role=UserRole.BUYER,
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+            buyer.set_password('P@ssw0rd', password_hasher)
+            await user_repo.create(buyer)
 
-        # 3. 創建 1 個 load test 用戶
-        loadtest_user = UserEntity(
-            email='b_1@t.com',
-            name='Load Test User 1',
-            role=UserRole.BUYER,
-            is_active=True,
-            is_superuser=False,
-            is_verified=True,
-        )
-        loadtest_user.set_password('P@ssw0rd', password_hasher)
-        await user_repo.create(loadtest_user)
-        print('   ✅ Created 1 load test user')
+            # Progress indicator every 5 users
+            if i % 5 == 0:
+                print(f'      Created {i}/25 buyers...')
+
+        print('   ✅ Created 25 buyers')
 
         # Verify user count
         session = await get_scylla_session()
@@ -94,12 +88,13 @@ async def create_init_users() -> int:
             session.execute,
             'SELECT COUNT(*) FROM ticketing_system."user"'
         )
-        user_count = result.one()[0]
+        row = result.one()
+        user_count = row[0] if row else 0
 
         print(f'   📊 Total users: {user_count}')
         print(f'   📧 Seller: s@t.com / P@ssw0rd (ID={created_seller.id})')
-        print(f'   📧 Buyer: b@t.com / P@ssw0rd')
-        print(f'   📧 Load test: b_1@t.com / P@ssw0rd')
+        print(f'   📧 Buyers: buyer_1@test.com ~ buyer_25@test.com / P@ssw0rd')
+        print(f'   💡 Load test will distribute requests across 25 different buyer_ids')
 
         if created_seller.id is None:
             raise Exception("Failed to create seller: ID is None")
@@ -262,8 +257,8 @@ async def main():
         print('🌱 Data seeding completed!')
         print('📋 Test accounts:')
         print('   Seller: s@t.com / P@ssw0rd')
-        print('   Buyer:  b@t.com / P@ssw0rd')
-        print('   Load test: b_1@t.com / P@ssw0rd')
+        print('   Buyers: buyer_1@test.com ~ buyer_25@test.com / P@ssw0rd')
+        print('   💡 Load test will distribute across 25 different buyer partitions')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')

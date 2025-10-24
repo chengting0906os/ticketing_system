@@ -328,8 +328,10 @@ func createAuthenticatedClient(host string, workerID int) (*http.Client, error) 
 	}
 
 	// Generate unique user credentials (must be pre-registered)
-	// Match seed_data.py format: b_1@t.com to b_10@t.com (workerID 0-9 maps to user 1-10)
-	email := fmt.Sprintf("b_%d@t.com", workerID+1)
+	// Match seed_data.py format: buyer_1@test.com to buyer_25@test.com
+	// Map workerID to one of 25 buyers (round-robin distribution)
+	buyerNum := (workerID % 25) + 1
+	email := fmt.Sprintf("buyer_%d@test.com", buyerNum)
 	password := "P@ssw0rd" // Fixed password for all users (set by seed_data.py)
 
 	// Login to get JWT token (user must already exist)
