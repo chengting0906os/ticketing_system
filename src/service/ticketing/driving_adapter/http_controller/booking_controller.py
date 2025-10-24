@@ -52,7 +52,7 @@ async def list_my_bookings(
 
 
 @router.post('', status_code=status.HTTP_201_CREATED)
-@Logger.io
+# @Logger.io
 @inject
 async def create_booking(
     request: BookingCreateRequest,
@@ -88,7 +88,7 @@ async def create_booking(
                 buyer_id=booking.buyer_id,
                 event_id=booking.event_id,
                 total_price=booking.total_price,
-                status=booking.status.value,  # Should be 'pending_payment' now
+                status=booking.status.value,
                 created_at=booking.created_at,
             )
 
