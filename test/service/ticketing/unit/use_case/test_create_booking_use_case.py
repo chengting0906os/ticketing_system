@@ -18,6 +18,7 @@ from src.service.ticketing.app.command.create_booking_use_case import CreateBook
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 
 
+@pytest.mark.unit
 class TestCreateBookingExecutionOrder:
     """測試 CreateBookingUseCase 的執行順序"""
 
@@ -154,6 +155,7 @@ class TestCreateBookingExecutionOrder:
         mock_booking_command_repo.create.assert_called_once()
 
 
+@pytest.mark.unit
 @pytest.mark.skip(reason='Seat availability check is currently disabled')
 class TestSeatAvailabilityCheck:
     """測試座位可用性檢查 (Fail Fast)"""

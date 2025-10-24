@@ -22,6 +22,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 from src.service.ticketing.domain.enum import EventStatus
 
 
+@pytest.mark.unit
 class TestCreateEventKafkaSetup:
     """Test CreateEventAndTicketsUseCase Kafka topics setup"""
 

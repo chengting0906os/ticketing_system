@@ -21,6 +21,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
+@pytest.mark.unit
 class TestUpdateBookingToPendingPayment:
     """測試更新 booking 到 pending_payment 狀態"""
 

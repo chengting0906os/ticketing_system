@@ -21,6 +21,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from test.service.ticketing.unit.test_helpers import RepositoryMocks
 
 
+@pytest.mark.unit
 class TestUpdateBookingToCancelled:
     """測試更新 booking 到 cancelled 狀態"""
 

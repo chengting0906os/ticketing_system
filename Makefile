@@ -48,20 +48,20 @@ cqlsh:  ## 🗄️ Connect to ScyllaDB
 test:  ## 🧪 Run unit tests (excludes CDK and E2E)
 	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-unit unit
-test-unit unit:  ## 🧪 Run unit tests only
+.PHONY: t-unit
+t-unit:  ## 🧪 Run unit tests only
 	@uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-e2e
 test-e2e:  ## 🧪 Run E2E tests
 	@uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-smoke
-test-smoke:  ## 🔍 Run smoke tests (critical API endpoints)
+.PHONY: t-smoke
+t-smoke:  ## 🔍 Run smoke tests (critical API endpoints)
 	@uv run pytest -m smoke -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-quick quick
-test-quick quick:  ## ⚡ Run quick tests (unit + smoke)
+.PHONY: t-quick
+t-quick:  ## ⚡ Run quick tests (unit + smoke)
 	@uv run pytest -m "unit or smoke" -v $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-cdk
