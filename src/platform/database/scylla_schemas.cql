@@ -10,12 +10,12 @@
 -- ============================================================================
 
 -- Create keyspace (run once)
--- Note: Using replication_factor=2 for development (requires at least 2 nodes)
+-- Note: Using replication_factor=3 for production (requires at least 3 nodes)
 -- Note: Tablets disabled to enable LWT (Lightweight Transactions) support for atomic operations
 CREATE KEYSPACE IF NOT EXISTS ticketing_system
     WITH REPLICATION = {
         'class': 'NetworkTopologyStrategy',
-        'datacenter1': 2  -- 2 replicas (can scale to 3 in production)
+        'datacenter1': 3  -- 3 replicas for high availability
     } AND TABLETS = {'enabled': false};
 
 USE ticketing_system;
