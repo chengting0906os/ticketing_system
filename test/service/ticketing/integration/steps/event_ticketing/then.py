@@ -54,7 +54,7 @@ def verify_buyer_sees_2_events(event_state):
     events = _verify_event_count(event_state, 2)
     for p in events:
         assert p['is_active'] is True
-        assert p['status'] == 'available'
+        assert p['status'] == 'open'
 
 
 @then('the buyer should see 0 events')
@@ -67,7 +67,7 @@ def verify_events_include_all_statuses(event_state):
     response = event_state['response']
     events = response.json()
     statuses = {event['status'] for event in events}
-    expected_statuses = {'available', 'sold_out', 'completed'}
+    expected_statuses = {'open', 'sold_out', 'completed'}
     assert expected_statuses.issubset(statuses), (
         f'Expected statuses {expected_statuses}, got {statuses}'
     )

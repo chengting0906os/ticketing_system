@@ -20,8 +20,8 @@ from typing import Dict, List, Optional
 import attrs
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 @attrs.define
@@ -111,7 +111,7 @@ class Event:
     venue_name: str = attrs.field(validator=_validate_non_empty_string)
     seating_config: Dict
     is_active: bool = True
-    status: EventStatus = EventStatus.AVAILABLE
+    status: EventStatus = EventStatus.OPEN
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -433,7 +433,7 @@ class EventTicketingAggregate:
         if self.available_tickets_count == 0 and self.total_tickets_count > 0:
             self.event.status = EventStatus.SOLD_OUT
         elif self.total_tickets_count > 0:
-            self.event.status = EventStatus.AVAILABLE
+            self.event.status = EventStatus.OPEN
         else:
             self.event.status = EventStatus.DRAFT
 
@@ -454,7 +454,7 @@ class EventTicketingAggregate:
             raise ValueError('Cannot activate event without tickets')
 
         Logger.base.info(f'Activating event {self.event.id} with {len(self.tickets)} tickets')
-        self.event.status = EventStatus.AVAILABLE
+        self.event.status = EventStatus.OPEN
 
     def get_statistics(self) -> dict:
         """獲取聚合統計信息"""

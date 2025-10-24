@@ -37,7 +37,7 @@ Feature: Event Creation
       | Broadway Musical | Classic theater performance | false     | Taipei Dome | {"sections": [{"name": "B", "price": 1500, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     Then the event should be created with:
       | id        | seller_id | name             | description                 | is_active | status    | venue_name  | seating_config                                                                                                |
-      | {any_int} | {any_int} | Broadway Musical | Classic theater performance | false     | available | Taipei Dome | {"sections": [{"name": "B", "price": 1500, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | {any_int} | {any_int} | Broadway Musical | Classic theater performance | false     | open | Taipei Dome | {"sections": [{"name": "B", "price": 1500, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
     And the response status code should be:
       | 201 |
 
@@ -64,7 +64,7 @@ Feature: Event Creation
       | 201 |
     And the event should be created with:
       | name       | status    | is_active |
-      | Test Event | available | true      |
+      | Test Event | open | true      |
     And tickets should be auto-created with:
       | count | price | status    |
       |    50 |  1000 | available |

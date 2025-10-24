@@ -102,7 +102,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         aggregates = []
         for row in rows:
             event = self._row_to_event(row)
-            if event.status in [EventStatus.AVAILABLE, EventStatus.DRAFT]:
+            if event.status in [EventStatus.OPEN, EventStatus.DRAFT]:
                 aggregates.append(EventTicketingAggregate(event=event, tickets=[]))
 
         return aggregates

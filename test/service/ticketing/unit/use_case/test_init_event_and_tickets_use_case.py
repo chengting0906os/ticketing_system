@@ -84,7 +84,7 @@ class TestCreateEventKafkaSetup:
             seller_id=1,
             venue_name='Test Venue',
             seating_config=valid_event_data['seating_config'],
-            status=EventStatus.AVAILABLE,
+            status=EventStatus.OPEN,
             is_active=True,
             created_at=datetime.now(timezone.utc),
         )

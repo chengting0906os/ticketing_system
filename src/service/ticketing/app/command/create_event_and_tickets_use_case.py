@@ -173,7 +173,7 @@ class CreateEventAndTicketsUseCase:
             raise  # Re-raise original exception
 
         # 6. Update aggregate status to AVAILABLE and persist to DB
-        final_aggregate.event.status = EventStatus.AVAILABLE
+        final_aggregate.event.status = EventStatus.OPEN
         final_aggregate = await self.event_ticketing_command_repo.update_event_aggregate(
             event_aggregate=final_aggregate
         )

@@ -12,7 +12,7 @@ class EventStatus(Enum):
     """Event status enumeration shared across domains"""
 
     DRAFT = 'draft'
-    AVAILABLE = 'available'
+    OPEN = 'open'
     SOLD_OUT = 'sold_out'
     CANCELLED = 'cancelled'
     COMPLETED = 'completed'

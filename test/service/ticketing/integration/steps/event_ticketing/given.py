@@ -125,7 +125,7 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_cql
             event_state['created_events'].append(created_event)
 
 
-@given('no available events exist')
+@given('no open events exist')
 def create_no_available_events(step, client: TestClient, event_state, execute_cql_statement):
     created_user = create_user(
         client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
