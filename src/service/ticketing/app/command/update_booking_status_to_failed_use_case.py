@@ -51,7 +51,7 @@ class UpdateBookingToFailedUseCase:
             return None
 
         # 標記為失敗狀態
-        failed_booking = booking.mark_as_failed()  # type: ignore
+        failed_booking = await booking.mark_as_failed()  # type: ignore
         updated_booking = await self.booking_command_repo.update_status_to_failed(
             booking=failed_booking
         )
@@ -66,7 +66,7 @@ class UpdateBookingToFailedUseCase:
 
         TODO: 逐步遷移到 execute() 方法
         """
-        failed_booking = booking.mark_as_failed()  # type: ignore
+        failed_booking = await booking.mark_as_failed()  # type: ignore
         updated_booking = await self.booking_command_repo.update_status_to_failed(
             booking=failed_booking
         )

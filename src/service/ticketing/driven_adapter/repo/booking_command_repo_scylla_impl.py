@@ -77,32 +77,10 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             session = await get_scylla_session()
 
             # Generate ID (in production, use distributed ID generator like Snowflake)
-            booking_id = int(datetime.now(timezone.utc).timestamp() * 1000000)
+            booking_id = booking.id or int(datetime.now(timezone.utc).timestamp() * 1000000)
             now = datetime.now(timezone.utc)
 
-            # Fetch denormalized buyer details
-            buyer_query = 'SELECT name, email FROM "user" WHERE id = %s'
-            buyer_result = await asyncio.to_thread(
-                session.execute, buyer_query, (booking.buyer_id,)
-            )
-            buyer_row = buyer_result.one()
-            buyer_name = buyer_row.name if buyer_row else 'Unknown Buyer'
-            buyer_email = buyer_row.email if buyer_row else 'unknown@example.com'
-
-            # Fetch denormalized event details (including seller info)
-            event_query = (
-                'SELECT name, venue_name, seller_id, seller_name FROM "event" WHERE id = %s'
-            )
-            event_result = await asyncio.to_thread(
-                session.execute, event_query, (booking.event_id,)
-            )
-            event_row = event_result.one()
-            event_name = event_row.name if event_row else 'Unknown Event'
-            venue_name = event_row.venue_name if event_row else 'Unknown Venue'
-            seller_id = event_row.seller_id if event_row else 0
-            seller_name = event_row.seller_name if event_row else 'Unknown Seller'
-
-            # Insert with full denormalization
+            # Simplified insert - denormalized fields will be populated on first read
             query = """
                 INSERT INTO "booking" (
                     id, buyer_id, event_id, section, subsection, quantity,
@@ -130,22 +108,23 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     booking.status.value,
                     now,
                     now,
-                    buyer_name,
-                    buyer_email,
-                    event_name,
-                    venue_name,
-                    seller_id,
-                    seller_name,
+                    None,  # buyer_name - lazy loaded on read
+                    None,  # buyer_email - lazy loaded on read
+                    None,  # event_name - lazy loaded on read
+                    None,  # venue_name - lazy loaded on read
+                    None,  # seller_id - lazy loaded on read
+                    None,  # seller_name - lazy loaded on read
                     [],  # tickets_data initially empty
                 ),
             )
 
-            # Fetch the created booking
-            created_booking = await self.get_by_id(booking_id=booking_id)
-            if created_booking and created_booking.id:
-                span.set_attribute('booking.id', created_booking.id)
+            # Return booking with generated ID (avoid extra SELECT)
+            booking.id = booking_id
+            booking.created_at = now
+            booking.updated_at = now
 
-            return created_booking  # type: ignore
+            span.set_attribute('booking.id', booking_id)
+            return booking
 
     @Logger.io
     async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:
@@ -191,11 +170,9 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             ),
         )
 
-        updated_booking = await self.get_by_id(booking_id=booking.id)  # type: ignore
-        if not updated_booking:
-            raise ValueError(f'Booking with id {booking.id} not found')
-
-        return updated_booking
+        # Directly return the updated booking object (avoid extra SELECT)
+        # The booking object already has all updated fields
+        return booking
 
     @Logger.io
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
@@ -218,11 +195,8 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             ],
         )
 
-        updated_booking = await self.get_by_id(booking_id=booking.id)  # type: ignore
-        if not updated_booking:
-            raise ValueError(f'Booking with id {booking.id} not found')
-
-        return updated_booking
+        # Directly return the updated booking object (avoid extra SELECT)
+        return booking
 
     @Logger.io
     async def update_status_to_failed(self, *, booking: Booking) -> Booking:
@@ -245,11 +219,8 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             ],
         )
 
-        updated_booking = await self.get_by_id(booking_id=booking.id)  # type: ignore
-        if not updated_booking:
-            raise ValueError(f'Booking with id {booking.id} not found')
-
-        return updated_booking
+        # Directly return the updated booking object (avoid extra SELECT)
+        return booking
 
     @Logger.io
     async def complete_booking_and_mark_tickets_sold_atomically(

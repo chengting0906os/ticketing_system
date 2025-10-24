@@ -80,7 +80,7 @@ class UpdateBookingToCancelledUseCase:
             raise ForbiddenError('Only the buyer can cancel this booking')
 
         # 標記為取消狀態（domain 會驗證狀態轉換）
-        cancelled_booking = booking.cancel()
+        cancelled_booking = await booking.cancel()
         updated_booking = await self.booking_command_repo.update_status_to_cancelled(
             booking=cancelled_booking
         )

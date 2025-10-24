@@ -3,9 +3,12 @@ from enum import StrEnum
 from typing import List, Optional
 
 import attrs
+from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
+
+tracer = trace.get_tracer(__name__)
 
 
 class SeatSelectionMode(StrEnum):
@@ -42,7 +45,7 @@ class Booking:
 
     @classmethod
     @Logger.io
-    def create(
+    async def create(
         cls,
         *,
         id: int = 0,
@@ -55,76 +58,83 @@ class Booking:
         seat_positions: List[str],
         quantity: int,
     ) -> 'Booking':
-        # Validate seat selection parameters
-        if seat_selection_mode == 'manual':
-            if not seat_positions:
-                raise DomainError('seat_positions is required for manual selection', 400)
-            if quantity != len(seat_positions):
+        with tracer.start_as_current_span('domain.booking.create') as span:
+            span.set_attribute('booking.buyer_id', buyer_id)
+            span.set_attribute('booking.event_id', event_id)
+            span.set_attribute('booking.seat_selection_mode', seat_selection_mode)
+            span.set_attribute('booking.quantity', quantity)
+
+            # Validate seat selection parameters
+            if seat_selection_mode == 'manual':
+                if not seat_positions:
+                    raise DomainError('seat_positions is required for manual selection', 400)
+                if quantity != len(seat_positions):
+                    raise DomainError(
+                        'quantity must match the number of selected seat positions for manual selection',
+                        400,
+                    )
+                if len(seat_positions) > 4:
+                    raise DomainError('Maximum 4 tickets per booking', 400)
+            elif seat_selection_mode == 'best_available':
+                if seat_positions and len(seat_positions) > 0:
+                    raise DomainError(
+                        'seat_positions must be empty for best_available selection', 400
+                    )
+                if quantity < 1 or quantity > 4:
+                    raise DomainError('quantity must be between 1 and 4', 400)
+            else:
                 raise DomainError(
-                    'quantity must match the number of selected seat positions for manual selection',
-                    400,
+                    'seat_selection_mode must be either "manual" or "best_available"', 400
                 )
-            if len(seat_positions) > 4:
-                raise DomainError('Maximum 4 tickets per booking', 400)
-        elif seat_selection_mode == 'best_available':
-            if seat_positions and len(seat_positions) > 0:
-                raise DomainError('seat_positions must be empty for best_available selection', 400)
-            if quantity < 1 or quantity > 4:
-                raise DomainError('quantity must be between 1 and 4', 400)
-        else:
-            raise DomainError(
-                'seat_selection_mode must be either "manual" or "best_available"', 400
+
+            # Validate seat_positions format for manual selection (now simple string format like "1-1", "1-2")
+            if seat_selection_mode == 'manual' and seat_positions:
+                for seat_position in seat_positions:
+                    try:
+                        # Validate seat_position format: "row-seat" (e.g., "1-1", "2-3")
+                        if not isinstance(seat_position, str):
+                            raise DomainError('seat_position must be a string', 400)
+
+                        parts = seat_position.split('-')
+                        if len(parts) != 2:
+                            raise DomainError(
+                                'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
+                            )
+
+                        try:
+                            row = int(parts[0])
+                            column = int(parts[1])
+                            if row <= 0 or column <= 0:
+                                raise DomainError('Row and seat numbers must be positive', 400)
+                        except ValueError:
+                            raise DomainError(
+                                'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
+                            )
+
+                    except Exception as e:
+                        if isinstance(e, DomainError):
+                            raise
+                        raise DomainError(f'Invalid seat_positions format: {e}', 400)
+
+            # For manual mode, validate that tickets are selected
+            if seat_selection_mode == 'manual' and not seat_positions:
+                raise DomainError('No tickets selected for booking', 400)
+
+            return cls(
+                buyer_id=buyer_id,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                total_price=total_price,
+                seat_selection_mode=seat_selection_mode,
+                status=BookingStatus.PROCESSING,
+                seat_positions=seat_positions,
+                quantity=quantity,
+                id=0 if id == 0 else id,
             )
 
-        # Validate seat_positions format for manual selection (now simple string format like "1-1", "1-2")
-
-        if seat_selection_mode == 'manual' and seat_positions:
-            for seat_position in seat_positions:
-                try:
-                    # Validate seat_position format: "row-seat" (e.g., "1-1", "2-3")
-                    if not isinstance(seat_position, str):
-                        raise DomainError('seat_position must be a string', 400)
-
-                    parts = seat_position.split('-')
-                    if len(parts) != 2:
-                        raise DomainError(
-                            'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
-                        )
-
-                    try:
-                        row = int(parts[0])
-                        column = int(parts[1])
-                        if row <= 0 or column <= 0:
-                            raise DomainError('Row and seat numbers must be positive', 400)
-                    except ValueError:
-                        raise DomainError(
-                            'Invalid seat format. Expected: row-seat (e.g., 1-1, 2-3)', 400
-                        )
-
-                except Exception as e:
-                    if isinstance(e, DomainError):
-                        raise
-                    raise DomainError(f'Invalid seat_positions format: {e}', 400)
-
-        # For manual mode, validate that tickets are selected
-        if seat_selection_mode == 'manual' and not seat_positions:
-            raise DomainError('No tickets selected for booking', 400)
-
-        return cls(
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            total_price=total_price,
-            seat_selection_mode=seat_selection_mode,
-            status=BookingStatus.PROCESSING,
-            seat_positions=seat_positions,
-            quantity=quantity,
-            id=0 if id == 0 else id,
-        )
-
     @Logger.io
-    def mark_as_pending_payment_and_update_newest_info(
+    async def mark_as_pending_payment_and_update_newest_info(
         self,
         *,
         total_price: int,
@@ -140,22 +150,27 @@ class Booking:
         Returns:
             更新後的 Booking
         """
-        now = datetime.now()
-        return attrs.evolve(
-            self,
-            status=BookingStatus.PENDING_PAYMENT,
-            total_price=total_price,
-            seat_positions=seat_positions,
-            updated_at=now,
-        )
+        with tracer.start_as_current_span('domain.booking.mark_as_pending_payment') as span:
+            span.set_attribute('booking.id', self.id or 0)
+            span.set_attribute('booking.total_price', total_price)
+            span.set_attribute('booking.seats_count', len(seat_positions))
+
+            now = datetime.now()
+            return attrs.evolve(
+                self,
+                status=BookingStatus.PENDING_PAYMENT,
+                total_price=total_price,
+                seat_positions=seat_positions,
+                updated_at=now,
+            )
 
     @Logger.io
-    def mark_as_failed(self) -> 'Booking':
+    async def mark_as_failed(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
 
     @Logger.io
-    def validate_can_be_paid(self) -> None:
+    async def validate_can_be_paid(self) -> None:
         """
         驗證訂單是否可以支付（Domain 層驗證邏輯）
 
@@ -170,12 +185,12 @@ class Booking:
             raise DomainError('Booking is not in a payable state')
 
     @Logger.io
-    def mark_as_completed(self) -> 'Booking':
+    async def mark_as_completed(self) -> 'Booking':
         now = datetime.now()
         return attrs.evolve(self, status=BookingStatus.COMPLETED, paid_at=now, updated_at=now)
 
     @Logger.io
-    def cancel(self) -> 'Booking':
+    async def cancel(self) -> 'Booking':
         """
         取消訂單（Domain 驗證）
 

@@ -51,7 +51,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             raise ForbiddenError('Only the buyer can pay for this booking')
 
         # Use domain method to validate payment eligibility
-        booking.validate_can_be_paid()
+        await booking.validate_can_be_paid()
 
         # Get reserved tickets first (before transaction)
         reserved_tickets = await self.booking_command_repo.get_tickets_by_booking_id(
@@ -62,7 +62,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         ticket_ids = [ticket.id for ticket in reserved_tickets if ticket.id is not None]
 
         # Process payment - atomically update booking AND tickets in single transaction
-        completed_booking = booking.mark_as_completed()
+        completed_booking = await booking.mark_as_completed()
         updated_booking = (
             await self.booking_command_repo.complete_booking_and_mark_tickets_sold_atomically(
                 booking=completed_booking, ticket_ids=ticket_ids

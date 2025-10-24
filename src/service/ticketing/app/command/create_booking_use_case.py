@@ -109,7 +109,7 @@ class CreateBookingUseCase:
             #     )
 
             # Use domain entity's create method which contains all validation logic
-            booking = Booking.create(
+            booking = await Booking.create(
                 buyer_id=buyer_id,
                 event_id=event_id,
                 section=section,
