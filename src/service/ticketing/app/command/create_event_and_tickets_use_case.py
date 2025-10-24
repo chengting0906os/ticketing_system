@@ -84,6 +84,7 @@ class CreateEventAndTicketsUseCase:
         venue_name: str,
         seating_config: Dict,
         is_active: bool = True,
+        event_id: int | None = None,
     ) -> EventTicketingAggregate:
         """
         Create event with tickets and setup infrastructure.
@@ -120,6 +121,7 @@ class CreateEventAndTicketsUseCase:
             venue_name=venue_name,
             seating_config=seating_config,
             is_active=is_active,
+            event_id=event_id,
         )
 
         # 2. Persist event to get ID (atomic transaction in repo)

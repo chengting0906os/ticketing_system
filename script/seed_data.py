@@ -161,6 +161,7 @@ async def create_init_event(seller_id: int):
             venue_name='Taipei Arena',
             seating_config=seating_config,
             is_active=True,
+            event_id=1,  # Fixed ID for testing
         )
 
         event = event_aggregate.event

@@ -150,6 +150,7 @@ class EventTicketingAggregate:
         venue_name: str,
         seating_config: Dict,
         is_active: bool = True,
+        event_id: int | None = None,
     ) -> 'EventTicketingAggregate':
         """
         創建帶票務的活動 - 聚合根工廠方法
@@ -163,6 +164,7 @@ class EventTicketingAggregate:
 
         # 創建 Event 實體 (初始狀態為 DRAFT)
         event = Event(
+            id=event_id,  # Optional: for testing purposes
             name=name,
             description=description,
             seller_id=seller_id,

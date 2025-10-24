@@ -38,8 +38,8 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
         """Create Event Aggregate (包含 Event 和 Tickets)"""
         session = await get_scylla_session()
 
-        # Generate event ID (timestamp-based, production should use Snowflake)
-        event_id = int(datetime.now(timezone.utc).timestamp() * 1000000)
+        # Use provided ID or generate new one (timestamp-based, production should use Snowflake)
+        event_id = event_aggregate.event.id or int(datetime.now(timezone.utc).timestamp() * 1000000)
         now = datetime.now(timezone.utc)
 
         # Fetch seller_name for denormalization
