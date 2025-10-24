@@ -29,6 +29,7 @@ Feature: Booking List
       |        6 |        3 |        3000 | pending_payment | null     |  3 |
       |        7 |        4 |        4000 | cancelled       | null     |  4 |
 
+  @smoke
   Scenario: Buyer lists their bookings
     When buyer with id 6 requests their bookings:
       | email           | password |

@@ -21,6 +21,7 @@ Feature: Booking Payment
       | email          | password |
       | buyer@test.com | P@ssw0rd |
 
+  @smoke
   Scenario: Successfully pay for an booking
     Given a booking exists with status "pending_payment":
       | buyer_id | event_id | total_price |

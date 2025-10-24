@@ -6,6 +6,7 @@ Feature: Event List
   As a buyer
   I only can see open events
 
+  @smoke
   Scenario: Seller sees all their events
     Given a seller with events:
       | name          | description        | is_active | status    | venue_name   | seating_config                                                                                                |

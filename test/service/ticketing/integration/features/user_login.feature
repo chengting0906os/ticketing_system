@@ -12,6 +12,7 @@ Feature: User Login
       | email           | password | name | role   |
       | seller@test.com | P@ssw0rd | Ryan | seller |
 
+  @smoke
   Scenario: Successful buyer login
     When I login with
       | email          | password |

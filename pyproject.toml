@@ -124,6 +124,7 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: unit",
     "integration: integration",
+    "smoke: Fast smoke tests covering critical API endpoints",
     "cdk: CDK infrastructure tests",
     "e2e",
     "asyncio: mark test as async",

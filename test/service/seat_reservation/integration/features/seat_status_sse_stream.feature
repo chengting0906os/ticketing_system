@@ -4,6 +4,7 @@ Feature: Seat Status SSE Stream
   I want to receive real-time seat status updates via SSE
   So that I can see seat availability changes instantly
 
+  @smoke
   Scenario: User receives initial seat status via SSE
     Given a seller exists:
       | email            | password | name         | role   |

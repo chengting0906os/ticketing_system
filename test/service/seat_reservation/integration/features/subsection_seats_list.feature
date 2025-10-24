@@ -4,6 +4,7 @@ Feature: Event Ticket Management
   I want to manage and view tickets for events
   So that I can handle event inventory and purchases
 
+  @smoke
   Scenario: Buyer can list available tickets for purchase
     Given a buyer exists:
       | email           | password | name        | role  |
