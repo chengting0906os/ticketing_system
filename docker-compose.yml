@@ -1,15 +1,22 @@
-# =============================================================================
-# DATABASE (Optional - can use external database)
-# =============================================================================
-#
-# Option 1: Use standalone database (docker-compose.db.yml)
-#   docker-compose -f docker-compose.db.yml up -d
-#   Then comment out this postgres service
-#
-# Option 2: Use this embedded database (default for quick start)
-#   Keep this service enabled for all-in-one deployment
+
 #
 # =============================================================================
+
+# YAML anchor for shared ScyllaDB configuration (must be outside services)
+x-scylladb-common: &scylladb-common
+  image: scylladb/scylla:6.2
+  healthcheck:
+    test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 90s
+  networks:
+    - ticketing-network
+  mem_limit: 1536M
+  memswap_limit: 1536M
+  ulimits:
+    memlock: -1
 
 services:
   # Kafka with KRaft mode (no Zookeeper) - Single Node
@@ -91,22 +98,6 @@ services:
     restart: "no"
     networks:
       - ticketing-network
-
-  # YAML anchor for shared ScyllaDB configuration
-  x-scylladb-common: &scylladb-common
-    image: scylladb/scylla:6.2
-    healthcheck:
-      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 90s
-    networks:
-      - ticketing-network
-    mem_limit: 1536M
-    memswap_limit: 1536M
-    ulimits:
-      memlock: -1
 
   scylladb1:
     <<: *scylladb-common
