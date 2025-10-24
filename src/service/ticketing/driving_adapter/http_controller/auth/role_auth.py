@@ -1,4 +1,5 @@
 from fastapi import Depends
+from opentelemetry import trace
 
 from src.platform.exception.exceptions import ForbiddenError
 from src.platform.logging.loguru_io import Logger
@@ -33,9 +34,17 @@ def get_current_user(current_user: UserEntity = Depends(get_user_from_controller
 
 @Logger.io
 def require_buyer(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
-    if not RoleAuthStrategy.can_create_booking(current_user):
-        raise ForbiddenError('Only buyers can perform this action')
-    return current_user
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        'auth.require_buyer',
+        attributes={
+            'user.id': current_user.id or 0,
+            'user.role': current_user.role.value,
+        },
+    ):
+        if not RoleAuthStrategy.can_create_booking(current_user):
+            raise ForbiddenError('Only buyers can perform this action')
+        return current_user
 
 
 @Logger.io

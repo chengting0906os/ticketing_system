@@ -2,6 +2,7 @@ from typing import List
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, status
+from opentelemetry import trace
 
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
@@ -58,28 +59,38 @@ async def create_booking(
     current_user: UserEntity = Depends(require_buyer),
     booking_use_case: CreateBookingUseCase = Depends(Provide[Container.create_booking_use_case]),
 ) -> BookingResponse:
-    # Create booking - ticket validation and reservation are now handled atomically inside use case
-    booking = await booking_use_case.create_booking(
-        buyer_id=current_user.id or 0,
-        event_id=request.event_id,
-        section=request.section,
-        subsection=request.subsection,
-        seat_selection_mode=request.seat_selection_mode,
-        seat_positions=request.seat_positions,
-        quantity=request.quantity,
-    )
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        'controller.create_booking',
+        attributes={
+            'http.method': 'POST',
+            'http.route': '/api/booking',
+            'event_id': request.event_id,
+            'section': request.section,
+            'subsection': request.subsection,
+            'quantity': request.quantity,
+        },
+    ):
+        # Create booking - ticket validation and reservation are now handled atomically inside use case
+        booking = await booking_use_case.create_booking(
+            buyer_id=current_user.id or 0,
+            event_id=request.event_id,
+            section=request.section,
+            subsection=request.subsection,
+            seat_selection_mode=request.seat_selection_mode,
+            seat_positions=request.seat_positions,
+            quantity=request.quantity,
+        )
 
-    if booking.id is None:
-        raise ValueError('Booking ID should not be None after creation.')
-
-    return BookingResponse(
-        id=booking.id,
-        buyer_id=booking.buyer_id,
-        event_id=booking.event_id,
-        total_price=booking.total_price,
-        status=booking.status.value,  # Should be 'pending_payment' now
-        created_at=booking.created_at,
-    )
+        with tracer.start_as_current_span('controller.build_response'):
+            return BookingResponse(
+                id=booking.id,
+                buyer_id=booking.buyer_id,
+                event_id=booking.event_id,
+                total_price=booking.total_price,
+                status=booking.status.value,  # Should be 'pending_payment' now
+                created_at=booking.created_at,
+            )
 
 
 @router.get('/{booking_id}')

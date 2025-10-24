@@ -8,10 +8,10 @@ from typing import List, Optional
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
+from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 
 
 @dataclass

@@ -6,6 +6,7 @@ from typing import Optional
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Cookie, Depends, Response, status
+from opentelemetry import trace
 
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
@@ -37,7 +38,17 @@ async def get_current_user(
     This function is synchronous despite being marked async for FastAPI compatibility.
     No actual async operations are performed.
     """
-    return jwt_auth.get_current_user_info_from_jwt(token)
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span('auth.get_current_user'):
+        user = jwt_auth.get_current_user_info_from_jwt(token)
+        trace.get_current_span().set_attributes(
+            {
+                'user.id': user.id or 0,
+                'user.email': user.email,
+                'user.role': user.role.value,
+            }
+        )
+        return user
 
 
 @router.post('', response_model=UserResponse, status_code=status.HTTP_201_CREATED)

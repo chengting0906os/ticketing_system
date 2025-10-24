@@ -19,6 +19,7 @@ import asyncio
 from cassandra import ConsistencyLevel
 from cassandra.cluster import EXEC_PROFILE_DEFAULT, Cluster, ExecutionProfile, Session
 from cassandra.query import SimpleStatement
+from opentelemetry import trace
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
@@ -96,33 +97,41 @@ async def get_scylla_session() -> Session:
     Returns:
         Session: ScyllaDB session for async operations
     """
-    current_loop = asyncio.get_running_loop()
-    loop_id = id(current_loop)
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span('db.get_scylla_session'):
+        current_loop = asyncio.get_running_loop()
+        loop_id = id(current_loop)
 
-    # Fast path: session already exists for this loop
-    if loop_id in scylla_sessions:
-        session = scylla_sessions[loop_id]
-        Logger.base.debug(f'♻️  [ScyllaDB] Reusing session (loop={loop_id})')
-        return session
+        # Fast path: session already exists for this loop
+        if loop_id in scylla_sessions:
+            session = scylla_sessions[loop_id]
+            Logger.base.debug(f'♻️  [ScyllaDB] Reusing session (loop={loop_id})')
+            trace.get_current_span().set_attribute('session.reused', True)
+            return session
 
-    # Slow path: create new session (should only happen at startup)
-    Logger.base.info(f'🔌 [ScyllaDB] Creating new session (loop={loop_id})...')
+        # Slow path: create new session (should only happen at startup)
+        Logger.base.info(f'🔌 [ScyllaDB] Creating new session (loop={loop_id})...')
+        trace.get_current_span().set_attribute('session.reused', False)
 
-    cluster = _create_cluster()
-    # Support pytest-xdist worker isolation: read keyspace from environment
-    import os
+        with tracer.start_as_current_span('db.create_cluster'):
+            cluster = _create_cluster()
 
-    keyspace = os.getenv('SCYLLA_KEYSPACE', settings.SCYLLA_KEYSPACE)
-    session = await asyncio.to_thread(cluster.connect, keyspace)
+        # Support pytest-xdist worker isolation: read keyspace from environment
+        import os
 
-    # Note: Consistency level and timeout are now configured via execution profiles
-    # in _create_cluster() instead of session-level settings (which are deprecated)
+        keyspace = os.getenv('SCYLLA_KEYSPACE', settings.SCYLLA_KEYSPACE)
 
-    scylla_sessions[loop_id] = session
+        with tracer.start_as_current_span('db.cluster_connect', attributes={'keyspace': keyspace}):
+            session = await asyncio.to_thread(cluster.connect, keyspace)
 
-    Logger.base.info(f'✅ [ScyllaDB] Session created (loop={loop_id}, keyspace={keyspace})')
+        # Note: Consistency level and timeout are now configured via execution profiles
+        # in _create_cluster() instead of session-level settings (which are deprecated)
 
-    return scylla_sessions[loop_id]
+        scylla_sessions[loop_id] = session
+
+        Logger.base.info(f'✅ [ScyllaDB] Session created (loop={loop_id}, keyspace={keyspace})')
+
+        return scylla_sessions[loop_id]
 
 
 async def close_scylla_session():

@@ -71,7 +71,17 @@ class CreateBookingUseCase:
         Raises:
             DomainError: If seat availability check fails or creation fails
         """
-        with self.tracer.start_as_current_span('use_case.create_booking'):
+        with self.tracer.start_as_current_span(
+            'use_case.create_booking',
+            attributes={
+                'buyer_id': buyer_id,
+                'event_id': event_id,
+                'section': section,
+                'subsection': subsection,
+                'seat_selection_mode': seat_selection_mode,
+                'quantity': quantity,
+            },
+        ):
             # Fail Fast: Check seat availability before creating booking
             # has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
             #     event_id=event_id,
@@ -86,18 +96,20 @@ class CreateBookingUseCase:
             #     )
 
             # Use domain entity's create method which contains all validation logic
-            booking = await Booking.create(
-                buyer_id=buyer_id,
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                seat_selection_mode=seat_selection_mode,
-                seat_positions=seat_positions,
-                quantity=quantity,
-            )
+            with self.tracer.start_as_current_span('booking.create_entity'):
+                booking = await Booking.create(
+                    buyer_id=buyer_id,
+                    event_id=event_id,
+                    section=section,
+                    subsection=subsection,
+                    seat_selection_mode=seat_selection_mode,
+                    seat_positions=seat_positions,
+                    quantity=quantity,
+                )
 
             try:
-                created_booking = await self.booking_command_repo.create(booking=booking)
+                with self.tracer.start_as_current_span('booking.persist_to_db'):
+                    created_booking = await self.booking_command_repo.create(booking=booking)
 
             except Exception as e:
                 raise DomainError(f'Failed to create booking: {e}', 400)
@@ -105,9 +117,12 @@ class CreateBookingUseCase:
             # Publish domain event after successful creation (using abstraction)
             # SAGA pattern: If downstream fails, compensating events will be triggered
             # Fire-and-forget: Don't block response waiting for event publishing
-            booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
-            asyncio.create_task(
-                self.event_publisher.publish_booking_created(event=booking_created_event)
-            )
+            with self.tracer.start_as_current_span('booking.prepare_event'):
+                booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
+
+            with self.tracer.start_as_current_span('booking.publish_event'):
+                asyncio.create_task(
+                    self.event_publisher.publish_booking_created(event=booking_created_event)
+                )
 
             return created_booking

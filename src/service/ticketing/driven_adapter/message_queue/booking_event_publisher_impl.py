@@ -34,25 +34,35 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
         """Publish BookingCreated event to ticket reservation topic"""
-        topic = KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
-            event_id=event.event_id
-        )
+        with self.tracer.start_as_current_span(
+            'kafka.publish_booking_created',
+            attributes={
+                'booking_id': event.booking_id,
+                'event_id': event.event_id,
+                'buyer_id': event.buyer_id,
+                'seat_selection_mode': event.seat_selection_mode,
+                'quantity': event.quantity,
+            },
+        ):
+            topic = KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
+                event_id=event.event_id
+            )
 
-        Logger.base.info(
-            f'\033[92m📤 [BOOKING Publisher] 發送 BookingCreated 到 Topic: {topic}\033[0m'
-        )
-        Logger.base.info(
-            f'\033[92m📦 [BOOKING Publisher] 事件內容: event_id={event.event_id}, '
-            f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}\033[0m'
-        )
+            Logger.base.info(
+                f'\033[92m📤 [BOOKING Publisher] 發送 BookingCreated 到 Topic: {topic}\033[0m'
+            )
+            Logger.base.info(
+                f'\033[92m📦 [BOOKING Publisher] 事件內容: event_id={event.event_id}, '
+                f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}\033[0m'
+            )
 
-        await publish_domain_event(
-            event=event,
-            topic=topic,
-            partition_key=str(event.booking_id),
-        )
+            await publish_domain_event(
+                event=event,
+                topic=topic,
+                partition_key=str(event.booking_id),
+            )
 
-        Logger.base.info('\033[92m✅ [BOOKING Publisher] BookingCreated 事件發送完成！\033[0m')
+            Logger.base.info('\033[92m✅ [BOOKING Publisher] BookingCreated 事件發送完成！\033[0m')
 
     @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
