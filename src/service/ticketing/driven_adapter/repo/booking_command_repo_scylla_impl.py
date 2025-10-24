@@ -54,7 +54,12 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
     @Logger.io
     async def get_by_id(self, *, booking_id: int) -> Booking | None:
-        """查詢單筆 booking（用於 command 操作前的驗證）"""
+        """
+        查詢單筆 booking（用於 command 操作前的驗證）
+
+        Note: With PRIMARY KEY (buyer_id, id), we need ALLOW FILTERING for id-only queries
+        This is acceptable for command validation (infrequent, single-row lookups)
+        """
         session = await get_scylla_session()
 
         query = """
@@ -63,6 +68,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                    created_at, updated_at, paid_at
             FROM "booking"
             WHERE id = %s
+            ALLOW FILTERING
             """
 
         result = await anyio.to_thread.run_sync(partial(session.execute, query, (booking_id,)))
@@ -131,13 +137,19 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
     @Logger.io
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
+        """
+        Update booking status to cancelled
+
+        Note: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
+        """
         session = await get_scylla_session()
 
         query = """
             UPDATE "booking"
             SET status = %s,
                 updated_at = %s
-            WHERE id = %s
+            WHERE buyer_id = %s
+              AND id = %s
             """
 
         await anyio.to_thread.run_sync(
@@ -147,6 +159,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 [
                     booking.status.value,
                     booking.updated_at,
+                    booking.buyer_id,
                     booking.id,
                 ],
             )
@@ -157,13 +170,19 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
     @Logger.io
     async def update_status_to_failed(self, *, booking: Booking) -> Booking:
+        """
+        Update booking status to failed
+
+        Note: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
+        """
         session = await get_scylla_session()
 
         query = """
             UPDATE "booking"
             SET status = %s,
                 updated_at = %s
-            WHERE id = %s
+            WHERE buyer_id = %s
+              AND id = %s
             """
 
         await anyio.to_thread.run_sync(
@@ -173,6 +192,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 [
                     booking.status.value,
                     booking.updated_at,
+                    booking.buyer_id,
                     booking.id,
                 ],
             )
@@ -214,6 +234,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         batch = BatchStatement(batch_type=BatchType.LOGGED)
 
         # Update booking with denormalized tickets_data
+        # Note: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
         batch.add(
             SimpleStatement("""
                 UPDATE "booking"
@@ -221,9 +242,17 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     updated_at = %s,
                     paid_at = %s,
                     tickets_data = %s
-                WHERE id = %s
+                WHERE buyer_id = %s
+                  AND id = %s
                 """),
-            (booking.status.value, booking.updated_at, booking.paid_at, tickets_data, booking.id),
+            (
+                booking.status.value,
+                booking.updated_at,
+                booking.paid_at,
+                tickets_data,
+                booking.buyer_id,
+                booking.id,
+            ),
         )
 
         # Update tickets to SOLD
@@ -480,6 +509,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 ]
 
                 # Add booking UPDATE to batch
+                # Note: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
                 batch_statements.append(
                     """
                     UPDATE "booking"
@@ -488,7 +518,8 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                         seat_positions = %s,
                         tickets_data = %s,
                         updated_at = %s
-                    WHERE id = %s
+                    WHERE buyer_id = %s
+                      AND id = %s
                     """
                 )
                 batch_params.extend(
@@ -498,6 +529,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                         booking.seat_positions,
                         tickets_data,
                         booking.updated_at,
+                        booking.buyer_id,
                         booking.id,
                     ]
                 )

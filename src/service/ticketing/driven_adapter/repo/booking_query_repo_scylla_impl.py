@@ -116,6 +116,12 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
 
     @Logger.io
     async def get_by_id(self, *, booking_id: int) -> Booking | None:
+        """
+        Get booking by ID
+
+        Note: With PRIMARY KEY (buyer_id, id), we need ALLOW FILTERING for id-only queries
+        This is acceptable for infrequent, single-row lookups
+        """
         session = await get_scylla_session()
 
         query = """
@@ -124,6 +130,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
                    created_at, updated_at, paid_at
             FROM "booking"
             WHERE id = %s
+            ALLOW FILTERING
             """
 
         result = await asyncio.to_thread(session.execute, query, (booking_id,))
@@ -139,8 +146,11 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         """
         Get booking by ID with full details including tickets
 
+        Note: With PRIMARY KEY (buyer_id, id), we need ALLOW FILTERING for id-only queries
+        This is acceptable for detail views (infrequent, single-row lookup)
+
         ScyllaDB Optimization: All data (buyer, event, seller, tickets) denormalized in ONE row!
-        Zero JOINs, zero N+1 queries - just a simple primary key lookup
+        Zero JOINs, zero N+1 queries
         """
         session = await get_scylla_session()
 
@@ -152,6 +162,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
                    tickets_data
             FROM "booking"
             WHERE id = %s
+            ALLOW FILTERING
             """
 
         result = await asyncio.to_thread(session.execute, query, (booking_id,))
@@ -168,7 +179,10 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         """
         Get all bookings for a buyer with optional status filter
 
-        ScyllaDB Optimization: Tickets already denormalized - no N+1 queries!
+        ScyllaDB Optimization:
+        - Direct partition key query (buyer_id) - FAST! No ALLOW FILTERING needed
+        - Tickets already denormalized - no N+1 queries!
+        - Returns bookings ordered by id DESC (latest first)
         """
         session = await get_scylla_session()
 
@@ -187,6 +201,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
                 """
             params = (buyer_id, status)
         else:
+            # Direct partition key query - no ALLOW FILTERING needed!
             query = """
                 SELECT id, buyer_id, event_id, section, subsection, quantity,
                        total_price, seat_selection_mode, seat_positions, status,
@@ -195,12 +210,15 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
                        tickets_data
                 FROM "booking"
                 WHERE buyer_id = %s
-                ALLOW FILTERING
                 """
             params = (buyer_id,)
 
         result = await asyncio.to_thread(session.execute, query, params)
         rows = result.all()
+
+        # Filter by status in Python if needed (more efficient than ALLOW FILTERING for small result sets)
+        if status:
+            rows = [row for row in rows if row.status == status]
 
         # Tickets already in each row - just parse and return!
         return [self._to_booking_dict(row) for row in rows]
