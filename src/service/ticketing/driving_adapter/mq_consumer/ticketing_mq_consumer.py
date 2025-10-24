@@ -25,6 +25,9 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+from opentelemetry import trace
+from opentelemetry.propagate import extract
+from opentelemetry.trace import SpanKind
 from quixstreams import Application
 
 
@@ -130,6 +133,7 @@ class TicketingMqConsumer:
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
+        self.tracer = trace.get_tracer(__name__)
 
         # DLQ configuration
         self.dlq_topic = KafkaTopicBuilder.ticketing_dlq(event_id=self.event_id)
@@ -280,95 +284,148 @@ class TicketingMqConsumer:
         if hasattr(context, 'partition'):
             partition_info = f' | partition={context.partition}'
 
-        try:
-            Logger.base.info(
-                f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
-            )
+        # Extract trace context from Kafka message headers
+        headers_dict = {}
+        if hasattr(context, 'headers') and context.headers:
+            # Convert Kafka headers (list of tuples) to dict
+            for header_key, header_value in context.headers:
+                if isinstance(header_value, bytes):
+                    headers_dict[header_key] = header_value.decode('utf-8')
+                else:
+                    headers_dict[header_key] = header_value
 
-            # Use portal to call async function (ensures proper async context)
-            # pyrefly: ignore  # missing-attribute
-            self.portal.call(self._handle_pending_payment_and_reserved_async, message)
+        # Extract parent context from headers
+        parent_context = extract(headers_dict)
 
-            Logger.base.info(
-                f'✅ [BOOKING+TICKET] Completed: booking_id={booking_id}, tickets={len(reserved_seats)}'
-            )
-            return {'success': True}
+        # Create a linked span (connects to parent trace from HTTP request)
+        with self.tracer.start_as_current_span(
+            'CONSUMER.PROCESS_PENDING_PAYMENT_AND_RESERVED',
+            context=parent_context,
+            kind=SpanKind.CONSUMER,
+            attributes={
+                'messaging.system': 'kafka',
+                'messaging.operation': 'receive',
+                'booking_id': booking_id or 0,
+                'event_id': message.get('event_id') or 0,
+                'buyer_id': message.get('buyer_id') or 0,
+                'reserved_seats_count': len(reserved_seats),
+                'consumer.instance_id': self.instance_id,
+            },
+        ):
+            try:
+                Logger.base.info(
+                    f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                )
 
-        except Exception as e:
-            Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
-            return {'success': False, 'error': str(e)}
+                with self.tracer.start_as_current_span('consumer.call_async_handler'):
+                    # Use portal to call async function (ensures proper async context)
+                    # pyrefly: ignore  # missing-attribute
+                    self.portal.call(self._handle_pending_payment_and_reserved_async, message)
+
+                Logger.base.info(
+                    f'✅ [BOOKING+TICKET] Completed: booking_id={booking_id}, tickets={len(reserved_seats)}'
+                )
+                return {'success': True}
+
+            except Exception as e:
+                Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
+                trace.get_current_span().set_attribute('error', True)
+                trace.get_current_span().set_attribute('error.message', str(e))
+                return {'success': False, 'error': str(e)}
 
     async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
-        Logger.base.info(f'🔧 [BOOKING+TICKET] Handling async message: {message} ')
         """
         Async handler for pending payment and reserved
 
         Note: Repositories use asyncpg and manage their own connections.
         Use case directly depends on repositories, no UoW needed.
         """
+        Logger.base.info(f'🔧 [BOOKING+TICKET] Handling async message: {message} ')
 
-        booking_id = message.get('booking_id')
-        buyer_id = message.get('buyer_id')
-        event_id = message.get('event_id')
-        reserved_seats = message.get('reserved_seats', [])
-        ticket_details = message.get('ticket_details', [])  # 新增：獲取 ticket 詳細資訊（含價格）
+        with self.tracer.start_as_current_span(
+            'consumer.handle_pending_payment_async',
+            attributes={
+                'booking_id': message.get('booking_id') or 0,
+                'event_id': message.get('event_id') or 0,
+                'buyer_id': message.get('buyer_id') or 0,
+            },
+        ):
+            booking_id = message.get('booking_id')
+            buyer_id = message.get('buyer_id')
+            event_id = message.get('event_id')
+            reserved_seats = message.get('reserved_seats', [])
+            ticket_details = message.get(
+                'ticket_details', []
+            )  # 新增：獲取 ticket 詳細資訊（含價格）
 
-        # Extract section and subsection from first seat
-        # Seat format: 'section-subsection-row-seat' (e.g., 'A-1-1-3')
-        section = None
-        subsection = None
-        if reserved_seats:
-            first_seat = reserved_seats[0]
-            parts = first_seat.split('-')
-            if len(parts) == 4:
-                section = parts[0]
-                subsection = int(parts[1])
+            # Extract section and subsection from first seat
+            # Seat format: 'section-subsection-row-seat' (e.g., 'A-1-1-3')
+            with self.tracer.start_as_current_span('consumer.parse_seat_data'):
+                section = None
+                subsection = None
+                if reserved_seats:
+                    first_seat = reserved_seats[0]
+                    parts = first_seat.split('-')
+                    if len(parts) == 4:
+                        section = parts[0]
+                        subsection = int(parts[1])
 
-        # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
-        # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
-        # Atomic CTE expects: ['1-3', '1-4']
-        seat_identifiers = []
-        for seat_id in reserved_seats:
-            parts = seat_id.split('-')
-            if len(parts) == 4:  # section-subsection-row-seat
-                row_seat = f'{parts[2]}-{parts[3]}'  # Extract row-seat only
-                seat_identifiers.append(row_seat)
-            else:
-                Logger.base.warning(
-                    f'⚠️ [BOOKING+TICKET] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
+                # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
+                # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
+                # Atomic CTE expects: ['1-3', '1-4']
+                seat_identifiers = []
+                for seat_id in reserved_seats:
+                    parts = seat_id.split('-')
+                    if len(parts) == 4:  # section-subsection-row-seat
+                        row_seat = f'{parts[2]}-{parts[3]}'  # Extract row-seat only
+                        seat_identifiers.append(row_seat)
+                    else:
+                        Logger.base.warning(
+                            f'⚠️ [BOOKING+TICKET] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
+                        )
+
+                # Extract ticket price from ticket_details (all tickets have same price per subsection)
+                # ticket_details format: [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
+                if not ticket_details or len(ticket_details) == 0:
+                    Logger.base.error(
+                        f'❌ [BOOKING+TICKET] No ticket_details in message for booking {booking_id}'
+                    )
+                    raise ValueError('ticket_details is required in SeatsReservedEvent')
+
+                ticket_price = ticket_details[0].get('price')
+                if ticket_price is None:
+                    Logger.base.error(
+                        f'❌ [BOOKING+TICKET] No price in ticket_details for booking {booking_id}'
+                    )
+                    raise ValueError('price is required in ticket_details')
+
+            # Create repository (asyncpg-based, no session management needed)
+            with self.tracer.start_as_current_span('consumer.create_repo_and_usecase'):
+                booking_command_repo = BookingCommandRepoScyllaImpl()
+
+                # Create and execute use case with direct repository injection
+                use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
+                    booking_command_repo=booking_command_repo,
                 )
 
-        # Extract ticket price from ticket_details (all tickets have same price per subsection)
-        # ticket_details format: [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
-        if not ticket_details or len(ticket_details) == 0:
-            Logger.base.error(
-                f'❌ [BOOKING+TICKET] No ticket_details in message for booking {booking_id}'
-            )
-            raise ValueError('ticket_details is required in SeatsReservedEvent')
-
-        ticket_price = ticket_details[0].get('price')
-        if ticket_price is None:
-            Logger.base.error(
-                f'❌ [BOOKING+TICKET] No price in ticket_details for booking {booking_id}'
-            )
-            raise ValueError('price is required in ticket_details')
-
-        # Create repository (asyncpg-based, no session management needed)
-        booking_command_repo = BookingCommandRepoScyllaImpl()
-
-        # Create and execute use case with direct repository injection
-        use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
-            booking_command_repo=booking_command_repo,
-        )
-        await use_case.execute(
-            booking_id=booking_id or 0,
-            buyer_id=buyer_id or 0,
-            event_id=event_id or 0,
-            section=section or '',
-            subsection=subsection or 0,
-            seat_identifiers=seat_identifiers,
-            ticket_price=ticket_price,
-        )
+            with self.tracer.start_as_current_span(
+                'consumer.execute_usecase',
+                attributes={
+                    'section': section or '',
+                    'subsection': subsection or 0,
+                    'seat_count': len(seat_identifiers),
+                    'ticket_price': ticket_price,
+                },
+            ):
+                await use_case.execute(
+                    booking_id=booking_id or 0,
+                    buyer_id=buyer_id or 0,
+                    event_id=event_id or 0,
+                    section=section or '',
+                    subsection=subsection or 0,
+                    seat_identifiers=seat_identifiers,
+                    ticket_price=ticket_price,
+                )
 
     @Logger.io
     def _process_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:

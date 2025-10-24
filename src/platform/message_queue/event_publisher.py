@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Any, Literal
 
 import attrs
+from opentelemetry import trace
+from opentelemetry.propagate import inject
 from quixstreams import Application
 
 from src.platform.config.core_setting import settings
@@ -101,6 +103,15 @@ async def publish_domain_event(
     event_data.pop('aggregate_id', None)
     event_data.pop('occurred_at', None)
 
+    # Inject trace context into Kafka headers for distributed tracing
+    headers = {}
+    inject(headers)  # Injects traceparent, tracestate into headers dict
+
+    # Convert headers to Kafka format (list of tuples)
+    kafka_headers = [
+        (k, v.encode('utf-8') if isinstance(v, str) else v) for k, v in headers.items()
+    ]
+
     # 發布事件
     with app.get_producer() as producer:
         message = kafka_topic.serialize(
@@ -112,10 +123,16 @@ async def publish_domain_event(
             topic=kafka_topic.name,
             key=message.key,
             value=message.value,
+            headers=kafka_headers,  # Add trace context headers
         )
 
         producer.flush(timeout=5.0)
 
-    Logger.base.info(f'📤 Published {event.__class__.__name__} to {topic} (key: {partition_key})')
+    current_span = trace.get_current_span()
+    trace_id = format(current_span.get_span_context().trace_id, '032x') if current_span else 'none'
+    Logger.base.info(
+        f'📤 Published {event.__class__.__name__} to {topic} '
+        f'(key: {partition_key}, trace_id: {trace_id})'
+    )
 
     return True

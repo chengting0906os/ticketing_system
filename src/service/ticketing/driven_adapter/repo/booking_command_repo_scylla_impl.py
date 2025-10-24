@@ -369,124 +369,153 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         Returns:
             Tuple of (updated_booking, reserved_tickets, total_price)
         """
-        session = await get_scylla_session()
-        now: datetime = datetime.now(timezone.utc)
+        with self.tracer.start_as_current_span(
+            'repo.reserve_tickets_atomically',
+            attributes={
+                'booking_id': booking_id,
+                'event_id': event_id,
+                'seat_count': len(seat_identifiers),
+                'ticket_price': ticket_price,
+            },
+        ):
+            with self.tracer.start_as_current_span('db.get_session'):
+                session = await get_scylla_session()
 
-        # Step 1: Build BATCH statement for all ticket updates + booking update (1 network round-trip)
-        reserved_tickets: List[TicketRef] = []
-        total_price = 0
-        batch_statements: List[str] = []
-        batch_params: List[Any] = []
+            now: datetime = datetime.now(timezone.utc)
 
-        for seat_id in seat_identifiers:
-            try:
-                row_num, seat_num = seat_id.split('-')
-                row_num = int(row_num)
-                seat_num = int(seat_num)
-            except (ValueError, AttributeError):
-                Logger.base.error(f'❌ Invalid seat identifier: {seat_id}')
-                continue
+            # Step 1: Build BATCH statement for all ticket updates + booking update (1 network round-trip)
+            with self.tracer.start_as_current_span('repo.build_batch_statements'):
+                reserved_tickets: List[TicketRef] = []
+                total_price = 0
+                batch_statements: List[str] = []
+                batch_params: List[Any] = []
 
-            # Use price from Kvrocks (all seats in same subsection have same price)
-            price = ticket_price
+                for seat_id in seat_identifiers:
+                    try:
+                        row_num, seat_num = seat_id.split('-')
+                        row_num = int(row_num)
+                        seat_num = int(seat_num)
+                    except (ValueError, AttributeError):
+                        Logger.base.error(f'❌ Invalid seat identifier: {seat_id}')
+                        continue
 
-            # Add ticket UPDATE to batch
-            batch_statements.append(
-                """
-                UPDATE "ticket"
-                SET status = %s,
-                    buyer_id = %s,
-                    updated_at = %s,
-                    reserved_at = %s
-                WHERE event_id = %s
-                  AND section = %s
-                  AND subsection = %s
-                  AND row_number = %s
-                  AND seat_number = %s
-                """
+                    # Use price from Kvrocks (all seats in same subsection have same price)
+                    price = ticket_price
+
+                    # Add ticket UPDATE to batch
+                    batch_statements.append(
+                        """
+                        UPDATE "ticket"
+                        SET status = %s,
+                            buyer_id = %s,
+                            updated_at = %s,
+                            reserved_at = %s
+                        WHERE event_id = %s
+                          AND section = %s
+                          AND subsection = %s
+                          AND row_number = %s
+                          AND seat_number = %s
+                        """
+                    )
+                    batch_params.extend(
+                        [
+                            'reserved',
+                            buyer_id,
+                            now,
+                            now,
+                            event_id,
+                            section,
+                            subsection,
+                            row_num,
+                            seat_num,
+                        ]
+                    )
+
+                    # Create TicketRef without querying
+                    ticket = TicketRef(
+                        id=0,
+                        event_id=event_id,
+                        section=section,
+                        subsection=subsection,
+                        row=row_num,
+                        seat=seat_num,
+                        price=price,
+                        status=TicketStatus.RESERVED,
+                        buyer_id=buyer_id,
+                        created_at=now,
+                        updated_at=now,
+                        reserved_at=now,
+                    )
+                    reserved_tickets.append(ticket)
+                    total_price += price
+
+            # Step 2: Add booking UPDATE to batch
+            with self.tracer.start_as_current_span('repo.prepare_booking_update'):
+                booking = Booking(
+                    id=booking_id,
+                    buyer_id=buyer_id,
+                    event_id=event_id,
+                    section=section,
+                    subsection=subsection,
+                    quantity=len(seat_identifiers),
+                    seat_selection_mode='manual',
+                    status=BookingStatus.PENDING_PAYMENT,
+                    total_price=total_price,
+                    seat_positions=seat_identifiers,
+                    updated_at=now,
+                )
+
+                # Convert reserved tickets to denormalized format
+                tickets_data = [
+                    {
+                        'id': str(ticket.id),
+                        'section': ticket.section,
+                        'subsection': str(ticket.subsection),
+                        'row': str(ticket.row),
+                        'seat': str(ticket.seat),
+                        'price': str(ticket.price),
+                        'status': ticket.status.value,
+                    }
+                    for ticket in reserved_tickets
+                ]
+
+                # Add booking UPDATE to batch
+                batch_statements.append(
+                    """
+                    UPDATE "booking"
+                    SET status = %s,
+                        total_price = %s,
+                        seat_positions = %s,
+                        tickets_data = %s,
+                        updated_at = %s
+                    WHERE id = %s
+                    """
+                )
+                batch_params.extend(
+                    [
+                        booking.status.value,
+                        booking.total_price,
+                        booking.seat_positions,
+                        tickets_data,
+                        booking.updated_at,
+                        booking.id,
+                    ]
+                )
+
+            # Step 3: Execute BATCH (1 network round-trip for all updates)
+            with self.tracer.start_as_current_span(
+                'db.execute_batch',
+                attributes={
+                    'batch.statement_count': len(batch_statements),
+                    'batch.total_price': total_price,
+                },
+            ):
+                batch_query = 'BEGIN BATCH\n' + ';\n'.join(batch_statements) + ';\nAPPLY BATCH'
+                await anyio.to_thread.run_sync(partial(session.execute, batch_query, batch_params))
+
+            Logger.base.info(
+                f'🚀 [BATCH] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
+                f'to PENDING_PAYMENT (total: {total_price}) in 1 network round-trip'
             )
-            batch_params.extend(
-                ['reserved', buyer_id, now, now, event_id, section, subsection, row_num, seat_num]
-            )
 
-            # Create TicketRef without querying
-            ticket = TicketRef(
-                id=0,
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                row=row_num,
-                seat=seat_num,
-                price=price,
-                status=TicketStatus.RESERVED,
-                buyer_id=buyer_id,
-                created_at=now,
-                updated_at=now,
-                reserved_at=now,
-            )
-            reserved_tickets.append(ticket)
-            total_price += price
-
-        # Step 2: Add booking UPDATE to batch
-        booking = Booking(
-            id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            quantity=len(seat_identifiers),
-            seat_selection_mode='manual',
-            status=BookingStatus.PENDING_PAYMENT,
-            total_price=total_price,
-            seat_positions=seat_identifiers,
-            updated_at=now,
-        )
-
-        # Convert reserved tickets to denormalized format
-        tickets_data = [
-            {
-                'id': str(ticket.id),
-                'section': ticket.section,
-                'subsection': str(ticket.subsection),
-                'row': str(ticket.row),
-                'seat': str(ticket.seat),
-                'price': str(ticket.price),
-                'status': ticket.status.value,
-            }
-            for ticket in reserved_tickets
-        ]
-
-        # Add booking UPDATE to batch
-        batch_statements.append(
-            """
-            UPDATE "booking"
-            SET status = %s,
-                total_price = %s,
-                seat_positions = %s,
-                tickets_data = %s,
-                updated_at = %s
-            WHERE id = %s
-            """
-        )
-        batch_params.extend(
-            [
-                booking.status.value,
-                booking.total_price,
-                booking.seat_positions,
-                tickets_data,
-                booking.updated_at,
-                booking.id,
-            ]
-        )
-
-        # Step 3: Execute BATCH (1 network round-trip for all updates)
-        batch_query = 'BEGIN BATCH\n' + ';\n'.join(batch_statements) + ';\nAPPLY BATCH'
-
-        await anyio.to_thread.run_sync(partial(session.execute, batch_query, batch_params))
-
-        Logger.base.info(
-            f'🚀 [BATCH] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
-            f'to PENDING_PAYMENT (total: {total_price}) in 1 network round-trip'
-        )
-
-        return (booking, reserved_tickets, total_price)
+            return (booking, reserved_tickets, total_price)

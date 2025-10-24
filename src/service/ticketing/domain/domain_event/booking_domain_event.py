@@ -34,7 +34,7 @@ class BookingCreatedDomainEvent:
         return self.booking_id
 
     @classmethod
-    def from_booking(cls, booking: 'Booking') -> 'BookingCreatedDomainEvent':
+    async def from_booking(cls, booking: 'Booking') -> 'BookingCreatedDomainEvent':
         from datetime import datetime, timezone
 
         return cls(

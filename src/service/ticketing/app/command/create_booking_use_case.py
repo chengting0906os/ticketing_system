@@ -117,12 +117,9 @@ class CreateBookingUseCase:
             # Publish domain event after successful creation (using abstraction)
             # SAGA pattern: If downstream fails, compensating events will be triggered
             # Fire-and-forget: Don't block response waiting for event publishing
-            with self.tracer.start_as_current_span('booking.prepare_event'):
-                booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
-
-            with self.tracer.start_as_current_span('booking.publish_event'):
-                asyncio.create_task(
-                    self.event_publisher.publish_booking_created(event=booking_created_event)
-                )
+            booking_created_event = await BookingCreatedDomainEvent.from_booking(created_booking)
+            asyncio.create_task(
+                self.event_publisher.publish_booking_created(event=booking_created_event)
+            )
 
             return created_booking
