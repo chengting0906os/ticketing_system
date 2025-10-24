@@ -17,7 +17,7 @@ Usage:
 import asyncio
 
 from cassandra import ConsistencyLevel
-from cassandra.cluster import Cluster, Session
+from cassandra.cluster import EXEC_PROFILE_DEFAULT, Cluster, ExecutionProfile, Session
 from cassandra.query import SimpleStatement
 
 from src.platform.config.core_setting import settings
@@ -38,6 +38,7 @@ def _create_cluster() -> Cluster:
     - WhiteList policy: Prevents Docker internal IP discovery (localhost-only for tests)
     - Connection pooling: One connection per shard for optimal performance
     - Authentication: Uses username/password from settings
+    - Execution Profiles: Define consistency, timeout, and load balancing per profile
 
     Returns:
         Cluster: Configured ScyllaDB cluster
@@ -54,11 +55,21 @@ def _create_cluster() -> Cluster:
         username=settings.SCYLLA_USERNAME, password=settings.SCYLLA_PASSWORD.get_secret_value()
     )
 
+    # Create execution profile for default operations
+    # This replaces the deprecated session-level settings (consistency_level, timeout)
+    # Note: load_balancing_policy must be in the profile, not in Cluster() when using profiles
+    default_profile = ExecutionProfile(
+        load_balancing_policy=load_balancing_policy,
+        consistency_level=ConsistencyLevel.LOCAL_QUORUM,
+        request_timeout=settings.SCYLLA_REQUEST_TIMEOUT,
+        # Note: retry_policy defaults to RetryPolicy() which is sufficient for most cases
+        # DowngradingConsistencyRetryPolicy is deprecated and should be avoided
+    )
+
     return Cluster(
         contact_points=settings.SCYLLA_CONTACT_POINTS,
         port=settings.SCYLLA_PORT,
-        auth_provider=auth_provider,  # Add authentication
-        load_balancing_policy=load_balancing_policy,
+        auth_provider=auth_provider,
         protocol_version=4,  # CQL native protocol v4
         compression=True,  # Enable LZ4 compression
         # Connection pooling (one per shard for optimal performance)
@@ -68,6 +79,8 @@ def _create_cluster() -> Cluster:
         control_connection_timeout=settings.SCYLLA_CONTROL_TIMEOUT,
         # Retry and reconnection
         reconnection_policy=ExponentialReconnectionPolicy(base_delay=1, max_delay=30),
+        # Execution profiles (replaces deprecated session-level settings)
+        execution_profiles={EXEC_PROFILE_DEFAULT: default_profile},
     )
 
 
@@ -102,11 +115,8 @@ async def get_scylla_session() -> Session:
     keyspace = os.getenv('SCYLLA_KEYSPACE', settings.SCYLLA_KEYSPACE)
     session = await asyncio.to_thread(cluster.connect, keyspace)
 
-    # Set default consistency level
-    session.default_consistency_level = ConsistencyLevel.LOCAL_QUORUM
-
-    # Configure execution profiles for different workloads
-    session.default_timeout = settings.SCYLLA_REQUEST_TIMEOUT
+    # Note: Consistency level and timeout are now configured via execution profiles
+    # in _create_cluster() instead of session-level settings (which are deprecated)
 
     scylla_sessions[loop_id] = session
 

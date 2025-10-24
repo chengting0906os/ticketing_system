@@ -107,37 +107,39 @@ _cached_tables = None
 def get_scylla_session():
     """Get ScyllaDB session with authentication (test configuration)
 
-    Note: Uses DCAwareRoundRobinPolicy with contact_points_fallthrough=True
+    Note: Uses execution profiles with WhiteListRoundRobinPolicy
     to prevent auto-discovery of Docker internal IPs during local testing.
     """
-    from cassandra.policies import DCAwareRoundRobinPolicy
+    from cassandra import ConsistencyLevel
+    from cassandra.cluster import EXEC_PROFILE_DEFAULT, ExecutionProfile
+    from cassandra.policies import WhiteListRoundRobinPolicy
 
     auth_provider = PlainTextAuthProvider(
         username=SCYLLA_CONFIG['username'], password=SCYLLA_CONFIG['password']
     )
 
-    # Prevent auto-discovery of internal Docker IPs
-    # contact_points_fallthrough=True ensures only contact_points are used
-    _ = DCAwareRoundRobinPolicy(
-        local_dc='datacenter1',
-        used_hosts_per_remote_dc=0,  # Don't use remote DC hosts
-    )
-
-    from cassandra.policies import WhiteListRoundRobinPolicy
-
     # Use WhiteList to ONLY connect to localhost (prevent Docker internal IP discovery)
     whitelist_policy = WhiteListRoundRobinPolicy(SCYLLA_CONFIG['contact_points'])
+
+    # Create execution profile matching production configuration
+    # This replaces the deprecated load_balancing_policy parameter at Cluster level
+    default_profile = ExecutionProfile(
+        load_balancing_policy=whitelist_policy,
+        consistency_level=ConsistencyLevel.LOCAL_QUORUM,
+        request_timeout=30,  # Increased for test stability
+    )
 
     cluster = Cluster(
         contact_points=SCYLLA_CONFIG['contact_points'],
         port=SCYLLA_CONFIG['port'],
         auth_provider=auth_provider,
-        load_balancing_policy=whitelist_policy,  # Use whitelist instead of DC-aware
         protocol_version=4,  # Match production setting
         # Increase timeouts for schema agreement in multi-node cluster
         connect_timeout=30,  # 30 seconds for initial connection
         control_connection_timeout=30,  # 30 seconds for control connection
         max_schema_agreement_wait=60,  # Wait up to 60 seconds for schema agreement
+        # Execution profiles (modern API, replaces legacy parameters)
+        execution_profiles={EXEC_PROFILE_DEFAULT: default_profile},
     )
     return cluster, cluster.connect()
 
