@@ -26,6 +26,7 @@ class SeatsReservedEvent:
 
     booking_id: int
     buyer_id: int
+    event_id: int  # Added: event_id is required for ticketing consumer
     reserved_seats: List[str]
     total_price: int
     ticket_details: List[dict]  # Required: contains seat_id and price
@@ -43,6 +44,7 @@ class SeatReservationFailedEvent:
 
     booking_id: int
     buyer_id: int
+    event_id: int  # Added: event_id is required for ticketing consumer
     error_message: str
     status: str = 'seat_reservation_failed'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
@@ -69,6 +71,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
+            event_id=event_id,  # Pass event_id to event
             reserved_seats=reserved_seats,
             total_price=total_price,
             ticket_details=ticket_details,
@@ -98,6 +101,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         event = SeatReservationFailedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
+            event_id=event_id,  # Pass event_id to event
             error_message=error_message,
         )
 
