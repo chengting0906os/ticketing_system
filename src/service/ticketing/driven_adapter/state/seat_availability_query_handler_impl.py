@@ -111,10 +111,10 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
                 stats = await self._fetch_all_stats(event_id)
                 self._cache[event_id] = stats
 
-            total_sections = sum(len(sections) for sections in self._cache.values())
-            Logger.base.debug(
-                f'💾 [CACHE] Refreshed {len(event_ids)} events, {total_sections} sections'
-            )
+            sum(len(sections) for sections in self._cache.values())
+            # Logger.base.debug(
+            #     f'💾 [CACHE] Refreshed {len(event_ids)} events, {total_sections} sections'
+            # )
         except Exception as e:
             Logger.base.error(f'❌ [CACHE] Refresh failed: {e}')
 
