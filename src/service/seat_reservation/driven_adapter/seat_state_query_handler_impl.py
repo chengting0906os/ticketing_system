@@ -126,7 +126,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
 
-    @Logger.io
+    # @Logger.io
     async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
         """獲取活動所有 subsection 的統計資訊"""
 
