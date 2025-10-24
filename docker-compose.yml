@@ -12,95 +12,33 @@
 # =============================================================================
 
 services:
-  # Kafka with KRaft mode (no Zookeeper)
-  kafka1:
+  # Kafka with KRaft mode (no Zookeeper) - Single Node
+  kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka1
+    container_name: kafka
     ports:
       - "9092:9092"
       - "9101:9101"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092'
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
       KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
-      KAFKA_LISTENERS: 'PLAINTEXT://kafka1:29092,CONTROLLER://kafka1:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
       KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
     volumes:
-      - kafka1_data:/var/lib/kafka/data
-    networks:
-      - ticketing-network
-    mem_limit: 2G
-    memswap_limit: 2G
-
-  kafka2:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka2
-    ports:
-      - "9093:9093"
-      - "9102:9102"
-    environment:
-      KAFKA_NODE_ID: 2
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka2:29092,PLAINTEXT_HOST://localhost:9093'
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_JMX_PORT: 9102
-      KAFKA_JMX_HOSTNAME: localhost
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
-      KAFKA_LISTENERS: 'PLAINTEXT://kafka2:29092,CONTROLLER://kafka2:29093,PLAINTEXT_HOST://0.0.0.0:9093'
-      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
-      KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
-    volumes:
-      - kafka2_data:/var/lib/kafka/data
-    networks:
-      - ticketing-network
-    mem_limit: 2G
-    memswap_limit: 2G
-
-  kafka3:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: kafka3
-    ports:
-      - "9094:9094"
-      - "9103:9103"
-    environment:
-      KAFKA_NODE_ID: 3
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka3:29092,PLAINTEXT_HOST://localhost:9094'
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_JMX_PORT: 9103
-      KAFKA_JMX_HOSTNAME: localhost
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
-      KAFKA_LISTENERS: 'PLAINTEXT://kafka3:29092,CONTROLLER://kafka3:29093,PLAINTEXT_HOST://0.0.0.0:9094'
-      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
-      KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
-    volumes:
-      - kafka3_data:/var/lib/kafka/data
+      - kafka_data:/var/lib/kafka/data
     networks:
       - ticketing-network
     mem_limit: 2G
@@ -110,14 +48,12 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
+      - kafka
     ports:
       - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
       DYNAMIC_CONFIG_ENABLED: 'true'
     networks:
       - ticketing-network
@@ -274,7 +210,7 @@ services:
       SCYLLA_USERNAME: cassandra
       SCYLLA_PASSWORD: cassandra
       # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_INSTANCE_ID: "consumer-ticketing-1"
       # Kvrocks (for seed script initialization)
       KVROCKS_HOST: kvrocks
@@ -285,7 +221,7 @@ services:
       JAEGER_HOST: jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       # Application
-      DEBUG: "false"
+      DEBUG: "true"
       # Timezone
       TZ: "Asia/Taipei"
     env_file:
@@ -300,11 +236,7 @@ services:
     depends_on:
       scylladb1:
         condition: service_healthy
-      kafka1:
-        condition: service_started
-      kafka2:
-        condition: service_started
-      kafka3:
+      kafka:
         condition: service_started
     networks:
       - ticketing-network
@@ -344,7 +276,7 @@ services:
       SCYLLA_USERNAME: cassandra
       SCYLLA_PASSWORD: cassandra
       # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_INSTANCE_ID: "consumer-seat-reservation-1"
       # Kvrocks
       KVROCKS_HOST: kvrocks
@@ -355,7 +287,7 @@ services:
       JAEGER_HOST: jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       # Application
-      DEBUG: "false"
+      DEBUG: "true"
       # Timezone
       TZ: "Asia/Taipei"
     env_file:
@@ -369,11 +301,7 @@ services:
     depends_on:
       scylladb1:
         condition: service_healthy
-      kafka1:
-        condition: service_started
-      kafka2:
-        condition: service_started
-      kafka3:
+      kafka:
         condition: service_started
       kvrocks:
         condition: service_healthy
@@ -445,9 +373,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  kafka1_data:
-  kafka2_data:
-  kafka3_data:
+  kafka_data:
   kvrocks_data:
   scylladb1_data:
   scylladb2_data:
