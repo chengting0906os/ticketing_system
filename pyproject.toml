@@ -68,9 +68,7 @@ dev = [
     # Additional development tools
     "uvicorn>=0.37.0",
 ]
-test = [
-    "filelock>=3.19.1",
-]
+test = ["filelock>=3.19.1"]
 
 [tool.ruff]
 line-length = 100
@@ -143,7 +141,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:gherkin.gherkin_line",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 10"
+addopts = "-v --tb=short --strict-markers"
 
 [tool.pyright]
 
