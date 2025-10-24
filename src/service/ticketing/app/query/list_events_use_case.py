@@ -1,29 +1,16 @@
 from typing import List
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
 from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
     IEventTicketingQueryRepo,
 )
-from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 
 
 class ListEventsUseCase:
-    def __init__(self, event_ticketing_query_repo: IEventTicketingQueryRepo):
+    def __init__(self, *, event_ticketing_query_repo: IEventTicketingQueryRepo):
         self.event_ticketing_query_repo = event_ticketing_query_repo
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        event_ticketing_query_repo: IEventTicketingQueryRepo = Depends(
-            Provide[Container.event_ticketing_query_repo]
-        ),
-    ):
-        return cls(event_ticketing_query_repo=event_ticketing_query_repo)
 
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[EventTicketingAggregate]:

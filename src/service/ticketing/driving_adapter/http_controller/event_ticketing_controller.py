@@ -1,7 +1,9 @@
 from typing import Dict, List, Optional
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, status
 
+from src.platform.config.di import Container
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
@@ -24,10 +26,13 @@ router = APIRouter()
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
+@inject
 async def create_event(
     request: EventCreateWithTicketConfigRequest,
     current_user: UserEntity = Depends(require_seller),
-    use_case: CreateEventAndTicketsUseCase = Depends(CreateEventAndTicketsUseCase.depends),
+    use_case: CreateEventAndTicketsUseCase = Depends(
+        Provide[Container.create_event_and_tickets_use_case]
+    ),
 ) -> EventResponse:
     event_aggregate = await use_case.create_event_and_tickets(
         name=request.name,
@@ -58,13 +63,12 @@ async def create_event(
 
 @router.get('/{event_id}', status_code=status.HTTP_200_OK)
 @Logger.io
+@inject
 async def get_event(
     event_id: int,
-    use_case: GetEventUseCase = Depends(GetEventUseCase.depends),
+    use_case: GetEventUseCase = Depends(Provide[Container.get_event_use_case]),
     seat_query_handler: ISeatStateQueryHandler = Depends(
-        lambda: __import__(
-            'src.platform.config.di', fromlist=['container']
-        ).container.seat_state_query_handler()
+        Provide[Container.seat_state_query_handler]
     ),
 ) -> EventResponse:
     event_aggregate = await use_case.get_by_id(event_id=event_id)
@@ -148,9 +152,10 @@ def _merge_seat_stats_into_config(seating_config: Dict, seat_stats: Dict[str, Di
 
 @router.get('', status_code=status.HTTP_200_OK)
 @Logger.io
+@inject
 async def list_events(
     seller_id: Optional[int] = None,
-    use_case: ListEventsUseCase = Depends(ListEventsUseCase.depends),
+    use_case: ListEventsUseCase = Depends(Provide[Container.list_events_use_case]),
 ) -> List[EventResponse]:
     if seller_id is not None:
         events = await use_case.get_by_seller(seller_id)

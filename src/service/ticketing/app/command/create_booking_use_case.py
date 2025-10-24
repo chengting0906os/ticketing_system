@@ -1,11 +1,8 @@
 import asyncio
 from typing import List
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
 from opentelemetry import trace
 
-from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
@@ -37,26 +34,6 @@ class CreateBookingUseCase:
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
         self.tracer = trace.get_tracer(__name__)
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        booking_command_repo: IBookingCommandRepo = Depends(
-            Provide[Container.booking_command_repo]
-        ),
-        event_publisher: IBookingEventPublisher = Depends(
-            Provide[Container.booking_event_publisher]
-        ),
-        seat_availability_handler: ISeatAvailabilityQueryHandler = Depends(
-            Provide[Container.seat_availability_query_handler]
-        ),
-    ):
-        return cls(
-            booking_command_repo=booking_command_repo,
-            event_publisher=event_publisher,
-            seat_availability_handler=seat_availability_handler,
-        )
 
     # @Logger.io
     async def create_booking(

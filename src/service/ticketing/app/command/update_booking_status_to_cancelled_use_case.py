@@ -1,9 +1,6 @@
 from datetime import datetime, timezone
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
 
-from src.platform.config.di import Container
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
@@ -35,23 +32,6 @@ class UpdateBookingToCancelledUseCase:
     ):
         self.booking_command_repo = booking_command_repo
         self.event_ticketing_query_repo = event_ticketing_query_repo
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        booking_command_repo: IBookingCommandRepo = Depends(
-            Provide[Container.booking_command_repo]
-        ),
-        event_ticketing_query_repo: IEventTicketingQueryRepo = Depends(
-            Provide[Container.event_ticketing_query_repo]
-        ),
-    ):
-        """For FastAPI endpoint compatibility"""
-        return cls(
-            booking_command_repo=booking_command_repo,
-            event_ticketing_query_repo=event_ticketing_query_repo,
-        )
 
     @Logger.io
     async def execute(self, *, booking_id: int, buyer_id: int) -> Booking:

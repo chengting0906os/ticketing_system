@@ -1,9 +1,6 @@
 from typing import Optional
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
 
-from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
     IEventTicketingQueryRepo,
@@ -14,16 +11,6 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Eve
 class GetEventUseCase:
     def __init__(self, event_ticketing_query_repo: IEventTicketingQueryRepo):
         self.event_ticketing_query_repo = event_ticketing_query_repo
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        event_ticketing_query_repo: IEventTicketingQueryRepo = Depends(
-            Provide[Container.event_ticketing_query_repo]
-        ),
-    ):
-        return cls(event_ticketing_query_repo=event_ticketing_query_repo)
 
     @Logger.io
     async def get_by_id(self, event_id: int) -> Optional[EventTicketingAggregate]:

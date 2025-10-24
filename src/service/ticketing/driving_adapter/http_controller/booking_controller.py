@@ -1,7 +1,9 @@
 from typing import List
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, status
 
+from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
@@ -34,10 +36,11 @@ router = APIRouter()
 
 @router.get('/my_booking', response_model=List[BookingWithDetailsResponse])
 @Logger.io
+@inject
 async def list_my_bookings(
     booking_status: str = '',
     current_user: UserEntity = Depends(get_current_user),
-    use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
+    use_case: ListBookingsUseCase = Depends(Provide[Container.list_bookings_use_case]),
 ):
     if RoleAuthStrategy.is_buyer(current_user):
         return await use_case.list_buyer_bookings(current_user.id or 0, booking_status)
@@ -49,10 +52,11 @@ async def list_my_bookings(
 
 @router.post('', status_code=status.HTTP_201_CREATED)
 @Logger.io
+@inject
 async def create_booking(
     request: BookingCreateRequest,
     current_user: UserEntity = Depends(require_buyer),
-    booking_use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
+    booking_use_case: CreateBookingUseCase = Depends(Provide[Container.create_booking_use_case]),
 ) -> BookingResponse:
     # Create booking - ticket validation and reservation are now handled atomically inside use case
     booking = await booking_use_case.create_booking(
@@ -80,10 +84,11 @@ async def create_booking(
 
 @router.get('/{booking_id}')
 @Logger.io
+@inject
 async def get_booking(
     booking_id: int,
     current_user: UserEntity = Depends(get_current_user),
-    use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
+    use_case: GetBookingUseCase = Depends(Provide[Container.get_booking_use_case]),
 ) -> BookingDetailResponse:
     booking_details = await use_case.get_booking_with_details(booking_id)
     return BookingDetailResponse(**booking_details)
@@ -91,10 +96,13 @@ async def get_booking(
 
 @router.patch('/{booking_id}', status_code=status.HTTP_200_OK)
 @Logger.io
+@inject
 async def cancel_booking(
     booking_id: int,
     current_user: UserEntity = Depends(require_buyer),
-    use_case: UpdateBookingToCancelledUseCase = Depends(UpdateBookingToCancelledUseCase.depends),
+    use_case: UpdateBookingToCancelledUseCase = Depends(
+        Provide[Container.update_booking_to_cancelled_use_case]
+    ),
 ):
     # Use case will raise exceptions for validation errors (Fail Fast)
     booking = await use_case.execute(
@@ -109,12 +117,13 @@ async def cancel_booking(
 
 @router.post('/{booking_id}/pay')
 @Logger.io
+@inject
 async def pay_booking(
     booking_id: int,
     request: PaymentRequest,
     current_user: UserEntity = Depends(require_buyer),
     use_case: MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase = Depends(
-        MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase.depends
+        Provide[Container.mock_payment_use_case]
     ),
 ) -> PaymentResponse:
     result = await use_case.pay_booking(

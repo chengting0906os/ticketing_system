@@ -2,10 +2,6 @@ import random
 import string
 from typing import Any, Dict
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
-
-from src.platform.config.di import Container
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
@@ -22,17 +18,6 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         booking_command_repo: IBookingCommandRepo,
     ):
         self.booking_command_repo = booking_command_repo
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        booking_command_repo: IBookingCommandRepo = Depends(
-            Provide[Container.booking_command_repo]
-        ),
-    ):
-        """For FastAPI endpoint compatibility"""
-        return cls(booking_command_repo=booking_command_repo)
 
     @Logger.io
     async def pay_booking(self, booking_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:

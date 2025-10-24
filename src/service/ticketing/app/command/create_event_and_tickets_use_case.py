@@ -9,10 +9,7 @@ Clean architecture use case for event creation:
 
 from typing import Dict
 
-from dependency_injector.wiring import Provide, inject
-from fastapi import Depends
 
-from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
     IEventTicketingCommandRepo,
@@ -53,26 +50,6 @@ class CreateEventAndTicketsUseCase:
         self.event_ticketing_command_repo = event_ticketing_command_repo
         self.mq_infra_orchestrator = mq_infra_orchestrator
         self.init_state_handler = init_state_handler
-
-    @classmethod
-    @inject
-    def depends(
-        cls,
-        event_ticketing_command_repo: IEventTicketingCommandRepo = Depends(
-            Provide[Container.event_ticketing_command_repo]
-        ),
-        mq_infra_orchestrator: IMqInfraOrchestrator = Depends(
-            Provide[Container.mq_infra_orchestrator]
-        ),
-        init_state_handler: IInitEventAndTicketsStateHandler = Depends(
-            Provide[Container.init_event_and_tickets_state_handler]
-        ),
-    ):
-        return cls(
-            event_ticketing_command_repo=event_ticketing_command_repo,
-            mq_infra_orchestrator=mq_infra_orchestrator,
-            init_state_handler=init_state_handler,
-        )
 
     @Logger.io
     async def create_event_and_tickets(
