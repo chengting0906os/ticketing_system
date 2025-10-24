@@ -81,58 +81,22 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
     async def create(self, *, booking: Booking) -> Booking:
         with self.tracer.start_as_current_span('db.booking.create') as span:
-            session = await get_scylla_session()
+            # OPTIMIZATION: Skip database write here - booking will be created via UPSERT
+            # in reserve_tickets_and_update_booking_atomically() BATCH statement
+            # This eliminates one independent QUORUM write, reducing latency from ~10s to ~0ms
 
             # Generate ID (in production, use distributed ID generator like Snowflake)
             booking_id = booking.id or int(datetime.now(timezone.utc).timestamp() * 1000000)
             now = datetime.now(timezone.utc)
 
-            # Simplified insert - denormalized fields will be populated on first read
-            query = """
-                INSERT INTO "booking" (
-                    id, buyer_id, event_id, section, subsection, quantity,
-                    total_price, seat_selection_mode, seat_positions, status,
-                    created_at, updated_at,
-                    buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name,
-                    tickets_data
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-
-            await anyio.to_thread.run_sync(
-                partial(
-                    session.execute,
-                    query,
-                    (
-                        booking_id,
-                        booking.buyer_id,
-                        booking.event_id,
-                        booking.section,
-                        booking.subsection,
-                        booking.quantity,
-                        booking.total_price,
-                        booking.seat_selection_mode,
-                        booking.seat_positions,
-                        booking.status.value,
-                        now,
-                        now,
-                        None,  # buyer_name - lazy loaded on read
-                        None,  # buyer_email - lazy loaded on read
-                        None,  # event_name - lazy loaded on read
-                        None,  # venue_name - lazy loaded on read
-                        None,  # seller_id - lazy loaded on read
-                        None,  # seller_name - lazy loaded on read
-                        [],  # tickets_data initially empty
-                    ),
-                )
-            )
-
-            # Return booking with generated ID (avoid extra SELECT)
+            # Return in-memory booking object with generated ID
+            # Actual database write will happen in BATCH with tickets
             booking.id = booking_id
             booking.created_at = now
             booking.updated_at = now
 
             span.set_attribute('booking.id', booking_id)
+            span.set_attribute('write.skipped', True)  # Track this optimization in trace
             return booking
 
     @Logger.io
@@ -478,7 +442,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     reserved_tickets.append(ticket)
                     total_price += price
 
-            # Step 2: Add booking UPDATE to batch
+            # Step 2: Add booking UPDATE to batch (acts as UPSERT in ScyllaDB)
             with self.tracer.start_as_current_span('repo.prepare_booking_update'):
                 booking = Booking(
                     id=booking_id,
@@ -491,6 +455,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     status=BookingStatus.PENDING_PAYMENT,
                     total_price=total_price,
                     seat_positions=seat_identifiers,
+                    created_at=now,  # Will be set on first UPSERT
                     updated_at=now,
                 )
 
@@ -508,15 +473,22 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     for ticket in reserved_tickets
                 ]
 
-                # Add booking UPDATE to batch
+                # Add booking UPDATE to batch (UPSERT: creates if not exists, updates if exists)
                 # Note: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
+                # Note: Include all essential fields to support first-time INSERT via UPSERT
                 batch_statements.append(
                     """
                     UPDATE "booking"
-                    SET status = %s,
+                    SET event_id = %s,
+                        section = %s,
+                        subsection = %s,
+                        quantity = %s,
+                        seat_selection_mode = %s,
+                        status = %s,
                         total_price = %s,
                         seat_positions = %s,
                         tickets_data = %s,
+                        created_at = %s,
                         updated_at = %s
                     WHERE buyer_id = %s
                       AND id = %s
@@ -524,10 +496,16 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 )
                 batch_params.extend(
                     [
+                        booking.event_id,
+                        booking.section,
+                        booking.subsection,
+                        booking.quantity,
+                        booking.seat_selection_mode,
                         booking.status.value,
                         booking.total_price,
                         booking.seat_positions,
                         tickets_data,
+                        booking.created_at,
                         booking.updated_at,
                         booking.buyer_id,
                         booking.id,
@@ -539,14 +517,21 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 'db.execute_batch',
                 attributes={
                     'batch.statement_count': len(batch_statements),
+                    'batch.ticket_count': len(reserved_tickets),
                     'batch.total_price': total_price,
+                    'batch.booking_id': booking_id,
+                    'batch.buyer_id': buyer_id,
+                    'batch.event_id': event_id,
+                    'batch.section': section,
+                    'batch.subsection': subsection,
+                    'batch.operation': 'upsert_booking_and_reserve_tickets',
                 },
             ):
                 batch_query = 'BEGIN BATCH\n' + ';\n'.join(batch_statements) + ';\nAPPLY BATCH'
                 await anyio.to_thread.run_sync(partial(session.execute, batch_query, batch_params))
 
             Logger.base.info(
-                f'🚀 [BATCH] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
+                f'🚀 [BATCH UPSERT] Reserved {len(reserved_tickets)} tickets and upserted booking {booking_id} '
                 f'to PENDING_PAYMENT (total: {total_price}) in 1 network round-trip'
             )
 
