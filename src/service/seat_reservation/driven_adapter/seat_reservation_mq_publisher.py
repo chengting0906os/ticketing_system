@@ -28,6 +28,7 @@ class SeatsReservedEvent:
     buyer_id: int
     reserved_seats: List[str]
     total_price: int
+    ticket_details: List[dict]  # Required: contains seat_id and price
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
@@ -62,6 +63,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         reserved_seats: List[str],
         total_price: int,
         event_id: int,
+        ticket_details: List[dict],
     ) -> None:
         """發送座位預訂成功事件"""
         event = SeatsReservedEvent(
@@ -69,6 +71,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             buyer_id=buyer_id,
             reserved_seats=reserved_seats,
             total_price=total_price,
+            ticket_details=ticket_details,
         )
 
         await publish_domain_event(

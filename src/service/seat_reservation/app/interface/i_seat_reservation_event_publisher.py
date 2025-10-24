@@ -19,8 +19,15 @@ class ISeatReservationEventPublisher(ABC):
         reserved_seats: List[str],
         total_price: int,
         event_id: int,
+        ticket_details: List[dict],
     ) -> None:
-        """發送座位預訂成功事件"""
+        """
+        發送座位預訂成功事件
+
+        Args:
+            ticket_details: Required list of dicts with seat_id and price
+                           e.g., [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
+        """
         pass
 
     @abstractmethod

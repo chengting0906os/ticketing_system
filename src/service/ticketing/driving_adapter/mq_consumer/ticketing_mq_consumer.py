@@ -311,6 +311,7 @@ class TicketingMqConsumer:
         buyer_id = message.get('buyer_id')
         event_id = message.get('event_id')
         reserved_seats = message.get('reserved_seats', [])
+        ticket_details = message.get('ticket_details', [])  # 新增：獲取 ticket 詳細資訊（含價格）
 
         # Extract section and subsection from first seat
         # Seat format: 'section-subsection-row-seat' (e.g., 'A-1-1-3')
@@ -337,6 +338,21 @@ class TicketingMqConsumer:
                     f'⚠️ [BOOKING+TICKET] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
                 )
 
+        # Extract ticket price from ticket_details (all tickets have same price per subsection)
+        # ticket_details format: [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
+        if not ticket_details or len(ticket_details) == 0:
+            Logger.base.error(
+                f'❌ [BOOKING+TICKET] No ticket_details in message for booking {booking_id}'
+            )
+            raise ValueError('ticket_details is required in SeatsReservedEvent')
+
+        ticket_price = ticket_details[0].get('price')
+        if ticket_price is None:
+            Logger.base.error(
+                f'❌ [BOOKING+TICKET] No price in ticket_details for booking {booking_id}'
+            )
+            raise ValueError('price is required in ticket_details')
+
         # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = BookingCommandRepoScyllaImpl()
 
@@ -351,6 +367,7 @@ class TicketingMqConsumer:
             section=section or '',
             subsection=subsection or 0,
             seat_identifiers=seat_identifiers,
+            ticket_price=ticket_price,
         )
 
     @Logger.io

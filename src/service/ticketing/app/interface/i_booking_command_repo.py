@@ -43,10 +43,6 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:
-        pass
-
-    @abstractmethod
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
         pass
 
@@ -80,16 +76,20 @@ class IBookingCommandRepo(ABC):
         section: str,
         subsection: int,
         seat_identifiers: list[str],
+        ticket_price: int,
     ) -> tuple[Booking, list[TicketRef], int]:
         """
-        Atomically reserve tickets and update booking in a single CTE operation.
+        Atomically reserve tickets and update booking using BATCH statement.
 
-        This method performs 3 operations in ONE database round-trip using PostgreSQL CTE:
-        1. Query and validate tickets by seat_identifiers
-        2. Update tickets status to RESERVED and set buyer_id
-        3. Update booking status to PENDING_PAYMENT with total_price and seat_positions
+        This method performs N+1 operations in ONE database round-trip using ScyllaDB BATCH:
+        1. Update N tickets status to RESERVED and set buyer_id
+        2. Update booking status to PENDING_PAYMENT with total_price and seat_positions
 
-        Performance: Reduces 5 database round-trips to 1 by using CTE.
+        Performance Optimizations:
+        - Uses ticket_price from Kvrocks to avoid N SELECT queries for ticket prices
+        - Uses BATCH statement to reduce network round-trips from N+1 to 1
+        - No LWT needed because Kvrocks Lua script already guaranteed atomicity
+        - Single price value because all seats in same subsection have same price
 
         Args:
             booking_id: Booking ID to update
@@ -98,12 +98,12 @@ class IBookingCommandRepo(ABC):
             section: Section for ticket lookup
             subsection: Subsection for ticket lookup
             seat_identifiers: List of seat identifiers (format: "row-seat" like ["1-1", "1-2"])
+            ticket_price: Price per ticket from Kvrocks (same for all seats in subsection)
 
         Returns:
             tuple of (updated_booking, reserved_tickets, total_price)
 
         Raises:
             ValueError: If booking not found or ticket count mismatch
-            ForbiddenError: If buyer_id doesn't match booking owner
         """
         pass

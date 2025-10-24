@@ -166,10 +166,28 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     'error_message': f'Some seats are not available: {failed_seats}',
                 }
 
-            Logger.base.info(f'✅ [CMD] Reserved {len(successful_seats)} seats (manual)')
+            # Get price from Kvrocks seat_meta (all seats in same subsection have same price)
+            # Fetch from first seat's row
+            if successful_seats:
+                first_seat = successful_seats[0]
+                parts = first_seat.split('-')
+                if len(parts) == 4:
+                    _, _, row, seat_num = parts
+                    meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
+                    prices = await client.hgetall(meta_key)  # type: ignore
+                    ticket_price = int(prices.get(seat_num, 0)) if prices else 0
+                else:
+                    ticket_price = 0
+            else:
+                ticket_price = 0
+
+            Logger.base.info(
+                f'✅ [CMD] Reserved {len(successful_seats)} seats (manual), price={ticket_price}'
+            )
             return {
                 'success': True,
                 'reserved_seats': successful_seats,
+                'ticket_price': ticket_price,
                 'error_message': None,
             }
 
@@ -212,12 +230,27 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 seat_ids_str = raw_result.split(':', 1)[1]
                 reserved_seats = seat_ids_str.split(',') if seat_ids_str else []
 
+                # Get price from Kvrocks seat_meta (all seats in same subsection have same price)
+                if reserved_seats:
+                    first_seat = reserved_seats[0]
+                    parts = first_seat.split('-')
+                    if len(parts) == 4:
+                        _, _, row, seat_num = parts
+                        meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
+                        prices = await client.hgetall(meta_key)  # type: ignore
+                        ticket_price = int(prices.get(seat_num, 0)) if prices else 0
+                    else:
+                        ticket_price = 0
+                else:
+                    ticket_price = 0
+
                 Logger.base.info(
-                    f'✅ [CMD] Reserved {len(reserved_seats)} consecutive seats (best_available)'
+                    f'✅ [CMD] Reserved {len(reserved_seats)} consecutive seats (best_available), price={ticket_price}'
                 )
                 return {
                     'success': True,
                     'reserved_seats': reserved_seats,
+                    'ticket_price': ticket_price,
                     'error_message': None,
                 }
 

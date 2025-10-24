@@ -96,29 +96,39 @@ class ReserveSeatsUseCase:
                 quantity=request.quantity if request.selection_mode == 'best_available' else None,
             )
 
-            # 3. 處理結果並發送事件（價格計算由 Ticketing Service 負責）
+            # 3. 處理結果並發送事件（price 已由 reserve_seats_atomic 從 Kvrocks 獲取）
             if result['success']:
                 reserved_seats = result['reserved_seats']
+                ticket_price = result.get('ticket_price', 0)
 
                 Logger.base.info(
                     f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
-                    f'for booking {request.booking_id}'
+                    f'for booking {request.booking_id}, price={ticket_price}'
                 )
 
-                # 發送座位預訂成功事件（不包含 total_price，由 Ticketing Service 計算）
+                # 計算總價格（所有座位價格相同）
+                total_price = ticket_price * len(reserved_seats)
+
+                # 建立包含價格的 ticket 資訊
+                ticket_details = [
+                    {'seat_id': seat_id, 'price': ticket_price} for seat_id in reserved_seats
+                ]
+
+                # 發送座位預訂成功事件（包含完整的 ticket 資訊和價格）
                 await self.mq_publisher.publish_seats_reserved(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
                     reserved_seats=reserved_seats,
-                    total_price=0,  # Placeholder，實際價格由 Ticketing Service 計算
+                    total_price=total_price,
                     event_id=request.event_id,
+                    ticket_details=ticket_details,
                 )
 
                 return ReservationResult(
                     success=True,
                     booking_id=request.booking_id,
                     reserved_seats=reserved_seats,
-                    total_price=0,  # Placeholder，實際價格由 Ticketing Service 計算
+                    total_price=total_price,
                     event_id=request.event_id,
                 )
             else:

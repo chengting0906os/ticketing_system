@@ -1,7 +1,8 @@
-import asyncio
 from datetime import datetime, timezone
-from typing import List
+from functools import partial
+from typing import Any, List
 
+import anyio.to_thread
 from cassandra.query import BatchStatement, BatchType, SimpleStatement
 from opentelemetry import trace
 
@@ -64,7 +65,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             WHERE id = %s
             """
 
-        result = await asyncio.to_thread(session.execute, query, (booking_id,))
+        result = await anyio.to_thread.run_sync(partial(session.execute, query, (booking_id,)))
         row = result.one()
 
         if not row:
@@ -92,30 +93,32 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
 
-            await asyncio.to_thread(
-                session.execute,
-                query,
-                (
-                    booking_id,
-                    booking.buyer_id,
-                    booking.event_id,
-                    booking.section,
-                    booking.subsection,
-                    booking.quantity,
-                    booking.total_price,
-                    booking.seat_selection_mode,
-                    booking.seat_positions,
-                    booking.status.value,
-                    now,
-                    now,
-                    None,  # buyer_name - lazy loaded on read
-                    None,  # buyer_email - lazy loaded on read
-                    None,  # event_name - lazy loaded on read
-                    None,  # venue_name - lazy loaded on read
-                    None,  # seller_id - lazy loaded on read
-                    None,  # seller_name - lazy loaded on read
-                    [],  # tickets_data initially empty
-                ),
+            await anyio.to_thread.run_sync(
+                partial(
+                    session.execute,
+                    query,
+                    (
+                        booking_id,
+                        booking.buyer_id,
+                        booking.event_id,
+                        booking.section,
+                        booking.subsection,
+                        booking.quantity,
+                        booking.total_price,
+                        booking.seat_selection_mode,
+                        booking.seat_positions,
+                        booking.status.value,
+                        now,
+                        now,
+                        None,  # buyer_name - lazy loaded on read
+                        None,  # buyer_email - lazy loaded on read
+                        None,  # event_name - lazy loaded on read
+                        None,  # venue_name - lazy loaded on read
+                        None,  # seller_id - lazy loaded on read
+                        None,  # seller_name - lazy loaded on read
+                        [],  # tickets_data initially empty
+                    ),
+                )
             )
 
             # Return booking with generated ID (avoid extra SELECT)
@@ -125,54 +128,6 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
             span.set_attribute('booking.id', booking_id)
             return booking
-
-    @Logger.io
-    async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:
-        session = await get_scylla_session()
-
-        # Fetch tickets to denormalize into booking
-        tickets = await self.get_tickets_by_booking_id(booking_id=booking.id)  # type: ignore
-
-        # Convert tickets to denormalized format: LIST<FROZEN<MAP<TEXT, TEXT>>>
-        tickets_data = [
-            {
-                'id': str(ticket.id),
-                'section': ticket.section,
-                'subsection': str(ticket.subsection),
-                'row': str(ticket.row),
-                'seat': str(ticket.seat),
-                'price': str(ticket.price),
-                'status': ticket.status.value,
-            }
-            for ticket in tickets
-        ]
-
-        query = """
-            UPDATE "booking"
-            SET status = %s,
-                total_price = %s,
-                seat_positions = %s,
-                tickets_data = %s,
-                updated_at = %s
-            WHERE id = %s
-            """
-
-        await asyncio.to_thread(
-            session.execute,
-            query,
-            (
-                booking.status.value,
-                booking.total_price,
-                booking.seat_positions,
-                tickets_data,
-                booking.updated_at,
-                booking.id,
-            ),
-        )
-
-        # Directly return the updated booking object (avoid extra SELECT)
-        # The booking object already has all updated fields
-        return booking
 
     @Logger.io
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
@@ -185,14 +140,16 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             WHERE id = %s
             """
 
-        await asyncio.to_thread(
-            session.execute,
-            query,
-            [
-                booking.status.value,
-                booking.updated_at,
-                booking.id,
-            ],
+        await anyio.to_thread.run_sync(
+            partial(
+                session.execute,
+                query,
+                [
+                    booking.status.value,
+                    booking.updated_at,
+                    booking.id,
+                ],
+            )
         )
 
         # Directly return the updated booking object (avoid extra SELECT)
@@ -209,14 +166,16 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             WHERE id = %s
             """
 
-        await asyncio.to_thread(
-            session.execute,
-            query,
-            [
-                booking.status.value,
-                booking.updated_at,
-                booking.id,
-            ],
+        await anyio.to_thread.run_sync(
+            partial(
+                session.execute,
+                query,
+                [
+                    booking.status.value,
+                    booking.updated_at,
+                    booking.id,
+                ],
+            )
         )
 
         # Directly return the updated booking object (avoid extra SELECT)
@@ -292,7 +251,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             )
 
         # Execute batch
-        await asyncio.to_thread(session.execute, batch)
+        await anyio.to_thread.run_sync(partial(session.execute, batch))
 
         Logger.base.info(
             f'💳 [ATOMIC_PAY] Updated booking {booking.id} to COMPLETED '
@@ -304,176 +263,6 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             raise ValueError(f'Booking with id {booking.id} not found')
 
         return updated_booking
-
-    @Logger.io
-    async def reserve_tickets_and_update_booking_atomically(
-        self,
-        *,
-        booking_id: int,
-        buyer_id: int,
-        event_id: int,
-        section: str,
-        subsection: int,
-        seat_identifiers: list[str],
-    ) -> tuple[Booking, List[TicketRef], int]:
-        """
-        Atomically reserve tickets and update booking using LWT (Lightweight Transactions)
-
-        Idempotency: If booking status is not 'processing', returns existing data.
-
-        ScyllaDB LWT Strategy:
-        1. Check booking status (idempotency)
-        2. For each ticket: UPDATE ... IF status = 'available' (LWT)
-        3. Calculate total price
-        4. Update booking to PENDING_PAYMENT
-
-        Performance: Multiple round-trips due to LWT per ticket (slower than PostgreSQL CTE)
-        Trade-off: Atomicity & correctness > performance for ticket reservation
-
-        Args:
-            booking_id: Booking ID
-            buyer_id: Buyer ID
-            event_id: Event ID
-            section: Section code
-            subsection: Subsection number
-            seat_identifiers: List of "row-seat" strings (e.g., ["1-1", "1-2"])
-
-        Returns:
-            Tuple of (updated_booking, reserved_tickets, total_price)
-        """
-        session = await get_scylla_session()
-        now = datetime.now(timezone.utc)
-
-        # Step 1: Check booking status for idempotency
-        booking = await self.get_by_id(booking_id=booking_id)
-        if not booking:
-            raise ValueError(f'Booking {booking_id} not found')
-
-        if booking.buyer_id != buyer_id:
-            raise ValueError(f'Booking {booking_id} buyer mismatch')
-
-        # Idempotency check
-        if booking.status != BookingStatus.PROCESSING:
-            Logger.base.warning(
-                f'⚠️ [IDEMPOTENCY] Booking {booking_id} status is {booking.status.value}, '
-                f'not "processing" - skipping update (likely duplicate Kafka event)'
-            )
-            existing_tickets = await self.get_tickets_by_booking_id(booking_id=booking_id)
-            return (booking, existing_tickets, booking.total_price)
-
-        # Step 2: Reserve tickets using LWT (one-by-one for atomicity)
-        reserved_tickets = []
-        total_price = 0
-
-        for seat_id in seat_identifiers:
-            try:
-                row_num, seat_num = seat_id.split('-')
-                row_num = int(row_num)
-                seat_num = int(seat_num)
-            except (ValueError, AttributeError):
-                Logger.base.error(f'❌ Invalid seat identifier: {seat_id}')
-                continue
-
-            # LWT: UPDATE ... IF status = 'available'
-            query = """
-                UPDATE "ticket"
-                SET status = %s,
-                    buyer_id = %s,
-                    updated_at = %s,
-                    reserved_at = %s
-                WHERE event_id = %s
-                  AND section = %s
-                  AND subsection = %s
-                  AND row_number = %s
-                  AND seat_number = %s
-                IF status = 'available'
-                """
-
-            result = await asyncio.to_thread(
-                session.execute,
-                query,
-                [
-                    'reserved',
-                    buyer_id,
-                    now,
-                    now,
-                    event_id,
-                    section,
-                    subsection,
-                    row_num,
-                    seat_num,
-                ],
-            )
-
-            # Check LWT result
-            row = result.one()
-            if row and row[0]:  # [applied] column
-                # Success: fetch ticket details for price calculation
-                ticket_query = """
-                    SELECT id, event_id, section, subsection, row_number, seat_number,
-                           price, status, buyer_id, reserved_at, created_at, updated_at
-                    FROM "ticket"
-                    WHERE event_id = %s
-                      AND section = %s
-                      AND subsection = %s
-                      AND row_number = %s
-                      AND seat_number = %s
-                    """
-
-                ticket_result = await asyncio.to_thread(
-                    session.execute,
-                    ticket_query,
-                    [event_id, section, subsection, row_num, seat_num],
-                )
-
-                ticket_row = ticket_result.one()
-                if ticket_row:
-                    ticket = TicketRef(
-                        id=ticket_row.id,
-                        event_id=ticket_row.event_id,
-                        section=ticket_row.section,
-                        subsection=ticket_row.subsection,
-                        row=ticket_row.row_number,
-                        seat=ticket_row.seat_number,
-                        price=ticket_row.price,
-                        status=TicketStatus(ticket_row.status),
-                        buyer_id=ticket_row.buyer_id,
-                        created_at=ticket_row.created_at,
-                        updated_at=ticket_row.updated_at,
-                        reserved_at=ticket_row.reserved_at,
-                    )
-                    reserved_tickets.append(ticket)
-                    total_price += ticket_row.price
-            else:
-                Logger.base.warning(
-                    f'⚠️ [LWT FAILED] Ticket ({row_num}, {seat_num}) not available '
-                    f'(event={event_id}, section={section}, subsection={subsection})'
-                )
-
-        # Verify ticket count
-        if len(reserved_tickets) != len(seat_identifiers):
-            Logger.base.error(
-                f'❌ [ATOMIC] Ticket count mismatch: reserved {len(reserved_tickets)} '
-                f'out of {len(seat_identifiers)} requested tickets'
-            )
-            raise ValueError(
-                f'Found {len(reserved_tickets)} available tickets for {len(seat_identifiers)} seat identifiers'
-            )
-
-        # Step 3: Update booking to PENDING_PAYMENT
-        booking.status = BookingStatus.PENDING_PAYMENT
-        booking.total_price = total_price
-        booking.seat_positions = seat_identifiers
-        booking.updated_at = now
-
-        updated_booking = await self.update_status_to_pending_payment(booking=booking)
-
-        Logger.base.info(
-            f'🚀 [ATOMIC] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
-            f'to PENDING_PAYMENT (total: {total_price}) using ScyllaDB LWT'
-        )
-
-        return (updated_booking, reserved_tickets, total_price)
 
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
@@ -511,10 +300,12 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                   AND seat_number = %s
                 """
 
-            result = await asyncio.to_thread(
-                session.execute,
-                query,
-                (booking.event_id, booking.section, booking.subsection, row_num, seat_num),
+            result = await anyio.to_thread.run_sync(
+                partial(
+                    session.execute,
+                    query,
+                    (booking.event_id, booking.section, booking.subsection, row_num, seat_num),
+                )
             )
 
             ticket_row = result.one()
@@ -536,3 +327,166 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                 tickets.append(ticket)
 
         return tickets
+
+    # ==============================================================================
+    #
+    # Atomic Operations with LWT
+
+    @Logger.io
+    async def reserve_tickets_and_update_booking_atomically(
+        self,
+        *,
+        booking_id: int,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_identifiers: list[str],
+        ticket_price: int,
+    ) -> tuple[Booking, List[TicketRef], int]:
+        """
+        Update tickets to RESERVED and booking to PENDING_PAYMENT
+
+        Atomicity Guarantee:
+        - Kvrocks Lua script already ensured seat availability atomically
+        - This method only persists the reservation to ScyllaDB
+        - No LWT needed because Kvrocks is the source of truth
+
+        Performance:
+        - Uses ticket_price from Kvrocks to avoid N SELECT queries
+        - Uses BATCH statement to reduce network round-trips from N+1 to 1
+        - Single price value because all seats in same subsection have same price
+
+        Args:
+            booking_id: Booking ID
+            buyer_id: Buyer ID
+            event_id: Event ID
+            section: Section code
+            subsection: Subsection number
+            seat_identifiers: List of "row-seat" strings (e.g., ["1-1", "1-2"])
+            ticket_price: Price per ticket from Kvrocks (same for all seats)
+
+        Returns:
+            Tuple of (updated_booking, reserved_tickets, total_price)
+        """
+        session = await get_scylla_session()
+        now: datetime = datetime.now(timezone.utc)
+
+        # Step 1: Build BATCH statement for all ticket updates + booking update (1 network round-trip)
+        reserved_tickets: List[TicketRef] = []
+        total_price = 0
+        batch_statements: List[str] = []
+        batch_params: List[Any] = []
+
+        for seat_id in seat_identifiers:
+            try:
+                row_num, seat_num = seat_id.split('-')
+                row_num = int(row_num)
+                seat_num = int(seat_num)
+            except (ValueError, AttributeError):
+                Logger.base.error(f'❌ Invalid seat identifier: {seat_id}')
+                continue
+
+            # Use price from Kvrocks (all seats in same subsection have same price)
+            price = ticket_price
+
+            # Add ticket UPDATE to batch
+            batch_statements.append(
+                """
+                UPDATE "ticket"
+                SET status = %s,
+                    buyer_id = %s,
+                    updated_at = %s,
+                    reserved_at = %s
+                WHERE event_id = %s
+                  AND section = %s
+                  AND subsection = %s
+                  AND row_number = %s
+                  AND seat_number = %s
+                """
+            )
+            batch_params.extend(
+                ['reserved', buyer_id, now, now, event_id, section, subsection, row_num, seat_num]
+            )
+
+            # Create TicketRef without querying
+            ticket = TicketRef(
+                id=0,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                row=row_num,
+                seat=seat_num,
+                price=price,
+                status=TicketStatus.RESERVED,
+                buyer_id=buyer_id,
+                created_at=now,
+                updated_at=now,
+                reserved_at=now,
+            )
+            reserved_tickets.append(ticket)
+            total_price += price
+
+        # Step 2: Add booking UPDATE to batch
+        booking = Booking(
+            id=booking_id,
+            buyer_id=buyer_id,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+            quantity=len(seat_identifiers),
+            seat_selection_mode='manual',
+            status=BookingStatus.PENDING_PAYMENT,
+            total_price=total_price,
+            seat_positions=seat_identifiers,
+            updated_at=now,
+        )
+
+        # Convert reserved tickets to denormalized format
+        tickets_data = [
+            {
+                'id': str(ticket.id),
+                'section': ticket.section,
+                'subsection': str(ticket.subsection),
+                'row': str(ticket.row),
+                'seat': str(ticket.seat),
+                'price': str(ticket.price),
+                'status': ticket.status.value,
+            }
+            for ticket in reserved_tickets
+        ]
+
+        # Add booking UPDATE to batch
+        batch_statements.append(
+            """
+            UPDATE "booking"
+            SET status = %s,
+                total_price = %s,
+                seat_positions = %s,
+                tickets_data = %s,
+                updated_at = %s
+            WHERE id = %s
+            """
+        )
+        batch_params.extend(
+            [
+                booking.status.value,
+                booking.total_price,
+                booking.seat_positions,
+                tickets_data,
+                booking.updated_at,
+                booking.id,
+            ]
+        )
+
+        # Step 3: Execute BATCH (1 network round-trip for all updates)
+        batch_query = 'BEGIN BATCH\n' + ';\n'.join(batch_statements) + ';\nAPPLY BATCH'
+
+        await anyio.to_thread.run_sync(partial(session.execute, batch_query, batch_params))
+
+        Logger.base.info(
+            f'🚀 [BATCH] Reserved {len(reserved_tickets)} tickets and updated booking {booking_id} '
+            f'to PENDING_PAYMENT (total: {total_price}) in 1 network round-trip'
+        )
+
+        return (booking, reserved_tickets, total_price)

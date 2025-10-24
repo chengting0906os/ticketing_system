@@ -28,6 +28,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
         section: str,
         subsection: int,
         seat_identifiers: list[str],
+        ticket_price: int,
     ) -> Booking:
         """
         Atomically reserve tickets and update booking to PENDING_PAYMENT (1 DB round-trip)
@@ -38,7 +39,8 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             event_id: Event ID
             section: Section identifier
             subsection: Subsection number
-            seat_identifiers: Seat identifiers (e.g., ['A-1-1-1', 'A-1-1-2'])
+            seat_identifiers: Seat identifiers (e.g., ['1-1', '1-2'])
+            ticket_price: Price per ticket from Kvrocks (all seats same price per subsection)
 
         Returns:
             Updated booking
@@ -61,6 +63,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             section=section,
             subsection=subsection,
             seat_identifiers=seat_identifiers,
+            ticket_price=ticket_price,
         )
 
         Logger.base.info(
