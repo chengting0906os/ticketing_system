@@ -219,7 +219,7 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
 		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
-		-v -n4
+		-v -n3
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
