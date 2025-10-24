@@ -23,13 +23,13 @@ from test.util_constant import (
 
 
 @given('an event exists with seating config:')
-def event_exists_with_seating_config(step, client: TestClient, event_state, execute_sql_statement):
+def event_exists_with_seating_config(step, client: TestClient, event_state, execute_cql_statement):
     """Create an event with specific seating configuration for get event tests."""
     row_data = extract_table_data(step)
     seller_email = TEST_SELLER_EMAIL
 
     # Check if seller exists, create if not
-    existing_seller = execute_sql_statement(
+    existing_seller = execute_cql_statement(
         'SELECT id FROM "user" WHERE email = :email',
         {'email': seller_email},
         fetch=True,
@@ -89,7 +89,7 @@ def _(step, client: TestClient, event_state):
 
 
 @given('a seller with events:')
-def create_seller_with_events(step, client: TestClient, event_state, execute_sql_statement):
+def create_seller_with_events(step, client: TestClient, event_state, execute_cql_statement):
     created_user = create_user(
         client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD, LIST_TEST_SELLER_NAME, 'seller'
     )
@@ -117,8 +117,8 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
             created_event = create_response.json()
             event_id = created_event['id']
             if event_data['status'] != 'available':
-                execute_sql_statement(
-                    'UPDATE event SET status = :status WHERE id = :id',
+                execute_cql_statement(
+                    'UPDATE "event" SET status = :status WHERE id = :id',
                     {'status': event_data['status'], 'id': event_id},
                 )
                 created_event['status'] = event_data['status']
@@ -126,7 +126,7 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
 
 
 @given('no available events exist')
-def create_no_available_events(step, client: TestClient, event_state, execute_sql_statement):
+def create_no_available_events(step, client: TestClient, event_state, execute_cql_statement):
     created_user = create_user(
         client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
     )
@@ -153,8 +153,8 @@ def create_no_available_events(step, client: TestClient, event_state, execute_sq
         if create_response.status_code == 201:
             created_event = create_response.json()
             event_id = created_event['id']
-            execute_sql_statement(
-                'UPDATE event SET status = :status WHERE id = :id',
+            execute_cql_statement(
+                'UPDATE "event" SET status = :status WHERE id = :id',
                 {'status': event_data['status'], 'id': event_id},
             )
             created_event['status'] = event_data['status']
@@ -162,7 +162,7 @@ def create_no_available_events(step, client: TestClient, event_state, execute_sq
 
 
 @given('an event exists with:')
-def event_exists(step, execute_sql_statement):
+def event_exists(step, execute_cql_statement):
     event_data = extract_table_data(step)
     event_id = int(event_data['event_id'])
     expected_seller_id = int(event_data['seller_id'])
@@ -208,9 +208,9 @@ def event_exists(step, execute_sql_statement):
     }
 
     # Insert event with specific ID
-    execute_sql_statement(
+    execute_cql_statement(
         """
-        INSERT INTO event (id, name, description, seller_id, is_active, status, venue_name, seating_config)
+        INSERT INTO "event" (id, name, description, seller_id, is_active, status, venue_name, seating_config)
         VALUES (:id, :name, :description, :seller_id, :is_active, :status, :venue_name, :seating_config)
         ON CONFLICT (id) DO NOTHING
         """,
@@ -242,9 +242,9 @@ def event_exists(step, execute_sql_statement):
             # Generate tickets for each seat
             for row in range(1, rows + 1):
                 for seat in range(1, seats_per_row + 1):
-                    execute_sql_statement(
+                    execute_cql_statement(
                         """
-                        INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
+                        INSERT INTO "ticket" (event_id, section, subsection, row_number, seat_number, price, status)
                         VALUES (:event_id, :section, :subsection, :row_number, :seat_number, :price, :status)
                         ON CONFLICT DO NOTHING
                         """,

@@ -13,12 +13,10 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.platform.config.di import container
-from src.platform.database.asyncpg_setting import (
-    close_all_asyncpg_pools,
-    get_asyncpg_pool,
-    warmup_asyncpg_pool,
+from src.platform.database.scylla_setting import (
+    close_all_scylla_sessions,
+    warmup_scylla_session,
 )
-from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -90,16 +88,14 @@ async def start_ticketing_consumer() -> None:
                     Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
                     raise
 
-                # Initialize and warmup asyncpg pool for consumer event loop
+                # Initialize and warmup ScyllaDB session for consumer event loop
                 try:
-                    portal.call(get_asyncpg_pool)  # type: ignore[arg-type]
+                    portal.call(warmup_scylla_session)  # type: ignore[arg-type]
                     Logger.base.info(
-                        '🏊 [Consumer] Asyncpg pool initialized for consumer event loop'
+                        '🔥 [Consumer] ScyllaDB session warmed up for consumer event loop'
                     )
-                    portal.call(warmup_asyncpg_pool)  # type: ignore[arg-type]
-                    Logger.base.info('🔥 [Consumer] Asyncpg pool warmed up for consumer event loop')
                 except Exception as e:
-                    Logger.base.error(f'❌ [Consumer] Failed to initialize asyncpg pool: {e}')
+                    Logger.base.error(f'❌ [Consumer] Failed to initialize ScyllaDB session: {e}')
                     raise
 
                 # Mock signal handlers to avoid "signal only works in main thread" error
@@ -153,13 +149,6 @@ async def lifespan(_app: FastAPI):
     container.wire(modules=wire_modules)
     Logger.base.info('🔌 [Ticketing Service] Dependency injection wired')
 
-    # Initialize database
-    engine = get_engine()
-    if engine:
-        # Auto-instrument SQLAlchemy
-        tracing.instrument_sqlalchemy(engine=engine)
-        Logger.base.info('🗄️  [Ticketing Service] Database engine ready + instrumented')
-
     # Auto-instrument Redis/Kvrocks
     tracing.instrument_redis()
     Logger.base.info('📊 [Ticketing Service] Redis instrumentation configured')
@@ -168,13 +157,9 @@ async def lifespan(_app: FastAPI):
     await kvrocks_client.initialize()
     Logger.base.info('📡 [Ticketing Service] Kvrocks initialized')
 
-    # Initialize asyncpg connection pool (eager initialization)
-    await get_asyncpg_pool()
-    Logger.base.info('🏊 [Ticketing Service] Asyncpg pool initialized')
-
-    # Warmup pool to eliminate "connect" spans during request handling
-    await warmup_asyncpg_pool()
-    Logger.base.info('🔥 [Ticketing Service] Asyncpg pool warmed up to MAX_SIZE')
+    # Initialize and warmup ScyllaDB session (eager initialization)
+    await warmup_scylla_session()
+    Logger.base.info('🔥 [Ticketing Service] ScyllaDB session warmed up')
 
     # Start Kafka consumer (graceful failure if Kafka unavailable)
     import os
@@ -217,9 +202,9 @@ async def lifespan(_app: FastAPI):
     consumer_task.cancel_scope.cancel()
     await consumer_task.__aexit__(None, None, None)
 
-    # Close asyncpg pools
-    await close_all_asyncpg_pools()
-    Logger.base.info('🏊 [Ticketing Service] Asyncpg pools closed')
+    # Close ScyllaDB sessions
+    await close_all_scylla_sessions()
+    Logger.base.info('🗄️ [Ticketing Service] ScyllaDB sessions closed')
 
     # Disconnect Kvrocks
     await kvrocks_client.disconnect()

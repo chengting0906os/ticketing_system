@@ -4,29 +4,39 @@ import json
 import bcrypt
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+
+from src.platform.constant.route_constant import EVENT_BASE, EVENT_TICKETS_BY_SUBSECTION
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
 
-from src.platform.constant.route_constant import EVENT_BASE, EVENT_TICKETS_BY_SUBSECTION
-
 
 @given('a booking exists with status "pending_payment":')
-def create_pending_booking(step, client: TestClient, booking_state, execute_sql_statement):
+def create_pending_booking(step, client: TestClient, booking_state, execute_cql_statement):
     """Create a pending booking using existing event from Background"""
     booking_data = extract_table_data(step)
 
-    # Assume event was created in Background (event_id=1)
-    event_id = int(booking_data.get('event_id', 1))
-    buyer_id = int(booking_data['buyer_id'])
+    # Get event_id from booking_state (created in Background)
+    event_id = booking_state.get('event_id') or booking_state.get('event', {}).get('id')
+    if not event_id:
+        event_id = int(booking_data.get('event_id', 1))
+
+    # Get buyer_id from booking_state (actual ID from created user)
+    # Fallback to table data for backward compatibility with other tests
+    buyer_id = booking_state.get('buyer', {}).get('id') or int(booking_data['buyer_id'])
     total_price = int(booking_data['total_price'])
 
+    # Get denormalized data for ScyllaDB
+    buyer = booking_state.get('buyer', {})
+    event = booking_state.get('event', {})
+    seller = booking_state.get('seller', {})
+
     # Directly insert booking into database with pending_payment status
-    execute_sql_statement(
+    # ScyllaDB requires all denormalized fields
+    execute_cql_statement(
         """
-        INSERT INTO "booking" (buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, created_at, updated_at)
-        VALUES (:buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, NOW(), NOW())
-        RETURNING id
+        INSERT INTO "booking" (buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name)
+        VALUES (:buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name)
         """,
         {
             'buyer_id': buyer_id,
@@ -37,22 +47,29 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
             'total_price': total_price,
             'status': 'pending_payment',
             'seat_selection_mode': 'manual',
+            'seat_positions': [],
+            'buyer_name': buyer.get('name', 'Test Buyer'),
+            'buyer_email': buyer.get('email', 'buyer@test.com'),
+            'event_name': event.get('name', 'Test Event'),
+            'venue_name': 'Taipei Arena',
+            'seller_id': seller.get('id', 1),
+            'seller_name': seller.get('name', 'Test Seller'),
         },
     )
 
-    # Get the created booking ID
-    result = execute_sql_statement(
-        'SELECT id FROM booking ORDER BY id DESC LIMIT 1',
-        {},
+    # Get the created booking ID (ScyllaDB uses timestamp-based IDs)
+    result = execute_cql_statement(
+        'SELECT id FROM "booking" WHERE buyer_id = :buyer_id ALLOW FILTERING',
+        {'buyer_id': buyer_id},
         fetch=True,
     )
     booking_id = result[0]['id'] if result else 1
 
     # Create reserved tickets for this booking
-    # Find available tickets from the event
-    available_tickets = execute_sql_statement(
-        "SELECT id FROM ticket WHERE event_id = :event_id AND status = 'available' AND section = 'A' AND subsection = 1 ORDER BY id LIMIT 2",
-        {'event_id': event_id},
+    # Find available tickets from the event (ScyllaDB: query by partition key)
+    available_tickets = execute_cql_statement(
+        """SELECT id, row_number, seat_number FROM "ticket" WHERE event_id = :event_id AND section = :section AND subsection = :subsection AND status = 'available' LIMIT 2""",
+        {'event_id': event_id, 'section': 'A', 'subsection': 1},
         fetch=True,
     )
 
@@ -61,28 +78,29 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     if available_tickets:
         for ticket in available_tickets:
             ticket_id = ticket['id']
+            row_num = ticket['row_number']
+            seat_num = ticket['seat_number']
             ticket_ids.append(ticket_id)
-            # Update ticket to reserved status and link to booking
-            execute_sql_statement(
-                "UPDATE ticket SET status = 'reserved', buyer_id = :buyer_id WHERE id = :ticket_id",
-                {'buyer_id': buyer_id, 'ticket_id': ticket_id},
-            )
+            seat_positions.append(f'{row_num}-{seat_num}')
 
-            # Get ticket's row and seat number to build seat_positions
-            ticket_info = execute_sql_statement(
-                'SELECT row_number, seat_number FROM ticket WHERE id = :ticket_id',
-                {'ticket_id': ticket_id},
-                fetch=True,
+            # Update ticket to reserved status and link to booking
+            # ScyllaDB: UPDATE requires partition key + clustering key
+            execute_cql_statement(
+                """UPDATE "ticket" SET status = 'reserved', buyer_id = :buyer_id WHERE event_id = :event_id AND section = :section AND subsection = :subsection AND row_number = :row_num AND seat_number = :seat_num""",
+                {
+                    'buyer_id': buyer_id,
+                    'event_id': event_id,
+                    'section': 'A',
+                    'subsection': 1,
+                    'row_num': row_num,
+                    'seat_num': seat_num,
+                },
             )
-            if ticket_info:
-                row_num = ticket_info[0]['row_number']
-                seat_num = ticket_info[0]['seat_number']
-                seat_positions.append(f'{row_num}-{seat_num}')
 
     # Update booking with seat_positions
     if seat_positions:
-        execute_sql_statement(
-            'UPDATE booking SET seat_positions = :seat_positions WHERE id = :booking_id',
+        execute_cql_statement(
+            'UPDATE "booking" SET seat_positions = :seat_positions WHERE id = :booking_id',
             {'booking_id': booking_id, 'seat_positions': seat_positions},
         )
 
@@ -93,11 +111,11 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
 
 
 @given('a booking exists with status "completed":')
-def create_completed_booking(step, client: TestClient, booking_state, execute_sql_statement):
+def create_completed_booking(step, client: TestClient, booking_state, execute_cql_statement):
     booking_data = extract_table_data(step)
-    create_pending_booking(step, client, booking_state, execute_sql_statement)
+    create_pending_booking(step, client, booking_state, execute_cql_statement)
     if 'paid_at' in booking_data and booking_data['paid_at'] == 'not_null':
-        execute_sql_statement(
+        execute_cql_statement(
             'UPDATE "booking" SET status = \'completed\', paid_at = :paid_at WHERE id = :id',
             {'paid_at': datetime.now(), 'id': booking_state['booking']['id']},
         )
@@ -106,21 +124,22 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_sq
 
 
 @given('a booking exists with status "cancelled":')
-def create_cancelled_booking(step, client: TestClient, booking_state, execute_sql_statement):
-    create_pending_booking(step, client, booking_state, execute_sql_statement)
-    execute_sql_statement(
+def create_cancelled_booking(step, client: TestClient, booking_state, execute_cql_statement):
+    create_pending_booking(step, client, booking_state, execute_cql_statement)
+    execute_cql_statement(
         'UPDATE "booking" SET status = \'cancelled\' WHERE id = :id',
         {'id': booking_state['booking']['id']},
     )
-    execute_sql_statement(
-        "UPDATE event SET status = 'available' WHERE id = :id", {'id': booking_state['event_id']}
+    execute_cql_statement(
+        """UPDATE "event" SET status = 'available' WHERE id = :id""",
+        {'id': booking_state['event_id']},
     )
     booking_state['booking']['status'] = 'cancelled'
 
 
 @given('an event exists with seating configuration:')
 def create_event_with_seating_config(
-    step, client: TestClient, booking_state, execute_sql_statement
+    step, client: TestClient, booking_state, execute_cql_statement
 ):
     event_data = extract_table_data(step)
 
@@ -165,7 +184,7 @@ def create_event_with_seating_config(
 
 
 @given('users exist:')
-def create_users(step, booking_state, execute_sql_statement):
+def create_users(step, booking_state, execute_cql_statement):
     """Create users for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows
@@ -178,7 +197,7 @@ def create_users(step, booking_state, execute_sql_statement):
         hashed_password = bcrypt.hashpw(
             user_data['password'].encode('utf-8'), bcrypt.gensalt()
         ).decode('utf-8')
-        execute_sql_statement(
+        execute_cql_statement(
             """
             INSERT INTO "user" (id, email, hashed_password, name, role, is_active, is_superuser, is_verified)
             VALUES (:id, :email, :hashed_password, :name, :role, true, false, true)
@@ -197,13 +216,11 @@ def create_users(step, booking_state, execute_sql_statement):
             'name': user_data['name'],
             'role': user_data['role'],
         }
-    execute_sql_statement(
-        'SELECT setval(\'user_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "user"), false)', {}
-    )
+    # Note: ScyllaDB uses timestamp-based ID generation, no sequence management needed
 
 
 @given('events exist:')
-def create_events(step, booking_state, execute_sql_statement):
+def create_events(step, booking_state, execute_cql_statement):
     """Create events for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows
@@ -215,9 +232,9 @@ def create_events(step, booking_state, execute_sql_statement):
         event_id = int(event_data['id'])
         seller_id = int(event_data['seller_id'])
 
-        execute_sql_statement(
+        execute_cql_statement(
             """
-            INSERT INTO event (id, seller_id, name, description, is_active, status, venue_name, seating_config)
+            INSERT INTO "event" (id, seller_id, name, description, is_active, status, venue_name, seating_config)
             VALUES (:id, :seller_id, :name, :description, :is_active, :status, :venue_name, :seating_config)
             """,
             {
@@ -233,17 +250,16 @@ def create_events(step, booking_state, execute_sql_statement):
         )
         booking_state['events'][event_id] = {
             'id': event_id,
+            'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
             'seller_id': seller_id,
             'name': event_data['name'],
             'status': event_data['status'],
         }
-    execute_sql_statement(
-        "SELECT setval('event_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM event), false)", {}
-    )
+    # Note: ScyllaDB uses timestamp-based ID generation, no sequence management needed
 
 
 @given('bookings with tickets exist:')
-def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
+def create_bookings_with_tickets(step, booking_state, execute_cql_statement):
     """Create bookings with associated tickets for detailed testing."""
     data_table = step.data_table
     rows = data_table.rows
@@ -263,12 +279,18 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
         status = booking_data['status']
         seat_selection_mode = booking_data.get('seat_selection_mode', 'best_available')
 
+        # Get denormalized data for ScyllaDB
+        buyer_info = booking_state.get('users', {}).get(buyer_id, {})
+        event_info = booking_state.get('events', {}).get(event_id, {})
+        seller_id = event_info.get('seller_id', 1)
+        seller_info = booking_state.get('users', {}).get(seller_id, {})
+
         # Create booking
         if booking_data.get('paid_at') == 'not_null':
-            execute_sql_statement(
+            execute_cql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name)
                 """,
                 {
                     'id': booking_id,
@@ -281,13 +303,19 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                     'status': status,
                     'seat_selection_mode': seat_selection_mode,
                     'seat_positions': [],
+                    'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                    'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                    'event_name': event_info.get('name', f'Event {event_id}'),
+                    'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                    'seller_id': seller_id,
+                    'seller_name': seller_info.get('name', f'Seller {seller_id}'),
                 },
             )
         else:
-            execute_sql_statement(
+            execute_cql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name)
                 """,
                 {
                     'id': booking_id,
@@ -300,6 +328,12 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                     'status': status,
                     'seat_selection_mode': seat_selection_mode,
                     'seat_positions': [],
+                    'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                    'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                    'event_name': event_info.get('name', f'Event {event_id}'),
+                    'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                    'seller_id': seller_id,
+                    'seller_name': seller_info.get('name', f'Seller {seller_id}'),
                 },
             )
 
@@ -307,6 +341,7 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
         if 'ticket_ids' in booking_data:
             ticket_ids = [int(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
             seat_positions = []
+            tickets_data = []
 
             for idx, ticket_id in enumerate(ticket_ids):
                 # Create ticket - map booking status to ticket status
@@ -314,10 +349,10 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                 row_number = 1
                 seat_number = idx + 1
 
-                execute_sql_statement(
+                execute_cql_statement(
                     """
-                    INSERT INTO ticket (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
-                    VALUES (:id, :event_id, :section, :subsection, :row_number, :seat_number, :price, :status, :buyer_id, NOW(), NOW())
+                    INSERT INTO "ticket" (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
+                    VALUES (:id, :event_id, :section, :subsection, :row_number, :seat_number, :price, :status, :buyer_id, currenttimestamp(), currenttimestamp())
                     """,
                     {
                         'id': ticket_id,
@@ -332,25 +367,86 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                     },
                 )
 
-                # Build seat_positions list (format: "row-seat")
-                seat_positions.append(f'{row_number}-{seat_number}')
+                # Build seat_positions list (format: "section-subsection-row-seat")
+                seat_positions.append(f'{section}-{subsection}-{row_number}-{seat_number}')
 
-            # Update booking with seat_positions
-            execute_sql_statement(
-                """
-                UPDATE booking
-                SET seat_positions = :seat_positions
-                WHERE id = :booking_id
-                """,
-                {
-                    'booking_id': booking_id,
-                    'seat_positions': seat_positions,
-                },
+                # Build tickets_data for denormalization in ScyllaDB
+                tickets_data.append(
+                    {
+                        'id': str(ticket_id),
+                        'section': section,
+                        'subsection': str(subsection),
+                        'row': str(row_number),
+                        'seat': str(seat_number),
+                        'price': '1000',
+                        'status': ticket_status,
+                    }
+                )
+
+            # Re-insert booking with tickets_data (ScyllaDB: easier than UPDATE for complex types)
+            # Delete old booking first
+            execute_cql_statement(
+                'DELETE FROM "booking" WHERE id = :booking_id',
+                {'booking_id': booking_id},
             )
+
+            # Re-insert with tickets_data (pass as Python list, not JSON string)
+            if booking_data.get('paid_at') == 'not_null':
+                execute_cql_statement(
+                    """
+                    INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name, tickets_data)
+                    VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name, :tickets_data)
+                    """,
+                    {
+                        'id': booking_id,
+                        'buyer_id': buyer_id,
+                        'event_id': event_id,
+                        'section': section,
+                        'subsection': subsection,
+                        'quantity': quantity,
+                        'total_price': total_price,
+                        'status': status,
+                        'seat_selection_mode': seat_selection_mode,
+                        'seat_positions': seat_positions,
+                        'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                        'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                        'event_name': event_info.get('name', f'Event {event_id}'),
+                        'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                        'seller_id': seller_id,
+                        'seller_name': seller_info.get('name', f'Seller {seller_id}'),
+                        'tickets_data': tickets_data,  # Python list, not JSON
+                    },
+                )
+            else:
+                execute_cql_statement(
+                    """
+                    INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name, tickets_data)
+                    VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name, :tickets_data)
+                    """,
+                    {
+                        'id': booking_id,
+                        'buyer_id': buyer_id,
+                        'event_id': event_id,
+                        'section': section,
+                        'subsection': subsection,
+                        'quantity': quantity,
+                        'total_price': total_price,
+                        'status': status,
+                        'seat_selection_mode': seat_selection_mode,
+                        'seat_positions': seat_positions,
+                        'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                        'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                        'event_name': event_info.get('name', f'Event {event_id}'),
+                        'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                        'seller_id': seller_id,
+                        'seller_name': seller_info.get('name', f'Seller {seller_id}'),
+                        'tickets_data': tickets_data,  # Python list, not JSON
+                    },
+                )
 
 
 @given('bookings exist:')
-def create_bookings(step, booking_state, execute_sql_statement):
+def create_bookings(step, booking_state, execute_cql_statement):
     """Create bookings for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows
@@ -391,15 +487,22 @@ def create_bookings(step, booking_state, execute_sql_statement):
             seat_selection_mode = 'best_available'
             seat_positions = []
 
+        # Get denormalized data for ScyllaDB
+        buyer_id = int(booking_data['buyer_id'])
+        buyer_info = booking_state.get('users', {}).get(buyer_id, {})
+        event_info = booking_state.get('events', {}).get(event_id, {})
+        seller_id = event_info.get('seller_id', 1)
+        seller_info = booking_state.get('users', {}).get(seller_id, {})
+
         if booking_data.get('paid_at') == 'not_null' and booking_data['status'] == 'paid':
-            execute_sql_statement(
+            execute_cql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, paid_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name)
                 """,
                 {
                     'id': booking_id,
-                    'buyer_id': int(booking_data['buyer_id']),
+                    'buyer_id': buyer_id,
                     'event_id': event_id,
                     'section': section,
                     'subsection': subsection,
@@ -408,17 +511,23 @@ def create_bookings(step, booking_state, execute_sql_statement):
                     'status': booking_data['status'],
                     'seat_selection_mode': seat_selection_mode,
                     'seat_positions': seat_positions,
+                    'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                    'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                    'event_name': event_info.get('name', f'Event {event_id}'),
+                    'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                    'seller_id': seller_id,
+                    'seller_name': seller_info.get('name', f'Seller {seller_id}'),
                 },
             )
         else:
-            execute_sql_statement(
+            execute_cql_statement(
                 """
-                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at)
-                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW())
+                INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at, buyer_name, buyer_email, event_name, venue_name, seller_id, seller_name)
+                VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, currenttimestamp(), currenttimestamp(), :buyer_name, :buyer_email, :event_name, :venue_name, :seller_id, :seller_name)
                 """,
                 {
                     'id': booking_id,
-                    'buyer_id': int(booking_data['buyer_id']),
+                    'buyer_id': buyer_id,
                     'event_id': event_id,
                     'section': section,
                     'subsection': subsection,
@@ -427,10 +536,13 @@ def create_bookings(step, booking_state, execute_sql_statement):
                     'status': booking_data['status'],
                     'seat_selection_mode': seat_selection_mode,
                     'seat_positions': seat_positions,
+                    'buyer_name': buyer_info.get('name', f'Buyer {buyer_id}'),
+                    'buyer_email': buyer_info.get('email', f'buyer{buyer_id}@test.com'),
+                    'event_name': event_info.get('name', f'Event {event_id}'),
+                    'venue_name': event_info.get('venue_name', 'Taipei Arena'),
+                    'seller_id': seller_id,
+                    'seller_name': seller_info.get('name', f'Seller {seller_id}'),
                 },
             )
         booking_state['bookings'][int(booking_data['id'])] = {'id': booking_id}
-    execute_sql_statement(
-        'SELECT setval(\'booking_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "booking"), false)',
-        {},
-    )
+    # Note: ScyllaDB uses timestamp-based ID generation, no sequence management needed

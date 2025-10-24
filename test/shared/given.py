@@ -148,7 +148,7 @@ def create_seller_user_simple(
 
 @given('an event exists:')
 def create_event_shared(
-    step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
+    step, client: TestClient, booking_state=None, event_state=None, execute_cql_statement=None
 ):
     event_data = extract_table_data(step)
     login_user(client, TEST_SELLER_EMAIL, 'P@ssw0rd')
@@ -169,9 +169,9 @@ def create_event_shared(
 
     # If test specifies sold_out status, directly update the event status in database
     desired_status = event_data.get('status', 'available')
-    if desired_status == 'sold_out' and execute_sql_statement:
-        execute_sql_statement(
-            'UPDATE event SET status = :status WHERE id = :id',
+    if desired_status == 'sold_out' and execute_cql_statement:
+        execute_cql_statement(
+            'UPDATE "event" SET status = :status WHERE id = :id',
             {'status': 'sold_out', 'id': event_id},
         )
 

@@ -2,7 +2,7 @@
 OpenTelemetry tracing configuration for distributed observability.
 
 Provides:
-- Auto-instrumentation for FastAPI, SQLAlchemy, Redis
+- Auto-instrumentation for FastAPI, Redis
 - Manual span creation helpers
 - Context propagation across Kafka messages
 - Jaeger export for local development
@@ -15,7 +15,6 @@ from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
@@ -91,24 +90,6 @@ class TracingConfig:
             app: FastAPI application instance
         """
         FastAPIInstrumentor.instrument_app(app)
-
-    def instrument_sqlalchemy(self, *, engine: Any) -> None:
-        """
-        Auto-instrument SQLAlchemy engine.
-
-        Args:
-            engine: SQLAlchemy engine instance (AsyncEngine or Engine)
-
-        Note:
-            For AsyncEngine, automatically extracts and instruments the
-            underlying sync_engine since OpenTelemetry events don't support
-            async engines.
-        """
-        # Handle AsyncEngine by instrumenting its sync_engine
-        if hasattr(engine, 'sync_engine'):
-            SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
-        else:
-            SQLAlchemyInstrumentor().instrument(engine=engine)
 
     def instrument_redis(self) -> None:
         """

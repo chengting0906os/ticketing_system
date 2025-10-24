@@ -10,31 +10,21 @@ dependencies = [
     "granian[reload]",
     "uvloop",
     "sse-starlette>=3.0.2",
-
     # Database
-    "sqlalchemy",
-    "asyncpg",
-    "psycopg2-binary>=2.9.10",
-    "alembic>=1.16.4",
-    "greenlet>=3.2.4",
-
+    "scylla-driver>=3.29.2", # ScyllaDB driver (provides 'cassandra' module)
     # Data Validation
     "pydantic",
     "pydantic-settings",
     "email-validator>=2.3.0",
-
     # Messaging & Streaming
     "quixstreams[protobuf]>=3.23.0",
     "grpcio-tools>=1.0.0",
-
     # Cache
     "redis>=6.4.0",
     "async-lru>=2.0.5",
-
     # Security
     "pyjwt>=2.10.1",
     "bcrypt>=5.0.0",
-
     # Utilities
     "uuid-v7>=1.0.0",
     "orjson>=3.11.3",
@@ -42,16 +32,15 @@ dependencies = [
     "attrs>=24.0.0",
     "dependency-injector>=4.48.2",
     "loguru>=0.7.3",
-
     # Monitoring
     "prometheus-client>=0.20.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "opentelemetry-api>=1.30.0",
     "opentelemetry-sdk>=1.30.0",
     "opentelemetry-instrumentation-fastapi>=0.51b0",
-    "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
     "opentelemetry-instrumentation-redis>=0.51b0",
     "opentelemetry-exporter-otlp>=1.30.0",
+    "lz4>=4.4.4",
 ]
 
 [dependency-groups]
@@ -60,10 +49,8 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-bdd-ng>=2.3.1",
-    "pytest-postgresql>=7.0.2",
     "pytest-xdist>=3.8.0",
     "httpx",
-    "psycopg-binary>=3.2.9",
 
     # Code Quality
     "pyright",
@@ -81,12 +68,15 @@ dev = [
     # Additional development tools
     "uvicorn>=0.37.0",
 ]
+test = [
+    "filelock>=3.19.1",
+]
 
 [tool.ruff]
 line-length = 100
 indent-width = 4
 target-version = "py313"
-exclude = ["src/platform/alembic/", "script/"]
+exclude = ["script/"]
 
 [tool.ruff.lint]
 select = [

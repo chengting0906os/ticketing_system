@@ -13,7 +13,7 @@ AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output t
 reset:  ## 🔄 Reset Kafka + Database + Seed data
 	@echo "🚀 Complete system reset..."
 	@PYTHONPATH=. uv run python script/reset_kafka.py
-	@PYTHONPATH=. uv run python script/reset_database.py
+	@PYTHONPATH=. DATABASE_TYPE=scylladb uv run python script/reset_scylladb.py
 	@PYTHONPATH=. uv run python script/seed_data.py
 	@echo "✅ Reset complete!"
 
@@ -24,29 +24,21 @@ reset-all: reset  ## 🔄 Reset + start services (DEPRECATED: use Docker)
 # 🗄️ DATABASE
 # ==============================================================================
 
-.PHONY: migrate-up
-migrate-up:  ## ⬆️ Run database migrations
-	@uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
+.PHONY: db-reset
+db-reset:  ## 🔄 Reset ScyllaDB (drop & recreate keyspace)
+	@echo "🔄 Resetting ScyllaDB..."
+	@DATABASE_TYPE=scylladb uv run python script/reset_scylladb.py
+	@echo "✅ Database reset complete!"
 
-.PHONY: migrate-down
-migrate-down:  ## ⬇️ Rollback one migration
-	@uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
+.PHONY: db-init
+db-init:  ## 🏗️ Initialize ScyllaDB schema
+	@echo "🏗️ Initializing ScyllaDB schema..."
+	@docker exec -i scylladb1 cqlsh -u cassandra -p cassandra < src/platform/database/scylla_schemas.cql
+	@echo "✅ Schema initialization completed"
 
-.PHONY: migrate-new
-migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message')
-	@if [ -z "$(MSG)" ]; then \
-		echo "Error: MSG required. Usage: make migrate-new MSG='your message'"; \
-		exit 1; \
-	fi
-	@uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
-
-.PHONY: migrate-history
-migrate-history:  ## 📜 Show migration history
-	@uv run alembic -c $(ALEMBIC_CONFIG) history
-
-.PHONY: psql
-psql:  ## 🐘 Connect to PostgreSQL
-	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
+.PHONY: cqlsh
+cqlsh:  ## 🗄️ Connect to ScyllaDB
+	@docker exec -it scylladb1 cqlsh -u cassandra -p cassandra
 
 # ==============================================================================
 # 🧪 TESTING
@@ -205,10 +197,10 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "✅ ==================== RESET COMPLETED ===================="
 
 .PHONY: dm
-dm:  ## 🗄️ Run migrations in Docker
-	@echo "🗄️  Running database migrations..."
-	@docker-compose exec ticketing-service uv run alembic upgrade head
-	@echo "✅ Migrations completed"
+dm:  ## 🗄️ Initialize ScyllaDB schema in Docker
+	@echo "🗄️  Initializing ScyllaDB schema..."
+	@docker exec -i scylladb1 cqlsh -u cassandra -p cassandra < src/platform/database/scylla_schemas.cql
+	@echo "✅ Schema initialization completed"
 
 .PHONY: ds
 ds:  ## 🌱 Seed data in Docker
@@ -227,7 +219,7 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
 		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
-		-v
+		-v -n4
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
@@ -472,8 +464,8 @@ help:
 	@echo "🐳 DOCKER (Recommended)"
 	@echo "  dsu/dsd/dsr/dr/dra/dm/drk/ds/dt/de2e/dsh/dal"
 	@echo ""
-	@echo "🗄️  DATABASE"
-	@echo "  migrate-up/down/new/history, psql"
+	@echo "🗄️  DATABASE (ScyllaDB)"
+	@echo "  db-reset, db-init, cqlsh"
 	@echo ""
 	@echo "🧪 TESTING"
 	@echo "  test, test-verbose, test-e2e, test-bdd"

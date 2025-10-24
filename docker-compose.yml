@@ -12,43 +12,6 @@
 # =============================================================================
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: ticketing_system_db
-    environment:
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=500"
-      - "-c"
-      - "shared_buffers=2GB"
-      - "-c"
-      - "effective_cache_size=8GB"
-      - "-c"
-      - "work_mem=8MB"
-      - "-c"
-      - "wal_buffers=16MB"
-      - "-c"
-      - "max_wal_size=2GB"
-      - "-c"
-      - "min_wal_size=1GB"
-
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U py_arch_lab" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - ticketing-network
-
   # Kafka with KRaft mode (no Zookeeper)
   kafka1:
     image: confluentinc/cp-kafka:7.5.0
@@ -73,17 +36,13 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
-      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
     volumes:
       - kafka1_data:/var/lib/kafka/data
     networks:
       - ticketing-network
-    deploy:
-      resources:
-        limits:
-          memory: 3G
-        reservations:
-          memory: 1G
+    mem_limit: 2G
+    memswap_limit: 2G
 
   kafka2:
     image: confluentinc/cp-kafka:7.5.0
@@ -108,17 +67,13 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
-      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
     volumes:
       - kafka2_data:/var/lib/kafka/data
     networks:
       - ticketing-network
-    deploy:
-      resources:
-        limits:
-          memory: 3G
-        reservations:
-          memory: 1G
+    mem_limit: 2G
+    memswap_limit: 2G
 
   kafka3:
     image: confluentinc/cp-kafka:7.5.0
@@ -143,17 +98,13 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
-      KAFKA_HEAP_OPTS: "-Xms1G -Xmx2G"
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx1536M"
     volumes:
       - kafka3_data:/var/lib/kafka/data
     networks:
       - ticketing-network
-    deploy:
-      resources:
-        limits:
-          memory: 3G
-        reservations:
-          memory: 1G
+    mem_limit: 2G
+    memswap_limit: 2G
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -187,6 +138,106 @@ services:
       retries: 5
     networks:
       - ticketing-network
+
+  # ScyllaDB - High-performance NoSQL database (3-node cluster)
+
+  # Initialize Docker Desktop VM for ScyllaDB (macOS only)
+  scylla-init:
+    image: alpine:latest
+    container_name: scylla-init
+    privileged: true
+    pid: host
+    command: >
+      sh -c "
+      echo '🔧 Configuring AIO limits for ScyllaDB...';
+      nsenter -t 1 -m -u -n -i -- sh -c '
+        sysctl -w fs.aio-max-nr=1048576 &&
+        echo \"fs.aio-max-nr = 1048576\" >> /etc/sysctl.conf
+      ' &&
+      echo '✅ AIO limits configured: fs.aio-max-nr=1048576'
+      "
+    restart: "no"
+    networks:
+      - ticketing-network
+
+  scylladb1:
+    image: scylladb/scylla:6.2
+    container_name: scylladb1
+    command: --smp 1 --memory 1400M --reserve-memory 0M --overprovisioned 1 --api-address 0.0.0.0 --developer-mode 1
+    ports:
+      - "9042:9042"  # CQL native protocol
+      - "10000:10000"  # REST API
+    volumes:
+      - scylladb1_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+    networks:
+      - ticketing-network
+    mem_limit: 1536M
+    memswap_limit: 1536M
+    ulimits:
+      memlock: -1
+
+  scylladb2:
+    image: scylladb/scylla:6.2
+    container_name: scylladb2
+    command: --smp 1 --memory 1400M --reserve-memory 0M --overprovisioned 1 --seeds=scylladb1 --api-address 0.0.0.0 --developer-mode 1
+    ports:
+      - "9043:9042"
+      - "10001:10000"
+    volumes:
+      - scylladb2_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+      scylladb1:
+        condition: service_started
+    networks:
+      - ticketing-network
+    mem_limit: 1536M
+    memswap_limit: 1536M
+    ulimits:
+      memlock: -1
+
+  scylladb3:
+    image: scylladb/scylla:6.2
+    container_name: scylladb3
+    command: --smp 1 --memory 1400M --reserve-memory 0M --overprovisioned 1 --seeds=scylladb1 --api-address 0.0.0.0 --developer-mode 1
+    ports:
+      - "9044:9042"
+      - "10002:10000"
+    volumes:
+      - scylladb3_data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+      scylladb1:
+        condition: service_started
+    networks:
+      - ticketing-network
+    mem_limit: 1536M
+    memswap_limit: 1536M
+    ulimits:
+      memlock: -1
 
   # Prometheus monitoring
   prometheus:
@@ -240,12 +291,12 @@ services:
     expose:
       - "8000"
     environment:
-      # Database
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_PORT: 5432
+      # ScyllaDB
+      SCYLLA_CONTACT_POINTS: '["scylladb1"]'
+      SCYLLA_PORT: 9042
+      SCYLLA_KEYSPACE: ticketing_system
+      SCYLLA_USERNAME: cassandra
+      SCYLLA_PASSWORD: cassandra
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
       KAFKA_CONSUMER_INSTANCE_ID: "consumer-ticketing-1"
@@ -271,7 +322,7 @@ services:
       - ./pyproject.toml:/app/pyproject.toml:ro # Pytest config and dependencies
     command: [ "uv", "run", "granian", "src.service.ticketing.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
     depends_on:
-      postgres:
+      scylladb1:
         condition: service_healthy
       kafka1:
         condition: service_started
@@ -310,12 +361,12 @@ services:
     expose:
       - "8000"
     environment:
-      # Database (for event metadata)
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_PORT: 5432
+      # ScyllaDB (for event metadata)
+      SCYLLA_CONTACT_POINTS: '["scylladb1"]'
+      SCYLLA_PORT: 9042
+      SCYLLA_KEYSPACE: ticketing_system
+      SCYLLA_USERNAME: cassandra
+      SCYLLA_PASSWORD: cassandra
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
       KAFKA_CONSUMER_INSTANCE_ID: "consumer-seat-reservation-1"
@@ -340,7 +391,7 @@ services:
       - ./state:/app/state # Quix Streams state directory
     command: [ "uv", "run", "granian", "src.service.seat_reservation.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
     depends_on:
-      postgres:
+      scylladb1:
         condition: service_healthy
       kafka1:
         condition: service_started
@@ -418,11 +469,13 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   kafka1_data:
   kafka2_data:
   kafka3_data:
   kvrocks_data:
+  scylladb1_data:
+  scylladb2_data:
+  scylladb3_data:
   prometheus_data:
   grafana_data:
 

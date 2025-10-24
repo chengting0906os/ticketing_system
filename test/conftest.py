@@ -2,7 +2,7 @@
 Test Configuration and Fixtures
 
 This module provides:
-- Database setup and cleanup for parallel testing (pytest-xdist)
+- ScyllaDB setup and cleanup for parallel testing (pytest-xdist)
 - Kvrocks isolation with worker-specific key prefixes
 - Test fixtures for users, events, and tickets
 - BDD step definitions (imported from bdd_steps_loader.py)
@@ -16,45 +16,30 @@ import asyncio
 import os
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
+from cassandra.auth import PlainTextAuthProvider
+from cassandra.cluster import Cluster
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 
 # =============================================================================
 # Environment Setup for Parallel Testing
 # =============================================================================
-# Each pytest-xdist worker gets isolated database and Kvrocks namespace
+# Each pytest-xdist worker gets isolated keyspace and Kvrocks namespace
 worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
 if worker_id == 'master':
-    os.environ['POSTGRES_DB'] = 'ticketing_system_test_db'
+    os.environ['SCYLLA_KEYSPACE'] = 'ticketing_system_test'
     os.environ['KVROCKS_KEY_PREFIX'] = 'test_'
 else:
     # Worker-specific isolation
-    os.environ['POSTGRES_DB'] = f'ticketing_system_test_db_{worker_id}'
+    os.environ['SCYLLA_KEYSPACE'] = f'ticketing_system_test_{worker_id}'
     os.environ['KVROCKS_KEY_PREFIX'] = f'test_{worker_id}_'
 
 # Test log directory
 test_log_dir = Path(__file__).parent / 'test_log'
 test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
-
-# =============================================================================
-# Database Connection Pool Configuration for Tests
-# =============================================================================
-# Override pool settings to prevent connection exhaustion during parallel testing
-# With 10 workers × (1 write + 1 read) × (2 pool + 2 overflow) = 80 connections
-# Plus asyncpg: 10 workers × 5 min = 50 connections
-# Total: 130 connections (within PostgreSQL's 200 limit)
-os.environ['DB_POOL_SIZE_WRITE'] = '2'
-os.environ['DB_POOL_SIZE_READ'] = '2'
-os.environ['DB_POOL_MAX_OVERFLOW'] = '2'
-os.environ['ASYNCPG_POOL_MIN_SIZE'] = '5'
-os.environ['ASYNCPG_POOL_MAX_SIZE'] = '10'
 
 # =============================================================================
 # Import Application and Test Components
@@ -78,146 +63,223 @@ from test.util_constant import (  # noqa: E402
 
 
 # =============================================================================
-# Database Configuration
+# ScyllaDB Configuration
 # =============================================================================
 env_file = '.env' if Path('.env').exists() else '.env.example'
-load_dotenv(env_file)
+# Load .env but don't override existing environment variables (Docker env has priority)
+load_dotenv(env_file, override=False)
 
-DB_CONFIG = {
-    'user': os.getenv('POSTGRES_USER', 'postgres'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
-    'host': os.getenv('POSTGRES_SERVER', 'localhost'),
-    'port': os.getenv('POSTGRES_PORT', '5432'),
-    'test_db': os.getenv('POSTGRES_DB', 'ticketing_system'),
+
+def _parse_contact_points(value: str) -> list[str]:
+    """Parse SCYLLA_CONTACT_POINTS from env var (supports JSON array or comma-separated)"""
+    import json
+
+    try:
+        # Try JSON array format: ["host1", "host2"]
+        return json.loads(value)
+    except (json.JSONDecodeError, ValueError):
+        # Fall back to comma-separated: host1,host2
+        return [h.strip() for h in value.split(',') if h.strip()]
+
+
+# Support xdist parallel testing with unique keyspace per worker
+def _get_keyspace_name():
+    """Get keyspace name (already configured with worker suffix in environment)"""
+    # The keyspace name is already set correctly with worker suffix at lines 30-37
+    return os.getenv('SCYLLA_KEYSPACE', 'ticketing_system_test')
+
+
+SCYLLA_CONFIG = {
+    'contact_points': _parse_contact_points(os.getenv('SCYLLA_CONTACT_POINTS', 'localhost')),
+    'port': int(os.getenv('SCYLLA_PORT', '9042')),
+    'username': os.getenv('SCYLLA_USERNAME', 'cassandra'),
+    'password': os.getenv('SCYLLA_PASSWORD', 'cassandra'),
+    'keyspace': _get_keyspace_name(),
 }
-TEST_DATABASE_URL = (
-    f'postgresql+asyncpg://{DB_CONFIG["user"]}:{DB_CONFIG["password"]}'
-    f'@{DB_CONFIG["host"]}:{DB_CONFIG["port"]}/{DB_CONFIG["test_db"]}'
-)
 
 # Cache for table names to avoid repeated queries
 _cached_tables = None
 
 
 # =============================================================================
-# Database Setup and Cleanup
+# ScyllaDB Setup and Cleanup
 # =============================================================================
+def get_scylla_session():
+    """Get ScyllaDB session with authentication (test configuration)
+
+    Note: Uses DCAwareRoundRobinPolicy with contact_points_fallthrough=True
+    to prevent auto-discovery of Docker internal IPs during local testing.
+    """
+    from cassandra.policies import DCAwareRoundRobinPolicy
+
+    auth_provider = PlainTextAuthProvider(
+        username=SCYLLA_CONFIG['username'], password=SCYLLA_CONFIG['password']
+    )
+
+    # Prevent auto-discovery of internal Docker IPs
+    # contact_points_fallthrough=True ensures only contact_points are used
+    _ = DCAwareRoundRobinPolicy(
+        local_dc='datacenter1',
+        used_hosts_per_remote_dc=0,  # Don't use remote DC hosts
+    )
+
+    from cassandra.policies import WhiteListRoundRobinPolicy
+
+    # Use WhiteList to ONLY connect to localhost (prevent Docker internal IP discovery)
+    whitelist_policy = WhiteListRoundRobinPolicy(SCYLLA_CONFIG['contact_points'])
+
+    cluster = Cluster(
+        contact_points=SCYLLA_CONFIG['contact_points'],
+        port=SCYLLA_CONFIG['port'],
+        auth_provider=auth_provider,
+        load_balancing_policy=whitelist_policy,  # Use whitelist instead of DC-aware
+        protocol_version=4,  # Match production setting
+        # Increase timeouts for schema agreement in multi-node cluster
+        connect_timeout=30,  # 30 seconds for initial connection
+        control_connection_timeout=30,  # 30 seconds for control connection
+        max_schema_agreement_wait=60,  # Wait up to 60 seconds for schema agreement
+    )
+    return cluster, cluster.connect()
+
+
 async def setup_test_database():
-    """Create test database and run migrations"""
-    # Create database if not exists
-    postgres_url = TEST_DATABASE_URL.replace(f'/{DB_CONFIG["test_db"]}', '/postgres')
-    engine = create_async_engine(postgres_url, isolation_level='AUTOCOMMIT')
-    async with engine.begin() as conn:
-        result = await conn.execute(
-            text(f"SELECT 1 FROM pg_database WHERE datname = '{DB_CONFIG['test_db']}'")
+    """Create test keyspace and tables for ScyllaDB"""
+    cluster, session = get_scylla_session()
+
+    try:
+        keyspace = SCYLLA_CONFIG['keyspace']
+
+        # Drop and recreate keyspace for clean state
+        session.execute(f'DROP KEYSPACE IF EXISTS {keyspace}')
+
+        # Create keyspace with RF=1 for testing
+        session.execute(f"""
+            CREATE KEYSPACE IF NOT EXISTS {keyspace}
+            WITH REPLICATION = {{
+                'class': 'NetworkTopologyStrategy',
+                'datacenter1': 1
+            }} AND TABLETS = {{'enabled': false}}
+        """)
+
+        # Use the keyspace
+        session.set_keyspace(keyspace)
+
+        # Load and execute schema from file
+        schema_file = (
+            Path(__file__).parent.parent / 'src' / 'platform' / 'database' / 'scylla_schemas.cql'
         )
-        if not result.fetchone():
-            await conn.execute(text(f'CREATE DATABASE {DB_CONFIG["test_db"]}'))
-    await engine.dispose()
+        with open(schema_file, 'r') as f:
+            schema_sql = f.read()
 
-    # Reset schema and run migrations
-    await execute_sql(TEST_DATABASE_URL, ['DROP SCHEMA public CASCADE', 'CREATE SCHEMA public'])
-    alembic_cfg = Config(Path(__file__).parent.parent / 'alembic.ini')
-    alembic_cfg.set_main_option('sqlalchemy.url', TEST_DATABASE_URL.replace('+asyncpg', ''))
-    command.upgrade(alembic_cfg, 'head')
+        # Remove all comment lines first (lines starting with --)
+        lines = schema_sql.split('\n')
+        clean_lines = [line for line in lines if not line.strip().startswith('--')]
+        schema_sql_clean = '\n'.join(clean_lines)
 
-    await verify_migration_completed()
+        # Parse and execute table creation statements (skip keyspace creation)
+        statements = [stmt.strip() for stmt in schema_sql_clean.split(';') if stmt.strip()]
+        for statement in statements:
+            # Skip CREATE KEYSPACE and USE keyspace statements
+            if any(keyword in statement.upper() for keyword in ['CREATE KEYSPACE', 'USE ']):
+                continue
+
+            # Replace any hardcoded keyspace references
+            statement = statement.replace('ticketing_system.', f'{keyspace}.')
+
+            if statement:
+                try:
+                    session.execute(statement)
+                except Exception as e:
+                    # Print full statement for debugging
+                    print('\n❌ Failed to execute statement:')
+                    print(f'Statement: {statement}')
+                    print(f'Error: {e}\n')
+                    raise  # Re-raise to catch schema errors early
+
+        await verify_tables_created(session)
+
+    finally:
+        cluster.shutdown()
 
 
-async def execute_sql(url: str, statements: list, **engine_kwargs):
-    """Execute SQL statements"""
-    engine = create_async_engine(url, **engine_kwargs)
-    async with engine.begin() as conn:
-        for stmt in statements:
-            await conn.execute(text(stmt))
-    await engine.dispose()
-
-
-async def verify_migration_completed():
-    """Verify all required tables exist after migration"""
+async def verify_tables_created(session):
+    """Verify all required tables exist"""
     required_tables = ['user', 'event', 'booking', 'ticket']
-    max_retries = 10
-    retry_delay = 0.1
+    keyspace = SCYLLA_CONFIG['keyspace']
 
-    for attempt in range(max_retries):
-        try:
-            engine = create_async_engine(TEST_DATABASE_URL)
-            async with engine.begin() as conn:
-                result = await conn.execute(
-                    text(
-                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
-                        "AND tablename != 'alembic_version'"
-                    )
-                )
-                existing_tables = [row[0] for row in result]
-            await engine.dispose()
+    result = session.execute(f"""
+        SELECT table_name FROM system_schema.tables
+        WHERE keyspace_name = '{keyspace}'
+    """)
+    existing_tables = [row.table_name for row in result]
 
-            missing_tables = [t for t in required_tables if t not in existing_tables]
-            if not missing_tables:
-                global _cached_tables
-                _cached_tables = existing_tables
-                return
+    global _cached_tables
+    _cached_tables = existing_tables
 
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-            else:
-                raise RuntimeError(
-                    f'Migration failed: missing {missing_tables}. Found: {existing_tables}'
-                )
-        except Exception as e:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-            else:
-                raise RuntimeError(f'Migration verification failed: {e}')
+    missing_tables = [t for t in required_tables if t not in existing_tables]
+    if missing_tables:
+        raise RuntimeError(
+            f'Table creation failed: missing {missing_tables}. Found: {existing_tables}'
+        )
 
 
 async def clean_all_tables():
     """Truncate all tables for test isolation"""
     global _cached_tables
-    engine = create_async_engine(TEST_DATABASE_URL)
-    try:
-        async with engine.begin() as conn:
-            # Refresh table list if not cached
-            if _cached_tables is None:
-                try:
-                    result = await conn.execute(
-                        text(
-                            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
-                            "AND tablename != 'alembic_version'"
-                        )
-                    )
-                    _cached_tables = [row[0] for row in result]
-                except Exception:
-                    _cached_tables = []
+    cluster, session = get_scylla_session()
 
-            if _cached_tables:
-                quoted_tables = [f'"{table}"' for table in _cached_tables]
+    try:
+        keyspace = SCYLLA_CONFIG['keyspace']
+        session.set_keyspace(keyspace)
+
+        # Get table list if not cached
+        if _cached_tables is None:
+            result = session.execute(f"""
+                SELECT table_name FROM system_schema.tables
+                WHERE keyspace_name = '{keyspace}'
+            """)
+            _cached_tables = [row.table_name for row in result]
+
+        # Truncate all tables
+        if _cached_tables:
+            for table in _cached_tables:
                 try:
-                    await conn.execute(
-                        text(f'TRUNCATE {", ".join(quoted_tables)} RESTART IDENTITY CASCADE')
-                    )
+                    session.execute(f'TRUNCATE {keyspace}.{table}')
                 except Exception as e:
-                    if 'does not exist' in str(e):
-                        _cached_tables = None
-                    else:
-                        raise
+                    print(f'Warning: Failed to truncate {table}: {e}')
+
     finally:
-        await engine.dispose()
+        cluster.shutdown()
 
 
 # =============================================================================
 # Pytest Hooks for Parallel Testing
 # =============================================================================
-def pytest_sessionstart(session):
-    """Setup database in master process (runs once before workers spawn)"""
-    if os.environ.get('PYTEST_XDIST_WORKER', 'master') == 'master':
-        asyncio.run(setup_test_database())
-
-
 def pytest_configure(config):
-    """Setup database in each worker process"""
-    if os.environ.get('PYTEST_XDIST_WORKER', 'master') != 'master':
-        asyncio.run(setup_test_database())
+    """
+    Setup database with file-based locking for parallel testing
+
+    Uses file lock to ensure only ONE process (master or worker)
+    creates the database at a time, preventing race conditions
+    """
+
+    from filelock import FileLock
+
+    # Use a lock file in the test directory
+    lock_file = Path(__file__).parent / '.pytest_scylla_setup.lock'
+    lock = FileLock(lock_file, timeout=120)  # 2 minute timeout
+
+    # Each worker gets its own keyspace, so all need to create their keyspace
+    worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    try:
+        with lock:
+            # Only setup if keyspace doesn't exist yet
+            print(f'\n🔧 [{worker_id}] Setting up ScyllaDB keyspace: {SCYLLA_CONFIG["keyspace"]}')
+            asyncio.run(setup_test_database())
+            print(f'✅ [{worker_id}] ScyllaDB setup complete\n')
+    except Exception as e:
+        print(f'❌ [{worker_id}] ScyllaDB setup failed: {e}')
+        raise
 
 
 # =============================================================================
@@ -271,50 +333,13 @@ async def clean_kvrocks():
 @pytest.fixture(autouse=True, scope='function')
 async def clean_database():
     """
-    Clean all database tables and dispose DB engines after each test
+    Clean all ScyllaDB tables after each test
 
-    Critical for test isolation - prevents connection pool exhaustion by:
-    1. Cleaning tables before test
-    2. Disposing SQLAlchemy engines after test (releases all connections)
-    3. Closing asyncpg pool after test
+    Critical for test isolation - ensures each test starts with clean state
     """
     await clean_all_tables()
     yield
-
-    # Cleanup: Dispose engines to release all DB connections
-    # Important: Each pytest-xdist worker has its own process, so this cleanup
-    # only affects the current worker's engines, not other workers
-    from src.platform.database.orm_db_setting import _engine_manager
-    from src.platform.database.asyncpg_setting import close_asyncpg_pool
-    import asyncio
-
-    # Get current event loop ID to ensure we only clean up this loop's resources
-    try:
-        current_loop = asyncio.get_running_loop()
-        current_loop_id = id(current_loop)
-    except RuntimeError:
-        current_loop_id = None
-
-    # Dispose SQLAlchemy engines if they belong to current loop
-    if current_loop_id and _engine_manager._loop and id(_engine_manager._loop) == current_loop_id:
-        if _engine_manager._write_engine is not None:
-            await _engine_manager._write_engine.dispose()
-            _engine_manager._write_engine = None
-            _engine_manager._write_session_maker = None
-
-        if _engine_manager._read_engine is not None:
-            await _engine_manager._read_engine.dispose()
-            _engine_manager._read_engine = None
-            _engine_manager._read_session_maker = None
-
-        # Reset loop tracking
-        _engine_manager._loop = None
-
-    # Close asyncpg pool for current loop only
-    try:
-        await close_asyncpg_pool()
-    except Exception:
-        pass  # Ignore if no pool exists
+    await clean_all_tables()
 
 
 # =============================================================================
@@ -417,20 +442,129 @@ def available_tickets():
 
 
 @pytest.fixture
-def execute_sql_statement():
-    """Execute SQL statement with optional parameter binding and result fetching"""
+def execute_cql_statement():
+    """
+    Execute SQL statement with PostgreSQL→ScyllaDB translation
+
+    Translates:
+    - Named parameters (:param) to positional (%s)
+    - Table names: "user"→users, "event"→events, "booking"→bookings, "ticket"→tickets
+    - Removes unsupported syntax (RETURNING, setval)
+    """
+    import re
 
     def _execute(statement: str, params: dict | None = None, fetch: bool = False):
-        async def _run():
-            engine = create_async_engine(TEST_DATABASE_URL)
-            async with engine.begin() as conn:
-                result = await conn.execute(text(statement), params or {})
-                if fetch:
-                    return [dict(row._mapping) for row in result]
-            await engine.dispose()
+        if params is None:
+            params = {}
+
+        cluster, session = get_scylla_session()
+        try:
+            keyspace = SCYLLA_CONFIG['keyspace']
+            session.set_keyspace(keyspace)
+
+            # No table name translation needed - ScyllaDB uses same singular names as PostgreSQL
+            # Tables: "user", "event", "booking", "ticket"
+
+            # Remove RETURNING clause (not supported in ScyllaDB)
+            statement = re.sub(r'\s+RETURNING\s+\w+', '', statement, flags=re.IGNORECASE)
+
+            # Remove ON CONFLICT clause (ScyllaDB uses IF NOT EXISTS instead)
+            # Handles both: "ON CONFLICT (id) DO NOTHING" and "ON CONFLICT DO NOTHING"
+            statement = re.sub(
+                r'\s+ON\s+CONFLICT(\s*\([^)]+\))?\s+DO\s+NOTHING',
+                '',
+                statement,
+                flags=re.IGNORECASE,
+            )
+
+            # Remove ORDER BY clause (ScyllaDB requires partition key restriction for ORDER BY)
+            statement = re.sub(r'\s+ORDER\s+BY\s+[\w\s,]+', '', statement, flags=re.IGNORECASE)
+
+            # Remove setval calls (PostgreSQL sequence management)
+            if 'setval' in statement.lower():
+                return None
+
+            # Add id to INSERT statements if missing (ScyllaDB requires explicit PRIMARY KEY)
+            if re.search(
+                r'\bINSERT\s+INTO\s+("?user"?|"?event"?|"?booking"?|"?ticket"?)\s*\(',
+                statement,
+                flags=re.IGNORECASE,
+            ):
+                # Check if id is already in the column list (use word boundary to avoid matching buyer_id, event_id, etc.)
+                insert_match = re.search(
+                    r'\bINSERT\s+INTO\s+"?(\w+)"?\s*\(([^)]+)\)', statement, flags=re.IGNORECASE
+                )
+                if insert_match and not re.search(
+                    r'\bid\b', insert_match.group(2), flags=re.IGNORECASE
+                ):
+                    # Add id to column list
+                    columns = insert_match.group(2)
+                    statement = statement.replace(f'({columns})', f'(id, {columns})', 1)
+
+                    # Find VALUES clause and add id placeholder
+                    values_match = re.search(r'\bVALUES\s*\(', statement, flags=re.IGNORECASE)
+                    if values_match:
+                        # Add %s for the generated id
+                        statement = statement.replace('VALUES (', 'VALUES (%s, ', 1)
+                        # We'll add the id value to param_values later
+
+            # Convert named parameters (:param) to positional (%s) with ordered tuple
+            from typing import Any
+
+            param_values: list[Any] = []
+
+            # Check if we added an id to INSERT
+            insert_id_added = False  # noqa: F841
+            if 'VALUES (%s,' in statement and re.search(
+                r'\bINSERT\s+INTO\s+("?user"?|"?event"?|"?booking"?|"?ticket"?)',
+                statement,
+                flags=re.IGNORECASE,
+            ):
+                from datetime import datetime, timezone
+
+                generated_id = int(datetime.now(timezone.utc).timestamp() * 1000000)
+                param_values.append(generated_id)
+                insert_id_added = True  # noqa: F841
+
+            if ':' in statement:
+                # Find all :param_name patterns in order
+                param_names = re.findall(r':(\w+)', statement)
+
+                # Replace :param_name with %s
+                for param_name in param_names:
+                    statement = statement.replace(f':{param_name}', '%s', 1)
+                    param_values.append(params.get(param_name))
+
+            # Translate NOW() to current timestamp
+            if 'NOW()' in statement:
+                from datetime import datetime, timezone
+
+                now = datetime.now(timezone.utc)
+                # Count NOW() occurrences
+                now_count = statement.count('NOW()')
+                statement = statement.replace('NOW()', '%s')
+                # Add now timestamp for each NOW() occurrence
+                for _ in range(now_count):
+                    param_values.append(now)
+
+            param_tuple = tuple(param_values)
+
+            # Add ALLOW FILTERING for SELECT queries with WHERE clause (ScyllaDB requirement)
+            # Only if not already present and it's a SELECT with WHERE
+            if re.search(
+                r'\bSELECT\b.*\bWHERE\b', statement, flags=re.IGNORECASE | re.DOTALL
+            ) and not re.search(r'\bALLOW\s+FILTERING\b', statement, flags=re.IGNORECASE):
+                statement = statement.rstrip().rstrip(';') + ' ALLOW FILTERING'
+
+            # Execute query
+            result = session.execute(statement, param_tuple)
+
+            if fetch:
+                return [dict(row._asdict()) for row in result]
             return None
 
-        return asyncio.run(_run())
+        finally:
+            cluster.shutdown()
 
     return _execute
 

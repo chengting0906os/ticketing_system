@@ -200,10 +200,10 @@ def verify_booking_status_remains_completed(step, client: TestClient, booking_st
 
 @then('the tickets should have status:')
 def verify_tickets_have_status(
-    step, client: TestClient, booking_state=None, context=None, execute_sql_statement=None
+    step, client: TestClient, booking_state=None, context=None, execute_cql_statement=None
 ):
-    if execute_sql_statement is None:
-        raise ValueError('execute_sql_statement function is required but was not provided')
+    if execute_cql_statement is None:
+        raise ValueError('execute_cql_statement function is required but was not provided')
     expected_data = extract_table_data(step)
     expected_status = expected_data['status']
 
@@ -218,7 +218,7 @@ def verify_tickets_have_status(
 
     # Query tickets directly from PostgreSQL database (source of truth)
     for ticket_id in ticket_ids:
-        result = execute_sql_statement(
+        result = execute_cql_statement(
             'SELECT id, status FROM ticket WHERE id = :ticket_id',
             {'ticket_id': ticket_id},
             fetch=True,
@@ -245,7 +245,7 @@ def verify_event_status_is_reserved(step, client: TestClient, booking_state):
 
 @then('tickets should be reserved for buyer:')
 def verify_tickets_reserved_for_buyer(
-    step, client: TestClient, booking_state, execute_sql_statement
+    step, client: TestClient, booking_state, execute_cql_statement
 ):
     ticket_data = extract_table_data(step)
     expected_status = ticket_data['status']
@@ -260,7 +260,7 @@ def verify_tickets_reserved_for_buyer(
 
     # Verify each ticket is reserved for the correct buyer
     for ticket_id in ticket_ids:
-        result = execute_sql_statement(
+        result = execute_cql_statement(
             'SELECT status, buyer_id FROM ticket WHERE id = :ticket_id',
             {'ticket_id': ticket_id},
             fetch=True,
@@ -279,7 +279,7 @@ def verify_tickets_reserved_for_buyer(
 
 @then('the booking should contain tickets with seats:')
 def verify_booking_contains_tickets_with_seats(
-    step, client: TestClient, booking_state, execute_sql_statement
+    step, client: TestClient, booking_state, execute_cql_statement
 ):
     # Extract expected seat numbers from table
     rows = step.data_table.rows
@@ -308,7 +308,7 @@ def verify_booking_contains_tickets_with_seats(
         return
 
     # First get booking info to know which tickets to query
-    booking_result = execute_sql_statement(
+    booking_result = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -322,7 +322,7 @@ def verify_booking_contains_tickets_with_seats(
     booking_data = booking_result[0]
 
     # Query tickets using booking's seat_positions
-    result = execute_sql_statement(
+    result = execute_cql_statement(
         """
         SELECT t.id, t.section, t.subsection, t.row_number, t.seat_number
         FROM ticket t
@@ -357,7 +357,7 @@ def verify_booking_contains_tickets_with_seats(
 
 
 @then('the selected tickets should have status:')
-def verify_selected_tickets_status(step, client: TestClient, booking_state, execute_sql_statement):
+def verify_selected_tickets_status(step, client: TestClient, booking_state, execute_cql_statement):
     expected_status = extract_single_value(step)
 
     # Get booking ID and status
@@ -369,7 +369,7 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
         return
 
     # Get booking info
-    booking_result = execute_sql_statement(
+    booking_result = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -382,7 +382,7 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
     booking_data = booking_result[0]
 
     # Query tickets using booking's seat_positions
-    result = execute_sql_statement(
+    result = execute_cql_statement(
         """
         SELECT t.id, t.status
         FROM ticket t
@@ -410,13 +410,13 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
 
 
 @then('the booking should contain consecutive available seats:')
-def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_statement):
+def verify_booking_contains_consecutive_seats(step, booking_state, execute_cql_statement):
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
     # Get booking info
-    booking_result = execute_sql_statement(
+    booking_result = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -429,7 +429,7 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
     booking_data = booking_result[0]
 
     # Query tickets using booking's seat_positions
-    result = execute_sql_statement(
+    result = execute_cql_statement(
         """
         SELECT t.id, t.seat_number, t.section, t.subsection, t.row_number, t.seat_number as seat
         FROM ticket t
@@ -472,12 +472,12 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
 
 
 @then('the selected seats should be from the lowest available row')
-def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement):
+def verify_seats_from_lowest_available_row(booking_state, execute_cql_statement):
     booking_id = booking_state['booking']['id']
     event_id = booking_state['event_id']
 
     # Get booking info
-    booking_info = execute_sql_statement(
+    booking_info = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -490,7 +490,7 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
     booking_data = booking_info[0]
 
     # Get the row number of seats in this booking
-    booking_result = execute_sql_statement(
+    booking_result = execute_cql_statement(
         """
         SELECT DISTINCT t.row_number
         FROM ticket t
@@ -512,7 +512,7 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
     booking_row = booking_result[0]['row_number']
 
     # Get the lowest available row number in the event (excluding reserved/sold tickets)
-    available_result = execute_sql_statement(
+    available_result = execute_cql_statement(
         """
         SELECT MIN(row_number) as min_row
         FROM ticket
@@ -533,13 +533,13 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
 
 
 @then('the booking should contain available seat:')
-def verify_booking_contains_single_available_seat(step, booking_state, execute_sql_statement):
+def verify_booking_contains_single_available_seat(step, booking_state, execute_cql_statement):
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
     # Get booking info
-    booking_info = execute_sql_statement(
+    booking_info = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -552,7 +552,7 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
     booking_data = booking_info[0]
 
     # Query tickets count using booking's seat_positions
-    result = execute_sql_statement(
+    result = execute_cql_statement(
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t
@@ -577,13 +577,13 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
 
 
 @then('the booking should contain tickets:')
-def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
+def verify_booking_contains_tickets(step, booking_state, execute_cql_statement):
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
 
     # Get booking info
-    booking_info = execute_sql_statement(
+    booking_info = execute_cql_statement(
         """
         SELECT event_id, section, subsection, seat_positions
         FROM booking
@@ -596,7 +596,7 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
     booking_data = booking_info[0]
 
     # Query tickets count using booking's seat_positions
-    result = execute_sql_statement(
+    result = execute_cql_statement(
         """
         SELECT COUNT(*) as ticket_count
         FROM ticket t

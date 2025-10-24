@@ -2,27 +2,23 @@ from typing import Any, Dict, List
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
-from src.platform.database.db_setting import get_async_read_session
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 
 
 class ListBookingsUseCase:
-    def __init__(self, session: AsyncSession, booking_query_repo: IBookingQueryRepo):
-        self.session = session
+    def __init__(self, booking_query_repo: IBookingQueryRepo):
         self.booking_query_repo = booking_query_repo
 
     @classmethod
     @inject
     def depends(
         cls,
-        session: AsyncSession = Depends(get_async_read_session),
         booking_query_repo: IBookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
     ):
-        return cls(session=session, booking_query_repo=booking_query_repo)
+        return cls(booking_query_repo=booking_query_repo)
 
     @Logger.io
     async def list_buyer_bookings(self, buyer_id: int, status: str) -> List[Dict[str, Any]]:

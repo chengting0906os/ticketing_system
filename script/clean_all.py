@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 """
 Complete System Cleanup Script
-完整系統清理腳本 - 清除所有 Kafka topics, consumer groups, Kvrocks 資料和 PostgreSQL 資料
+完整系統清理腳本 - 清除所有 Kafka topics, consumer groups, Kvrocks 資料和 ScyllaDB 資料
 
 清理內容:
 - Kafka Topics: 所有 event-id-* topics
 - Consumer Groups: 所有 consumer groups
 - Kvrocks Data: FLUSHDB 清空所有鍵值資料
 - Kvrocks State: seat_reservation 和 event_ticketing 的狀態目錄
-- PostgreSQL: TRUNCATE 清空所有資料表 (ticket, booking, event, user)
+- ScyllaDB: TRUNCATE 清空所有資料表 (tickets, bookings, events, users)
 """
 
 import os
@@ -245,39 +245,39 @@ class SystemCleaner:
         except Exception as e:
             Logger.base.error(f'❌ Failed to clean Kvrocks state: {e}')
 
-    def clean_postgresql(self):
-        """清空 PostgreSQL 資料庫所有資料表"""
-        Logger.base.info('🐘 ==================== CLEANING POSTGRESQL ====================')
+    def clean_scylladb(self):
+        """清空 ScyllaDB 資料庫所有資料表"""
+        Logger.base.info('🗄️ ==================== CLEANING SCYLLADB ====================')
 
         try:
-            # 從環境變數讀取資料庫設定
-            postgres_container = os.getenv('POSTGRES_CONTAINER', 'ticketing_system_db')
-            db_name = os.getenv('POSTGRES_DB', 'ticketing_system_db')
-            db_user = os.getenv('POSTGRES_USER', 'py_arch_lab')
+            # ScyllaDB container
+            scylla_container = os.getenv('SCYLLA_CONTAINER', 'scylladb1')
+            keyspace = os.getenv('SCYLLA_KEYSPACE', 'ticketing_system')
 
-            # 使用 docker exec 執行 TRUNCATE 清空所有資料表（保留結構）
-            truncate_cmd = [
-                'docker',
-                'exec',
-                postgres_container,
-                'psql',
-                '-U',
-                db_user,
-                '-d',
-                db_name,
-                '-c',
-                'TRUNCATE TABLE ticket, booking, event, "user" RESTART IDENTITY CASCADE;',
-            ]
+            # 清空所有資料表
+            tables = ['users', 'events', 'bookings', 'tickets']
 
-            success = self.run_command(truncate_cmd, 'Truncating all PostgreSQL tables')
+            for table in tables:
+                truncate_cmd = [
+                    'docker',
+                    'exec',
+                    scylla_container,
+                    'cqlsh',
+                    '-u', 'cassandra',
+                    '-p', 'cassandra',
+                    '-e',
+                    f'TRUNCATE {keyspace}.{table};',
+                ]
 
-            if success:
-                Logger.base.info('✅ PostgreSQL tables truncated successfully')
-            else:
-                Logger.base.warning('⚠️ Failed to truncate PostgreSQL tables')
+                success = self.run_command(truncate_cmd, f'Truncating {table} table')
+
+                if success:
+                    Logger.base.info(f'✅ Table {table} truncated successfully')
+                else:
+                    Logger.base.warning(f'⚠️ Failed to truncate table {table}')
 
         except Exception as e:
-            Logger.base.error(f'❌ Failed to clean PostgreSQL: {e}')
+            Logger.base.error(f'❌ Failed to clean ScyllaDB: {e}')
 
     def verify_cleanup(self):
         """驗證清理結果"""
@@ -374,8 +374,8 @@ class SystemCleaner:
         # 步驟 5: 清理 Kvrocks 狀態目錄
         self.clean_kvrocks_state()
 
-        # 步驟 6: 清空 PostgreSQL 資料表
-        self.clean_postgresql()
+        # 步驟 6: 清空 ScyllaDB 資料表
+        self.clean_scylladb()
 
         # 步驟 7: 驗證清理結果
         self.verify_cleanup()

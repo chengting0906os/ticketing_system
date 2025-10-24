@@ -43,11 +43,11 @@ from src.service.ticketing.app.command.update_booking_status_to_failed_use_case 
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
 )
-from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
-    IBookingCommandRepoImpl,
+from src.service.ticketing.driven_adapter.repo.booking_command_repo_scylla_impl import (
+    BookingCommandRepoScyllaImpl,
 )
-from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
-    BookingQueryRepoImpl,
+from src.service.ticketing.driven_adapter.repo.booking_query_repo_scylla_impl import (
+    BookingQueryRepoScyllaImpl,
 )
 
 
@@ -325,7 +325,7 @@ class TicketingMqConsumer:
                 )
 
         # Create repository (asyncpg-based, no session management needed)
-        booking_command_repo = IBookingCommandRepoImpl()
+        booking_command_repo = BookingCommandRepoScyllaImpl()
 
         # Create and execute use case with direct repository injection
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
@@ -375,8 +375,8 @@ class TicketingMqConsumer:
         reason = message.get('error_message', 'Unknown')
 
         # Create repositories (they manage their own asyncpg connections)
-        booking_command_repo = IBookingCommandRepoImpl()
-        booking_query_repo = BookingQueryRepoImpl()
+        booking_command_repo = BookingCommandRepoScyllaImpl()
+        booking_query_repo = BookingQueryRepoScyllaImpl()
 
         # Create and execute use case with direct repository injection
         use_case = UpdateBookingToFailedUseCase(

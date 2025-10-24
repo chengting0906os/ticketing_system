@@ -1,38 +1,43 @@
 #!/usr/bin/env python3
 """
-Database Seed Script
+Database Seed Script (ScyllaDB)
 填充測試資料到資料庫
 
 功能：
-1. Create Users - 創建 12 個測試用戶 (1 seller + 1 buyer + 10 load test)
+1. Create Users - 創建 3 個測試用戶 (1 seller + 1 buyer + 1 load test)
 2. Create Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation Kvrocks)
 
 注意：
-- 座位資料會存入 seat_reservation 的 Kvrocks (不是 PostgreSQL)
-- 票券資料會存入 event_ticketing 的 PostgreSQL
+- 座位資料會存入 seat_reservation 的 Kvrocks (不是 ScyllaDB)
+- 票券資料會存入 ScyllaDB
 """
 
 import asyncio
-from contextlib import asynccontextmanager
 
-from sqlalchemy import text
-
-from script.seating_config import  SEATING_CONFIG_50000
-from src.platform.database.db_setting import async_session_maker
+from script.seating_config import SEATING_CONFIG_50000
+from src.platform.database.scylla_setting import get_scylla_session
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
-from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
-    EventTicketingCommandRepoImpl,
+from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_scylla_impl import (
+    EventTicketingCommandRepoScyllaImpl,
 )
-from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
+from src.service.ticketing.driven_adapter.repo.user_command_repo_scylla_impl import (
+    UserCommandRepoScyllaImpl,
+)
+from src.service.ticketing.driven_adapter.repo.user_query_repo_scylla_impl import (
+    UserQueryRepoScyllaImpl,
+)
+from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_scylla_impl import (
+    EventTicketingQueryRepoScyllaImpl,
+)
 from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
 
 
-async def create_init_users_in_session(session) -> int:
+async def create_init_users() -> int:
     """創建初始測試用戶 (12 users total)
 
     Returns:
@@ -41,11 +46,7 @@ async def create_init_users_in_session(session) -> int:
     try:
         print('👥 Creating 12 users (1 seller + 1 buyer + 10 load test)...')
 
-        @asynccontextmanager
-        async def get_current_user_session():
-            yield session
-
-        user_repo = UserCommandRepoImpl(lambda: get_current_user_session())
+        user_repo = UserCommandRepoScyllaImpl()
         password_hasher = BcryptPasswordHasher()
 
         # 1. 創建 seller
@@ -74,29 +75,31 @@ async def create_init_users_in_session(session) -> int:
         created_buyer = await user_repo.create(buyer)
         print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
 
-        # 3. 批量創建 10 個 load test 用戶
-        print('   📝 Creating 10 load test users...')
-        for i in range(1, 11):
-            loadtest_user = UserEntity(
-                email=f'b_{i}@t.com',
-                name=f'Load Test User {i}',
-                role=UserRole.BUYER,
-                is_active=True,
-                is_superuser=False,
-                is_verified=True,
-            )
-            loadtest_user.set_password('P@ssw0rd', password_hasher)
-            await user_repo.create(loadtest_user)
+        # 3. 創建 1 個 load test 用戶
+        loadtest_user = UserEntity(
+            email='b_1@t.com',
+            name='Load Test User 1',
+            role=UserRole.BUYER,
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+        )
+        loadtest_user.set_password('P@ssw0rd', password_hasher)
+        await user_repo.create(loadtest_user)
+        print('   ✅ Created 1 load test user')
 
-        print('   ✅ Created 10 load test users')
-
-        result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
-        user_count = result.scalar()
+        # Verify user count
+        session = await get_scylla_session()
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT COUNT(*) FROM ticketing_system."user"'
+        )
+        user_count = result.one()[0]
 
         print(f'   📊 Total users: {user_count}')
         print(f'   📧 Seller: s@t.com / P@ssw0rd (ID={created_seller.id})')
         print(f'   📧 Buyer: b@t.com / P@ssw0rd')
-        print(f'   📧 Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
+        print(f'   📧 Load test: b_1@t.com / P@ssw0rd')
 
         if created_seller.id is None:
             raise Exception("Failed to create seller: ID is None")
@@ -108,29 +111,24 @@ async def create_init_users_in_session(session) -> int:
         raise
 
 
-async def create_init_event_in_session(session, seller_id: int):
+async def create_init_event(seller_id: int):
     """創建初始測試活動"""
     try:
         print('🎫 Creating initial event...')
 
         # 確認用戶存在
-        result = await session.execute(text(f'SELECT id, email FROM "user" WHERE id = {seller_id}'))
-        user_check = result.fetchone()
-        if user_check:
-            print(f'   🔍 User found in DB: ID={user_check[0]}, Email={user_check[1]}')
+        user_query_repo = UserQueryRepoScyllaImpl()
+        user = await user_query_repo.get_by_id(seller_id)
+        if user:
+            print(f'   🔍 User found in DB: ID={user.id}, Email={user.email}')
         else:
             print(f'   ❌ User {seller_id} NOT found in database!')
             return None
 
-        @asynccontextmanager
-        async def get_current_session():
-            yield session
-
         # 從 DI 容器取得所有依賴
         from src.platform.config.di import container
 
-        # Command repo 使用 raw SQL，不需要 session
-        event_ticketing_repo = EventTicketingCommandRepoImpl()
+        event_ticketing_repo = EventTicketingCommandRepoScyllaImpl()
         init_state_handler = container.init_event_and_tickets_state_handler()
         mq_infra_orchestrator = container.mq_infra_orchestrator()
 
@@ -142,7 +140,7 @@ async def create_init_event_in_session(session, seller_id: int):
         )
 
         # 座位配置選擇
-        seating_config =  SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
+        seating_config = SEATING_CONFIG_50000  
 
         # Calculate total seats
         total_seats = 0
@@ -181,37 +179,57 @@ async def create_init_event_in_session(session, seller_id: int):
 
 async def verify_data():
     """驗證填充的資料"""
-    # async_session_maker is a function that returns a sessionmaker
-    async with async_session_maker()() as session:
-        try:
-            print('🔍 Verifying seeded data...')
+    try:
+        print('🔍 Verifying seeded data...')
+        session = await get_scylla_session()
 
-            result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
-            user_count = result.scalar()
-            print(f'   User count: {user_count}')
+        # Count users
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT COUNT(*) FROM ticketing_system."user"'
+        )
+        row = result.one()
+        user_count = row[0] if row else 0
+        print(f'   User count: {user_count}')
 
-            result = await session.execute(text('SELECT COUNT(*) FROM event'))
-            event_count = result.scalar()
-            print(f'   Event count: {event_count}')
+        # Count events
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT COUNT(*) FROM ticketing_system."event"'
+        )
+        row = result.one()
+        event_count = row[0] if row else 0
+        print(f'   Event count: {event_count}')
 
-            result = await session.execute(text('SELECT COUNT(*) FROM ticket'))
-            ticket_count = result.scalar()
-            print(f'   Ticket count: {ticket_count}')
+        # Count tickets
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT COUNT(*) FROM ticketing_system."ticket"'
+        )
+        row = result.one()
+        ticket_count = row[0] if row else 0
+        print(f'   Ticket count: {ticket_count}')
 
-            result = await session.execute(text('SELECT id, email, role FROM "user" ORDER BY id'))
-            users = result.fetchall()
-            for user in users:
-                print(f'      User ID={user[0]}, Email={user[1]}, Role={user[2]}')
+        # List users
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT id, email, role FROM ticketing_system."user"'
+        )
+        for row in result:
+            print(f'      User ID={row.id}, Email={row.email}, Role={row.role}')
 
-            result = await session.execute(text('SELECT id, name, seller_id FROM event'))
-            events = result.fetchall()
-            for event in events:
-                print(f'      Event ID={event[0]}, Name={event[1]}, Seller={event[2]}')
+        # List events
+        result = await asyncio.to_thread(
+            session.execute,
+            'SELECT id, name, seller_id FROM ticketing_system."event"'
+        )
+        for row in result:
+            print(f'      Event ID={row.id}, Name={row.name}, Seller={row.seller_id}')
 
-            print('   ✅ Data verification completed!')
+        print('   ✅ Data verification completed!')
 
-        except Exception as e:
-            print(f'   ❌ Failed to verify data: {e}')
+    except Exception as e:
+        print(f'   ❌ Failed to verify data: {e}')
 
 
 async def main():
@@ -229,24 +247,12 @@ async def main():
         exit(1)
 
     try:
-        # 使用單一 session 來處理所有數據操作
-        # async_session_maker is a function that returns a sessionmaker
-        async with async_session_maker()() as session:
-            try:
-                seller_id = await create_init_users_in_session(session)
-                print()
+        # Create users and event (ScyllaDB commits happen per operation)
+        seller_id = await create_init_users()
+        print()
 
-                await create_init_event_in_session(session, seller_id)
-                print()
-
-                # 一次性提交所有操作
-                await session.commit()
-                print('✅ All data operations committed successfully!')
-
-            except Exception as e:
-                await session.rollback()
-                print(f'❌ Rolling back all operations: {e}')
-                raise
+        await create_init_event(seller_id)
+        print()
 
         await verify_data()
         print()
@@ -256,7 +262,7 @@ async def main():
         print('📋 Test accounts:')
         print('   Seller: s@t.com / P@ssw0rd')
         print('   Buyer:  b@t.com / P@ssw0rd')
-        print('   Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
+        print('   Load test: b_1@t.com / P@ssw0rd')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')

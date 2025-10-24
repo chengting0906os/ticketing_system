@@ -12,7 +12,6 @@ import anyio.to_thread
 from fastapi import FastAPI
 
 from src.platform.config.di import container
-from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -104,13 +103,6 @@ async def lifespan(_app: FastAPI):
     tracing = TracingConfig(service_name='seat-reservation-service')
     tracing.setup()
     Logger.base.info('📊 [Seat Reservation Service] OpenTelemetry tracing configured')
-
-    # Initialize database
-    engine = get_engine()
-    if engine:
-        # Auto-instrument SQLAlchemy
-        tracing.instrument_sqlalchemy(engine=engine)
-        Logger.base.info('🗄️  [Seat Reservation Service] Database engine ready + instrumented')
 
     # Auto-instrument Redis/Kvrocks
     tracing.instrument_redis()

@@ -20,65 +20,13 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = 'Ticketing System'
     VERSION: str = '0.1.0'
-    DEBUG: bool = True  # Set to False in evention
-
-    # Database
-    POSTGRES_SERVER: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: SecretStr
-    POSTGRES_DB: str
-    POSTGRES_PORT: int
-
-    # Read Replica (Optional - for read-write separation)
-    POSTGRES_REPLICA_SERVER: str | None = None
-    POSTGRES_REPLICA_PORT: int | None = None
-
-    # Database Connection Pool Configuration (SQLAlchemy)
-    # Formula: PostgreSQL max_connections (200) × 0.8 = 160 total
-    # Distributed across 8 workers (4 ticketing + 4 seat_reservation)
-    # Per worker: 160 / 8 = 20 connections
-    DB_POOL_SIZE_WRITE: int = 5  # Write pool per worker
-    DB_POOL_SIZE_READ: int = 5  # Read pool per worker
-    DB_POOL_MAX_OVERFLOW: int = 10  # Max overflow per worker (total: 20 per worker)
-    DB_POOL_TIMEOUT: int = 5  # Fail fast: 5 seconds
-    DB_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
-    DB_POOL_PRE_PING: bool = True  # Verify connection health before use
-
-    # Database Connection Pool Configuration (asyncpg - for bulk operations)
-    # Per worker: 20 connections max (matches SQLAlchemy)
-    # 8 workers × 20 = 160 total (within PostgreSQL limit of 200)
-    ASYNCPG_POOL_MIN_SIZE: int = 20  # Minimum connections in pool (per event loop)
-    ASYNCPG_POOL_MAX_SIZE: int = 50  # Maximum connections in pool (per event loop)
-    ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
-    ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
-    ASYNCPG_POOL_TIMEOUT: float = 2.0  # Connection acquire timeout (2s - fail fast)
-    ASYNCPG_POOL_MAX_QUERIES: int = 50000  # Max queries per connection
-
-    @property
-    def DATABASE_URL_ASYNC(self) -> str:
-        """Primary database URL for write operations"""
-        password = self.POSTGRES_PASSWORD.get_secret_value()
-        return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
-
-    @property
-    def DATABASE_READ_URL_ASYNC(self) -> str:
-        """Read replica database URL for read operations (falls back to primary if not configured)"""
-        password = self.POSTGRES_PASSWORD.get_secret_value()
-        if self.POSTGRES_REPLICA_SERVER and self.POSTGRES_REPLICA_PORT:
-            return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_REPLICA_SERVER}:{self.POSTGRES_REPLICA_PORT}/{self.POSTGRES_DB}'
-        # Fall back to primary if replica not configured
-        return self.DATABASE_URL_ASYNC
-
-    @property
-    def DATABASE_URL_SYNC(self) -> str:
-        password = self.POSTGRES_PASSWORD.get_secret_value()
-        return f'postgresql://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
+    DEBUG: bool = True  # Set to False in production
 
     # Security
-    SECRET_KEY: SecretStr
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
-    REFRESH_TOKEN_EXPIRE_DAYS: int
-    ALGORITHM: str
+    SECRET_KEY: SecretStr = SecretStr('test_secret_key_change_in_production')
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ALGORITHM: str = 'HS256'
 
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = []  # add your frontend URL here
@@ -93,8 +41,28 @@ class Settings(BaseSettings):
         return []
 
     # FastAPI Users
-    RESET_PASSWORD_TOKEN_SECRET: SecretStr
-    VERIFICATION_TOKEN_SECRET: SecretStr
+    RESET_PASSWORD_TOKEN_SECRET: SecretStr = SecretStr('test_reset_token_secret')
+    VERIFICATION_TOKEN_SECRET: SecretStr = SecretStr('test_verification_token_secret')
+
+    # ScyllaDB Configuration
+    SCYLLA_CONTACT_POINTS: List[str] = ['localhost']
+    SCYLLA_PORT: int = 9042
+    SCYLLA_KEYSPACE: str = 'ticketing_system'
+    SCYLLA_LOCAL_DC: str = 'datacenter1'  # Default ScyllaDB datacenter name
+    SCYLLA_USERNAME: str = 'cassandra'  # Default username in developer mode
+    SCYLLA_PASSWORD: SecretStr = SecretStr('cassandra')  # Default password in developer mode
+    SCYLLA_CONNECT_TIMEOUT: int = 10  # Connection timeout (seconds)
+    SCYLLA_CONTROL_TIMEOUT: int = 10  # Control connection timeout (seconds)
+    SCYLLA_REQUEST_TIMEOUT: float = 10.0  # Request timeout (seconds)
+
+    @field_validator('SCYLLA_CONTACT_POINTS', mode='before')
+    @classmethod
+    def assemble_scylla_contact_points(cls, v: str | List[str]) -> List[str]:
+        if isinstance(v, str) and not v.startswith('['):
+            return [i.strip() for i in v.split(',')]
+        elif isinstance(v, list):
+            return v
+        return ['localhost']
 
     # Kvrocks Configuration (Redis protocol + Kvrocks storage)
     KVROCKS_HOST: str = 'localhost'

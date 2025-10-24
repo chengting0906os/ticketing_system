@@ -9,7 +9,6 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from src.platform.config.core_setting import settings
 from src.platform.config.di import cleanup, container, setup
-from src.platform.database.db_setting import create_db_and_tables
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -47,12 +46,11 @@ from src.service.ticketing.driving_adapter.http_controller.user_controller impor
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    import os
 
     Logger.base.info('🚀 Starting application...')
 
-    if os.getenv('SKIP_DB_INIT', '').lower() not in ('true', '1'):
-        await create_db_and_tables()
+    # ScyllaDB schema is managed externally (via init-scylladb.sh or manual setup)
+    # No need for automatic table creation
     setup()
 
     # Wire the container for dependency injection

@@ -16,3 +16,4 @@ class EventStatus(Enum):
     SOLD_OUT = 'sold_out'
     CANCELLED = 'cancelled'
     COMPLETED = 'completed'
+    ENDED = 'ended'  # Event has ended (time-based)
