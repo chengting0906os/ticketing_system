@@ -2,7 +2,6 @@ from fastapi import Depends
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import ForbiddenError
-from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 from src.service.ticketing.driving_adapter.http_controller.user_controller import (
     get_current_user as get_user_from_controller,
@@ -27,13 +26,15 @@ class RoleAuthStrategy:
         return user.role == UserRole.SELLER
 
 
-@Logger.io
-def get_current_user(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
+# @Logger.io
+async def get_current_user(
+    current_user: UserEntity = Depends(get_user_from_controller),
+) -> UserEntity:
     return current_user
 
 
-@Logger.io
-def require_buyer(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
+# @Logger.io
+async def require_buyer(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span(
         'auth.require_buyer',
@@ -47,15 +48,17 @@ def require_buyer(current_user: UserEntity = Depends(get_user_from_controller)) 
         return current_user
 
 
-@Logger.io
-def require_seller(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
+# @Logger.io
+async def require_seller(
+    current_user: UserEntity = Depends(get_user_from_controller),
+) -> UserEntity:
     if not RoleAuthStrategy.can_create_event(current_user):
         raise ForbiddenError('Only sellers can perform this action')
     return current_user
 
 
-@Logger.io
-def require_buyer_or_seller(
+# @Logger.io
+async def require_buyer_or_seller(
     current_user: UserEntity = Depends(get_user_from_controller),
 ) -> UserEntity:
     if current_user.role not in [UserRole.BUYER, UserRole.SELLER]:
