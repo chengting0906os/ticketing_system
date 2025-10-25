@@ -1,6 +1,6 @@
 # Kafka Configuration Specification
 
-> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py) | [docker-compose.yml](../docker-compose.yml) | [reset_kafka.py](../script/reset_kafka.py)
+> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [subsection_based_partition_strategy.py](../src/platform/message_queue/subsection_based_partition_strategy.py) | [docker-compose.yml](../docker-compose.yml) | [reset_kafka.py](../script/reset_kafka.py)
 
 ## Cluster Infrastructure
 
@@ -24,7 +24,7 @@ See [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_bui
 
 ## Partition Strategy
 
-See [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py):
+See [subsection_based_partition_strategy.py](../src/platform/message_queue/subsection_based_partition_strategy.py):
 
 **Mapping Logic**:
 
@@ -37,7 +37,7 @@ See [section_based_partition_strategy.py](../src/platform/message_queue/section_
 - `booking_based()` - Event only
 - `booking_with_id()` - Event + booking ID
 
-**Partition Key Generation**: See [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py)
+**Partition Key Generation**: See [subsection_based_partition_strategy.py](../src/platform/message_queue/subsection_based_partition_strategy.py)
 
 ```python
 partition = get_partition_for_section(section, event_id)  # A → 0, B → 1
@@ -173,7 +173,7 @@ await publish_domain_event(
 ## Key Design Decisions
 
 1. **Event-specific topics**: Isolated infrastructure per event (clean boundaries, easier cleanup)
-2. **Section-based partitioning**: Locality-optimized for cache efficiency (see [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py))
+2. **Section-based partitioning**: Locality-optimized for cache efficiency (see [subsection_based_partition_strategy.py](../src/platform/message_queue/subsection_based_partition_strategy.py))
 3. **Batch publishing**: Non-blocking fire-and-forget with background flush for 10k+ TPS
 4. **Exactly-once semantics**: Maintained via idempotence and transactions
 5. **Cluster configuration**: See [docker-compose.yml](../docker-compose.yml) for deployment setup

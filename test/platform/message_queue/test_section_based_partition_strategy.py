@@ -5,9 +5,8 @@ Tests core behaviors of subsection partition strategy
 """
 
 import pytest
-
-from src.platform.message_queue.section_based_partition_strategy import (
-    SectionBasedPartitionStrategy,
+from src.platform.message_queue.subsection_based_partition_strategy import (
+    SubSectionBasedPartitionStrategy,
 )
 
 
@@ -18,7 +17,7 @@ class TestSubsectionBasedPartitioning:
     @pytest.fixture
     def strategy(self):
         """Create a strategy instance with 100 partitions"""
-        return SectionBasedPartitionStrategy(total_partitions=100)
+        return SubSectionBasedPartitionStrategy(total_partitions=100)
 
     def test_different_subsections_get_different_partitions(self, strategy):
         """

@@ -3,34 +3,24 @@ https://python-dependency-injector.ets-labs.org/index.html
 """
 
 from dependency_injector import containers, providers
+from src.platform.message_queue.subsection_based_partition_strategy import (
+    SubSectionBasedPartitionStrategy,
+)
 
 from src.platform.config.core_setting import Settings
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
-from src.platform.message_queue.section_based_partition_strategy import (
-    SectionBasedPartitionStrategy,
-)
-from src.service.ticketing.app.command.finalize_seat_payment_use_case import (
-    FinalizeSeatPaymentUseCase,
-)
-from src.service.ticketing.app.command.release_seat_use_case import ReleaseSeatUseCase
-from src.service.ticketing.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.ticketing.domain.seat_selection_domain import SeatSelectionDomain
-from src.service.ticketing.driven_adapter.message_queue.seat_reservation_mq_publisher import (
-    SeatReservationEventPublisher,
-)
-from src.service.ticketing.driven_adapter.state.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
-from src.service.ticketing.driven_adapter.state.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
-)
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
+from src.service.ticketing.app.command.finalize_seat_payment_use_case import (
+    FinalizeSeatPaymentUseCase,
+)
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
 )
+from src.service.ticketing.app.command.release_seat_use_case import ReleaseSeatUseCase
+from src.service.ticketing.app.command.reserve_seats_use_case import ReserveSeatsUseCase
 from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case import (
     UpdateBookingToCancelledUseCase,
 )
@@ -39,11 +29,15 @@ from src.service.ticketing.app.query.get_event_use_case import GetEventUseCase
 from src.service.ticketing.app.query.list_bookings_use_case import ListBookingsUseCase
 from src.service.ticketing.app.query.list_events_use_case import ListEventsUseCase
 from src.service.ticketing.app.query.user_query_use_case import UserUseCase
+from src.service.ticketing.domain.seat_selection_domain import SeatSelectionDomain
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
 )
 from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator_impl import (
     MqInfraOrchestrator,
+)
+from src.service.ticketing.driven_adapter.message_queue.seat_reservation_mq_publisher import (
+    SeatReservationEventPublisher,
 )
 
 # ScyllaDB Repositories
@@ -71,6 +65,12 @@ from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_han
 from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
     SeatAvailabilityQueryHandlerImpl,
 )
+from src.service.ticketing.driven_adapter.state.seat_state_command_handler_impl import (
+    SeatStateCommandHandlerImpl,
+)
+from src.service.ticketing.driven_adapter.state.seat_state_query_handler_impl import (
+    SeatStateQueryHandlerImpl,
+)
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
 
 
@@ -80,7 +80,7 @@ class Container(containers.DeclarativeContainer):
 
     # Infrastructure services
     kafka_service = providers.Singleton(KafkaConfigService)
-    partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
+    partition_strategy = providers.Singleton(SubSectionBasedPartitionStrategy)
 
     # Background task group for fire-and-forget operations (set at startup)
     background_task_group = providers.Object(None)

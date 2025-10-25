@@ -12,6 +12,7 @@ from typing import Dict, List
 from uuid import UUID
 
 from confluent_kafka.admin import AdminClient, NewTopic
+
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_kafka_config_service import (
@@ -19,7 +20,7 @@ from src.service.ticketing.app.interface.i_kafka_config_service import (
 )
 
 from .kafka_constant_builder import KafkaTopicBuilder
-from .section_based_partition_strategy import SectionBasedPartitionStrategy
+from .subsection_based_partition_strategy import SubSectionBasedPartitionStrategy
 
 
 @dataclass
@@ -42,7 +43,7 @@ class KafkaConfigService(IKafkaConfigService):
 
     def __init__(self, total_partitions: int = 100):
         self.total_partitions = total_partitions
-        self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
+        self.partition_strategy = SubSectionBasedPartitionStrategy(total_partitions)
 
         # Initialize Kafka Admin Client
         self.admin_client = AdminClient({'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS})
