@@ -4,12 +4,12 @@ User Management Use Cases (Use Case Layer)
 
 from uuid import UUID
 
-from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
-from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
-from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
-from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
+from src.platform.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
+from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
+from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
+from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 
 
 class UserUseCase:

@@ -2,16 +2,16 @@ import asyncio
 from typing import Optional
 from uuid import UUID
 
+from cassandra.query import ConsistencyLevel, SimpleStatement
 from pydantic import SecretStr
-from cassandra.query import SimpleStatement, ConsistencyLevel
 
 from src.platform.database.scylla_setting import get_scylla_session
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
-from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
-from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
+from src.platform.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
+from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
+from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 
 
 class UserQueryRepoScyllaImpl(IUserQueryRepo):

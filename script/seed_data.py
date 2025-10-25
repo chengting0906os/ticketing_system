@@ -34,7 +34,7 @@ from src.service.ticketing.driven_adapter.repo.user_query_repo_scylla_impl impor
 from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_scylla_impl import (
     EventTicketingQueryRepoScyllaImpl,
 )
-from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
+from src.platform.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
 
