@@ -26,14 +26,12 @@ class RoleAuthStrategy:
         return user.role == UserRole.SELLER
 
 
-# @Logger.io
 async def get_current_user(
     current_user: UserEntity = Depends(get_user_from_controller),
 ) -> UserEntity:
     return current_user
 
 
-# @Logger.io
 async def require_buyer(current_user: UserEntity = Depends(get_user_from_controller)) -> UserEntity:
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span(
@@ -48,7 +46,6 @@ async def require_buyer(current_user: UserEntity = Depends(get_user_from_control
         return current_user
 
 
-# @Logger.io
 async def require_seller(
     current_user: UserEntity = Depends(get_user_from_controller),
 ) -> UserEntity:
@@ -57,7 +54,6 @@ async def require_seller(
     return current_user
 
 
-# @Logger.io
 async def require_buyer_or_seller(
     current_user: UserEntity = Depends(get_user_from_controller),
 ) -> UserEntity:
