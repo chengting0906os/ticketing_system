@@ -4,7 +4,7 @@ from inspect import (
     isgeneratorfunction,
 )
 import types
-from typing import Any, Callable, Optional, TypeVar, cast, overload, ParamSpec
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast, overload
 
 from src.platform.logging.generator_wrapper import GeneratorWrapper
 from src.platform.logging.loguru_io_config import (
@@ -42,6 +42,10 @@ class LoguruIO:
     def log_args_kwargs_content(
         self, *args, yield_method: Optional[GeneratorMethod] = None, **kwargs
     ):
+        # Performance optimization: Skip expensive masking if DEBUG logging is disabled
+        if self._custom_logger.level('DEBUG').no < self._custom_logger._core.min_level:
+            return
+
         call_depth_var.set(call_depth_var.get() + 1)
         self.extra |= {
             ExtraField.CHAIN_START_TIME: get_chain_start_time(),
@@ -54,6 +58,10 @@ class LoguruIO:
         )
 
     def log_return_content(self, return_value, yield_method: Optional[GeneratorMethod] = None):
+        # Performance optimization: Skip expensive masking if DEBUG logging is disabled
+        if self._custom_logger.level('DEBUG').no < self._custom_logger._core.min_level:
+            return
+
         self.extra[ExtraField.ENTRY_MARKER] = ''
         self.extra[ExtraField.EXIT_MARKER] = EXIT_ARROW
         self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
