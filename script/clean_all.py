@@ -52,25 +52,9 @@ class SystemCleaner:
         """停止所有 consumer 進程 - 包含已知和未知的所有 consumer"""
         Logger.base.info('🛑 ==================== STOPPING CONSUMERS ====================')
 
-        # 方法 1: 停止所有 mq_consumer 進程（廣泛匹配）
         Logger.base.info('🔍 Stopping all *mq_consumer processes...')
         self.run_command(['pkill', '-f', 'mq_consumer'], 'Stopping all mq_consumer processes')
 
-        # 方法 2: 停止 launch_all_consumers 腳本
-        Logger.base.info('🔍 Stopping launch_all_consumers script...')
-        self.run_command(
-            ['pkill', '-f', 'launch_all_consumers'], 'Stopping launch_all_consumers script'
-        )
-
-        # 方法 3: 停止 topic_monitor 腳本（重要！會重新創建 consumer groups）
-        Logger.base.info('🔍 Stopping topic_monitor script...')
-        self.run_command(['pkill', '-f', 'topic_monitor'], 'Stopping topic_monitor script')
-
-        # 方法 4: 額外保險 - 停止任何包含 infra/*consumer 的進程
-        Logger.base.info('🔍 Stopping any infra consumer processes...')
-        self.run_command(['pkill', '-f', 'infra.*consumer'], 'Stopping infra consumer processes')
-
-        Logger.base.info('🛑 All consumer and monitor processes stopped (broad match)')
 
     def clean_kafka_topics(self):
         """清理所有 Kafka topics"""
