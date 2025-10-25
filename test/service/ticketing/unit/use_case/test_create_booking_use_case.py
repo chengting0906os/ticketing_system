@@ -42,13 +42,25 @@ class TestCreateBookingExecutionOrder:
         return handler
 
     @pytest.fixture
+    def mock_background_task_group(self):
+        """Mock TaskGroup that silently swallows exceptions (fire-and-forget)"""
+        task_group = MagicMock()
+        task_group.start_soon = MagicMock()  # Synchronous mock that doesn't raise
+        return task_group
+
+    @pytest.fixture
     def use_case(
-        self, mock_booking_command_repo, mock_event_publisher, mock_seat_availability_handler
+        self,
+        mock_booking_command_repo,
+        mock_event_publisher,
+        mock_seat_availability_handler,
+        mock_background_task_group,
     ):
         return CreateBookingUseCase(
             booking_command_repo=mock_booking_command_repo,
             event_publisher=mock_event_publisher,
             seat_availability_handler=mock_seat_availability_handler,
+            background_task_group=mock_background_task_group,
         )
 
     @pytest.fixture
@@ -180,13 +192,25 @@ class TestSeatAvailabilityCheck:
         return handler
 
     @pytest.fixture
+    def mock_background_task_group(self):
+        """Mock TaskGroup that silently swallows exceptions (fire-and-forget)"""
+        task_group = MagicMock()
+        task_group.start_soon = MagicMock()  # Synchronous mock that doesn't raise
+        return task_group
+
+    @pytest.fixture
     def use_case(
-        self, mock_booking_command_repo, mock_event_publisher, mock_seat_availability_handler
+        self,
+        mock_booking_command_repo,
+        mock_event_publisher,
+        mock_seat_availability_handler,
+        mock_background_task_group,
     ):
         return CreateBookingUseCase(
             booking_command_repo=mock_booking_command_repo,
             event_publisher=mock_event_publisher,
             seat_availability_handler=mock_seat_availability_handler,
+            background_task_group=mock_background_task_group,
         )
 
     @pytest.fixture

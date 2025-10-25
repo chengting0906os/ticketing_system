@@ -88,7 +88,7 @@ class TestUpdateBookingToCancelled:
           - event 包含 ticket_ids 和 seat_positions
         """
         # Arrange
-        cancelled_booking = pending_payment_booking.cancel()
+        cancelled_booking = await pending_payment_booking.cancel()
         repo_mocks = RepositoryMocks(
             booking=pending_payment_booking,
             tickets=reserved_tickets,
@@ -270,7 +270,7 @@ class TestUpdateBookingToCancelled:
             ),
         ]
 
-        cancelled_booking = pending_payment_booking.cancel()
+        cancelled_booking = await pending_payment_booking.cancel()
         repo_mocks = RepositoryMocks(
             booking=pending_payment_booking,
             tickets=tickets_with_seats,
@@ -312,7 +312,7 @@ class TestUpdateBookingToCancelled:
         Then: 不發送 event
         """
         # Arrange
-        cancelled_booking = pending_payment_booking.cancel()
+        cancelled_booking = await pending_payment_booking.cancel()
         repo_mocks = RepositoryMocks(
             booking=pending_payment_booking,
             tickets=[],

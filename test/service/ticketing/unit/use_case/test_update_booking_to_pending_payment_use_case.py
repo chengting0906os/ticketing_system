@@ -110,7 +110,11 @@ class TestUpdateBookingToPendingPayment:
         result = await use_case.execute(
             booking_id=4,
             buyer_id=2,
+            event_id=1,
+            section='A',
+            subsection=1,
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
+            ticket_price=1500,
         )
 
         # Then
@@ -124,6 +128,7 @@ class TestUpdateBookingToPendingPayment:
             section='A',
             subsection=1,
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
+            ticket_price=1500,
         )
 
     @pytest.mark.asyncio
@@ -131,13 +136,15 @@ class TestUpdateBookingToPendingPayment:
         """
         Fail Fast: booking does not exist
 
-        Given: booking not found (get_by_id returns None)
+        Given: atomic operation raises NotFoundError (booking not found)
         When: Execute use case
         Then: Raise NotFoundError
         """
         # Given
         booking_command_repo = AsyncMock()
-        booking_command_repo.get_by_id = AsyncMock(return_value=None)
+        booking_command_repo.reserve_tickets_and_update_booking_atomically = AsyncMock(
+            side_effect=NotFoundError('Booking not found')
+        )
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
@@ -148,7 +155,11 @@ class TestUpdateBookingToPendingPayment:
             await use_case.execute(
                 booking_id=999,
                 buyer_id=2,
+                event_id=1,
+                section='A',
+                subsection=1,
                 seat_identifiers=['A-1-1-1'],
+                ticket_price=1500,
             )
 
     @pytest.mark.asyncio
@@ -162,7 +173,9 @@ class TestUpdateBookingToPendingPayment:
         """
         # Given
         booking_command_repo = AsyncMock()
-        booking_command_repo.get_by_id = AsyncMock(return_value=existing_booking)
+        booking_command_repo.reserve_tickets_and_update_booking_atomically = AsyncMock(
+            side_effect=ForbiddenError('Booking owner mismatch')
+        )
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
@@ -173,5 +186,9 @@ class TestUpdateBookingToPendingPayment:
             await use_case.execute(
                 booking_id=4,
                 buyer_id=3,  # Wrong buyer_id
+                event_id=1,
+                section='A',
+                subsection=1,
                 seat_identifiers=['A-1-1-1', 'A-1-1-2'],
+                ticket_price=1500,
             )
