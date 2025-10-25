@@ -6,7 +6,7 @@ Finalize Seat Payment Use Case
 from dataclasses import dataclass
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.service.ticketing.app.interface import ISeatStateCommandHandler
 
 
 @dataclass

@@ -1,1 +1,0 @@
-"""Shared Kernel Application Layer"""

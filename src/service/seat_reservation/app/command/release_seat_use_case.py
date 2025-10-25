@@ -4,8 +4,8 @@ Release Seat Use Case
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
-from src.service.shared_kernel.app.dto import (
+from src.service.ticketing.app.interface import ISeatStateCommandHandler
+from src.service.ticketing.app.dto import (
     ReleaseSeatRequest,
     ReleaseSeatResult,
     ReleaseSeatsBatchRequest,

@@ -14,7 +14,7 @@ from quixstreams import Application
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.domain.domain_event import MqDomainEvent
+from src.service.ticketing.domain.domain_event import MqDomainEvent
 
 
 # Global Quix Application instance

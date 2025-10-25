@@ -4,7 +4,7 @@ Get Section Seats Detail Use Case
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.ticketing.app.interface import ISeatStateQueryHandler
 
 
 class ListSectionSeatsDetailUseCase:

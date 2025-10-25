@@ -30,7 +30,7 @@ from src.platform.metrics.ticketing_metrics import metrics
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
-from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
+from src.service.ticketing.app.dto import ReleaseSeatsBatchRequest
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
 
 
