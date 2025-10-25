@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class EventCreateWithTicketConfigRequest(BaseModel):
@@ -52,22 +53,11 @@ class EventCreateWithTicketConfigRequest(BaseModel):
 class TicketResponse(BaseModel):
     """票券回應 Schema"""
 
-    id: int
-    event_id: int
-    section: str
-    subsection: int
-    row: int
-    seat: int
-    price: int
-    status: str
-    seat_identifier: str
-    buyer_id: Optional[int] = None
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             'example': {
-                'id': 1,
-                'event_id': 1,
+                'id': '01234567-89ab-7def-0123-456789abcdef',
+                'event_id': '00000000-0000-0000-0000-000000000001',
                 'section': 'A',
                 'subsection': 1,
                 'row': 1,
@@ -75,29 +65,31 @@ class TicketResponse(BaseModel):
                 'price': 2000,
                 'status': 'sold',
                 'seat_identifier': 'A-1-1-1',
-                'buyer_id': 123,
+                'buyer_id': '01234567-89ab-7def-0123-456789abcdef',
             }
         }
+    )
+
+    id: UUID
+    event_id: UUID
+    section: str
+    subsection: int
+    row: int
+    seat: int
+    price: int
+    status: str
+    seat_identifier: str
+    buyer_id: Optional[UUID] = None
 
 
 class EventResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    seller_id: int
-    venue_name: str
-    seating_config: Dict
-    is_active: bool
-    status: str
-    tickets: List[TicketResponse] = []
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             'example': {
-                'id': 1,
+                'id': '00000000-0000-0000-0000-000000000001',
                 'name': 'iPhone 15 Pro',
                 'description': 'Latest Apple smartphone with A17 Pro chip',
-                'seller_id': 1,
+                'seller_id': '01234567-89ab-7def-0123-456789abcdef',
                 'venue_name': 'Taipei Arena',
                 'seating_config': {
                     'sections': [
@@ -111,3 +103,14 @@ class EventResponse(BaseModel):
                 'status': 'available',
             }
         }
+    )
+
+    id: UUID
+    name: str
+    description: str
+    seller_id: UUID
+    venue_name: str
+    seating_config: Dict
+    is_active: bool
+    status: str
+    tickets: List[TicketResponse] = []

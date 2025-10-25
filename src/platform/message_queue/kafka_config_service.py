@@ -6,8 +6,13 @@ Kafka Configuration Service
 import asyncio
 from dataclasses import dataclass
 import os
+import socket
+import time
 from typing import Dict, List
+from uuid import UUID
 
+from confluent_kafka.admin import AdminClient, NewTopic
+from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_kafka_config_service import (
     IKafkaConfigService,
@@ -39,6 +44,9 @@ class KafkaConfigService(IKafkaConfigService):
         self.total_partitions = total_partitions
         self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
 
+        # Initialize Kafka Admin Client
+        self.admin_client = AdminClient({'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS})
+
         # Consumer 配置定義 - 1-2-1 架構
         # booking: 1 consumer (輕量級訂單處理)
         # seat_reservation: 2 consumers (高負載座位選擇 + Kvrocks 操作)
@@ -59,7 +67,7 @@ class KafkaConfigService(IKafkaConfigService):
         ]
 
     @Logger.io
-    async def setup_event_infrastructure(self, *, event_id: int, seating_config: Dict) -> bool:
+    async def setup_event_infrastructure(self, *, event_id: UUID, seating_config: Dict) -> bool:
         """
         為新活動設置完整的 Kafka 基礎設施
 
@@ -94,7 +102,7 @@ class KafkaConfigService(IKafkaConfigService):
             )
             return False
 
-    async def _create_event_topics(self, event_id: int) -> None:
+    async def _create_event_topics(self, event_id: UUID) -> None:
         """創建 event-specific topics"""
         Logger.base.info(
             f'🎯 [KAFKA_CONFIG] Creating event-specific topics for EVENT_ID={event_id}'
@@ -113,55 +121,53 @@ class KafkaConfigService(IKafkaConfigService):
         )
 
     async def _create_single_topic(self, topic: str) -> bool:
-        """創建單個 topic"""
+        """
+        創建單個 topic using Kafka Admin API
+
+        使用 Kafka Admin API 而不是 docker exec,更可靠且跨平台
+        """
         try:
-            # Use full path to docker or search PATH explicitly
-            docker_cmd = self._find_docker_executable()
 
-            cmd = [
-                docker_cmd,
-                'exec',
-                'kafka1',
-                'kafka-topics',
-                '--bootstrap-server',
-                'kafka1:29092',
-                '--create',
-                '--if-not-exists',
-                '--topic',
-                topic,
-                '--partitions',
-                str(self.total_partitions),
-                '--replication-factor',
-                '3',
-            ]
-
-            # 使用 asyncio 執行 subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=os.environ.copy(),  # Explicitly pass environment
-            )
-
-            _, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
-
-            if process.returncode == 0:
-                Logger.base.info(f'✅ [KAFKA_CONFIG] Created topic: {topic}')
-                return True
-            else:
-                Logger.base.warning(
-                    f'⚠️ [KAFKA_CONFIG] Failed to create topic {topic}: {stderr.decode()}'
+            def _create_topic_sync() -> bool:
+                """Sync function to create topic - will be wrapped in async"""
+                # Create NewTopic with single replication (single broker setup)
+                new_topic = NewTopic(
+                    topic=topic,
+                    num_partitions=self.total_partitions,
+                    replication_factor=1,  # Single broker = replication factor 1
                 )
+
+                # Create topics (returns dict of futures)
+                futures = self.admin_client.create_topics([new_topic])
+
+                # Wait for topic creation to complete
+                for topic_name, future in futures.items():
+                    try:
+                        future.result(timeout=10)  # Block until completed
+                        Logger.base.info(f'✅ [KAFKA_CONFIG] Created topic: {topic_name}')
+                        return True
+                    except Exception as e:
+                        error_str = str(e)
+                        # Topic already exists is OK
+                        if 'TOPIC_ALREADY_EXISTS' in error_str:
+                            Logger.base.info(f'ℹ️ [KAFKA_CONFIG] Topic already exists: {topic_name}')
+                            return True
+                        else:
+                            Logger.base.warning(
+                                f'⚠️ [KAFKA_CONFIG] Failed to create topic {topic_name}: {e}'
+                            )
+                            return False
                 return False
 
-        except asyncio.TimeoutError:
-            Logger.base.error(f'❌ [KAFKA_CONFIG] Timeout creating topic: {topic}')
-            return False
+            # Wrap sync operation in async
+            result = await asyncio.to_thread(_create_topic_sync)
+            return result
+
         except Exception as e:
             Logger.base.error(f'❌ [KAFKA_CONFIG] Error creating topic {topic}: {e}')
             return False
 
-    def _analyze_partition_distribution(self, event_id: int, seating_config: Dict) -> None:
+    def _analyze_partition_distribution(self, event_id: UUID, seating_config: Dict) -> None:
         """分析並記錄 partition 分佈策略"""
         Logger.base.info(
             f'📊 [KAFKA_CONFIG] Analyzing partition distribution for EVENT_ID={event_id}'
@@ -194,8 +200,8 @@ class KafkaConfigService(IKafkaConfigService):
 
         Logger.base.info(f'📈 [KAFKA_CONFIG] Total seats: {total_seats:,}')
 
-    async def _start_event_consumers(self, event_id: int) -> None:
-        """啟動 event-specific consumers (支援多實例)"""
+    async def _start_event_consumers(self, event_id: UUID) -> None:
+        """啟動 event-specific consumers (支援多實例 + 分散式部署 + 防止 PID 重複)"""
         Logger.base.info(
             f'🚀 [KAFKA_CONFIG] Starting event-specific consumers for EVENT_ID={event_id}'
         )
@@ -203,12 +209,29 @@ class KafkaConfigService(IKafkaConfigService):
         # 獲取項目根目錄
         project_root = self._get_project_root()
 
+        # 生成全域唯一的 instance ID prefix
+        # 格式: {hostname}-{pid}-{timestamp_ms}
+        # - hostname: 區分不同機器
+        # - pid: 區分同機器不同程序
+        # - timestamp_ms: 防止 PID 重複使用 (作業系統可能回收 PID)
+        hostname = socket.gethostname()
+        pid = os.getpid()
+        timestamp_ms = int(time.time() * 1000)  # 毫秒級時間戳
+        instance_prefix = f'{hostname}-{pid}-{timestamp_ms}'
+
+        Logger.base.info(f'📍 [KAFKA_CONFIG] Instance prefix: {instance_prefix}')
+        Logger.base.info('   ✅ Supports: distributed deployment, PID reuse protection')
+
         # 為每個 consumer 配置創建多個實例的啟動任務
         tasks = []
         for consumer in self.consumer_configs:
-            for instance_id in range(1, consumer.instance_count + 1):
+            for local_instance_id in range(1, consumer.instance_count + 1):
+                # 全域唯一的 instance ID: hostname-pid-consumer-1
+                global_instance_id = f'{instance_prefix}-{consumer.name}-{local_instance_id}'
                 tasks.append(
-                    self._start_single_consumer(consumer, event_id, project_root, instance_id)
+                    self._start_single_consumer(
+                        consumer, event_id, project_root, global_instance_id
+                    )
                 )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -228,9 +251,21 @@ class KafkaConfigService(IKafkaConfigService):
         )
 
     async def _start_single_consumer(
-        self, consumer: ConsumerConfig, event_id: int, project_root: str, instance_id: int
+        self, consumer: ConsumerConfig, event_id: UUID, project_root: str, instance_id: str
     ) -> int:
-        """啟動單個 consumer 實例，返回 PID"""
+        """
+        啟動單個 consumer 實例，返回 PID
+
+        Args:
+            consumer: Consumer 配置
+            event_id: 活動 ID
+            project_root: 專案根目錄
+            instance_id: 全域唯一的 instance ID (e.g., 'hostname-pid-consumer-1')
+                        確保分散式環境下不會衝突
+
+        Returns:
+            Process PID
+        """
         try:
             from .kafka_constant_builder import KafkaConsumerGroupBuilder
 
@@ -275,23 +310,6 @@ class KafkaConfigService(IKafkaConfigService):
             )
             raise
 
-    def _find_docker_executable(self) -> str:
-        """查找 docker 可執行文件的完整路徑"""
-        import shutil
-
-        docker_path = shutil.which('docker')
-        if docker_path:
-            return docker_path
-
-        # Fallback to common locations
-        common_paths = ['/usr/local/bin/docker', '/usr/bin/docker']
-        for path in common_paths:
-            if os.path.exists(path):
-                return path
-
-        # If not found, return 'docker' and let it fail with a clear error
-        return 'docker'
-
     def _get_project_root(self) -> str:
         """獲取項目根目錄"""
         # 從當前文件位置推算項目根目錄
@@ -300,7 +318,7 @@ class KafkaConfigService(IKafkaConfigService):
         return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
 
     def get_partition_key_for_seat(
-        self, section: str, subsection: int, row: int, seat: int, event_id: int
+        self, section: str, subsection: int, row: int, seat: int, event_id: UUID
     ) -> str:
         """
         為座位生成 partition key
@@ -341,7 +359,7 @@ class KafkaConfigService(IKafkaConfigService):
             Logger.base.error(f'❌ [KAFKA_CONFIG] Error checking consumer groups: {e}')
             return []
 
-    async def cleanup_event_infrastructure(self, event_id: int) -> bool:
+    async def cleanup_event_infrastructure(self, event_id: UUID) -> bool:
         """
         清理活動的基礎設施
         (可選功能，用於活動結束後的清理)

@@ -23,6 +23,7 @@ import json
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
+from uuid import UUID
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from opentelemetry import trace
@@ -57,7 +58,7 @@ from src.service.ticketing.driven_adapter.repo.booking_query_repo_scylla_impl im
 class KafkaConfig:
     """Kafka 配置 - 支援 Exactly-Once 語義"""
 
-    def __init__(self, *, event_id: int, instance_id: str, retries: int = 3):
+    def __init__(self, *, event_id: UUID, instance_id: str, retries: int = 3):
         """
         Args:
             event_id: 活動 ID
@@ -120,7 +121,10 @@ class TicketingMqConsumer:
     """
 
     def __init__(self):
-        self.event_id = int(os.getenv('EVENT_ID', '1'))
+        # Parse EVENT_ID as UUID (not int!)
+        event_id_str = os.getenv('EVENT_ID', '00000000-0000-0000-0000-000000000001')
+        self.event_id = UUID(event_id_str)
+
         # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
         base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'
@@ -304,9 +308,9 @@ class TicketingMqConsumer:
             attributes={
                 'messaging.system': 'kafka',
                 'messaging.operation': 'receive',
-                'booking_id': booking_id or 0,
-                'event_id': message.get('event_id') or 0,
-                'buyer_id': message.get('buyer_id') or 0,
+                'booking_id': str(booking_id) if booking_id else 'unknown',
+                'event_id': str(message.get('event_id')) if message.get('event_id') else 'unknown',
+                'buyer_id': str(message.get('buyer_id')) if message.get('buyer_id') else 'unknown',
                 'reserved_seats_count': len(reserved_seats),
                 'consumer.instance_id': self.instance_id,
             },
@@ -344,14 +348,28 @@ class TicketingMqConsumer:
         with self.tracer.start_as_current_span(
             'consumer.handle_pending_payment_async',
             attributes={
-                'booking_id': message.get('booking_id') or 0,
-                'event_id': message.get('event_id') or 0,
-                'buyer_id': message.get('buyer_id') or 0,
+                'booking_id': str(message.get('booking_id'))
+                if message.get('booking_id')
+                else 'unknown',
+                'event_id': str(message.get('event_id')) if message.get('event_id') else 'unknown',
+                'buyer_id': str(message.get('buyer_id')) if message.get('buyer_id') else 'unknown',
             },
         ):
-            booking_id = message.get('booking_id')
-            buyer_id = message.get('buyer_id')
-            event_id = message.get('event_id')
+            # Extract and parse UUIDs from message
+            booking_id_raw = message.get('booking_id')
+            buyer_id_raw = message.get('buyer_id')
+            event_id_raw = message.get('event_id')
+
+            # Convert to UUID (Kafka messages contain UUID strings)
+            booking_id = UUID(booking_id_raw) if booking_id_raw else None
+            buyer_id = UUID(buyer_id_raw) if buyer_id_raw else None
+            event_id = UUID(event_id_raw) if event_id_raw else None
+
+            if not booking_id or not buyer_id or not event_id:
+                raise ValueError(
+                    f'Missing required UUID fields: booking_id={booking_id}, buyer_id={buyer_id}, event_id={event_id}'
+                )
+
             reserved_seats = message.get('reserved_seats', [])
             ticket_details = message.get(
                 'ticket_details', []
@@ -417,9 +435,9 @@ class TicketingMqConsumer:
                 },
             ):
                 await use_case.execute(
-                    booking_id=booking_id or 0,
-                    buyer_id=buyer_id or 0,
-                    event_id=event_id or 0,
+                    booking_id=booking_id,
+                    buyer_id=buyer_id,
+                    event_id=event_id,
                     section=section or '',
                     subsection=subsection or 0,
                     seat_identifiers=seat_identifiers,
@@ -459,9 +477,19 @@ class TicketingMqConsumer:
         Note: Repositories use asyncpg and manage their own connections.
         Use case directly depends on repositories, no UoW needed.
         """
-        booking_id = message.get('booking_id')
-        buyer_id = message.get('buyer_id')
+        # Extract and parse UUIDs from message
+        booking_id_raw = message.get('booking_id')
+        buyer_id_raw = message.get('buyer_id')
         reason = message.get('error_message', 'Unknown')
+
+        # Convert to UUID (Kafka messages contain UUID strings)
+        booking_id = UUID(booking_id_raw) if booking_id_raw else None
+        buyer_id = UUID(buyer_id_raw) if buyer_id_raw else None
+
+        if not booking_id or not buyer_id:
+            raise ValueError(
+                f'Missing required UUID fields: booking_id={booking_id}, buyer_id={buyer_id}'
+            )
 
         # Create repositories (they manage their own asyncpg connections)
         booking_command_repo = BookingCommandRepoScyllaImpl()
@@ -472,9 +500,7 @@ class TicketingMqConsumer:
             booking_query_repo=booking_query_repo,
             booking_command_repo=booking_command_repo,
         )
-        await use_case.execute(
-            booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
-        )
+        await use_case.execute(booking_id=booking_id, buyer_id=buyer_id, error_message=reason)
 
     # ========== Lifecycle ==========
 

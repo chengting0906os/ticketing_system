@@ -6,6 +6,7 @@ Simplified event publishing interface using Quix Streams directly.
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 import attrs
 from opentelemetry import trace
@@ -23,12 +24,14 @@ _quix_app: Application | None = None
 
 def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
-    Custom serializer - converts datetime to timestamp.
+    Custom serializer - converts datetime to timestamp and UUID to string.
 
     Used as value_serializer parameter for attrs.asdict.
     """
     if isinstance(value, datetime):
         return int(value.timestamp())
+    if isinstance(value, UUID):
+        return str(value)
     return value
 
 

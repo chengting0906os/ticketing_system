@@ -6,6 +6,7 @@ Seat State Command Handler Implementation
 
 import os
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -47,7 +48,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         return (row - 1) * seats_per_row + (seat_num - 1)
 
     @Logger.io
-    async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
+    async def _get_section_config(self, event_id: UUID, section_id: str) -> Dict:
         """從 Redis 獲取 section 配置信息"""
         try:
             client = kvrocks_client.get_client()
@@ -67,9 +68,9 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     async def reserve_seats_atomic(
         self,
         *,
-        event_id: int,
-        booking_id: int,
-        buyer_id: int,
+        event_id: UUID,
+        booking_id: UUID,
+        buyer_id: UUID,
         mode: str,
         seat_ids: Optional[List[str]] = None,
         section: Optional[str] = None,
@@ -282,12 +283,12 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     async def find_and_reserve_consecutive_seats(
         self,
         *,
-        event_id: int,
+        event_id: UUID,
         section: str,
         subsection: int,
         quantity: int,
-        booking_id: int,
-        buyer_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
     ) -> Dict:
         """
         自動找出連續座位並預訂 (best_available mode)
@@ -363,7 +364,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             }
 
     @Logger.io
-    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(self, seat_ids: List[str], event_id: UUID) -> Dict[str, bool]:
         """釋放座位 (RESERVED -> AVAILABLE)"""
         Logger.base.info(f'🔓 [CMD] Releasing {len(seat_ids)} seats')
 
@@ -374,7 +375,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
 
     @Logger.io
     async def finalize_payment(
-        self, seat_id: str, event_id: int, timestamp: Optional[str] = None
+        self, seat_id: str, event_id: UUID, timestamp: Optional[str] = None
     ) -> bool:
         """完成支付 (RESERVED -> SOLD)"""
         Logger.base.info(f'💳 [CMD] Finalizing payment for seat {seat_id}')
@@ -408,7 +409,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
 
     @Logger.io
     async def initialize_seat(
-        self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
+        self, seat_id: str, event_id: UUID, price: int, timestamp: Optional[str] = None
     ) -> bool:
         """初始化座位 (set to AVAILABLE)"""
         Logger.base.info(f'🆕 [CMD] Initializing seat {seat_id}')

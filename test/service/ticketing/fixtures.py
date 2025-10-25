@@ -3,6 +3,7 @@ import os
 import socket
 import time
 from unittest.mock import patch
+from uuid import UUID
 
 import httpx
 import pytest
@@ -61,7 +62,7 @@ def mock_kafka_infrastructure(request):
         yield
         return
 
-    async def mock_initialize_seats(self, *, event_id: int, seating_config: dict) -> dict:
+    async def mock_initialize_seats(self, *, event_id: UUID, seating_config: dict) -> dict:
         """
         Test implementation: Direct Kvrocks writes via Lua script.
         Bypasses async Kafka processing for faster, deterministic tests.

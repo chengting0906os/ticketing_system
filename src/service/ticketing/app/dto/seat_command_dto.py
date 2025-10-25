@@ -6,6 +6,7 @@ Seat Command DTOs - Shared Kernel
 """
 
 from dataclasses import dataclass
+from uuid import UUID
 
 
 # ========== Release Seat ==========
@@ -16,7 +17,7 @@ class ReleaseSeatRequest:
     """座位釋放請求"""
 
     seat_id: str
-    event_id: int
+    event_id: UUID
 
 
 @dataclass
@@ -43,7 +44,7 @@ class ReleaseSeatsBatchRequest:
     """批次座位釋放請求 - Performance optimization for releasing multiple seats"""
 
     seat_ids: list[str]
-    event_id: int
+    event_id: UUID
 
 
 @dataclass

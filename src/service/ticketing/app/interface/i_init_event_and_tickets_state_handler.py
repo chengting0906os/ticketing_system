@@ -6,6 +6,7 @@ Init Event And Tickets State Handler Interface
 
 from abc import ABC, abstractmethod
 from typing import Dict
+from uuid import UUID
 
 
 class IInitEventAndTicketsStateHandler(ABC):
@@ -19,7 +20,7 @@ class IInitEventAndTicketsStateHandler(ABC):
     """
 
     @abstractmethod
-    async def initialize_seats_from_config(self, *, event_id: int, seating_config: Dict) -> Dict:
+    async def initialize_seats_from_config(self, *, event_id: UUID, seating_config: Dict) -> Dict:
         """
         從 seating_config 初始化座位
 

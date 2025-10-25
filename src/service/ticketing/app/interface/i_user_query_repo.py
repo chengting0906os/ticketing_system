@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+from uuid import UUID
 
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 
@@ -12,7 +13,7 @@ class IUserQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
+    async def get_by_id(self, user_id: UUID) -> Optional[UserEntity]:
         pass
 
     @abstractmethod

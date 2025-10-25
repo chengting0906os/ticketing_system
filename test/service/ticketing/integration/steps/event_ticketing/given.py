@@ -1,6 +1,7 @@
 import json
 import os
 from unittest.mock import patch
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from pytest_bdd import given
@@ -115,7 +116,9 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_cql
         create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
-            event_id = created_event['id']
+            event_id_str = created_event['id']
+            # Convert to UUID for database operations (HTTP responses return strings)
+            event_id = UUID(event_id_str) if isinstance(event_id_str, str) else event_id_str
             if event_data['status'] != 'available':
                 execute_cql_statement(
                     'UPDATE "event" SET status = :status WHERE id = :id',
@@ -152,7 +155,9 @@ def create_no_available_events(step, client: TestClient, event_state, execute_cq
         create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
-            event_id = created_event['id']
+            event_id_str = created_event['id']
+            # Convert to UUID for database operations (HTTP responses return strings)
+            event_id = UUID(event_id_str) if isinstance(event_id_str, str) else event_id_str
             execute_cql_statement(
                 'UPDATE "event" SET status = :status WHERE id = :id',
                 {'status': event_data['status'], 'id': event_id},
@@ -164,8 +169,8 @@ def create_no_available_events(step, client: TestClient, event_state, execute_cq
 @given('an event exists with:')
 def event_exists(step, execute_cql_statement):
     event_data = extract_table_data(step)
-    event_id = int(event_data['event_id'])
-    expected_seller_id = int(event_data['seller_id'])
+    event_id = UUID(event_data['event_id'])
+    expected_seller_id = UUID(event_data['seller_id'])
 
     # Use the seller_id as provided in the test scenario
     # The BDD steps should ensure the seller exists before the event is created

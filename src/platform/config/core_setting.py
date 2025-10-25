@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     KAFKA_COMPRESSION_TYPE: str = 'gzip'
     KAFKA_BATCH_SIZE: int = 16384
     KAFKA_LINGER_MS: int = 10
+    KAFKA_REPLICATION_FACTOR: int = 1  # Set to 1 for development, 3 for production
 
     # Kafka Consumer Modules
     TICKETING_CONSUMER_MODULE: str = (

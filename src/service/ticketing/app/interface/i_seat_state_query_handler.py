@@ -7,6 +7,7 @@ Seat State Query Handler Interface - Shared Kernel
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
+from uuid import UUID
 
 
 class ISeatStateQueryHandler(ABC):
@@ -17,7 +18,7 @@ class ISeatStateQueryHandler(ABC):
     """
 
     @abstractmethod
-    async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
+    async def get_seat_states(self, seat_ids: List[str], event_id: UUID) -> Dict[str, Dict]:
         """
         獲取指定座位的狀態
 
@@ -31,7 +32,7 @@ class ISeatStateQueryHandler(ABC):
         pass
 
     @abstractmethod
-    async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
+    async def get_seat_price(self, seat_id: str, event_id: UUID) -> Optional[int]:
         """
         獲取座位價格
 
@@ -45,7 +46,7 @@ class ISeatStateQueryHandler(ABC):
         pass
 
     @abstractmethod
-    async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
+    async def list_all_subsection_status(self, event_id: UUID) -> Dict[str, Dict]:
         """
         獲取活動所有 subsection 的統計資訊
 
@@ -63,7 +64,7 @@ class ISeatStateQueryHandler(ABC):
 
     @abstractmethod
     async def list_all_subsection_seats(
-        self, event_id: int, section: str, subsection: int
+        self, event_id: UUID, section: str, subsection: int
     ) -> List[Dict]:
         """
         獲取指定 subsection 的所有座位（包括 available, reserved, sold）

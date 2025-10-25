@@ -6,6 +6,7 @@ Provides reusable test doubles (stubs, mocks, fakes) for common dependencies
 
 from typing import List
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Ticket
 from src.service.ticketing.domain.entity.booking_entity import Booking
@@ -23,7 +24,7 @@ class RepositoryMocks:
         mocks = RepositoryMocks(
             booking=some_booking,
             tickets=[ticket1, ticket2],
-            ticket_ids=[1, 2],
+            ticket_ids=[TEST_TICKET_ID_1, TEST_TICKET_ID_2],
         )
         use_case = SomeUseCase(
             booking_command_repo=mocks.booking_command_repo,
@@ -38,7 +39,7 @@ class RepositoryMocks:
         *,
         booking: Booking | None = None,
         tickets: List[Ticket] | None = None,
-        ticket_ids: List[int] | None = None,
+        ticket_ids: List[UUID] | None = None,
     ):
         """
         Initialize mock repositories with test data
@@ -46,7 +47,7 @@ class RepositoryMocks:
         Args:
             booking: Booking to return from get_by_id
             tickets: Tickets to return from get_tickets_by_ids
-            ticket_ids: Ticket IDs to return from seat identifier conversion
+            ticket_ids: Ticket IDs (UUIDs) to return from seat identifier conversion
         """
         self.booking = booking
         self.tickets = tickets or []

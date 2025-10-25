@@ -11,11 +11,13 @@ Tests the full async booking workflow from creation to cancellation:
 import time
 from typing import Any, Dict, Optional
 import uuid
+from uuid import UUID
 
 import httpx
 import pytest
 import pytest_asyncio
 
+from test.test_constants import TEST_EVENT_ID_1
 from test.util_constant import DEFAULT_PASSWORD
 
 
@@ -46,7 +48,7 @@ EVENT_CONFIG = {
 }
 
 
-def create_manual_booking_config(event_id: int, seat_positions: list[str]) -> Dict[str, Any]:
+def create_manual_booking_config(event_id: UUID, seat_positions: list[str]) -> Dict[str, Any]:
     """Create booking configuration for manual seat selection"""
     return {
         'event_id': event_id,
@@ -58,7 +60,7 @@ def create_manual_booking_config(event_id: int, seat_positions: list[str]) -> Di
     }
 
 
-def create_best_available_booking_config(event_id: int, quantity: int) -> Dict[str, Any]:
+def create_best_available_booking_config(event_id: UUID, quantity: int) -> Dict[str, Any]:
     """Create booking configuration for best available seat selection"""
     return {
         'event_id': event_id,
@@ -72,9 +74,9 @@ def create_best_available_booking_config(event_id: int, quantity: int) -> Dict[s
 class BookingFlow:
     """Fluent interface for booking flow operations"""
 
-    def __init__(self, client: httpx.AsyncClient, event_id: int):
+    def __init__(self, client: httpx.AsyncClient, event_id: UUID):
         self.client = client
-        self.event_id = event_id
+        self.event_id = TEST_EVENT_ID_1
         self.booking: Optional[Dict[str, Any]] = None
 
     async def create_best_available(self, *, quantity: int):
@@ -126,7 +128,9 @@ class BookingFlow:
         """Wait for MQ consumer to process the operation"""
         time.sleep(MQ_PROCESSING_WAIT_TIME)
 
-    async def _verify_booking_status(self, booking_id: int, expected_status: str) -> Dict[str, Any]:
+    async def _verify_booking_status(
+        self, booking_id: UUID, expected_status: str
+    ) -> Dict[str, Any]:
         """Get booking and verify it has expected status"""
         response = await self.client.get(f'{BASE_URL}/api/booking/{booking_id}')
         assert response.status_code == 200, f'Get booking failed: {response.text}'
@@ -136,7 +140,7 @@ class BookingFlow:
         )
         return booking_data
 
-    async def _cancel_booking(self, booking_id: int):
+    async def _cancel_booking(self, booking_id: UUID):
         """Cancel booking and verify cancellation"""
         response = await self.client.patch(f'{BASE_URL}/api/booking/{booking_id}')
         assert response.status_code == 200, f'Booking cancellation failed: {response.text}'
@@ -184,7 +188,7 @@ class TestAsyncBookingFlow:
         """Get existing event_id=1 or create it for testing"""
         async with httpx.AsyncClient() as client:
             client.cookies.set('fastapiusersauth', self.seller_token)
-            self.event_id = await self._get_or_create_event(client)
+            self.event_id = TEST_EVENT_ID_1
 
     async def _login_user(self, email: str, expected_role: str) -> Dict[str, Any]:
         """Login user and return user data with token"""

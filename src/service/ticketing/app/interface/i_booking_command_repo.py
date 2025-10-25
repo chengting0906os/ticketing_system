@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List
+from uuid import UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
@@ -13,7 +14,7 @@ class IBookingCommandRepo(ABC):
     """Repository interface for booking write operations"""
 
     @abstractmethod
-    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         """
         查詢單筆 booking（用於 command 操作前的驗證）
 
@@ -26,7 +27,7 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
         """
         查詢 booking 關聯的 tickets（用於 command 操作）
 
@@ -52,7 +53,7 @@ class IBookingCommandRepo(ABC):
 
     @abstractmethod
     async def complete_booking_and_mark_tickets_sold_atomically(
-        self, *, booking: Booking, ticket_ids: list[int]
+        self, *, booking: Booking, ticket_ids: list[UUID]
     ) -> Booking:
         """
         Atomically update booking to COMPLETED and mark tickets as SOLD in single transaction
@@ -70,9 +71,9 @@ class IBookingCommandRepo(ABC):
     async def reserve_tickets_and_update_booking_atomically(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
-        event_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
+        event_id: UUID,
         section: str,
         subsection: int,
         seat_identifiers: list[str],

@@ -5,6 +5,7 @@ Seat Reservation Event Publisher Interface
 
 from abc import ABC, abstractmethod
 from typing import List
+from uuid import UUID
 
 
 class ISeatReservationEventPublisher(ABC):
@@ -14,11 +15,11 @@ class ISeatReservationEventPublisher(ABC):
     async def publish_seats_reserved(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
         reserved_seats: List[str],
         total_price: int,
-        event_id: int,
+        event_id: UUID,
         ticket_details: List[dict],
     ) -> None:
         """
@@ -34,10 +35,10 @@ class ISeatReservationEventPublisher(ABC):
     async def publish_reservation_failed(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
         error_message: str,
-        event_id: int,
+        event_id: UUID,
     ) -> None:
         """發送座位預訂失敗事件"""
         pass

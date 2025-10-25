@@ -3,6 +3,8 @@ Get Section Seats Detail Use Case
 獲取指定 section/subsection 的所有座位詳情
 """
 
+from uuid import UUID
+
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface import ISeatStateQueryHandler
 
@@ -21,7 +23,7 @@ class ListSectionSeatsDetailUseCase:
         self.seat_state_handler = seat_state_handler
 
     @Logger.io
-    async def execute(self, event_id: int, section: str, subsection: int) -> dict:
+    async def execute(self, event_id: UUID, section: str, subsection: int) -> dict:
         """
         執行查詢
 

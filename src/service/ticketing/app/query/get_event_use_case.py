@@ -1,4 +1,5 @@
 from typing import Optional
+from uuid import UUID
 
 
 from src.platform.logging.loguru_io import Logger
@@ -13,7 +14,7 @@ class GetEventUseCase:
         self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @Logger.io
-    async def get_by_id(self, event_id: int) -> Optional[EventTicketingAggregate]:
+    async def get_by_id(self, event_id: UUID) -> Optional[EventTicketingAggregate]:
         """獲取活動聚合根（不含票務，性能優化）"""
         Logger.base.info(f'🔍 [GET_EVENT] Loading event aggregate for event {event_id}')
 

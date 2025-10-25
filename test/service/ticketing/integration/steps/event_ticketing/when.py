@@ -187,7 +187,7 @@ def seller_lists_all_tickets(step, client, context):
 def seller_lists_tickets_by_section(step, client, context):
     """Seller lists tickets for specific section."""
     data = extract_table_data(step)
-    event_id = int(data['event_id'])
+    event_id = data['event_id']
     section = data['section']
 
     # Login as seller
@@ -204,7 +204,7 @@ def seller_lists_tickets_by_section(step, client, context):
 @when('buyer lists available tickets with:')
 def buyer_lists_available_tickets(step, client, context):
     data = extract_table_data(step)
-    event_id = int(data['event_id'])
+    event_id = data['event_id']
 
     # Login as buyer
     login_user(client, BUYER1_EMAIL, DEFAULT_PASSWORD)
@@ -270,4 +270,6 @@ def get_event_details(client: TestClient, event_state):
 @when('I get event with id 99999')
 def get_nonexistent_event(client: TestClient, event_state):
     """Try to get a non-existent event."""
-    event_state['response'] = client.get(f'{EVENT_BASE}/99999')
+    # Use a valid UUID format that doesn't exist in database
+    nonexistent_uuid = '00000000-0000-0000-0000-000000099999'
+    event_state['response'] = client.get(f'{EVENT_BASE}/{nonexistent_uuid}')

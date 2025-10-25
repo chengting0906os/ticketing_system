@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
+from uuid import UUID
 
 import attrs
 from opentelemetry import trace
@@ -29,8 +30,8 @@ class BookingStatus(StrEnum):
 
 @attrs.define
 class Booking:
-    buyer_id: int
-    event_id: int
+    buyer_id: UUID
+    event_id: UUID
     total_price: int
     section: str
     subsection: int
@@ -38,7 +39,7 @@ class Booking:
     seat_selection_mode: str
     seat_positions: Optional[List[str]] = attrs.field(factory=list)
     status: BookingStatus = BookingStatus.PROCESSING
-    id: Optional[int] = None
+    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
@@ -48,9 +49,9 @@ class Booking:
     async def create(
         cls,
         *,
-        id: int = 0,
-        buyer_id: int,
-        event_id: int,
+        id: UUID | None = None,
+        buyer_id: UUID,
+        event_id: UUID,
         total_price: int = 0,
         section: str,
         subsection: int,
@@ -59,8 +60,8 @@ class Booking:
         quantity: int,
     ) -> 'Booking':
         with tracer.start_as_current_span('domain.booking.create') as span:
-            span.set_attribute('booking.buyer_id', buyer_id)
-            span.set_attribute('booking.event_id', event_id)
+            span.set_attribute('booking.buyer_id', str(buyer_id))
+            span.set_attribute('booking.event_id', str(event_id))
             span.set_attribute('booking.seat_selection_mode', seat_selection_mode)
             span.set_attribute('booking.quantity', quantity)
 
@@ -130,7 +131,7 @@ class Booking:
                 status=BookingStatus.PROCESSING,
                 seat_positions=seat_positions,
                 quantity=quantity,
-                id=0 if id == 0 else id,
+                id=id,
             )
 
     @Logger.io
@@ -151,7 +152,7 @@ class Booking:
             更新後的 Booking
         """
         with tracer.start_as_current_span('domain.booking.mark_as_pending_payment') as span:
-            span.set_attribute('booking.id', self.id or 0)
+            span.set_attribute('booking.id', str(self.id) if self.id else 'None')
             span.set_attribute('booking.total_price', total_price)
             span.set_attribute('booking.seats_count', len(seat_positions))
 

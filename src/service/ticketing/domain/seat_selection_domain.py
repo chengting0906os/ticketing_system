@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
@@ -52,8 +53,8 @@ class SeatSelectionRequest:
     """座位選擇請求（值對象）"""
 
     mode: SelectionMode
-    event_id: int
-    buyer_id: int
+    event_id: UUID
+    buyer_id: UUID
     quantity: Optional[int] = None
     manual_seats: Optional[List[str]] = None  # 手動選擇的座位ID列表
     section_filter: Optional[str] = None
@@ -104,7 +105,7 @@ class AvailableSeat:
 
     position: SeatPosition
     price: int
-    event_id: int
+    event_id: UUID
 
     @property
     def seat_id(self) -> str:

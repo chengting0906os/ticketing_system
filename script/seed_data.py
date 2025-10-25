@@ -13,8 +13,10 @@ Database Seed Script (ScyllaDB)
 """
 
 import asyncio
+from uuid import UUID
 
 from script.seating_config import SEATING_CONFIG_50000
+from test.test_constants import SEED_EVENT_ID
 from src.platform.database.scylla_setting import get_scylla_session
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
@@ -37,7 +39,7 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
 )
 
 
-async def create_init_users() -> int:
+async def create_init_users() -> UUID:
     """創建初始測試用戶 (1 seller + 25 buyers for distributed partition testing)
 
     Returns:
@@ -106,7 +108,7 @@ async def create_init_users() -> int:
         raise
 
 
-async def create_init_event(seller_id: int):
+async def create_init_event(seller_id: UUID):
     """創建初始測試活動"""
     try:
         print('🎫 Creating initial event...')
@@ -148,7 +150,7 @@ async def create_init_event(seller_id: int):
                 if isinstance(subsection, dict):
                     total_seats += subsection['rows'] * subsection['seats_per_row']
 
-        # 使用 UseCase 創建活動和票券
+        # 使用 UseCase 創建活動和票券 (使用固定的 event_id)
         event_aggregate = await create_event_use_case.create_event_and_tickets(
             name='Concert Event',
             description='Amazing live music performance',
@@ -156,7 +158,7 @@ async def create_init_event(seller_id: int):
             venue_name='Taipei Arena',
             seating_config=seating_config,
             is_active=True,
-            event_id=1,  # Fixed ID for testing
+            event_id=SEED_EVENT_ID,  # 使用固定的 event_id 方便辨識和測試
         )
 
         event = event_aggregate.event
@@ -259,6 +261,9 @@ async def main():
         print('   Seller: s@t.com / P@ssw0rd')
         print('   Buyers: buyer_1@test.com ~ buyer_25@test.com / P@ssw0rd')
         print('   💡 Load test will distribute across 25 different buyer partitions')
+        print()
+        print(f'🎫 Fixed Event ID: {SEED_EVENT_ID}')
+        print('   💡 All services will use this event_id for testing')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')

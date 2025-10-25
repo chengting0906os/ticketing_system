@@ -13,11 +13,11 @@ Feature: Event Ticket Management
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     And an event exists with:
-      | event_id | seller_id |
-      |        1 |         1 |
+      | event_id                             | seller_id                            |
+      | 019a1af7-0000-7003-0000-000000000001 | 019a1af7-0000-7002-0000-000000000001 |
     When buyer lists available tickets with:
-      | buyer_id | event_id |
-      |        2 |        1 |
+      | buyer_id                             | event_id                             |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 |
     Then the response status code should be:
       | 200 |
     And available tickets should be returned with count:
@@ -31,11 +31,11 @@ Feature: Event Ticket Management
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     And an event exists with:
-      | event_id | seller_id |
-      |        1 |         1 |
+      | event_id                             | seller_id                            |
+      | 019a1af7-0000-7003-0000-000000000002 | 019a1af7-0000-7002-0000-000000000002 |
     When seller lists tickets by section with:
-      | seller_id | event_id | section | subsection |
-      |         1 |        1 | A       |          1 |
+      | seller_id                            | event_id                             | section | subsection |
+      | 019a1af7-0000-7002-0000-000000000002 | 019a1af7-0000-7003-0000-000000000002 | A       |          1 |
     Then the response status code should be:
       | 200 |
     And section tickets should be returned with count:
@@ -46,8 +46,8 @@ Feature: Event Ticket Management
       | email           | password | name        | role  |
       | buyer1@test.com | P@ssw0rd | Test Buyer1 | buyer |
     When buyer lists available tickets with:
-      | buyer_id | event_id |
-      |        3 |      999 |
+      | buyer_id                             | event_id                             |
+      | 019a1af7-0000-7001-0000-000000000003 | 019a1af7-0000-7003-0000-999999999999 |
     Then the response status code should be:
       | 404 |
     And the error message should contain:

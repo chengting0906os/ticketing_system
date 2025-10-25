@@ -8,6 +8,7 @@ Clean architecture use case for event creation:
 """
 
 from typing import Dict
+from uuid import UUID
 
 
 from src.platform.logging.loguru_io import Logger
@@ -57,11 +58,11 @@ class CreateEventAndTicketsUseCase:
         *,
         name: str,
         description: str,
-        seller_id: int,
+        seller_id: UUID,
         venue_name: str,
         seating_config: Dict,
         is_active: bool = True,
-        event_id: int | None = None,
+        event_id: UUID | None = None,
     ) -> EventTicketingAggregate:
         """
         Create event with tickets and setup infrastructure.

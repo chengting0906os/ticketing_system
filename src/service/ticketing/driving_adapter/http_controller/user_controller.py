@@ -43,7 +43,7 @@ async def get_current_user(
         user = jwt_auth.get_current_user_info_from_jwt(token)
         trace.get_current_span().set_attributes(
             {
-                'user.id': user.id or 0,
+                'user.id': str(user.id) if user.id else 'None',
                 'user.email': user.email,
                 'user.role': user.role.value,
             }
@@ -67,12 +67,21 @@ async def create_user(
         role=request.role,
     )
 
-    return UserResponse(
-        id=user_entity.id or 0,
-        email=user_entity.email,
-        name=user_entity.name,
-        role=user_entity.role,
-        is_active=user_entity.is_active,
+    if not user_entity.id:
+        raise ValueError('User ID must not be None after creation')
+
+    # Use model_validate with mode='json' to ensure proper serialization
+    return UserResponse.model_validate(
+        {
+            'id': str(user_entity.id),
+            'email': user_entity.email,
+            'name': user_entity.name,
+            'role': user_entity.role.value
+            if hasattr(user_entity.role, 'value')
+            else user_entity.role,
+            'is_active': user_entity.is_active,
+        },
+        strict=False,
     )
 
 
@@ -102,22 +111,38 @@ async def login(
         secure=False,  # 生產環境設為 True
     )
 
-    return UserResponse(
-        id=user_entity.id or 0,
-        email=user_entity.email,
-        name=user_entity.name,
-        role=user_entity.role,
-        is_active=user_entity.is_active,
+    if not user_entity.id:
+        raise ValueError('User ID must not be None')
+
+    return UserResponse.model_validate(
+        {
+            'id': str(user_entity.id),
+            'email': user_entity.email,
+            'name': user_entity.name,
+            'role': user_entity.role.value
+            if hasattr(user_entity.role, 'value')
+            else user_entity.role,
+            'is_active': user_entity.is_active,
+        },
+        strict=False,
     )
 
 
 @router.get('', response_model=UserResponse)
 @Logger.io
 async def get_me(current_user: UserEntity = Depends(get_current_user)):
-    return UserResponse(
-        id=current_user.id or 0,
-        email=current_user.email,
-        name=current_user.name,
-        role=current_user.role,
-        is_active=current_user.is_active,
+    if not current_user.id:
+        raise ValueError('User ID must not be None')
+
+    return UserResponse.model_validate(
+        {
+            'id': str(current_user.id),
+            'email': current_user.email,
+            'name': current_user.name,
+            'role': current_user.role.value
+            if hasattr(current_user.role, 'value')
+            else current_user.role,
+            'is_active': current_user.is_active,
+        },
+        strict=False,
     )

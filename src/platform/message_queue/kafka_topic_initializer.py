@@ -6,6 +6,8 @@ This module provides auto-creation of Kafka topics during consumer startup,
 ensuring topics exist before subscription to prevent UNKNOWN_TOPIC_OR_PART errors.
 """
 
+from uuid import UUID
+
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka import KafkaException
 
@@ -23,12 +25,19 @@ class KafkaTopicInitializer:
     Kafka brokers via network, making it container-friendly.
     """
 
-    def __init__(self, *, bootstrap_servers: str | None = None, total_partitions: int = 100):
+    def __init__(
+        self,
+        *,
+        bootstrap_servers: str | None = None,
+        total_partitions: int = 100,
+        replication_factor: int | None = None,
+    ):
         self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
         self.total_partitions = total_partitions
+        self.replication_factor = replication_factor or settings.KAFKA_REPLICATION_FACTOR
         self.admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})
 
-    def ensure_topics_exist(self, *, event_id: int) -> bool:
+    def ensure_topics_exist(self, *, event_id: UUID) -> bool:
         """
         Ensure all required topics for an event exist, creating them if needed.
 
@@ -60,7 +69,7 @@ class KafkaTopicInitializer:
                 NewTopic(
                     topic=topic,
                     num_partitions=self.total_partitions,
-                    replication_factor=3,
+                    replication_factor=self.replication_factor,
                     config={
                         'cleanup.policy': 'delete',
                         'retention.ms': '604800000',  # 7 days

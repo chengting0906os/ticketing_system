@@ -1,7 +1,8 @@
 import time
+from uuid import UUID
 
 from fastapi.testclient import TestClient
-from pytest_bdd import when
+from pytest_bdd import when, parsers
 from test.shared.utils import create_user, extract_table_data, login_user
 from test.util_constant import (
     ANOTHER_BUYER_EMAIL,
@@ -32,7 +33,9 @@ def buyer_pays_for_booking(step, client: TestClient, booking_state):
     # If payment was successful, fetch the updated booking details
     if response.status_code == 200:
         booking_response = client.get(BOOKING_GET.format(booking_id=booking_id))
-        assert booking_response.status_code == 200
+        assert booking_response.status_code == 200, (
+            f'Failed to get booking after payment: {booking_response.text}'
+        )
         booking_state['updated_booking'] = booking_response.json()
 
 
@@ -99,70 +102,67 @@ def seller_tries_cancel_buyer_booking(step, client: TestClient, booking_state):
 
 @when('the buyer tries to cancel a non-existent booking')
 def buyer_tries_cancel_nonexistent(step, client: TestClient, booking_state):
-    # Use a booking ID that doesn't exist (999999)
-    response = client.patch(BOOKING_CANCEL.format(booking_id=999999))
+    # Use a valid UUID format that doesn't exist in database
+    # Using UUID with recognizable pattern: 00000000-0000-0000-0000-000000999999
+    nonexistent_uuid = '00000000-0000-0000-0000-000000999999'
+    response = client.patch(BOOKING_CANCEL.format(booking_id=nonexistent_uuid))
     booking_state['response'] = response
 
 
-def get_user_email_by_id(user_id: int) -> str:
-    """Map user ID to email address based on test setup."""
+def get_user_email_by_id(user_id) -> str:
+    """Map user ID to email address based on test setup. Supports both int and UUID."""
+    # Support both integer IDs (legacy) and UUIDs
     user_email_map = {
+        # Integer IDs (legacy)
         4: 'seller1@test.com',
         5: 'seller2@test.com',
         6: 'buyer1@test.com',
         7: 'buyer2@test.com',
         8: 'buyer3@test.com',
+        # UUID IDs (new)
+        '019a1af7-0000-7002-0000-000000000001': 'seller1@test.com',
+        '019a1af7-0000-7002-0000-000000000002': 'seller2@test.com',
+        '019a1af7-0000-7001-0000-000000000001': 'buyer1@test.com',
+        '019a1af7-0000-7001-0000-000000000002': 'buyer2@test.com',
+        '019a1af7-0000-7001-0000-000000000003': 'buyer3@test.com',
     }
-    return user_email_map.get(user_id, f'user{user_id}@test.com')
+
+    # Convert UUID to string for lookup
+    lookup_key = str(user_id) if isinstance(user_id, UUID) else user_id
+    return user_email_map.get(lookup_key, f'user{user_id}@test.com')
 
 
-@when('buyer with id 6 requests their bookings:')
-def buyer_6_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
+@when(parsers.parse('buyer with id {buyer_id} requests their bookings:'))
+def buyer_requests_bookings_with_table(buyer_id, step, client: TestClient, booking_state):
+    login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)
     booking_status = extract_table_data(step).get('booking_status', '')
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status={booking_status}')
     booking_state['response'] = response
 
 
-@when('buyer with id 6 requests their bookings')
-def buyer_6_requests_bookings_no_table(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
+@when(parsers.parse('buyer with id {buyer_id} requests their bookings'))
+def buyer_requests_bookings_no_table(buyer_id, client: TestClient, booking_state):
+    login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
-@when('buyer with id 8 requests their bookings')
-def buyer_8_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(8), DEFAULT_PASSWORD)
+@when(parsers.parse('seller with id {seller_id} requests their bookings'))
+def seller_requests_bookings(seller_id, client: TestClient, booking_state):
+    login_user(client, get_user_email_by_id(seller_id), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
-@when('seller with id 4 requests their bookings')
-def seller_4_requests_bookings(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(4), DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
+@when(parsers.parse('buyer with id {buyer_id} requests their bookings with status "{status}"'))
+def buyer_requests_bookings_with_status(buyer_id, status, client: TestClient, booking_state):
+    login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)
+    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status={status}')
     booking_state['response'] = response
 
 
-@when('buyer with id 6 requests their bookings with status "paid"')
-def buyer_6_requests_bookings_paid(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=paid')
-    booking_state['response'] = response
-
-
-@when('buyer with id 6 requests their bookings with status "pending_payment"')
-def buyer_6_requests_bookings_pending(step, client: TestClient, booking_state):
-    login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=pending_payment')
-    booking_state['response'] = response
-
-
-@when('buyer with id {buyer_id:d} requests booking details for booking {booking_id:d}')
-def buyer_requests_booking_details(
-    buyer_id: int, booking_id: int, client: TestClient, booking_state
-):
+@when(parsers.parse('buyer with id {buyer_id} requests booking details for booking {booking_id}'))
+def buyer_requests_booking_details(buyer_id, booking_id, client: TestClient, booking_state):
     from src.platform.constant.route_constant import BOOKING_GET
 
     login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)

@@ -37,7 +37,7 @@ async def require_buyer(current_user: UserEntity = Depends(get_user_from_control
     with tracer.start_as_current_span(
         'auth.require_buyer',
         attributes={
-            'user.id': current_user.id or 0,
+            'user.id': str(current_user.id) if current_user.id else '0',
             'user.role': current_user.role.value,
         },
     ):

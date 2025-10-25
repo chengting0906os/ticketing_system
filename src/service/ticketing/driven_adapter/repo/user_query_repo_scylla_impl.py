@@ -1,5 +1,6 @@
 import asyncio
 from typing import Optional
+from uuid import UUID
 
 from pydantic import SecretStr
 from cassandra.query import SimpleStatement, ConsistencyLevel
@@ -48,7 +49,7 @@ class UserQueryRepoScyllaImpl(IUserQueryRepo):
         return self._row_to_entity(row)
 
     @Logger.io
-    async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
+    async def get_by_id(self, user_id: UUID) -> Optional[UserEntity]:
         session = await get_scylla_session()
 
         query = SimpleStatement(

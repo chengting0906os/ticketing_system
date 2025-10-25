@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 
 @runtime_checkable
@@ -13,7 +14,7 @@ class MqDomainEvent(Protocol):
     """
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         """業務聚合根ID，用於分區和關聯"""
         ...
 

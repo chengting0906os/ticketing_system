@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List
+from uuid import UUID
 
 
 class IKafkaConfigService(ABC):
@@ -10,7 +11,7 @@ class IKafkaConfigService(ABC):
     """
 
     @abstractmethod
-    async def setup_event_infrastructure(self, *, event_id: int, seating_config: Dict) -> bool:
+    async def setup_event_infrastructure(self, *, event_id: UUID, seating_config: Dict) -> bool:
         """
         為新活動設置完整的 Kafka 基礎設施
 
@@ -25,7 +26,7 @@ class IKafkaConfigService(ABC):
 
     @abstractmethod
     def get_partition_key_for_seat(
-        self, section: str, subsection: int, row: int, seat: int, event_id: int
+        self, section: str, subsection: int, row: int, seat: int, event_id: UUID
     ) -> str:
         """
         為座位生成 partition key
@@ -54,7 +55,7 @@ class IKafkaConfigService(ABC):
         ...
 
     @abstractmethod
-    async def cleanup_event_infrastructure(self, event_id: int) -> bool:
+    async def cleanup_event_infrastructure(self, event_id: UUID) -> bool:
         """
         清理活動的基礎設施
         (可選功能，用於活動結束後的清理)

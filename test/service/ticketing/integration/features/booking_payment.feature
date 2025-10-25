@@ -15,8 +15,8 @@ Feature: Booking Payment
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
     And an event exists:
-      | name         | description | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
-      | Test Concert | Test event  | true      | available | 1         | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name         | description | is_active | status    | seller_id                            | venue_name   | seating_config                                                                                                |
+      | Test Concert | Test event  | true      | available | 019a1af7-0000-7002-0000-000000000001 | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -24,8 +24,8 @@ Feature: Booking Payment
   @smoke
   Scenario: Successfully pay for an booking
     Given a booking exists with status "pending_payment":
-      | buyer_id | event_id | total_price |
-      | 2        | 1        | 1000        |
+      | buyer_id                             | event_id                             | total_price |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        |
     When the buyer pays for the booking with:
       | card_number      |
       | 4242424242424242 |
@@ -45,8 +45,8 @@ Feature: Booking Payment
 
   Scenario: Cannot pay for already paid booking
     Given a booking exists with status "completed":
-      | buyer_id | event_id | total_price | paid_at  |
-      | 2        | 1        | 1000        | not_null |
+      | buyer_id                             | event_id                             | total_price | paid_at  |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        | not_null |
     When the buyer tries to pay for the booking again
     Then the response status code should be:
       | 400 |
@@ -55,8 +55,8 @@ Feature: Booking Payment
 
   Scenario: Cannot pay for cancelled booking
     Given a booking exists with status "cancelled":
-      | buyer_id | event_id | total_price |
-      | 2        | 1        | 1000        |
+      | buyer_id                             | event_id                             | total_price |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        |
     When the buyer tries to pay for the booking
     Then the response status code should be:
       | 400 |
@@ -65,8 +65,8 @@ Feature: Booking Payment
 
   Scenario: Only buyer can pay for their booking
     Given a booking exists with status "pending_payment":
-      | buyer_id | event_id | total_price |
-      | 2        | 1        | 1000        |
+      | buyer_id                             | event_id                             | total_price |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        |
     When another user tries to pay for the booking
     Then the response status code should be:
       | 403 |
@@ -75,8 +75,8 @@ Feature: Booking Payment
 
   Scenario: Cancel unpaid booking
     Given a booking exists with status "pending_payment":
-      | buyer_id | event_id | total_price |
-      | 2        | 1        | 1000        |
+      | buyer_id                             | event_id                             | total_price |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        |
     When the buyer cancels the booking
     Then the response status code should be:
       | 200 |
@@ -88,8 +88,8 @@ Feature: Booking Payment
 
   Scenario: Cannot cancel completed booking
     Given a booking exists with status "completed":
-      | buyer_id | event_id | total_price | paid_at  |
-      | 2        | 1        | 1000        | not_null |
+      | buyer_id                             | event_id                             | total_price | paid_at  |
+      | 019a1af7-0000-7001-0000-000000000001 | 019a1af7-0000-7003-0000-000000000001 | 1000        | not_null |
     When the buyer tries to cancel the booking
     Then the response status code should be:
       | 400 |

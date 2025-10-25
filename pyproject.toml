@@ -41,6 +41,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.51b0",
     "opentelemetry-exporter-otlp>=1.30.0",
     "lz4>=4.4.4",
+    "uuid-utils>=0.11.1",
 ]
 
 [dependency-groups]

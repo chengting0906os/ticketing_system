@@ -12,6 +12,7 @@ Cache Strategy (Polling-based):
 
 import os
 from typing import Dict
+from uuid import UUID
 
 import anyio
 from opentelemetry import trace
@@ -56,9 +57,9 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
     def __init__(self):
         self.tracer = trace.get_tracer(__name__)
-        self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
+        self._cache: Dict[UUID, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
-    async def _fetch_all_stats(self, event_id: int) -> Dict[str, Dict]:
+    async def _fetch_all_stats(self, event_id: UUID) -> Dict[str, Dict]:
         """Fetch all subsection stats from Kvrocks"""
         client = kvrocks_client.get_client()
         index_key = _make_key(f'event_sections:{event_id}')
@@ -88,18 +89,21 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
         return all_stats
 
-    async def _get_all_event_ids(self) -> list[int]:
+    async def _get_all_event_ids(self) -> list[UUID]:
         """Get all event IDs from Kvrocks"""
         client = kvrocks_client.get_client()
         # Scan for all event_sections:* keys
         keys = await client.keys(_make_key('event_sections:*'))  # type: ignore
         event_ids = []
         for key in keys:
-            # Extract event_id from key like "event_sections:1"
+            # Extract event_id from key like "event_sections:00000000-0000-0000-0000-000000000001"
             key_str = key.decode('utf-8') if isinstance(key, bytes) else key
             event_id_str = key_str.replace(_KEY_PREFIX, '').replace('event_sections:', '')
-            if event_id_str.isdigit():
-                event_ids.append(int(event_id_str))
+            try:
+                event_ids.append(UUID(event_id_str))
+            except ValueError:
+                # Skip invalid UUIDs
+                continue
         return event_ids
 
     async def _refresh_all_caches(self) -> None:
@@ -128,7 +132,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
             await self._refresh_all_caches()
 
     async def check_subsection_availability(
-        self, *, event_id: int, section: str, subsection: int, required_quantity: int
+        self, *, event_id: UUID, section: str, subsection: int, required_quantity: int
     ) -> bool:
         """Check if subsection has sufficient seats (cache with Kvrocks fallback)"""
         with self.tracer.start_as_current_span('cache.check_availability') as span:

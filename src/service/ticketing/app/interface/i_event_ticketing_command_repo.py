@@ -13,6 +13,7 @@ Event Ticketing Command Repository Interface
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from uuid import UUID
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
@@ -78,7 +79,7 @@ class IEventTicketingCommandRepo(ABC):
 
     @abstractmethod
     async def update_tickets_status(
-        self, *, ticket_ids: List[int], status: TicketStatus, buyer_id: Optional[int] = None
+        self, *, ticket_ids: List[UUID], status: TicketStatus, buyer_id: Optional[UUID] = None
     ) -> List[Ticket]:
         """
         批量更新票務狀態
@@ -94,7 +95,7 @@ class IEventTicketingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def delete_event_aggregate(self, *, event_id: int) -> bool:
+    async def delete_event_aggregate(self, *, event_id: UUID) -> bool:
         """
         刪除 Event Aggregate (cascade delete tickets)
 

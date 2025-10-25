@@ -2,7 +2,9 @@
 User API Schemas - Pydantic models for request/response
 """
 
-from pydantic import BaseModel, EmailStr, Field, SecretStr
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 from src.service.ticketing.domain.entity.user_entity import UserRole
 
@@ -46,41 +48,34 @@ class LoginRequest(BaseModel):
 class UserResponse(BaseModel):
     """User response schema"""
 
-    id: int
-    email: str
-    name: str
-    role: UserRole
-    is_active: bool
-
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             'example': {
-                'id': 1,
+                'id': '01234567-89ab-7def-0123-456789abcdef',
                 'email': 'user@example.com',
                 'name': 'John Doe',
                 'role': 'buyer',
                 'is_active': True,
             }
-        }
+        },
+    )
+
+    id: UUID
+    email: str
+    name: str
+    role: UserRole
+    is_active: bool
 
 
 class LoginResponse(BaseModel):
     """Login response schema with JWT token"""
 
-    id: int
-    email: str
-    name: str
-    role: UserRole
-    is_active: bool
-    access_token: str
-    token_type: str = 'bearer'
-
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             'example': {
-                'id': 1,
+                'id': '01234567-89ab-7def-0123-456789abcdef',
                 'email': 'user@example.com',
                 'name': 'John Doe',
                 'role': 'buyer',
@@ -88,4 +83,13 @@ class LoginResponse(BaseModel):
                 'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
                 'token_type': 'bearer',
             }
-        }
+        },
+    )
+
+    id: UUID
+    email: str
+    name: str
+    role: UserRole
+    is_active: bool
+    access_token: str
+    token_type: str = 'bearer'

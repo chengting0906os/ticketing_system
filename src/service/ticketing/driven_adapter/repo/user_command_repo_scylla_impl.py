@@ -1,5 +1,8 @@
 import asyncio
 from datetime import datetime, timezone
+from uuid import UUID
+
+from uuid_utils import uuid7
 
 from src.platform.database.scylla_setting import get_scylla_session
 from src.platform.logging.loguru_io import Logger
@@ -21,8 +24,8 @@ class UserCommandRepoScyllaImpl(IUserCommandRepo):
     async def create(self, user_entity: UserEntity) -> UserEntity:
         session = await get_scylla_session()
 
-        # Generate ID (in production, use distributed ID generator like Snowflake)
-        user_id = int(datetime.now(timezone.utc).timestamp() * 1000000)
+        # Generate UUID7 (time-sortable, distributed-friendly)
+        user_id = UUID(str(uuid7()))
         now = datetime.now(timezone.utc)
 
         query = """

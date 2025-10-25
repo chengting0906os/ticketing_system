@@ -5,6 +5,7 @@ Seat Reservation Controller
 
 import asyncio
 import json
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
@@ -28,7 +29,7 @@ router = APIRouter(prefix='/api/reservation', tags=['seat-reservation'])
 
 @router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)
 @Logger.io
-async def list_event_all_subsection_status(event_id: int) -> dict:
+async def list_event_all_subsection_status(event_id: UUID) -> dict:
     """
     獲取活動所有 section 的統計資訊（從 Kvrocks 讀取）
 
@@ -59,7 +60,7 @@ async def list_event_all_subsection_status(event_id: int) -> dict:
 )
 @Logger.io
 async def list_subsection_seats(
-    event_id: int,
+    event_id: UUID,
     section: str,
     subsection: int,
 ) -> SectionStatsResponse:
@@ -121,7 +122,7 @@ async def list_subsection_seats(
 
 @router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
 @Logger.io
-async def stream_all_section_stats(event_id: int):
+async def stream_all_section_stats(event_id: UUID):
     """
     SSE 即時推送所有 section 的統計資料（每 0.5 秒輪詢）
 
@@ -178,7 +179,7 @@ async def stream_all_section_stats(event_id: int):
                     event_type = 'initial_status' if is_first_event else 'status_update'
                     response_data = {
                         'event_type': event_type,
-                        'event_id': result['event_id'],
+                        'event_id': str(result['event_id']),  # Convert UUID to string for JSON
                         'sections': result['sections'],
                         'total_sections': result['total_sections'],
                     }
@@ -210,7 +211,7 @@ async def stream_all_section_stats(event_id: int):
 )
 @Logger.io
 async def stream_subsection_seats(
-    event_id: int,
+    event_id: UUID,
     section: str,
     subsection: int,
 ):
@@ -263,7 +264,7 @@ async def stream_subsection_seats(
                     # 轉換為 Response Schema
                     seats = [
                         {
-                            'event_id': result['event_id'],
+                            'event_id': str(result['event_id']),  # Convert UUID to string for JSON
                             'section': seat['section'],
                             'subsection': seat['subsection'],
                             'row': seat['row'],
@@ -281,7 +282,7 @@ async def stream_subsection_seats(
                         'available': result['available'],
                         'reserved': result['reserved'],
                         'sold': result['sold'],
-                        'event_id': result['event_id'],
+                        'event_id': str(result['event_id']),  # Convert UUID to string for JSON
                         'section': result['section'],
                         'subsection': result['subsection'],
                         'tickets': seats,

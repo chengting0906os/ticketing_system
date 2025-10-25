@@ -1,6 +1,7 @@
 import random
 import string
 from typing import Any, Dict
+from uuid import UUID
 
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
@@ -20,7 +21,9 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         self.booking_command_repo = booking_command_repo
 
     @Logger.io
-    async def pay_booking(self, booking_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
+    async def pay_booking(
+        self, booking_id: UUID, buyer_id: UUID, card_number: str
+    ) -> Dict[str, Any]:
         # In a real implementation, card_number would be used for payment processing
         # For mock payment, we just validate it's present
         if not card_number:

@@ -5,6 +5,7 @@ Event Ticketing Query Repository - ScyllaDB Implementation
 import asyncio
 import json
 from typing import List, Optional
+from uuid import UUID
 
 from src.platform.database.scylla_setting import get_scylla_session
 from src.platform.logging.loguru_io import Logger
@@ -35,7 +36,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_event_aggregate_by_id_with_tickets(
-        self, *, event_id: int
+        self, *, event_id: UUID
     ) -> Optional[EventTicketingAggregate]:
         """Get Event Aggregate by ID with tickets"""
         session = await get_scylla_session()
@@ -64,7 +65,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return EventTicketingAggregate(event=event, tickets=tickets)
 
     @Logger.io
-    async def list_events_by_seller(self, *, seller_id: int) -> List[EventTicketingAggregate]:
+    async def list_events_by_seller(self, *, seller_id: UUID) -> List[EventTicketingAggregate]:
         """List events by seller"""
         session = await get_scylla_session()
 
@@ -109,7 +110,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_tickets_by_event_and_section(
-        self, *, event_id: int, section: str, subsection: int
+        self, *, event_id: UUID, section: str, subsection: int
     ) -> List[Ticket]:
         """Get tickets by event and section"""
         session = await get_scylla_session()
@@ -125,7 +126,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return [self._row_to_ticket(row) for row in rows]
 
     @Logger.io
-    async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_available_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """Get available tickets by event"""
         session = await get_scylla_session()
 
@@ -145,7 +146,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return tickets
 
     @Logger.io
-    async def get_reserved_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_reserved_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """Get reserved tickets by event"""
         session = await get_scylla_session()
 
@@ -165,7 +166,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return tickets
 
     @Logger.io
-    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_all_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """Get all tickets by event"""
         session = await get_scylla_session()
 
@@ -180,7 +181,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return [self._row_to_ticket(row) for row in rows]
 
     @Logger.io
-    async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
+    async def get_tickets_by_buyer(self, *, buyer_id: UUID) -> List[Ticket]:
         """Get tickets by buyer"""
         session = await get_scylla_session()
 
@@ -195,7 +196,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return [self._row_to_ticket(row) for row in rows]
 
     @Logger.io
-    async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
+    async def get_tickets_by_ids(self, *, ticket_ids: List[UUID]) -> List[Ticket]:
         """Get tickets by IDs"""
         session = await get_scylla_session()
 
@@ -214,7 +215,7 @@ class EventTicketingQueryRepoScyllaImpl(IEventTicketingQueryRepo):
         return [self._row_to_ticket(row) for row in rows]
 
     @Logger.io
-    async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
+    async def check_tickets_exist_for_event(self, *, event_id: UUID) -> bool:
         """Check if tickets exist for event"""
         session = await get_scylla_session()
 

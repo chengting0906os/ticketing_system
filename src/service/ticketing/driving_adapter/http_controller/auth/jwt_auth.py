@@ -4,6 +4,7 @@ User Authentication Service (Use Case Layer)
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
+from uuid import UUID
 
 from fastapi import HTTPException, status
 import jwt
@@ -24,10 +25,12 @@ class JwtAuth:
             'sub': str(user_entity.id),
             'exp': datetime.now(timezone.utc) + timedelta(days=self.token_expire_days),
             'iat': datetime.now(timezone.utc),
-            'user_id': user_entity.id,
+            'user_id': str(user_entity.id),  # Convert UUID to string for JWT
             'email': user_entity.email,
             'name': user_entity.name,
-            'role': user_entity.role,
+            'role': user_entity.role.value
+            if hasattr(user_entity.role, 'value')
+            else user_entity.role,
             'is_active': user_entity.is_active,
         }
 
@@ -70,10 +73,12 @@ class JwtAuth:
 
         # 從 JWT payload 重建 UserEntity（不查 DB）
         user_entity = UserEntity(
-            id=user_id,
+            id=UUID(user_id)
+            if isinstance(user_id, str)
+            else user_id,  # Convert string back to UUID
             email=email,
             name=name,
-            role=UserRole(role),
+            role=UserRole(role) if isinstance(role, str) else role,
             is_active=is_active,
         )
 

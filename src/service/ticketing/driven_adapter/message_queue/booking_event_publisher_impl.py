@@ -36,9 +36,9 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         with self.tracer.start_as_current_span(
             'kafka.publish_booking_created',
             attributes={
-                'booking_id': event.booking_id,
-                'event_id': event.event_id,
-                'buyer_id': event.buyer_id,
+                'booking_id': str(event.booking_id),
+                'event_id': str(event.event_id),
+                'buyer_id': str(event.buyer_id),
                 'seat_selection_mode': event.seat_selection_mode,
                 'quantity': event.quantity,
             },

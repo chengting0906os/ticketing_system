@@ -13,6 +13,7 @@ Event Ticketing Query Repository Interface
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from uuid import UUID
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
@@ -25,7 +26,7 @@ class IEventTicketingQueryRepo(ABC):
 
     @abstractmethod
     async def get_event_aggregate_by_id_with_tickets(
-        self, *, event_id: int
+        self, *, event_id: UUID
     ) -> Optional[EventTicketingAggregate]:
         """
         根據 ID 獲取完整的 Event Aggregate
@@ -39,7 +40,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def list_events_by_seller(self, *, seller_id: int) -> List[EventTicketingAggregate]:
+    async def list_events_by_seller(self, *, seller_id: UUID) -> List[EventTicketingAggregate]:
         """
         獲取賣家的所有活動 (不包含 tickets，性能優化)
 
@@ -63,7 +64,7 @@ class IEventTicketingQueryRepo(ABC):
 
     @abstractmethod
     async def get_tickets_by_event_and_section(
-        self, *, event_id: int, section: str, subsection: int
+        self, *, event_id: UUID, section: str, subsection: int
     ) -> List[Ticket]:
         """
         獲取特定區域的票務
@@ -79,7 +80,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_available_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """
         獲取活動的所有可用票務
 
@@ -92,7 +93,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_reserved_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_reserved_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """
         獲取活動的所有已預訂票務
 
@@ -105,7 +106,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_all_tickets_by_event(self, *, event_id: UUID) -> List[Ticket]:
         """
         獲取活動的所有票務（不限狀態）
 
@@ -118,7 +119,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
+    async def get_tickets_by_buyer(self, *, buyer_id: UUID) -> List[Ticket]:
         """
         獲取購買者的所有票務
 
@@ -131,7 +132,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
+    async def get_tickets_by_ids(self, *, ticket_ids: List[UUID]) -> List[Ticket]:
         """
         根據 ID 列表獲取票務
 
@@ -144,7 +145,7 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
+    async def check_tickets_exist_for_event(self, *, event_id: UUID) -> bool:
         """
         檢查活動是否已有票務
 

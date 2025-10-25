@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from pytest_bdd import then
@@ -27,13 +28,13 @@ def assert_nullable_field(
         assert data.get(field) is None, message or f'{field} should be null'
 
 
-def get_event_status(client: TestClient, event_id: int) -> str:
+def get_event_status(client: TestClient, event_id: UUID) -> str:
     response = client.get(EVENT_GET.format(event_id=event_id))
     assert_response_status(response, 200)
     return response.json()['status']
 
 
-def get_booking_details(client: TestClient, booking_id: int) -> Dict[str, Any]:
+def get_booking_details(client: TestClient, booking_id: UUID) -> Dict[str, Any]:
     response = client.get(BOOKING_GET.format(booking_id=booking_id))
     assert_response_status(response, 200)
     return response.json()
@@ -753,7 +754,8 @@ def verify_booking_details_include(step, booking_state):
 
     # Verify all expected fields
     if 'id' in expected_data:
-        assert booking.get('id') == int(expected_data['id'])
+        # Compare as strings since JSON returns UUID as string
+        assert str(booking.get('id')) == expected_data['id']
     if 'event_name' in expected_data:
         assert booking.get('event_name') == expected_data['event_name']
     if 'venue_name' in expected_data:
@@ -813,8 +815,8 @@ def verify_booking_includes_tickets(step, booking_state):
         assert found, f'Ticket {expected["ticket_id"]} not found in response'
 
 
-@then('the booking with id {booking_id:d} should have seat_positions:')
-def verify_booking_seat_positions(step, booking_state, booking_id: int):
+@then('the booking with id {booking_id} should have seat_positions:')
+def verify_booking_seat_positions(step, booking_state, booking_id: str):
     """Verify that a booking has the expected seat positions."""
     # Extract expected seat positions from table (no header row in this table)
     rows = step.data_table.rows
@@ -826,8 +828,8 @@ def verify_booking_seat_positions(step, booking_state, booking_id: int):
     response = booking_state['response']
     bookings = response.json()
 
-    # Find the booking with the specified ID
-    booking = next((b for b in bookings if b['id'] == booking_id), None)
+    # Find the booking with the specified ID (compare as strings since JSON returns strings)
+    booking = next((b for b in bookings if str(b['id']) == booking_id), None)
     assert booking is not None, f'Booking {booking_id} not found in response'
 
     # Verify seat_positions field exists and is a list

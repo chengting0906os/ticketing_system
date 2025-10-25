@@ -16,6 +16,7 @@ import pytest
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+from test.test_constants import TEST_BOOKING_ID_999, TEST_BUYER_ID_1, TEST_EVENT_ID_1
 
 
 @pytest.mark.unit
@@ -78,9 +79,9 @@ class TestCreateBookingExecutionOrder:
     @pytest.fixture
     def created_booking(self):
         return Booking(
-            id=999,
-            buyer_id=1,
-            event_id=100,
+            id=TEST_BOOKING_ID_999,
+            buyer_id=TEST_BUYER_ID_1,
+            event_id=TEST_EVENT_ID_1,
             section='A',
             subsection=1,
             seat_selection_mode='manual',
@@ -228,9 +229,9 @@ class TestSeatAvailabilityCheck:
     @pytest.fixture
     def created_booking(self):
         return Booking(
-            id=999,
-            buyer_id=1,
-            event_id=100,
+            id=TEST_BOOKING_ID_999,
+            buyer_id=TEST_BUYER_ID_1,
+            event_id=TEST_EVENT_ID_1,
             section='A',
             subsection=1,
             seat_selection_mode='manual',

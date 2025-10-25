@@ -5,6 +5,7 @@ Reserve Seats Use Case
 
 from dataclasses import dataclass
 from typing import List, Optional
+from uuid import UUID
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
@@ -18,9 +19,9 @@ from src.service.ticketing.app.interface import ISeatStateCommandHandler
 class ReservationRequest:
     """座位預訂請求"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID
     selection_mode: str  # 'manual' or 'best_available'
     quantity: Optional[int] = None
     seat_positions: Optional[List[str]] = None  # 手動選擇的座位ID列表
@@ -33,11 +34,11 @@ class ReservationResult:
     """座位預訂結果"""
 
     success: bool
-    booking_id: int
+    booking_id: UUID
     reserved_seats: Optional[List[str]] = None
     total_price: int = 0
     error_message: Optional[str] = None
-    event_id: Optional[int] = None
+    event_id: Optional[UUID] = None
 
 
 class ReserveSeatsUseCase:

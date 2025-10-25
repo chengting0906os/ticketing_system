@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import sys
+from uuid import UUID
 
 
 # Add project root to Python path
@@ -25,6 +26,7 @@ from confluent_kafka import Consumer, Producer
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from test.test_constants import TEST_EVENT_ID_1
 
 
 def create_producer():
@@ -32,7 +34,7 @@ def create_producer():
     return Producer({'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS})
 
 
-def create_dlq_consumer(event_id: int):
+def create_dlq_consumer(event_id: UUID):
     """創建 DLQ consumer"""
     dlq_topic = KafkaTopicBuilder.seat_reservation_dlq(event_id=event_id)
 
@@ -48,7 +50,7 @@ def create_dlq_consumer(event_id: int):
     return consumer
 
 
-def send_invalid_reservation_request(event_id: int):
+def send_invalid_reservation_request(event_id: UUID):
     """發送一個無效的預訂請求（缺少必要欄位，會觸發 validation 錯誤）"""
     producer = create_producer()
     topic = KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id)
@@ -77,7 +79,7 @@ def send_invalid_reservation_request(event_id: int):
     Logger.base.info('✅ Invalid message sent. Watch for error callback...')
 
 
-def monitor_dlq(event_id: int, timeout: int = 30):
+def monitor_dlq(event_id: UUID, timeout: int = 30):
     """監控 DLQ，等待失敗訊息"""
     Logger.base.info(f'👀 Monitoring DLQ for {timeout} seconds...')
 
@@ -119,7 +121,7 @@ def monitor_dlq(event_id: int, timeout: int = 30):
 
 def main():
     """主程序"""
-    event_id = 1
+    event_id = TEST_EVENT_ID_1
 
     Logger.base.info('🧪 Testing Quix Streams Error Handling and DLQ')
     Logger.base.info('=' * 60)

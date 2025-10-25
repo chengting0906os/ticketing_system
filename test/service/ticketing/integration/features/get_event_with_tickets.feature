@@ -63,4 +63,4 @@ Feature: Get Event with Seat Availability
     Then the response status code should be:
       | 404 |
     And the error message should contain:
-      | Event with id 99999 not found |
+      | Event with id 00000000-0000-0000-0000-000000099999 not found |

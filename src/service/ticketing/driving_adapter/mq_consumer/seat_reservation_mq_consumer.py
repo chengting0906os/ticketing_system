@@ -11,6 +11,7 @@ import json
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
+from uuid import UUID
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from quixstreams import Application
@@ -40,7 +41,7 @@ from src.service.ticketing.app.command.reserve_seats_use_case import Reservation
 class KafkaConfig:
     """Kafka 配置 - 支援 Exactly-Once 語義"""
 
-    def __init__(self, *, event_id: int, instance_id: str, retries: int = 3):
+    def __init__(self, *, event_id: UUID, instance_id: str, retries: int = 3):
         """
         Args:
             event_id: 活動 ID
@@ -102,7 +103,10 @@ class SeatReservationConsumer:
     """
 
     def __init__(self):
-        self.event_id = int(os.getenv('EVENT_ID', '1'))
+        # Parse EVENT_ID as UUID (not int!)
+        event_id_str = os.getenv('EVENT_ID', '00000000-0000-0000-0000-000000000001')
+        self.event_id = UUID(event_id_str)
+
         # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
         base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'

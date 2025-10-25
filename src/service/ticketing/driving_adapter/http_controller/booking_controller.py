@@ -1,7 +1,8 @@
 from typing import List
+from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from opentelemetry import trace
 
 from src.platform.config.di import Container
@@ -43,10 +44,13 @@ async def list_my_bookings(
     current_user: UserEntity = Depends(get_current_user),
     use_case: ListBookingsUseCase = Depends(Provide[Container.list_bookings_use_case]),
 ):
+    if not current_user.id:
+        raise HTTPException(status_code=400, detail='User ID is required')
+
     if RoleAuthStrategy.is_buyer(current_user):
-        return await use_case.list_buyer_bookings(current_user.id or 0, booking_status)
+        return await use_case.list_buyer_bookings(current_user.id, booking_status)
     elif RoleAuthStrategy.is_seller(current_user):
-        return await use_case.list_seller_bookings(current_user.id or 0, booking_status)
+        return await use_case.list_seller_bookings(current_user.id, booking_status)
     else:
         return []
 
@@ -64,15 +68,18 @@ async def create_booking(
         attributes={
             'http.method': 'POST',
             'http.route': '/api/booking',
-            'event_id': request.event_id,
+            'event_id': str(request.event_id),
             'section': request.section,
             'subsection': request.subsection,
             'quantity': request.quantity,
         },
     ):
+        if not current_user.id:
+            raise HTTPException(status_code=400, detail='User ID is required')
+
         # Create booking - ticket validation and reservation are now handled atomically inside use case
         booking = await booking_use_case.create_booking(
-            buyer_id=current_user.id or 0,
+            buyer_id=current_user.id,
             event_id=request.event_id,
             section=request.section,
             subsection=request.subsection,
@@ -82,13 +89,16 @@ async def create_booking(
         )
 
         with tracer.start_as_current_span('controller.build_response'):
-            return BookingResponse(
-                id=booking.id,
-                buyer_id=booking.buyer_id,
-                event_id=booking.event_id,
-                total_price=booking.total_price,
-                status=booking.status.value,
-                created_at=booking.created_at,
+            return BookingResponse.model_validate(
+                {
+                    'id': str(booking.id) if booking.id else None,
+                    'buyer_id': str(booking.buyer_id),
+                    'event_id': str(booking.event_id),
+                    'total_price': booking.total_price,
+                    'status': booking.status.value,
+                    'created_at': booking.created_at,
+                },
+                strict=False,
             )
 
 
@@ -96,7 +106,7 @@ async def create_booking(
 @Logger.io
 @inject
 async def get_booking(
-    booking_id: int,
+    booking_id: UUID,
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(Provide[Container.get_booking_use_case]),
 ) -> BookingDetailResponse:
@@ -108,16 +118,19 @@ async def get_booking(
 @Logger.io
 @inject
 async def cancel_booking(
-    booking_id: int,
+    booking_id: UUID,
     current_user: UserEntity = Depends(require_buyer),
     use_case: UpdateBookingToCancelledUseCase = Depends(
         Provide[Container.update_booking_to_cancelled_use_case]
     ),
 ):
+    if not current_user.id:
+        raise HTTPException(status_code=400, detail='User ID is required')
+
     # Use case will raise exceptions for validation errors (Fail Fast)
     booking = await use_case.execute(
         booking_id=booking_id,
-        buyer_id=current_user.id or 0,
+        buyer_id=current_user.id,
     )
     return CancelReservationResponse(
         status=booking.status.value,
@@ -129,15 +142,18 @@ async def cancel_booking(
 @Logger.io
 @inject
 async def pay_booking(
-    booking_id: int,
+    booking_id: UUID,
     request: PaymentRequest,
     current_user: UserEntity = Depends(require_buyer),
     use_case: MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase = Depends(
         Provide[Container.mock_payment_use_case]
     ),
 ) -> PaymentResponse:
+    if not current_user.id:
+        raise HTTPException(status_code=400, detail='User ID is required')
+
     result = await use_case.pay_booking(
-        booking_id=booking_id, buyer_id=current_user.id or 0, card_number=request.card_number
+        booking_id=booking_id, buyer_id=current_user.id, card_number=request.card_number
     )
 
     return PaymentResponse(

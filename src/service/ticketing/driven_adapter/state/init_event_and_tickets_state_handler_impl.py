@@ -6,6 +6,7 @@ Init Event And Tickets State Handler Implementation
 
 import os
 from typing import Dict
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -35,7 +36,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     """
 
     @Logger.io
-    def _generate_all_seats_from_config(self, seating_config: dict, event_id: int) -> list[dict]:
+    def _generate_all_seats_from_config(self, seating_config: dict, event_id: UUID) -> list[dict]:
         """
         從 seating_config 生成所有座位數據
 
@@ -90,7 +91,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
         return all_seats
 
     @Logger.io
-    async def initialize_seats_from_config(self, *, event_id: int, seating_config: Dict) -> Dict:
+    async def initialize_seats_from_config(self, *, event_id: UUID, seating_config: Dict) -> Dict:
         """
         從 seating_config 初始化座位（使用單一 Lua 腳本）
 

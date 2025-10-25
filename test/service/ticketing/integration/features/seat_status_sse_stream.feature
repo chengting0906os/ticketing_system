@@ -10,11 +10,11 @@ Feature: Seat Status SSE Stream
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     And an event exists with:
-      | event_id | seller_id |
-      |        1 |         1 |
+      | event_id                             | seller_id                            |
+      | 019a1af7-0000-7003-0000-000000000011 | 019a1af7-0000-7002-0000-000000000011 |
     When user connects to SSE stream for event:
-      | event_id |
-      |        1 |
+      | event_id                             |
+      | 019a1af7-0000-7003-0000-000000000011 |
     Then SSE connection should be established
     And initial status event should be received with:
       | event_type     | sections_count |
@@ -28,9 +28,9 @@ Feature: Seat Status SSE Stream
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     And an event exists with:
-      | event_id | seller_id |
-      |        1 |         1 |
-    And user is connected to SSE stream for event 1
+      | event_id                             | seller_id                            |
+      | 019a1af7-0000-7003-0000-000000000012 | 019a1af7-0000-7002-0000-000000000012 |
+    And user is connected to SSE stream for event 019a1af7-0000-7003-0000-000000000012
     When section stats are updated with:
       | section_id | available | reserved | sold |
       | A-1        |        45 |        5 |    0 |
@@ -46,8 +46,8 @@ Feature: Seat Status SSE Stream
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     When user connects to SSE stream for event:
-      | event_id |
-      |      999 |
+      | event_id                             |
+      | 019a1af7-0000-7003-0000-999999999999 |
     Then the response status code should be:
       | 404 |
     And the error message should contain:
@@ -58,9 +58,9 @@ Feature: Seat Status SSE Stream
       | email            | password | name         | role   |
       | seller1@test.com | P@ssw0rd | Test Seller1 | seller |
     And an event exists with:
-      | event_id | seller_id |
-      |        1 |         1 |
-    When 3 users connect to SSE stream for event 1
+      | event_id                             | seller_id                            |
+      | 019a1af7-0000-7003-0000-000000000013 | 019a1af7-0000-7002-0000-000000000013 |
+    When 3 users connect to SSE stream for event 019a1af7-0000-7003-0000-000000000013
     Then all 3 users should receive status update event
     And all users should see same section stats:
       | section_id | available | reserved |

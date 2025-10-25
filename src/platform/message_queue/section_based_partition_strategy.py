@@ -15,6 +15,7 @@ Subsection-Based Partition Strategy
 """
 
 from typing import Dict
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 
@@ -38,7 +39,7 @@ class SectionBasedPartitionStrategy:
         self._subsection_partition_cache: Dict[str, int] = {}
 
     @Logger.io
-    def get_partition_for_subsection(self, section: str, subsection: int, event_id: int) -> int:
+    def get_partition_for_subsection(self, section: str, subsection: int, event_id: UUID) -> int:
         """
         為指定子區域分配固定的 partition
 
@@ -77,7 +78,7 @@ class SectionBasedPartitionStrategy:
 
     @Logger.io
     def generate_partition_key(
-        self, section: str, subsection: int, row: int, seat: int, event_id: int
+        self, section: str, subsection: int, row: int, seat: int, event_id: UUID
     ) -> str:
         """
         生成子區域集中式的 partition key
@@ -101,7 +102,7 @@ class SectionBasedPartitionStrategy:
         )
 
     @Logger.io
-    def get_section_partition_mapping(self, sections: list, event_id: int) -> Dict[str, int]:
+    def get_section_partition_mapping(self, sections: list, event_id: UUID) -> Dict[str, int]:
         """
         返回所有子區域的 partition 映射關係
         用於監控和調試
@@ -121,7 +122,7 @@ class SectionBasedPartitionStrategy:
         return mapping
 
     @Logger.io
-    def calculate_expected_load(self, seating_config: Dict, event_id: int) -> Dict[int, Dict]:
+    def calculate_expected_load(self, seating_config: Dict, event_id: UUID) -> Dict[int, Dict]:
         """
         計算每個 partition 的預期負載
         返回：{partition_id: {"subsections": [subsection_ids], "estimated_seats": count}}

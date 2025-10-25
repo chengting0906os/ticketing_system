@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from opentelemetry import trace
 
 from src.platform.logging.loguru_io import Logger
@@ -25,9 +27,9 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
     async def execute(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
-        event_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
+        event_id: UUID,
         section: str,
         subsection: int,
         seat_identifiers: list[str],
@@ -56,9 +58,9 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
         with self.tracer.start_as_current_span(
             'use_case.update_booking_to_pending_payment',
             attributes={
-                'booking_id': booking_id,
-                'buyer_id': buyer_id,
-                'event_id': event_id,
+                'booking_id': str(booking_id),
+                'buyer_id': str(buyer_id),
+                'event_id': str(event_id),
                 'section': section,
                 'subsection': subsection,
                 'seat_count': len(seat_identifiers),

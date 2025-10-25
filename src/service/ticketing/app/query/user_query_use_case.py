@@ -2,6 +2,8 @@
 User Management Use Cases (Use Case Layer)
 """
 
+from uuid import UUID
+
 from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
 from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
@@ -40,7 +42,7 @@ class UserUseCase:
         user_entity.set_password(password, password_hasher)
         return await self.user_command_repo.create(user_entity)
 
-    async def get_user_by_id(self, user_id: int) -> UserEntity | None:
+    async def get_user_by_id(self, user_id: UUID) -> UserEntity | None:
         if not self.user_query_repo:
             raise RuntimeError('UserQueryRepo not injected')
 

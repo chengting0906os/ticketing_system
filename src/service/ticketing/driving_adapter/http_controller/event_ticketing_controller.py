@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional
+from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, status
@@ -34,10 +35,13 @@ async def create_event(
         Provide[Container.create_event_and_tickets_use_case]
     ),
 ) -> EventResponse:
+    if not current_user.id:
+        raise ValueError('Current user must have an ID')
+
     event_aggregate = await use_case.create_event_and_tickets(
         name=request.name,
         description=request.description,
-        seller_id=current_user.id or 0,  # Use current user's ID
+        seller_id=current_user.id,  # Use current user's ID (UUID)
         venue_name=request.venue_name,
         seating_config=request.seating_config,
         is_active=request.is_active,
@@ -49,15 +53,18 @@ async def create_event(
     if event.id is None:
         raise ValueError('Event ID should not be None after creation.')
 
-    return EventResponse(
-        id=event.id,
-        name=event.name,
-        description=event.description,
-        seller_id=event.seller_id,
-        venue_name=event.venue_name,
-        seating_config=event.seating_config,
-        is_active=event.is_active,
-        status=event.status.value,  # Convert enum to string
+    return EventResponse.model_validate(
+        {
+            'id': str(event.id),
+            'name': event.name,
+            'description': event.description,
+            'seller_id': str(event.seller_id),
+            'venue_name': event.venue_name,
+            'seating_config': event.seating_config,
+            'is_active': event.is_active,
+            'status': event.status.value,  # Convert enum to string
+        },
+        strict=False,
     )
 
 
@@ -65,7 +72,7 @@ async def create_event(
 @Logger.io
 @inject
 async def get_event(
-    event_id: int,
+    event_id: UUID,
     use_case: GetEventUseCase = Depends(Provide[Container.get_event_use_case]),
     seat_query_handler: ISeatStateQueryHandler = Depends(
         Provide[Container.seat_state_query_handler]
@@ -87,32 +94,41 @@ async def get_event(
 
     # Get all tickets for this event
     tickets = await use_case.event_ticketing_query_repo.get_all_tickets_by_event(event_id=event_id)
-    ticket_responses = [
-        TicketResponse(
-            id=ticket.id or 0,
-            event_id=ticket.event_id,
-            section=ticket.section,
-            subsection=ticket.subsection,
-            row=ticket.row,
-            seat=ticket.seat,
-            price=ticket.price,
-            status=ticket.status.value,
-            seat_identifier=ticket.seat_identifier,
-            buyer_id=ticket.buyer_id,
+    ticket_responses = []
+    for ticket in tickets:
+        if ticket.id is None:
+            continue  # Skip tickets without ID
+        ticket_responses.append(
+            TicketResponse.model_validate(
+                {
+                    'id': str(ticket.id),
+                    'event_id': str(ticket.event_id),
+                    'section': ticket.section,
+                    'subsection': ticket.subsection,
+                    'row': ticket.row,
+                    'seat': ticket.seat,
+                    'price': ticket.price,
+                    'status': ticket.status.value,
+                    'seat_identifier': ticket.seat_identifier,
+                    'buyer_id': str(ticket.buyer_id) if ticket.buyer_id else None,
+                },
+                strict=False,
+            )
         )
-        for ticket in tickets
-    ]
 
-    return EventResponse(
-        id=event_id,
-        name=event.name,
-        description=event.description,
-        seller_id=event.seller_id,
-        venue_name=event.venue_name,
-        seating_config=enhanced_seating_config,
-        is_active=event.is_active,
-        status=event.status.value,
-        tickets=ticket_responses,
+    return EventResponse.model_validate(
+        {
+            'id': str(event_id),
+            'name': event.name,
+            'description': event.description,
+            'seller_id': str(event.seller_id),
+            'venue_name': event.venue_name,
+            'seating_config': enhanced_seating_config,
+            'is_active': event.is_active,
+            'status': event.status.value,
+            'tickets': ticket_responses,
+        },
+        strict=False,
     )
 
 
@@ -154,7 +170,7 @@ def _merge_seat_stats_into_config(seating_config: Dict, seat_stats: Dict[str, Di
 @Logger.io
 @inject
 async def list_events(
-    seller_id: Optional[int] = None,
+    seller_id: Optional[UUID] = None,
     use_case: ListEventsUseCase = Depends(Provide[Container.list_events_use_case]),
 ) -> List[EventResponse]:
     if seller_id is not None:
@@ -168,15 +184,18 @@ async def list_events(
         event = event_aggregate.event
         if event.id is not None:
             result.append(
-                EventResponse(
-                    id=event.id,
-                    name=event.name,
-                    description=event.description,
-                    seller_id=event.seller_id,
-                    venue_name=event.venue_name,
-                    seating_config=event.seating_config,
-                    is_active=event.is_active,
-                    status=event.status.value,
+                EventResponse.model_validate(
+                    {
+                        'id': str(event.id),
+                        'name': event.name,
+                        'description': event.description,
+                        'seller_id': str(event.seller_id),
+                        'venue_name': event.venue_name,
+                        'seating_config': event.seating_config,
+                        'is_active': event.is_active,
+                        'status': event.status.value,
+                    },
+                    strict=False,
                 )
             )
     return result

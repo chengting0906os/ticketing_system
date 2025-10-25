@@ -1,4 +1,5 @@
 from typing import List
+from uuid import UUID
 
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import EventTicketingAggregate
@@ -13,7 +14,7 @@ class ListEventsUseCase:
         self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @Logger.io
-    async def get_by_seller(self, seller_id: int) -> List[EventTicketingAggregate]:
+    async def get_by_seller(self, seller_id: UUID) -> List[EventTicketingAggregate]:
         """獲取賣家的所有活動（不含票務，性能優化）"""
         Logger.base.info(f'📋 [LIST_BY_SELLER] Loading events for seller {seller_id}')
 

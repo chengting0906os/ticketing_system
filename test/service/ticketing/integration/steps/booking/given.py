@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from uuid import UUID
 
 import bcrypt
 from fastapi.testclient import TestClient
@@ -19,17 +20,26 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_cql_
     # Get event_id from booking_state (created in Background)
     event_id = booking_state.get('event_id') or booking_state.get('event', {}).get('id')
     if not event_id:
-        event_id = int(booking_data.get('event_id', 1))
+        event_id_str = booking_data.get('event_id', '019a1af7-0000-7003-0000-000000000001')
+        event_id = UUID(event_id_str) if isinstance(event_id_str, str) else event_id_str
+    else:
+        # Ensure event_id is a UUID object (HTTP responses return strings)
+        event_id = UUID(event_id) if isinstance(event_id, str) else event_id
 
     # Get buyer_id from booking_state (actual ID from created user)
     # Fallback to table data for backward compatibility with other tests
-    buyer_id = booking_state.get('buyer', {}).get('id') or int(booking_data['buyer_id'])
+    buyer_id_raw = booking_state.get('buyer', {}).get('id') or booking_data['buyer_id']
+    buyer_id = UUID(buyer_id_raw) if isinstance(buyer_id_raw, str) else buyer_id_raw
     total_price = int(booking_data['total_price'])
 
     # Get denormalized data for ScyllaDB
     buyer = booking_state.get('buyer', {})
     event = booking_state.get('event', {})
     seller = booking_state.get('seller', {})
+
+    # Convert seller_id to UUID if it's a string (from HTTP response)
+    seller_id_raw = seller.get('id', '019a1af7-0000-7002-0000-000000000001')
+    seller_id = UUID(seller_id_raw) if isinstance(seller_id_raw, str) else seller_id_raw
 
     # Directly insert booking into database with pending_payment status
     # ScyllaDB requires all denormalized fields
@@ -52,7 +62,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_cql_
             'buyer_email': buyer.get('email', 'buyer@test.com'),
             'event_name': event.get('name', 'Test Event'),
             'venue_name': 'Taipei Arena',
-            'seller_id': seller.get('id', 1),
+            'seller_id': seller_id,
             'seller_name': seller.get('name', 'Test Seller'),
         },
     )
@@ -117,12 +127,20 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_cq
     create_pending_booking(step, client, booking_state, execute_cql_statement)
     if 'paid_at' in booking_data and booking_data['paid_at'] == 'not_null':
         # ScyllaDB: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
+        # Ensure UUIDs are proper UUID objects, not strings
+        buyer_id = booking_state['buyer_id']
+        booking_id = booking_state['booking']['id']
+        if isinstance(buyer_id, str):
+            buyer_id = UUID(buyer_id)
+        if isinstance(booking_id, str):
+            booking_id = UUID(booking_id)
+
         execute_cql_statement(
             'UPDATE "booking" SET status = \'completed\', paid_at = :paid_at WHERE buyer_id = :buyer_id AND id = :id',
             {
                 'paid_at': datetime.now(),
-                'buyer_id': booking_state['buyer_id'],
-                'id': booking_state['booking']['id'],
+                'buyer_id': buyer_id,
+                'id': booking_id,
             },
         )
         booking_state['booking']['status'] = 'completed'
@@ -133,13 +151,27 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_cq
 def create_cancelled_booking(step, client: TestClient, booking_state, execute_cql_statement):
     create_pending_booking(step, client, booking_state, execute_cql_statement)
     # ScyllaDB: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
+    # Ensure UUIDs are proper UUID objects, not strings
+    buyer_id = booking_state['buyer_id']
+    booking_id = booking_state['booking']['id']
+    if isinstance(buyer_id, str):
+        buyer_id = UUID(buyer_id)
+    if isinstance(booking_id, str):
+        booking_id = UUID(booking_id)
+
     execute_cql_statement(
         'UPDATE "booking" SET status = \'cancelled\' WHERE buyer_id = :buyer_id AND id = :id',
-        {'buyer_id': booking_state['buyer_id'], 'id': booking_state['booking']['id']},
+        {'buyer_id': buyer_id, 'id': booking_id},
     )
+
+    # Ensure event_id is also a UUID object
+    event_id = booking_state['event_id']
+    if isinstance(event_id, str):
+        event_id = UUID(event_id)
+
     execute_cql_statement(
         """UPDATE "event" SET status = 'available' WHERE id = :id""",
-        {'id': booking_state['event_id']},
+        {'id': event_id},
     )
     booking_state['booking']['status'] = 'cancelled'
 
@@ -200,7 +232,7 @@ def create_users(step, booking_state, execute_cql_statement):
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         user_data = dict(zip(headers, values, strict=True))
-        user_id = int(user_data['id'])
+        user_id = UUID(user_data['id'])
         hashed_password = bcrypt.hashpw(
             user_data['password'].encode('utf-8'), bcrypt.gensalt()
         ).decode('utf-8')
@@ -236,8 +268,8 @@ def create_events(step, booking_state, execute_cql_statement):
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         event_data = dict(zip(headers, values, strict=True))
-        event_id = int(event_data['id'])
-        seller_id = int(event_data['seller_id'])
+        event_id = UUID(event_data['id'])
+        seller_id = UUID(event_data['seller_id'])
 
         execute_cql_statement(
             """
@@ -276,9 +308,9 @@ def create_bookings_with_tickets(step, booking_state, execute_cql_statement):
         values = [cell.value for cell in row.cells]
         booking_data = dict(zip(headers, values, strict=True))
 
-        booking_id = int(booking_data['booking_id'])
-        buyer_id = int(booking_data['buyer_id'])
-        event_id = int(booking_data['event_id'])
+        booking_id = UUID(booking_data['booking_id'])
+        buyer_id = UUID(booking_data['buyer_id'])
+        event_id = UUID(booking_data['event_id'])
         section = booking_data['section']
         subsection = int(booking_data['subsection'])
         quantity = int(booking_data['quantity'])
@@ -346,7 +378,7 @@ def create_bookings_with_tickets(step, booking_state, execute_cql_statement):
 
         # Create tickets if ticket_ids provided
         if 'ticket_ids' in booking_data:
-            ticket_ids = [int(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
+            ticket_ids = [UUID(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
             seat_positions = []
             tickets_data = []
 
@@ -463,12 +495,12 @@ def create_bookings(step, booking_state, execute_cql_statement):
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         booking_data = dict(zip(headers, values, strict=True))
-        event_key = int(booking_data['event_id'])
+        event_key = UUID(booking_data['event_id'])
         if 'events' in booking_state and event_key in booking_state['events']:
             event_id = booking_state['events'][event_key]['id']
         else:
             event_id = event_key
-        booking_id = int(booking_data['id'])
+        booking_id = UUID(booking_data['id'])
 
         # Get section/subsection/quantity/seat_selection_mode/seat_positions from table if provided
         if 'section' in booking_data:
@@ -485,18 +517,24 @@ def create_bookings(step, booking_state, execute_cql_statement):
                 seat_positions = []
         else:
             # Determine section/subsection from event_id (backward compatibility)
-            # Event A (id=1) -> section A, subsection 1
-            # Event B (id=2) -> section B, subsection 2
-            # Event C (id=3) -> section C, subsection 3
-            # Event D (id=4) -> section D, subsection 4
-            section_map = {1: ('A', 1), 2: ('B', 2), 3: ('C', 3), 4: ('D', 4)}
+            # Extract last byte from UUID to get numeric ID for mapping
+            # Event A (019a1af7-0000-7003-0000-000000000001) -> section A, subsection 1
+            # Event B (019a1af7-0000-7003-0000-000000000002) -> section B, subsection 2
+            # Event C (019a1af7-0000-7003-0000-000000000003) -> section C, subsection 3
+            # Event D (019a1af7-0000-7003-0000-000000000004) -> section D, subsection 4
+            section_map = {
+                UUID('019a1af7-0000-7003-0000-000000000001'): ('A', 1),
+                UUID('019a1af7-0000-7003-0000-000000000002'): ('B', 2),
+                UUID('019a1af7-0000-7003-0000-000000000003'): ('C', 3),
+                UUID('019a1af7-0000-7003-0000-000000000004'): ('D', 4),
+            }
             section, subsection = section_map.get(event_id, ('A', 1))
             quantity = 1
             seat_selection_mode = 'best_available'
             seat_positions = []
 
         # Get denormalized data for ScyllaDB
-        buyer_id = int(booking_data['buyer_id'])
+        buyer_id = UUID(booking_data['buyer_id'])
         buyer_info = booking_state.get('users', {}).get(buyer_id, {})
         event_info = booking_state.get('events', {}).get(event_id, {})
         seller_id = event_info.get('seller_id', 1)
@@ -552,5 +590,5 @@ def create_bookings(step, booking_state, execute_cql_statement):
                     'seller_name': seller_info.get('name', f'Seller {seller_id}'),
                 },
             )
-        booking_state['bookings'][int(booking_data['id'])] = {'id': booking_id}
+        booking_state['bookings'][UUID(booking_data['id'])] = {'id': booking_id}
     # Note: ScyllaDB uses timestamp-based ID generation, no sequence management needed

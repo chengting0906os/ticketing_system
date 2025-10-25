@@ -15,8 +15,19 @@ def verify_event_created(step, event_state=None, context=None):
     for field, expected_value in expected_data.items():
         if expected_value == '{any_int}':
             assert field in response_json, f"Response should contain field '{field}'"
-            assert isinstance(response_json[field], int), f'{field} should be an integer'
-            assert response_json[field] > 0, f'{field} should be positive'
+            # IDs are now UUIDs (strings in JSON), not integers
+            if field in ['id', 'seller_id']:
+                assert isinstance(response_json[field], str), f'{field} should be a UUID string'
+                # Validate it's a valid UUID format
+                from uuid import UUID
+
+                try:
+                    UUID(response_json[field])
+                except ValueError:
+                    raise AssertionError(f'{field} is not a valid UUID: {response_json[field]}')
+            else:
+                assert isinstance(response_json[field], int), f'{field} should be an integer'
+                assert response_json[field] > 0, f'{field} should be positive'
         elif field == 'is_active':
             expected_active = expected_value.lower() == 'true'
             assert response_json['is_active'] == expected_active

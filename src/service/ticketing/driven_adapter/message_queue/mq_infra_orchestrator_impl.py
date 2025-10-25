@@ -5,6 +5,7 @@ Handles Kafka topics and partitions setup for events.
 """
 
 from typing import Dict
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_mq_infra_orchestrator import IMqInfraOrchestrator
@@ -35,7 +36,7 @@ class MqInfraOrchestrator(IMqInfraOrchestrator):
     async def setup_kafka_topics_and_partitions(
         self,
         *,
-        event_id: int,
+        event_id: UUID,
         seating_config: Dict,
     ) -> None:
         """

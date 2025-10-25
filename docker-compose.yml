@@ -236,8 +236,8 @@ services:
       # Kvrocks (for seed script initialization)
       KVROCKS_HOST: kvrocks
       KVROCKS_PORT: 6666
-      # Event selection (default to event 1, can override)
-      EVENT_ID: "${EVENT_ID:-1}"
+      # Event selection (read from .env.example, can override with shell ENV)
+      # EVENT_ID is now set in .env.example
       # OpenTelemetry / Jaeger
       JAEGER_HOST: jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
@@ -278,71 +278,8 @@ services:
           memory: 2G
 
   # ============= SEAT RESERVATION SERVICE =============
-  # Handles: Seat Allocation, Reservation via Kvrocks
-
-  seat-reservation-service:
-    build:
-      context: .
-      target: development
-    # Note: No container_name to allow scaling with --scale
-    ports:
-      - "8200:8000" # Port range for scaled instances
-    expose:
-      - "8000"
-    environment:
-      # ScyllaDB (for event metadata)
-      SCYLLA_CONTACT_POINTS: '["scylladb1"]'
-      SCYLLA_PORT: 9042
-      SCYLLA_KEYSPACE: ticketing_system
-      SCYLLA_USERNAME: cassandra
-      SCYLLA_PASSWORD: cassandra
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      KAFKA_CONSUMER_INSTANCE_ID: "consumer-seat-reservation-1"
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
-      KVROCKS_PORT: 6666
-      # Event selection (default to event 1, can override)
-      EVENT_ID: "${EVENT_ID:-1}"
-      # OpenTelemetry / Jaeger
-      JAEGER_HOST: jaeger
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      # Application
-      DEBUG: "false"
-      # Timezone
-      TZ: "Asia/Taipei"
-    env_file:
-      - .env.example
-    volumes:
-      - ./src:/app/src:ro # Hot-reload: mount source code
-      - ./test:/app/test # Tests need write access for test logs
-      - ./logs:/app/logs # Share logs
-      - ./state:/app/state # Quix Streams state directory
-    command: [ "uv", "run", "granian", "src.service.seat_reservation.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
-    depends_on:
-      scylladb1:
-        condition: service_healthy
-      kafka:
-        condition: service_started
-      kvrocks:
-        condition: service_healthy
-    networks:
-      - ticketing-network
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
+  # NOTE: Seat reservation has been merged into ticketing-service
+  # See commit 987da05: "refactor: combine reservation service into ticketing service"
 
   # =============================================================================
   # NGINX Load Balancer (Simulates AWS ALB for local development)
@@ -360,8 +297,6 @@ services:
       - ticketing-network
     depends_on:
       ticketing-service:
-        condition: service_healthy
-      seat-reservation-service:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-q", "--spider", "http://localhost/health" ]

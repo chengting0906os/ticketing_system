@@ -51,6 +51,7 @@ from test.fixture_loader import *  # noqa: E402, F403
 
 # Explicit imports for commonly used test utilities
 from test.shared.utils import create_user  # noqa: E402
+from test.test_constants import TEST_TICKET_ID_1  # noqa: E402
 from test.util_constant import (  # noqa: E402
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
@@ -429,8 +430,8 @@ def available_tickets():
     now = datetime.now()
     return [
         Ticket(
-            id=1,
-            event_id=1,
+            id=TEST_TICKET_ID_1,
+            event_id=TEST_TICKET_ID_1,
             section='A',
             subsection=1,
             row=1,
@@ -522,9 +523,9 @@ def execute_cql_statement():
                 statement,
                 flags=re.IGNORECASE,
             ):
-                from datetime import datetime, timezone
+                from uuid_utils import uuid7
 
-                generated_id = int(datetime.now(timezone.utc).timestamp() * 1000000)
+                generated_id = uuid7()
                 param_values.append(generated_id)
                 insert_id_added = True  # noqa: F841
 
@@ -532,10 +533,12 @@ def execute_cql_statement():
                 # Find all :param_name patterns in order
                 param_names = re.findall(r':(\w+)', statement)
 
-                # Replace :param_name with %s
+                # Replace :param_name with %s and preserve UUID objects
                 for param_name in param_names:
                     statement = statement.replace(f':{param_name}', '%s', 1)
-                    param_values.append(params.get(param_name))
+                    value = params.get(param_name)
+                    # UUID objects must be passed as-is to the driver (don't convert to string)
+                    param_values.append(value)
 
             # Translate NOW() to current timestamp
             if 'NOW()' in statement:

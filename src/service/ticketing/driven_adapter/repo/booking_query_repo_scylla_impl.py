@@ -1,5 +1,6 @@
 import asyncio
 from typing import List
+from uuid import UUID
 
 from src.platform.database.scylla_setting import get_scylla_session
 from src.platform.logging.loguru_io import Logger
@@ -81,9 +82,15 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         tickets_data = []
         if hasattr(row, 'tickets_data') and row.tickets_data:
             for ticket_map in row.tickets_data:
+                # Handle ticket ID as UUID (string)
+                ticket_id_str = ticket_map.get('id', '')
+                from uuid import UUID
+
+                ticket_id = UUID(ticket_id_str) if ticket_id_str else None
+
                 tickets_data.append(
                     {
-                        'id': int(ticket_map.get('id', 0)),
+                        'id': ticket_id,
                         'section': ticket_map.get('section', ''),
                         'subsection': int(ticket_map.get('subsection', 0)),
                         'row': int(ticket_map.get('row', 0)),
@@ -115,7 +122,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         }
 
     @Logger.io
-    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         """
         Get booking by ID
 
@@ -142,7 +149,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         return self._to_entity(row)
 
     @Logger.io
-    async def get_by_id_with_details(self, *, booking_id: int) -> dict | None:
+    async def get_by_id_with_details(self, *, booking_id: UUID) -> dict | None:
         """
         Get booking by ID with full details including tickets
 
@@ -175,7 +182,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         return self._to_booking_detail_dict(row)
 
     @Logger.io
-    async def get_buyer_bookings_with_details(self, *, buyer_id: int, status: str) -> List[dict]:
+    async def get_buyer_bookings_with_details(self, *, buyer_id: UUID, status: str) -> List[dict]:
         """
         Get all bookings for a buyer with optional status filter
 
@@ -224,7 +231,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         return [self._to_booking_dict(row) for row in rows]
 
     @Logger.io(truncate_content=True)  # type: ignore
-    async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
+    async def get_seller_bookings_with_details(self, *, seller_id: UUID, status: str) -> List[dict]:
         """
         Get all bookings for a seller's events with optional status filter
 
@@ -269,7 +276,7 @@ class BookingQueryRepoScyllaImpl(IBookingQueryRepo):
         return [self._to_booking_dict(row) for row in rows]
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
         """
         Get all tickets for a booking using seat_positions from booking
 

@@ -4,6 +4,7 @@ Finalize Seat Payment Use Case
 """
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface import ISeatStateCommandHandler
@@ -14,7 +15,7 @@ class FinalizeSeatPaymentRequest:
     """座位支付完成請求"""
 
     seat_id: str
-    event_id: int
+    event_id: UUID
     timestamp: str
 
 

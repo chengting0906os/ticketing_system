@@ -7,6 +7,7 @@ be handled by other bounded contexts (like event_ticketing).
 
 from datetime import datetime
 from typing import List
+from uuid import UUID
 
 import attrs
 
@@ -17,9 +18,9 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 class BookingCreatedDomainEvent:
     """Domain event fired when a booking is created"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID
     total_price: int
     section: str
     subsection: int
@@ -30,7 +31,7 @@ class BookingCreatedDomainEvent:
     occurred_at: datetime  # Required by DomainEvent protocol
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @classmethod
@@ -56,15 +57,15 @@ class BookingCreatedDomainEvent:
 class BookingPaidEvent:
     """Published when a booking is successfully paid"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int
-    ticket_ids: List[int]
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID
+    ticket_ids: List[UUID]
     paid_at: datetime
     total_amount: float
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @property
@@ -80,15 +81,15 @@ class BookingPaidEvent:
 class BookingCancelledEvent:
     """Published when a booking is cancelled"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int
-    ticket_ids: List[int]
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID
+    ticket_ids: List[UUID]
     seat_positions: List[str]  # Added for seat release
     cancelled_at: datetime
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @property

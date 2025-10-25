@@ -16,6 +16,7 @@ Event Ticketing Aggregate - 活動票務聚合根
 
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+from uuid import UUID
 
 import attrs
 
@@ -33,15 +34,15 @@ class Ticket:
     不再是獨立的聚合根
     """
 
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int
     row: int
     seat: int
     price: int
     status: TicketStatus
-    buyer_id: Optional[int] = None
-    id: Optional[int] = None
+    buyer_id: Optional[UUID] = None
+    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     reserved_at: Optional[datetime] = None
@@ -52,7 +53,7 @@ class Ticket:
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
     @Logger.io
-    def reserve(self, *, buyer_id: int) -> None:
+    def reserve(self, *, buyer_id: UUID) -> None:
         """預訂票務"""
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
@@ -80,7 +81,7 @@ class Ticket:
         self.reserved_at = None
 
     @Logger.io
-    def cancel_reservation(self, *, buyer_id: int) -> None:
+    def cancel_reservation(self, *, buyer_id: UUID) -> None:
         """取消預訂"""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot cancel reservation for ticket with status {self.status}')
@@ -107,12 +108,12 @@ class Event:
 
     name: str = attrs.field(validator=_validate_non_empty_string)
     description: str = attrs.field(validator=_validate_non_empty_string)
-    seller_id: int
+    seller_id: UUID
     venue_name: str = attrs.field(validator=_validate_non_empty_string)
     seating_config: Dict
     is_active: bool = True
     status: EventStatus = EventStatus.OPEN
-    id: Optional[int] = None
+    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -146,11 +147,11 @@ class EventTicketingAggregate:
         *,
         name: str,
         description: str,
-        seller_id: int,
+        seller_id: UUID,
         venue_name: str,
         seating_config: Dict,
         is_active: bool = True,
-        event_id: int | None = None,
+        event_id: UUID | None = None,
     ) -> 'EventTicketingAggregate':
         """
         創建帶票務的活動 - 聚合根工廠方法
@@ -305,7 +306,7 @@ class EventTicketingAggregate:
                         )
 
     @Logger.io
-    def reserve_tickets(self, *, ticket_ids: List[int], buyer_id: int) -> List[Ticket]:
+    def reserve_tickets(self, *, ticket_ids: List[UUID], buyer_id: UUID) -> List[Ticket]:
         """
         預訂票務 - 聚合內業務邏輯
 
@@ -337,7 +338,7 @@ class EventTicketingAggregate:
         return reserved_tickets
 
     @Logger.io
-    def cancel_ticket_reservations(self, *, ticket_ids: List[int], buyer_id: int) -> List[Ticket]:
+    def cancel_ticket_reservations(self, *, ticket_ids: List[UUID], buyer_id: UUID) -> List[Ticket]:
         """
         取消票務預訂 - 聚合內業務邏輯
         """
@@ -362,7 +363,7 @@ class EventTicketingAggregate:
         return cancelled_tickets
 
     @Logger.io
-    def finalize_tickets_as_sold(self, *, ticket_ids: List[int]) -> List[Ticket]:
+    def finalize_tickets_as_sold(self, *, ticket_ids: List[UUID]) -> List[Ticket]:
         """
         將票務標記為已售出
         """
@@ -382,7 +383,7 @@ class EventTicketingAggregate:
 
         return sold_tickets
 
-    def _find_ticket_by_id(self, ticket_id: int) -> Optional[Ticket]:
+    def _find_ticket_by_id(self, ticket_id: UUID) -> Optional[Ticket]:
         """在聚合內查找票務"""
         for ticket in self.tickets:
             if ticket.id == ticket_id:

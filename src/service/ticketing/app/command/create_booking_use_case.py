@@ -1,5 +1,6 @@
 from functools import partial
 from typing import List, Optional
+from uuid import UUID
 
 from anyio.abc import TaskGroup
 from opentelemetry import trace
@@ -44,8 +45,8 @@ class CreateBookingUseCase:
     async def create_booking(
         self,
         *,
-        buyer_id: int,
-        event_id: int,
+        buyer_id: UUID,
+        event_id: UUID,
         section: str,
         subsection: int,
         seat_selection_mode: str,
@@ -79,8 +80,8 @@ class CreateBookingUseCase:
         with self.tracer.start_as_current_span(
             'use_case.create_booking',
             attributes={
-                'buyer_id': buyer_id,
-                'event_id': event_id,
+                'buyer_id': str(buyer_id),
+                'event_id': str(event_id),
                 'section': section,
                 'subsection': subsection,
                 'seat_selection_mode': seat_selection_mode,

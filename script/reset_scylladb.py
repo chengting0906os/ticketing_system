@@ -51,15 +51,47 @@ def reset_scylladb_keyspace():
         with open(schema_file, 'r') as f:
             schema_sql = f.read()
 
-        # Split by semicolons and execute each statement
-        statements = [stmt.strip() for stmt in schema_sql.split(';') if stmt.strip() and not stmt.strip().startswith('--')]
+        # Split by semicolons
+        raw_statements = schema_sql.split(';')
+
+        # Clean and filter statements:
+        # - Remove leading/trailing whitespace
+        # - Remove comment-only lines (but keep SQL with inline comments)
+        # - Keep statements that contain actual SQL keywords
+        statements = []
+        for stmt in raw_statements:
+            # Remove comment lines but preserve the SQL content
+            lines = [line for line in stmt.split('\n') if not line.strip().startswith('--')]
+            cleaned = '\n'.join(lines).strip()
+            if cleaned:  # If there's content after removing comments
+                statements.append(cleaned)
+
+        print(f'   📋 Found {len(statements)} SQL statements to execute')
+
+        # Track if keyspace was created so we can reconnect
+        keyspace_created = False
 
         for i, statement in enumerate(statements, 1):
-            # Skip comments and empty lines
-            if not statement or statement.startswith('--'):
+            # Skip empty statements
+            if not statement:
                 continue
 
-            # Skip USE statement as we'll connect to keyspace after creation
+            # Execute CREATE KEYSPACE and then reconnect
+            if statement.upper().startswith('CREATE KEYSPACE'):
+                try:
+                    session.execute(statement)
+                    print(f'   ✅ Keyspace created')
+                    keyspace_created = True
+                    # Reconnect to the keyspace for subsequent table creation
+                    session.shutdown()
+                    session = cluster.connect(settings.SCYLLA_KEYSPACE)
+                    print(f'   🔌 Connected to keyspace "{settings.SCYLLA_KEYSPACE}"')
+                except Exception as e:
+                    print(f'   ❌ Failed to create keyspace: {str(e)}')
+                    raise
+                continue
+
+            # Skip USE statement - we're already connected to keyspace
             if statement.upper().startswith('USE '):
                 continue
 
@@ -67,7 +99,8 @@ def reset_scylladb_keyspace():
                 session.execute(statement)
                 print(f'   ✅ Statement {i}/{len(statements)} executed')
             except Exception as e:
-                print(f'   ⚠️  Statement {i} failed (may be expected): {str(e)[:100]}')
+                print(f'   ⚠️  Statement {i} failed: {str(e)[:100]}')
+                # Don't raise - some statements like CREATE INDEX may fail if they already exist
 
         session.shutdown()
         cluster.shutdown()

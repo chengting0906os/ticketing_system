@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import List, Literal, Optional
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class BookingCreateRequest(BaseModel):
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int
     seat_selection_mode: Literal['manual', 'best_available']
@@ -16,39 +17,44 @@ class BookingCreateRequest(BaseModel):
         json_schema_extra = {
             'examples': [
                 {
-                    'event_id': 1,
+                    'event_id': '00000000-0000-0000-0000-000000000001',
                     'section': 'A',
                     'subsection': 1,
                     'seat_positions': [],
                     'seat_selection_mode': 'best_available',
                     'quantity': 2,
                 },
-                {'event_id': 1, 'seat_selection_mode': 'best_available', 'quantity': 3},
+                {
+                    'event_id': '00000000-0000-0000-0000-000000000001',
+                    'seat_selection_mode': 'best_available',
+                    'quantity': 3,
+                },
             ]
         }
 
 
 class BookingResponse(BaseModel):
-    id: int
-    buyer_id: int
-    event_id: int
-    total_price: int
-    status: str
-    created_at: datetime
-    paid_at: Optional[datetime] = None
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             'example': {
-                'id': 1,
-                'buyer_id': 2,
-                'event_id': 1,
+                'id': '01234567-89ab-7def-0123-456789abcdef',
+                'buyer_id': '01234567-89ab-7def-0123-456789abcdef',
+                'event_id': '00000000-0000-0000-0000-000000000001',
                 'total_price': 2000,
                 'status': 'pending_payment',
                 'created_at': '2025-01-10T10:30:00',
                 'paid_at': None,
             }
         }
+    )
+
+    id: UUID
+    buyer_id: UUID
+    event_id: UUID
+    total_price: int
+    status: str
+    created_at: datetime
+    paid_at: Optional[datetime] = None
 
 
 class BookingStatusUpdateRequest(BaseModel):
@@ -66,7 +72,7 @@ class PaymentRequest(BaseModel):
 
 
 class PaymentResponse(BaseModel):
-    booking_id: int
+    booking_id: UUID
     payment_id: str
     status: str
     paid_at: Optional[str]
@@ -74,7 +80,7 @@ class PaymentResponse(BaseModel):
     class Config:
         json_schema_extra = {
             'example': {
-                'booking_id': 1,
+                'booking_id': '01234567-89ab-cdef-0123-456789abcdef',
                 'payment_id': 'PAY-123456789',
                 'status': 'success',
                 'paid_at': '2025-01-10T10:35:00',
@@ -90,9 +96,9 @@ class CancelReservationResponse(BaseModel):
 class BookingWithDetailsResponse(BaseModel):
     """Booking response with event and user details"""
 
-    id: int
-    buyer_id: int
-    event_id: int
+    id: UUID
+    buyer_id: UUID
+    event_id: UUID
     total_price: int
     status: str
     created_at: datetime
@@ -111,7 +117,7 @@ class BookingWithDetailsResponse(BaseModel):
 class TicketDetail(BaseModel):
     """Ticket detail in booking"""
 
-    id: int
+    id: UUID
     section: str
     subsection: int
     row: int
@@ -123,9 +129,9 @@ class TicketDetail(BaseModel):
 class BookingDetailResponse(BaseModel):
     """Detailed booking response with all information and tickets"""
 
-    id: int
-    buyer_id: int
-    event_id: int
+    id: UUID
+    buyer_id: UUID
+    event_id: UUID
     total_price: int
     status: str
     created_at: datetime

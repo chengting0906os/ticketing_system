@@ -11,6 +11,7 @@ Cache Strategy (Polling-based):
 
 import os
 from typing import Dict, List, Optional
+from uuid import UUID
 
 import anyio
 
@@ -48,7 +49,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
     """
 
     def __init__(self):
-        self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
+        self._cache: Dict[UUID, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
     @staticmethod
     def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
@@ -56,7 +57,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         return (row - 1) * seats_per_row + (seat_num - 1)
 
     @Logger.io
-    async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
+    async def _get_section_config(self, event_id: UUID, section_id: str) -> Dict:
         """從 Redis 獲取 section 配置"""
         from src.platform.exception.exceptions import NotFoundError
 
@@ -71,7 +72,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         return {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
 
     @Logger.io
-    async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
+    async def get_seat_states(self, seat_ids: List[str], event_id: UUID) -> Dict[str, Dict]:
         """獲取指定座位的狀態"""
         Logger.base.info(f'🔍 [QUERY] Getting states for {len(seat_ids)} seats')
 
@@ -120,14 +121,14 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         return seat_states
 
     @Logger.io
-    async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
+    async def get_seat_price(self, seat_id: str, event_id: UUID) -> Optional[int]:
         """獲取座位價格"""
         seat_states = await self.get_seat_states([seat_id], event_id)
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
 
     # @Logger.io
-    async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
+    async def list_all_subsection_status(self, event_id: UUID) -> Dict[str, Dict]:
         """獲取活動所有 subsection 的統計資訊"""
 
         # Get client from initialized pool (no await needed)
@@ -154,7 +155,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
             if stats:
                 all_stats[section_id] = {
                     'section_id': stats.get('section_id'),
-                    'event_id': int(stats.get('event_id', 0)),
+                    'event_id': stats.get('event_id', ''),  # Keep as string UUID
                     'available': int(stats.get('available', 0)),
                     'reserved': int(stats.get('reserved', 0)),
                     'sold': int(stats.get('sold', 0)),
@@ -164,16 +165,20 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         return all_stats
 
-    async def _get_all_event_ids(self) -> list[int]:
+    async def _get_all_event_ids(self) -> list[UUID]:
         """Get all event IDs from Kvrocks"""
+        from uuid import UUID
+
         client = kvrocks_client.get_client()
         keys = await client.keys(_make_key('event_sections:*'))  # type: ignore
         event_ids = []
         for key in keys:
             key_str = key.decode('utf-8') if isinstance(key, bytes) else key
             event_id_str = key_str.replace(_KEY_PREFIX, '').replace('event_sections:', '')
-            if event_id_str.isdigit():
-                event_ids.append(int(event_id_str))
+            try:
+                event_ids.append(UUID(event_id_str))
+            except (ValueError, AttributeError):
+                pass  # Skip invalid UUIDs
         return event_ids
 
     async def _refresh_all_caches(self) -> None:
@@ -206,7 +211,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @Logger.io
     async def list_all_subsection_seats(
-        self, event_id: int, section: str, subsection: int
+        self, event_id: UUID, section: str, subsection: int
     ) -> List[Dict]:
         """
         獲取指定 subsection 的所有座位（包括 available, reserved, sold）

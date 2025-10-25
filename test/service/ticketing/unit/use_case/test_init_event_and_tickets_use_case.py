@@ -20,6 +20,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
 )
 from src.service.ticketing.domain.enum import EventStatus
+from test.test_constants import TEST_EVENT_ID_1
 
 
 @pytest.mark.unit
@@ -79,10 +80,10 @@ class TestCreateEventKafkaSetup:
     @pytest.fixture
     def created_aggregate(self, valid_event_data):
         event = Event(
-            id=1,
+            id=TEST_EVENT_ID_1,
             name='Test Concert',
             description='Test Description',
-            seller_id=1,
+            seller_id=TEST_EVENT_ID_1,
             venue_name='Test Venue',
             seating_config=valid_event_data['seating_config'],
             status=EventStatus.OPEN,
@@ -174,7 +175,7 @@ class TestCreateEventKafkaSetup:
 
         # Then: Event should be created successfully
         assert result is not None
-        assert result.event.id == 1
+        assert result.event.id == TEST_EVENT_ID_1
 
         # Kafka setup was attempted
         mock_mq_orchestrator.setup_kafka_topics_and_partitions.assert_called_once()
@@ -201,5 +202,5 @@ class TestCreateEventKafkaSetup:
 
         # Then: Kafka setup called with correct parameters
         mock_mq_orchestrator.setup_kafka_topics_and_partitions.assert_called_once_with(
-            event_id=1, seating_config=valid_event_data['seating_config']
+            event_id=TEST_EVENT_ID_1, seating_config=valid_event_data['seating_config']
         )

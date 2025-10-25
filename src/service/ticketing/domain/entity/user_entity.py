@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+from uuid import UUID
 
 import attrs
 from pydantic import SecretStr
@@ -24,7 +25,7 @@ class UserEntity:
     email: str = ''
     name: str = ''
     hashed_password: str = attrs.field(default='', repr=False)  # Hide from repr for security
-    id: Optional[int] = None
+    id: Optional[UUID] = None
     role: UserRole = UserRole.BUYER
     is_active: bool = True
     is_superuser: bool = False

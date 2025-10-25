@@ -6,6 +6,7 @@ Used by ticketing service to update its availability cache.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 import attrs
 
@@ -19,7 +20,7 @@ class SeatStatusChangedEvent:
     cache of seat availability without polling Kvrocks.
     """
 
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int
     available: int
@@ -29,7 +30,7 @@ class SeatStatusChangedEvent:
     occurred_at: datetime
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         """Event ID serves as aggregate ID"""
         return self.event_id
 

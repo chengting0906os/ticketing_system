@@ -6,6 +6,7 @@ before creating bookings (Fail Fast principle)
 """
 
 from abc import ABC, abstractmethod
+from uuid import UUID
 
 
 class ISeatAvailabilityQueryHandler(ABC):
@@ -18,7 +19,7 @@ class ISeatAvailabilityQueryHandler(ABC):
 
     @abstractmethod
     async def check_subsection_availability(
-        self, *, event_id: int, section: str, subsection: int, required_quantity: int
+        self, *, event_id: UUID, section: str, subsection: int, required_quantity: int
     ) -> bool:
         """
         檢查指定 subsection 是否有足夠的可用座位

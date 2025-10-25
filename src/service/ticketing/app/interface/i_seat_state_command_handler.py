@@ -7,6 +7,7 @@ Seat State Command Handler Interface - Shared Kernel
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
+from uuid import UUID
 
 
 class ISeatStateCommandHandler(ABC):
@@ -20,9 +21,9 @@ class ISeatStateCommandHandler(ABC):
     async def reserve_seats_atomic(
         self,
         *,
-        event_id: int,
-        booking_id: int,
-        buyer_id: int,
+        event_id: UUID,
+        booking_id: UUID,
+        buyer_id: UUID,
         mode: str,  # 'manual' or 'best_available'
         seat_ids: Optional[List[str]] = None,  # for manual mode
         section: Optional[str] = None,  # for best_available mode
@@ -51,7 +52,7 @@ class ISeatStateCommandHandler(ABC):
         pass
 
     @abstractmethod
-    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(self, seat_ids: List[str], event_id: UUID) -> Dict[str, bool]:
         """
         釋放座位 (RESERVED -> AVAILABLE)
 
@@ -66,7 +67,7 @@ class ISeatStateCommandHandler(ABC):
 
     @abstractmethod
     async def finalize_payment(
-        self, seat_id: str, event_id: int, timestamp: Optional[str] = None
+        self, seat_id: str, event_id: UUID, timestamp: Optional[str] = None
     ) -> bool:
         """
         完成支付，將座位從 RESERVED 轉為 SOLD
@@ -83,7 +84,7 @@ class ISeatStateCommandHandler(ABC):
 
     @abstractmethod
     async def initialize_seat(
-        self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
+        self, seat_id: str, event_id: UUID, price: int, timestamp: Optional[str] = None
     ) -> bool:
         """
         初始化座位狀態

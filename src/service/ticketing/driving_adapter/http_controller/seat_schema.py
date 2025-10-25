@@ -1,4 +1,5 @@
 from typing import List
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -8,7 +9,7 @@ class SeatResponse(BaseModel):
     座位響應 Schema（從 Kvrocks 查詢，不含 ticket_id）
     """
 
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int
     row: int
@@ -26,7 +27,7 @@ class SectionStatsResponse(BaseModel):
     available: int
     reserved: int
     sold: int
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int
     tickets: List[SeatResponse] = []
@@ -36,6 +37,6 @@ class SectionStatsResponse(BaseModel):
 class ListSeatsBySectionResponse(BaseModel):
     seats: List[SeatResponse]
     total_count: int
-    event_id: int
+    event_id: UUID
     section: str
     subsection: int | None = None

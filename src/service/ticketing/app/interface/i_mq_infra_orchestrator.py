@@ -9,6 +9,7 @@ Handles message queue infrastructure setup for events:
 
 from abc import ABC, abstractmethod
 from typing import Dict
+from uuid import UUID
 
 
 class IMqInfraOrchestrator(ABC):
@@ -26,7 +27,7 @@ class IMqInfraOrchestrator(ABC):
     async def setup_kafka_topics_and_partitions(
         self,
         *,
-        event_id: int,
+        event_id: UUID,
         seating_config: Dict,
     ) -> None:
         """

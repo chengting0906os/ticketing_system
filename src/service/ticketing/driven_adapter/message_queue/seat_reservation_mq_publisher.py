@@ -11,6 +11,7 @@ Seat Reservation Event Publisher
 import attrs
 from datetime import datetime, timezone
 from typing import List
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
@@ -24,9 +25,9 @@ from src.service.ticketing.app.interface.i_seat_reservation_event_publisher impo
 class SeatsReservedEvent:
     """座位預訂成功事件"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int  # Added: event_id is required for ticketing consumer
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID  # Added: event_id is required for ticketing consumer
     reserved_seats: List[str]
     total_price: int
     ticket_details: List[dict]  # Required: contains seat_id and price
@@ -34,7 +35,7 @@ class SeatsReservedEvent:
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
 
@@ -42,15 +43,15 @@ class SeatsReservedEvent:
 class SeatReservationFailedEvent:
     """座位預訂失敗事件"""
 
-    booking_id: int
-    buyer_id: int
-    event_id: int  # Added: event_id is required for ticketing consumer
+    booking_id: UUID
+    buyer_id: UUID
+    event_id: UUID  # Added: event_id is required for ticketing consumer
     error_message: str
     status: str = 'seat_reservation_failed'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
 
@@ -60,11 +61,11 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
     async def publish_seats_reserved(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
         reserved_seats: List[str],
         total_price: int,
-        event_id: int,
+        event_id: UUID,
         ticket_details: List[dict],
     ) -> None:
         """發送座位預訂成功事件"""
@@ -92,10 +93,10 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
     async def publish_reservation_failed(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
         error_message: str,
-        event_id: int,
+        event_id: UUID,
     ) -> None:
         """發送座位預訂失敗事件"""
         event = SeatReservationFailedEvent(

@@ -55,66 +55,83 @@ async def start_ticketing_consumer() -> None:
     Auto-creates required Kafka topics before consumer starts to prevent
     UNKNOWN_TOPIC_OR_PART errors during cold start.
     """
-    import os
+    try:
+        import os
+        from uuid import UUID
 
-    from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
+        from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 
-    # Get event_id from environment
-    event_id = int(os.getenv('EVENT_ID', '1'))
+        Logger.base.info('🚀 [TICKETING-CONSUMER] Starting ticketing consumer...')
 
-    # Auto-create topics before consumer starts (container-friendly)
-    topic_initializer = KafkaTopicInitializer()
-    topic_initializer.ensure_topics_exist(event_id=event_id)
+        # Get event_id from environment (as UUID)
+        event_id_str = os.getenv('EVENT_ID', '00000000-0000-0000-0000-000000000001')
+        event_id = UUID(event_id_str)
 
-    consumer = TicketingMqConsumer()
+        # Auto-create topics before consumer starts (container-friendly)
+        topic_initializer = KafkaTopicInitializer()
+        topic_initializer.ensure_topics_exist(event_id=event_id)
 
-    async def run_consumer_with_portal() -> None:
-        """Run consumer in thread with BlockingPortal for async-to-sync calls"""
+        consumer = TicketingMqConsumer()
+        Logger.base.info(
+            f'📦 [TICKETING-CONSUMER] Consumer created with group_id={consumer.consumer_group_id}'
+        )
 
-        def run_with_portal() -> None:
-            # Create BlockingPortal to bridge sync Kafka consumer with async use cases
-            with start_blocking_portal() as portal:
-                consumer.set_portal(portal)
+        async def run_consumer_with_portal() -> None:
+            """Run consumer in thread with BlockingPortal for async-to-sync calls"""
 
-                # Initialize Kvrocks client for this event loop (consumer's event loop)
-                try:
-                    portal.call(kvrocks_client.initialize)  # type: ignore
-                    Logger.base.info('📡 [Consumer] Kvrocks initialized for consumer event loop')
-                except Exception as e:
-                    Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
-                    raise
+            def run_with_portal() -> None:
+                Logger.base.info('🔧 [TICKETING-CONSUMER] Entering run_with_portal...')
+                # Create BlockingPortal to bridge sync Kafka consumer with async use cases
+                with start_blocking_portal() as portal:
+                    consumer.set_portal(portal)
 
-                # Initialize and warmup ScyllaDB session for consumer event loop
-                try:
-                    portal.call(warmup_scylla_session)  # type: ignore[arg-type]
-                    Logger.base.info(
-                        '🔥 [Consumer] ScyllaDB session warmed up for consumer event loop'
-                    )
-                except Exception as e:
-                    Logger.base.error(f'❌ [Consumer] Failed to initialize ScyllaDB session: {e}')
-                    raise
-
-                # Mock signal handlers to avoid "signal only works in main thread" error
-                original_signal = signal.signal
-
-                def mock_signal(*args: object, **kwargs: object) -> object:
-                    return None
-
-                signal.signal = mock_signal  # type: ignore[bad-assignment]
-                try:
-                    # Run the consumer's sync start method (Quix Streams app.run() is sync)
-                    consumer.start()  # Direct call - start() is now sync
-                finally:
-                    signal.signal = original_signal
-                    # Cleanup Kvrocks connection for this event loop
+                    # Initialize Kvrocks client for this event loop (consumer's event loop)
                     try:
-                        portal.call(kvrocks_client.disconnect)  # type: ignore
-                    except Exception:
-                        pass
+                        portal.call(kvrocks_client.initialize)  # type: ignore
+                        Logger.base.info(
+                            '📡 [Consumer] Kvrocks initialized for consumer event loop'
+                        )
+                    except Exception as e:
+                        Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
+                        raise
 
-        await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
+                    # Initialize and warmup ScyllaDB session for consumer event loop
+                    try:
+                        portal.call(warmup_scylla_session)  # type: ignore[arg-type]
+                        Logger.base.info(
+                            '🔥 [Consumer] ScyllaDB session warmed up for consumer event loop'
+                        )
+                    except Exception as e:
+                        Logger.base.error(
+                            f'❌ [Consumer] Failed to initialize ScyllaDB session: {e}'
+                        )
+                        raise
 
-    await run_consumer_with_portal()
+                    # Mock signal handlers to avoid "signal only works in main thread" error
+                    original_signal = signal.signal
+
+                    def mock_signal(*args: object, **kwargs: object) -> object:
+                        return None
+
+                    signal.signal = mock_signal  # type: ignore[bad-assignment]
+                    try:
+                        # Run the consumer's sync start method (Quix Streams app.run() is sync)
+                        Logger.base.info('▶️ [TICKETING-CONSUMER] Calling consumer.start()...')
+                        consumer.start()  # Direct call - start() is now sync
+                    finally:
+                        signal.signal = original_signal
+                        # Cleanup Kvrocks connection for this event loop
+                        try:
+                            portal.call(kvrocks_client.disconnect)  # type: ignore
+                        except Exception:
+                            pass
+
+            await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
+
+        await run_consumer_with_portal()
+    except Exception as e:
+        Logger.base.error(f'❌ [TICKETING-CONSUMER] Failed to start: {e}', exc_info=True)
+        raise
 
 
 async def start_seat_reservation_consumer() -> None:
@@ -127,64 +144,82 @@ async def start_seat_reservation_consumer() -> None:
     Auto-creates required Kafka topics before consumer starts to prevent
     UNKNOWN_TOPIC_OR_PART errors during cold start.
     """
-    import os
+    try:
+        import os
+        from uuid import UUID
 
-    from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
+        from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 
-    # Get event_id from environment
-    event_id = int(os.getenv('EVENT_ID', '1'))
+        Logger.base.info('🚀 [SEAT-CONSUMER] Starting seat reservation consumer...')
 
-    # Auto-create topics before consumer starts (container-friendly)
-    topic_initializer = KafkaTopicInitializer()
-    topic_initializer.ensure_topics_exist(event_id=event_id)
+        # Get event_id from environment (as UUID)
+        event_id_str = os.getenv('EVENT_ID', '00000000-0000-0000-0000-000000000001')
+        event_id = UUID(event_id_str)
 
-    # Initialize consumer with use cases from DI container
-    consumer = SeatReservationConsumer()
-    consumer.reserve_seats_use_case = container.reserve_seats_use_case()
-    consumer.release_seat_use_case = container.release_seat_use_case()
-    consumer.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
+        # Auto-create topics before consumer starts (container-friendly)
+        topic_initializer = KafkaTopicInitializer()
+        topic_initializer.ensure_topics_exist(event_id=event_id)
 
-    # Setup Kafka topics
-    consumer._setup_topics()
+        # Initialize consumer with use cases from DI container
+        consumer = SeatReservationConsumer()
+        consumer.reserve_seats_use_case = container.reserve_seats_use_case()
+        consumer.release_seat_use_case = container.release_seat_use_case()
+        consumer.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
 
-    async def run_consumer_with_portal() -> None:
-        """Run consumer in thread with BlockingPortal for async-to-sync calls"""
+        Logger.base.info(
+            f'📦 [SEAT-CONSUMER] Consumer created with group_id={consumer.consumer_group_id}'
+        )
 
-        def run_with_portal() -> None:
-            # Create BlockingPortal to bridge sync Kafka consumer with async use cases
-            with start_blocking_portal() as portal:
-                consumer.set_portal(portal)
+        # Setup Kafka topics
+        consumer._setup_topics()
 
-                # Initialize Kvrocks client for this event loop (consumer's event loop)
-                try:
-                    portal.call(kvrocks_client.initialize)  # type: ignore
-                    Logger.base.info('📡 [Consumer] Kvrocks initialized for consumer event loop')
-                except Exception as e:
-                    Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
-                    raise
+        async def run_consumer_with_portal() -> None:
+            """Run consumer in thread with BlockingPortal for async-to-sync calls"""
 
-                # Mock signal handlers to avoid "signal only works in main thread" error
-                original_signal = signal.signal
+            def run_with_portal() -> None:
+                Logger.base.info('🔧 [SEAT-CONSUMER] Entering run_with_portal...')
+                # Create BlockingPortal to bridge sync Kafka consumer with async use cases
+                with start_blocking_portal() as portal:
+                    consumer.set_portal(portal)
 
-                def mock_signal(*args: object, **kwargs: object) -> object:
-                    return None
-
-                signal.signal = mock_signal  # type: ignore[bad-assignment]
-                try:
-                    if consumer.kafka_app:
-                        consumer.kafka_app.run()
-                finally:
-                    signal.signal = original_signal
-                    # Cleanup Kvrocks connection for this event loop
+                    # Initialize Kvrocks client for this event loop (consumer's event loop)
                     try:
-                        portal.call(kvrocks_client.disconnect)  # type: ignore
-                    except Exception:
-                        pass
+                        portal.call(kvrocks_client.initialize)  # type: ignore
+                        Logger.base.info(
+                            '📡 [Consumer] Kvrocks initialized for consumer event loop'
+                        )
+                    except Exception as e:
+                        Logger.base.error(f'❌ [Consumer] Failed to initialize Kvrocks: {e}')
+                        raise
 
-        await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
+                    # Mock signal handlers to avoid "signal only works in main thread" error
+                    original_signal = signal.signal
 
-    if consumer.kafka_app:
-        await run_consumer_with_portal()
+                    def mock_signal(*args: object, **kwargs: object) -> object:
+                        return None
+
+                    signal.signal = mock_signal  # type: ignore[bad-assignment]
+                    try:
+                        if consumer.kafka_app:
+                            Logger.base.info('▶️ [SEAT-CONSUMER] Calling kafka_app.run()...')
+                            consumer.kafka_app.run()
+                    finally:
+                        signal.signal = original_signal
+                        # Cleanup Kvrocks connection for this event loop
+                        try:
+                            portal.call(kvrocks_client.disconnect)  # type: ignore
+                        except Exception:
+                            pass
+
+            await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
+
+        if consumer.kafka_app:
+            await run_consumer_with_portal()
+        else:
+            Logger.base.warning('⚠️ [SEAT-CONSUMER] kafka_app is None, skipping consumer start')
+    except Exception as e:
+        Logger.base.error(f'❌ [SEAT-CONSUMER] Failed to start: {e}', exc_info=True)
+        raise
 
 
 @asynccontextmanager

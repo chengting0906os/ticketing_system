@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from prometheus_client import Counter, Gauge, Histogram
 
 
@@ -88,7 +90,7 @@ class TicketingMetrics:
     # ========== Helper Methods ==========
 
     def record_kafka_message_processed(
-        self, *, service: str, topic: str, partition: str, event_id: int, processing_time: float
+        self, *, service: str, topic: str, partition: str, event_id: UUID, processing_time: float
     ):
         """記錄 Kafka 訊息處理"""
         self.kafka_messages_processed.labels(
@@ -99,14 +101,14 @@ class TicketingMetrics:
             service=service, topic=topic, event_id=event_id
         ).observe(processing_time)
 
-    def record_kafka_error(self, *, service: str, topic: str, error_type: str, event_id: int):
+    def record_kafka_error(self, *, service: str, topic: str, error_type: str, event_id: UUID):
         """記錄 Kafka 錯誤"""
         self.kafka_consumer_errors.labels(
             service=service, topic=topic, error_type=error_type, event_id=event_id
         ).inc()
 
     def record_seat_reservation(
-        self, *, event_id: int, section: str, mode: str, result: str, duration: float
+        self, *, event_id: UUID, section: str, mode: str, result: str, duration: float
     ):
         """記錄座位預訂"""
         self.seat_reservation_requests.labels(
@@ -118,7 +120,7 @@ class TicketingMetrics:
         ).observe(duration)
 
     def update_seat_availability(
-        self, *, event_id: int, section: str, subsection: str, ratio: float
+        self, *, event_id: UUID, section: str, subsection: str, ratio: float
     ):
         """更新座位可用性比例"""
         self.seat_availability.labels(
@@ -126,7 +128,7 @@ class TicketingMetrics:
         ).set(ratio)
 
     def record_kvrocks_operation(
-        self, *, operation: str, event_id: int, result: str, duration: float
+        self, *, operation: str, event_id: UUID, result: str, duration: float
     ):
         """記錄 Kvrocks 操作"""
         self.kvrocks_operations.labels(operation=operation, event_id=event_id, result=result).inc()

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-
+from uuid import UUID
 
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
@@ -34,7 +34,7 @@ class UpdateBookingToCancelledUseCase:
         self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @Logger.io
-    async def execute(self, *, booking_id: int, buyer_id: int) -> Booking:
+    async def execute(self, *, booking_id: UUID, buyer_id: UUID) -> Booking:
         """
         執行訂單狀態更新為取消
 

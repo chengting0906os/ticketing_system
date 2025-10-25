@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from functools import partial
 from typing import Any, List
+from uuid import UUID
 
 import anyio.to_thread
+from uuid_utils import uuid7
 from cassandra.query import BatchStatement, BatchType, SimpleStatement
 from opentelemetry import trace
 
@@ -53,7 +55,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         )
 
     @Logger.io
-    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         """
         查詢單筆 booking（用於 command 操作前的驗證）
 
@@ -85,8 +87,8 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             # in reserve_tickets_and_update_booking_atomically() BATCH statement
             # This eliminates one independent QUORUM write, reducing latency from ~10s to ~0ms
 
-            # Generate ID (in production, use distributed ID generator like Snowflake)
-            booking_id = booking.id or int(datetime.now(timezone.utc).timestamp() * 1000000)
+            # Generate UUID7 (time-sortable UUID)
+            booking_id = booking.id or UUID(str(uuid7()))
             now = datetime.now(timezone.utc)
 
             # Return in-memory booking object with generated ID
@@ -95,7 +97,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
             booking.created_at = now
             booking.updated_at = now
 
-            span.set_attribute('booking.id', booking_id)
+            span.set_attribute('booking.id', str(booking_id))
             span.set_attribute('write.skipped', True)  # Track this optimization in trace
             return booking
 
@@ -167,7 +169,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
     @Logger.io
     async def complete_booking_and_mark_tickets_sold_atomically(
-        self, *, booking: Booking, ticket_ids: list[int]
+        self, *, booking: Booking, ticket_ids: list[UUID]
     ) -> Booking:
         """
         Atomically update booking to COMPLETED and mark tickets as SOLD using BATCH
@@ -258,7 +260,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         return updated_booking
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
         """
         Get all tickets for a booking using seat_positions from booking
 
@@ -329,9 +331,9 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
     async def reserve_tickets_and_update_booking_atomically(
         self,
         *,
-        booking_id: int,
-        buyer_id: int,
-        event_id: int,
+        booking_id: UUID,
+        buyer_id: UUID,
+        event_id: UUID,
         section: str,
         subsection: int,
         seat_identifiers: list[str],
@@ -365,8 +367,8 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         with self.tracer.start_as_current_span(
             'repo.reserve_tickets_atomically',
             attributes={
-                'booking_id': booking_id,
-                'event_id': event_id,
+                'booking_id': str(booking_id),
+                'event_id': str(event_id),
                 'seat_count': len(seat_identifiers),
                 'ticket_price': ticket_price,
             },
@@ -426,7 +428,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
 
                     # Create TicketRef without querying
                     ticket = TicketRef(
-                        id=0,
+                        id=None,
                         event_id=event_id,
                         section=section,
                         subsection=subsection,
@@ -519,9 +521,9 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     'batch.statement_count': len(batch_statements),
                     'batch.ticket_count': len(reserved_tickets),
                     'batch.total_price': total_price,
-                    'batch.booking_id': booking_id,
-                    'batch.buyer_id': buyer_id,
-                    'batch.event_id': event_id,
+                    'batch.booking_id': str(booking_id),
+                    'batch.buyer_id': str(buyer_id),
+                    'batch.event_id': str(event_id),
                     'batch.section': section,
                     'batch.subsection': subsection,
                     'batch.operation': 'upsert_booking_and_reserve_tickets',

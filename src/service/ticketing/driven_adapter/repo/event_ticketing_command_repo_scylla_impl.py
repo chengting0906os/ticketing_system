@@ -6,6 +6,9 @@ import asyncio
 from datetime import datetime, timezone
 import json
 from typing import List, Optional
+from uuid import UUID
+
+from uuid_utils import uuid7
 
 from src.platform.database.scylla_setting import get_scylla_session
 from src.platform.logging.loguru_io import Logger
@@ -39,7 +42,7 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
         session = await get_scylla_session()
 
         # Use provided ID or generate new one (timestamp-based, production should use Snowflake)
-        event_id = event_aggregate.event.id or int(datetime.now(timezone.utc).timestamp() * 1000000)
+        event_id = event_aggregate.event.id or UUID(str(uuid7()))
         now = datetime.now(timezone.utc)
 
         # Fetch seller_name for denormalization
@@ -122,7 +125,7 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
                 # Generate ticket IDs and prepare statements
                 statements_and_params = []
                 for event_id, section, subsection, row, seat, price, status in batch:
-                    ticket_id = int(datetime.now(timezone.utc).timestamp() * 1000000) + i
+                    ticket_id = uuid7()
                     statements_and_params.append(
                         (
                             event_id,
@@ -168,9 +171,9 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
 
         # Generate IDs for tickets and prepare batch
         statements_and_params = []
-        for idx, ticket in enumerate(tickets):
+        for _, ticket in enumerate(tickets):
             if not ticket.id:
-                ticket.id = int(datetime.now(timezone.utc).timestamp() * 1000000) + idx
+                ticket.id = UUID(str(uuid7()))
                 ticket.created_at = now
 
             statements_and_params.append(
@@ -241,7 +244,7 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
 
     @Logger.io
     async def update_tickets_status(
-        self, *, ticket_ids: List[int], status: TicketStatus, buyer_id: Optional[int] = None
+        self, *, ticket_ids: List[UUID], status: TicketStatus, buyer_id: Optional[UUID] = None
     ) -> List[Ticket]:
         """Update tickets status"""
         session = await get_scylla_session()
@@ -312,7 +315,7 @@ class EventTicketingCommandRepoScyllaImpl(IEventTicketingCommandRepo):
         return updated_tickets
 
     @Logger.io
-    async def delete_event_aggregate(self, *, event_id: int) -> bool:
+    async def delete_event_aggregate(self, *, event_id: UUID) -> bool:
         """Delete Event Aggregate (cascade delete tickets)"""
         session = await get_scylla_session()
 

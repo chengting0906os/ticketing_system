@@ -6,7 +6,7 @@ from typing import List
 
 from fastapi.testclient import TestClient
 import httpx
-from pytest_bdd import when
+from pytest_bdd import when, parsers
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, SELLER1_EMAIL
 
@@ -18,18 +18,25 @@ def read_sse_events_in_thread(
         with httpx.Client(timeout=5.0, cookies=cookies) as client:
             with client.stream('GET', url, headers=headers) as response:
                 if response.status_code != 200:
+                    print(f'SSE response status: {response.status_code}')
                     return
 
                 current_event = {}
+                line_count = 0
                 for line in response.iter_lines():
                     line = line.strip()
+                    line_count += 1
+                    print(f'SSE line {line_count}: {repr(line)}')  # Debug output
 
                     if not line:
                         if current_event:
+                            print(f'Appending event: {current_event}')  # Debug output
                             events_list.append(current_event.copy())
                             current_event = {}
                             if len(events_list) >= max_events:
                                 break
+                        else:
+                            print('Empty line but no current_event to append')  # Debug output
                         continue
 
                     if line.startswith('event:'):
@@ -46,8 +53,12 @@ def read_sse_events_in_thread(
                                 current_event['data'] = ast.literal_eval(data_str)
                             except (ValueError, SyntaxError):
                                 current_event['data'] = data_str
+                print(f'Final events_list: {events_list}')  # Debug output
     except Exception as e:
         print(f'SSE thread error: {e}')
+        import traceback
+
+        traceback.print_exc()
 
 
 @when('user connects to SSE stream for event:')
@@ -55,7 +66,7 @@ def user_connects_to_sse(step, client: TestClient, context, http_server):
     """User connects to SSE stream using real HTTP client in thread."""
 
     data = extract_table_data(step)
-    event_id = int(data['event_id'])
+    event_id = data['event_id']
 
     # Login first to get cookies
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
@@ -146,8 +157,8 @@ def section_stats_updated(step, context):
     )
 
 
-@when('3 users connect to SSE stream for event 1')
-def multiple_users_connect(client: TestClient, context, http_server):
+@when(parsers.parse('3 users connect to SSE stream for event {event_id}'))
+def multiple_users_connect(client: TestClient, context, http_server, event_id):
     # Login first to get cookies
     login_user(client, SELLER1_EMAIL, DEFAULT_PASSWORD)
 
@@ -157,7 +168,7 @@ def multiple_users_connect(client: TestClient, context, http_server):
         cookies[cookie.name] = cookie.value
 
     context['user_connections'] = []
-    url = f'{http_server}/api/reservation/1/all_subsection_status/sse'
+    url = f'{http_server}/api/reservation/{event_id}/all_subsection_status/sse'
     headers = {'Accept': 'text/event-stream'}
 
     # 啟動3個 thread 模擬3個用戶

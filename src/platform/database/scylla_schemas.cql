@@ -30,7 +30,7 @@ USE ticketing_system;
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS "user" (
-    id BIGINT,
+    id UUID,
     email TEXT,
     hashed_password TEXT,
     name TEXT,
@@ -55,10 +55,10 @@ CREATE INDEX IF NOT EXISTS users_email_idx ON "user" (email);
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS "event" (
-    id BIGINT,
+    id UUID,
     name TEXT,
     description TEXT,
-    seller_id BIGINT,
+    seller_id UUID,
     seller_name TEXT,  -- Denormalized for display
     is_active BOOLEAN,
     status TEXT,  -- 'available' | 'sold_out' | 'cancelled'
@@ -86,9 +86,9 @@ CREATE INDEX IF NOT EXISTS events_seller_id_idx ON "event" (seller_id);
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS "booking" (
-    id BIGINT,
-    buyer_id BIGINT,
-    event_id BIGINT,
+    id UUID,
+    buyer_id UUID,
+    event_id UUID,
     section TEXT,
     subsection INT,
     seat_positions LIST<TEXT>,  -- ['1-1', '1-2', '1-3'] (row-seat pairs)
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS "booking" (
     buyer_email TEXT,
     event_name TEXT,
     venue_name TEXT,
-    seller_id BIGINT,  -- Denormalized for seller queries (avoid N+1)
+    seller_id UUID,  -- Denormalized for seller queries (avoid N+1)
     seller_name TEXT,
     -- Denormalized ticket details (avoid separate ticket queries)
     tickets_data LIST<FROZEN<MAP<TEXT, TEXT>>>,  -- [{'id': '123', 'row': '1', 'seat': '1', 'price': '1000', 'status': 'sold'}, ...]
@@ -130,15 +130,15 @@ CREATE TABLE IF NOT EXISTS "booking" (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS "ticket" (
-    event_id BIGINT,
+    event_id UUID,
     section TEXT,
     subsection INT,
     row_number INT,
     seat_number INT,
-    id BIGINT,  -- Global unique ID
+    id UUID,  -- Global unique ID
     price BIGINT,
     status TEXT,  -- 'available' | 'reserved' | 'sold'
-    buyer_id BIGINT,
+    buyer_id UUID,
     reserved_at TIMESTAMP,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,

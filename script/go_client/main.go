@@ -35,7 +35,7 @@ type LoginRequest struct {
 }
 
 type BookingCreateRequest struct {
-	EventID           int      `json:"event_id"`
+	EventID           string   `json:"event_id"` // UUID string (e.g. "01234567-89ab-7def-0123-456789abcdef")
 	Section           string   `json:"section"`
 	Subsection        int      `json:"subsection"`
 	SeatSelectionMode string   `json:"seat_selection_mode"`
@@ -48,6 +48,44 @@ type BookingResponse struct {
 	Status  string   `json:"status"`
 	SeatIDs []string `json:"seat_ids,omitempty"`
 	Message string   `json:"message,omitempty"`
+}
+
+type EventResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"is_active"`
+}
+
+// fetchLatestEvent fetches the latest event from the API
+// and returns its UUID string. If no events are available, return an error.
+func fetchLatestEvent(host string) (string, error) {
+	// Make GET request to /api/event
+	resp, err := http.Get(host + "/api/event")
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch events: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse JSON response
+	var events []EventResponse
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return "", fmt.Errorf("failed to parse events response: %w", err)
+	}
+
+	// Check if events list is empty
+	if len(events) == 0 {
+		return "", fmt.Errorf("no events available in the system")
+	}
+
+	// Return the first event's ID
+	return events[0].ID, nil
 }
 
 // Metrics Collection
@@ -73,7 +111,7 @@ type Config struct {
 	TotalRequests    int
 	Concurrency      int
 	ClientPoolSize   int // Number of HTTP clients in pool
-	EventID          int
+	EventID          string // Event UUID (e.g. "01234567-89ab-7def-0123-456789abcdef")
 	Sections         []string
 	Subsections      []int
 	Mode             string // "best_available" or "mixed"
@@ -96,7 +134,7 @@ func main() {
 	flag.IntVar(&config.TotalRequests, "requests", 50000, "Total number of requests")
 	flag.IntVar(&config.Concurrency, "concurrency", 500, "Number of concurrent workers")
 	flag.IntVar(&config.ClientPoolSize, "clients", 10, "Number of HTTP clients in pool")
-	flag.IntVar(&config.EventID, "event", 1, "Event ID to book")
+	flag.StringVar(&config.EventID, "event", "", "Event UUID to book (required, e.g. '01234567-89ab-cdef-0123-456789abcdef')")
 	flag.StringVar(&config.Mode, "mode", "best_available", "Booking mode: best_available or mixed")
 	flag.IntVar(&config.BestAvailableQty, "quantity", 2, "Number of seats per booking for best_available mode")
 	flag.BoolVar(&config.Debug, "debug", false, "Enable debug output (verbose logging)")
@@ -115,6 +153,20 @@ func main() {
 	flag.StringVar(&traceProfile, "trace", "", "Write execution trace to file")
 
 	flag.Parse()
+
+	// Auto-fetch event ID if not provided
+	if config.EventID == "" {
+		fmt.Println("📡 No event ID provided, fetching latest event from API...")
+		eventID, err := fetchLatestEvent(config.Host)
+		if err != nil {
+			fmt.Printf("❌ Failed to fetch event: %v\n", err)
+			fmt.Println("💡 Hint: Make sure the API is running and has at least one event")
+			fmt.Println("💡 You can also specify event ID manually: -event '<uuid>'")
+			os.Exit(1)
+		}
+		config.EventID = eventID
+		fmt.Printf("✅ Using event: %s\n", eventID)
+	}
 
 	// Enable profiling if requested
 	if blockProfile != "" {
@@ -166,7 +218,7 @@ func main() {
 	fmt.Printf("Host:        %s\n", config.Host)
 	fmt.Printf("Requests:    %d\n", config.TotalRequests)
 	fmt.Printf("Concurrency: %d\n", config.Concurrency)
-	fmt.Printf("Event ID:    %d\n", config.EventID)
+	fmt.Printf("Event ID:    %s\n", config.EventID)
 	fmt.Printf("Mode:        %s\n", config.Mode)
 	fmt.Printf("Quantity:    %d seats/booking\n", config.BestAvailableQty)
 	fmt.Println("========================================")

@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass
 from typing import List
+from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface import ISeatStateQueryHandler
@@ -32,7 +33,7 @@ class PriceGroupAvailability:
 class EventAvailabilityStatus:
     """活動整體可用性狀態"""
 
-    event_id: int
+    event_id: UUID
     price_groups: List[PriceGroupAvailability]
 
 
@@ -47,7 +48,7 @@ class ListAllSubSectionStatusUseCase:
         self.seat_state_handler = seat_state_handler
 
     @Logger.io
-    async def execute(self, *, event_id: int) -> dict:
+    async def execute(self, *, event_id: UUID) -> dict:
         """
         獲取活動所有 section 的統計資訊（從 Kvrocks 讀取）
 
