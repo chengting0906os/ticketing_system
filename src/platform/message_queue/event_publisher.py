@@ -1,8 +1,7 @@
 """
 Domain Event Publisher
-領域事件發布器
 
-簡化版事件發布接口 - 直接使用 Quix Streams
+Simplified event publishing interface using Quix Streams directly.
 """
 
 from datetime import datetime
@@ -18,15 +17,15 @@ from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
 
-# 全域 Quix Application 實例
+# Global Quix Application instance
 _quix_app: Application | None = None
 
 
 def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
-    自定義序列化器 - 將 datetime 轉換為 timestamp
+    Custom serializer - converts datetime to timestamp.
 
-    用於 attrs.asdict 的 value_serializer 參數
+    Used as value_serializer parameter for attrs.asdict.
     """
     if isinstance(value, datetime):
         return int(value.timestamp())
@@ -34,62 +33,51 @@ def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
 
 
 def _get_quix_app() -> Application:
-    """取得全域 Quix Application 實例 - 支援 Exactly-Once 語義"""
+    """Get global Quix Application instance with exactly-once semantics."""
     global _quix_app
     if _quix_app is None:
-        # 產生唯一的事務 ID (用於 exactly-once)
+        # Generate unique transaction ID for exactly-once delivery
         instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
         transactional_id = f'ticketing-producer-{instance_id}'
 
         _quix_app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
-            processing_guarantee='exactly-once',  # 🆕 啟用 exactly-once
+            processing_guarantee='exactly-once',
             producer_extra_config={
+                # Reliability (exactly-once)
                 'enable.idempotence': True,
                 'acks': 'all',
                 'retries': 3,
-                'compression.type': 'snappy',
-                'transactional.id': transactional_id,  # 🆕 事務 ID
-                'max.in.flight.requests.per.connection': 5,  # 🆕 exactly-once 優化
+                'transactional.id': transactional_id,
+                'max.in.flight.requests.per.connection': 5,
+                # Batching (high throughput)
+                'linger.ms': 50,  # Auto-flush after 50ms
+                'batch.size': 524288,  # 512KB batch size
+                'batch.num.messages': 1000,  # Or 1000 messages
+                # Network optimization
+                'compression.type': 'lz4',  # lz4 faster than snappy
+                'socket.send.buffer.bytes': 1048576,  # 1MB send buffer
             },
         )
     return _quix_app
 
 
-@Logger.io
 async def publish_domain_event(
     event: MqDomainEvent,
     topic: str,
     partition_key: str,
+    *,
+    force_flush: bool = False,
 ) -> Literal[True]:
-    """
-    發布領域事件到 Kafka
-
-    Args:
-        event: 領域事件對象
-        topic: Kafka topic 名稱
-        partition_key: 分區鍵（確保相同實體的事件順序處理）
-
-    Returns:
-        True（永遠成功，失敗會拋出異常）
-
-    範例:
-        await publish_domain_event(
-            event=BookingCreated(booking_id=123, ...),
-            topic=KafkaTopicBuilder.ticket_reserving_request(...),
-            partition_key="booking-123"
-        )
-    """
     app = _get_quix_app()
 
-    # 創建 topic（Quix 會自動處理重複創建）
+    # Create topic (Quix handles duplicate creation automatically)
     kafka_topic = app.topic(
         name=topic,
         key_serializer='str',
         value_serializer='json',
     )
 
-    # 準備事件數據 - 使用 attrs.asdict 並確保 datetime 轉換為 timestamp
     event_dict = attrs.asdict(event, value_serializer=_serialize_value)
 
     event_data = {
@@ -99,7 +87,7 @@ async def publish_domain_event(
         **event_dict,
     }
 
-    # 移除已包含的欄位
+    # Remove already included fields
     event_data.pop('aggregate_id', None)
     event_data.pop('occurred_at', None)
 
@@ -112,7 +100,7 @@ async def publish_domain_event(
         (k, v.encode('utf-8') if isinstance(v, str) else v) for k, v in headers.items()
     ]
 
-    # 發布事件
+    # Publish event
     with app.get_producer() as producer:
         message = kafka_topic.serialize(
             key=partition_key,
@@ -126,7 +114,10 @@ async def publish_domain_event(
             headers=kafka_headers,  # Add trace context headers
         )
 
-        producer.flush(timeout=5.0)
+        # Only critical events need immediate flush (e.g., payment confirmation)
+        # Normal events are auto-batched by linger.ms=50, no manual flush needed
+        if force_flush:
+            producer.flush(timeout=1.0)
 
     current_span = trace.get_current_span()
     trace_id = format(current_span.get_span_context().trace_id, '032x') if current_span else 'none'

@@ -31,7 +31,6 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     def __init__(self):
         self.tracer = trace.get_tracer(__name__)
 
-    @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
         """Publish BookingCreated event to ticket reservation topic"""
         with self.tracer.start_as_current_span(
@@ -64,7 +63,6 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
             Logger.base.info('\033[92m✅ [BOOKING Publisher] BookingCreated 事件發送完成！\033[0m')
 
-    @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
         """Publish BookingPaidEvent to ticket completion topic"""
         # pyrefly: ignore  # missing-attribute
@@ -79,13 +77,13 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
             event=event,
             topic=topic,
             partition_key=str(event.booking_id),
+            force_flush=True,  # 付款事件需立即確認
         )
 
         Logger.base.info(
             f'✅ [PAYMENT Publisher] BookingPaidEvent published successfully to {topic}'
         )
 
-    @Logger.io
     async def publish_booking_cancelled(self, *, event: BookingCancelledEvent) -> None:
         """Publish BookingCancelledEvent to seat release topic"""
         # pyrefly: ignore  # missing-attribute

@@ -120,8 +120,60 @@ docker exec kafka1 kafka-consumer-groups \
   --describe
 ```
 
+## Producer Performance (High Throughput)
+
+> **📁 Related Files**: [event_publisher.py](../src/platform/message_queue/event_publisher.py) | [main.py](../src/service/ticketing/main.py)
+
+**Target**: 10,000+ requests/sec with low latency
+
+### Batching Configuration
+
+See [event_publisher.py](../src/platform/message_queue/event_publisher.py) `_get_quix_app()`:
+
+```python
+producer_extra_config={
+    # Batching (high throughput)
+    'linger.ms': 50,                    # Accumulate for 50ms
+    'batch.size': 524288,               # 512KB batch size
+    'batch.num.messages': 1000,         # Or 1000 messages
+    # Network optimization
+    'compression.type': 'lz4',          # Fast compression
+    'socket.send.buffer.bytes': 1048576, # 1MB send buffer
+
+    # Reliability (exactly-once)
+    'enable.idempotence': True,
+    'acks': 'all',
+}
+```
+
+### Non-blocking Publishing
+
+See [event_publisher.py](../src/platform/message_queue/event_publisher.py) `publish_domain_event()`:
+
+- **Default**: No flush (fire-and-forget, batched by background task)
+- **Optional**: `force_flush=True` for critical events (e.g., payment)
+
+```python
+# General event (non-blocking, high throughput)
+await publish_domain_event(
+    event=BookingCreated(...),
+    topic=topic,
+    partition_key=key,
+)
+
+# Critical event (immediate flush)
+await publish_domain_event(
+    event=BookingPaid(...),
+    topic=topic,
+    partition_key=key,
+    force_flush=True,  # Ensure immediate delivery
+)
+```
+
 ## Key Design Decisions
 
 1. **Event-specific topics**: Isolated infrastructure per event (clean boundaries, easier cleanup)
 2. **Section-based partitioning**: Locality-optimized for cache efficiency (see [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py))
-3. **Cluster configuration**: See [docker-compose.yml](../docker-compose.yml) for deployment setup
+3. **Batch publishing**: Non-blocking fire-and-forget with background flush for 10k+ TPS
+4. **Exactly-once semantics**: Maintained via idempotence and transactions
+5. **Cluster configuration**: See [docker-compose.yml](../docker-compose.yml) for deployment setup

@@ -82,6 +82,9 @@ class Container(containers.DeclarativeContainer):
     kafka_service = providers.Singleton(KafkaConfigService)
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
+    # Background task group for fire-and-forget operations (set at startup)
+    background_task_group = providers.Object(None)
+
     # Repositories - ScyllaDB only (Singleton because they are stateless)
     booking_command_repo = providers.Singleton(BookingCommandRepoScyllaImpl)
     booking_query_repo = providers.Singleton(BookingQueryRepoScyllaImpl)
@@ -139,6 +142,7 @@ class Container(containers.DeclarativeContainer):
         booking_command_repo=booking_command_repo,
         event_publisher=booking_event_publisher,
         seat_availability_handler=seat_availability_query_handler,
+        background_task_group=background_task_group,
     )
     create_event_and_tickets_use_case = providers.Singleton(
         CreateEventAndTicketsUseCase,

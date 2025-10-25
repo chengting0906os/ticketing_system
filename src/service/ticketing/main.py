@@ -168,6 +168,10 @@ async def lifespan(_app: FastAPI):
         consumer_task = anyio.create_task_group()
         await consumer_task.__aenter__()
 
+    # Inject background task group into DI container for fire-and-forget operations
+    container.background_task_group.override(consumer_task)
+    Logger.base.info('🔧 [Ticketing Service] Background task group configured')
+
     # Start seat availability cache polling
     seat_availability_handler = container.seat_availability_query_handler()
     consumer_task.start_soon(seat_availability_handler.start_polling)  # type: ignore[arg-type]

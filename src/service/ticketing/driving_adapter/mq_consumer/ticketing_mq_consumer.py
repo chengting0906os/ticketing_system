@@ -271,7 +271,6 @@ class TicketingMqConsumer:
 
     # ========== Message Handlers ==========
 
-    @Logger.io
     def _process_pending_payment_and_reserved(
         self, message: Dict, key: Any = None, context: Any = None
     ) -> Dict:

@@ -52,7 +52,6 @@ async def list_my_bookings(
 
 
 @router.post('', status_code=status.HTTP_201_CREATED)
-# @Logger.io
 @inject
 async def create_booking(
     request: BookingCreateRequest,

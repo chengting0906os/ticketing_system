@@ -1,9 +1,11 @@
-import asyncio
-from typing import List
+from functools import partial
+from typing import List, Optional
 
+from anyio.abc import TaskGroup
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
@@ -21,6 +23,7 @@ class CreateBookingUseCase:
     - booking_command_repo: For creating booking
     - event_publisher: For publishing domain events
     - seat_availability_handler: For checking seat availability
+    - background_task_group: Optional TaskGroup for fire-and-forget event publishing
     """
 
     def __init__(
@@ -29,13 +32,15 @@ class CreateBookingUseCase:
         booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
+        background_task_group: Optional[TaskGroup] = None,
     ):
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
+        self.background_task_group = background_task_group
         self.tracer = trace.get_tracer(__name__)
 
-    # @Logger.io
+    @Logger.io
     async def create_booking(
         self,
         *,
@@ -96,6 +101,7 @@ class CreateBookingUseCase:
             #     )
 
             # Use domain entity's create method which contains all validation logic
+
             with self.tracer.start_as_current_span('booking.create_entity'):
                 booking = await Booking.create(
                     buyer_id=buyer_id,
@@ -113,13 +119,15 @@ class CreateBookingUseCase:
 
             except Exception as e:
                 raise DomainError(f'Failed to create booking: {e}', 400)
-
-            # Publish domain event after successful creation (using abstraction)
-            # SAGA pattern: If downstream fails, compensating events will be triggered
-            # Fire-and-forget: Don't block response waiting for event publishing
             booking_created_event = await BookingCreatedDomainEvent.from_booking(created_booking)
-            asyncio.create_task(
-                self.event_publisher.publish_booking_created(event=booking_created_event)
-            )
+
+            # Fire-and-forget: Use background TaskGroup if available, otherwise await synchronously
+            if self.background_task_group:
+                publish_fn = partial(
+                    self.event_publisher.publish_booking_created, event=booking_created_event
+                )
+                self.background_task_group.start_soon(publish_fn)
+            else:
+                await self.event_publisher.publish_booking_created(event=booking_created_event)
 
             return created_booking
