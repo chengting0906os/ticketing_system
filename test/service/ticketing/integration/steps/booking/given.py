@@ -98,10 +98,11 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_cql_
             )
 
     # Update booking with seat_positions
+    # ScyllaDB: WITH PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
     if seat_positions:
         execute_cql_statement(
-            'UPDATE "booking" SET seat_positions = :seat_positions WHERE id = :booking_id',
-            {'booking_id': booking_id, 'seat_positions': seat_positions},
+            'UPDATE "booking" SET seat_positions = :seat_positions WHERE buyer_id = :buyer_id AND id = :booking_id',
+            {'buyer_id': buyer_id, 'booking_id': booking_id, 'seat_positions': seat_positions},
         )
 
     booking_state['booking'] = {'id': booking_id, 'status': 'pending_payment', 'event_id': event_id}
@@ -115,9 +116,14 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_cq
     booking_data = extract_table_data(step)
     create_pending_booking(step, client, booking_state, execute_cql_statement)
     if 'paid_at' in booking_data and booking_data['paid_at'] == 'not_null':
+        # ScyllaDB: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
         execute_cql_statement(
-            'UPDATE "booking" SET status = \'completed\', paid_at = :paid_at WHERE id = :id',
-            {'paid_at': datetime.now(), 'id': booking_state['booking']['id']},
+            'UPDATE "booking" SET status = \'completed\', paid_at = :paid_at WHERE buyer_id = :buyer_id AND id = :id',
+            {
+                'paid_at': datetime.now(),
+                'buyer_id': booking_state['buyer_id'],
+                'id': booking_state['booking']['id'],
+            },
         )
         booking_state['booking']['status'] = 'completed'
         booking_state['booking']['paid_at'] = datetime.now().isoformat()
@@ -126,9 +132,10 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_cq
 @given('a booking exists with status "cancelled":')
 def create_cancelled_booking(step, client: TestClient, booking_state, execute_cql_statement):
     create_pending_booking(step, client, booking_state, execute_cql_statement)
+    # ScyllaDB: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
     execute_cql_statement(
-        'UPDATE "booking" SET status = \'cancelled\' WHERE id = :id',
-        {'id': booking_state['booking']['id']},
+        'UPDATE "booking" SET status = \'cancelled\' WHERE buyer_id = :buyer_id AND id = :id',
+        {'buyer_id': booking_state['buyer_id'], 'id': booking_state['booking']['id']},
     )
     execute_cql_statement(
         """UPDATE "event" SET status = 'available' WHERE id = :id""",
@@ -385,9 +392,10 @@ def create_bookings_with_tickets(step, booking_state, execute_cql_statement):
 
             # Re-insert booking with tickets_data (ScyllaDB: easier than UPDATE for complex types)
             # Delete old booking first
+            # ScyllaDB: With PRIMARY KEY (buyer_id, id), we must include both in WHERE clause
             execute_cql_statement(
-                'DELETE FROM "booking" WHERE id = :booking_id',
-                {'booking_id': booking_id},
+                'DELETE FROM "booking" WHERE buyer_id = :buyer_id AND id = :booking_id',
+                {'buyer_id': buyer_id, 'booking_id': booking_id},
             )
 
             # Re-insert with tickets_data (pass as Python list, not JSON string)

@@ -31,7 +31,11 @@ from src.service.ticketing.app.query import (
     list_bookings_use_case,
     list_events_use_case,
 )
-from src.service.ticketing.driving_adapter.http_controller import user_controller
+from src.service.ticketing.driving_adapter.http_controller import (
+    booking_controller,
+    event_ticketing_controller,
+    user_controller,
+)
 from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
     router as booking_router,
 )
@@ -67,6 +71,8 @@ async def lifespan(app: FastAPI):
             list_events_use_case,
             get_event_use_case,
             user_controller,
+            booking_controller,
+            event_ticketing_controller,
         ]
     )
 

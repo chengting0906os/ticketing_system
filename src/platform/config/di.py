@@ -146,19 +146,18 @@ class Container(containers.DeclarativeContainer):
     )
     create_event_and_tickets_use_case = providers.Singleton(
         CreateEventAndTicketsUseCase,
-        event_command_repo=event_ticketing_command_repo,
-        user_query_repo=user_query_repo,
-        init_event_and_tickets_state_handler=init_event_and_tickets_state_handler,
+        event_ticketing_command_repo=event_ticketing_command_repo,
+        mq_infra_orchestrator=mq_infra_orchestrator,
+        init_state_handler=init_event_and_tickets_state_handler,
     )
     update_booking_to_cancelled_use_case = providers.Singleton(
         UpdateBookingToCancelledUseCase,
         booking_command_repo=booking_command_repo,
-        booking_query_repo=booking_query_repo,
+        event_ticketing_query_repo=event_ticketing_query_repo,
     )
     mock_payment_use_case = providers.Singleton(
         MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
         booking_command_repo=booking_command_repo,
-        booking_query_repo=booking_query_repo,
     )
 
     # Ticketing Service - Query Use Cases (Singleton because they are stateless)
