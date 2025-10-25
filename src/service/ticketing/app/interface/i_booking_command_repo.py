@@ -78,6 +78,7 @@ class IBookingCommandRepo(ABC):
         subsection: int,
         seat_identifiers: list[str],
         ticket_price: int,
+        seat_selection_mode: str,
     ) -> tuple[Booking, list[TicketRef], int]:
         """
         Atomically reserve tickets and update booking using BATCH statement.
@@ -100,6 +101,7 @@ class IBookingCommandRepo(ABC):
             subsection: Subsection for ticket lookup
             seat_identifiers: List of seat identifiers (format: "row-seat" like ["1-1", "1-2"])
             ticket_price: Price per ticket from Kvrocks (same for all seats in subsection)
+            seat_selection_mode: Seat selection mode ('manual' or 'best_available')
 
         Returns:
             tuple of (updated_booking, reserved_tickets, total_price)

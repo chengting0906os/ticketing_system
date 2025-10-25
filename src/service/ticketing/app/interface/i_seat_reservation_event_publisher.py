@@ -21,6 +21,7 @@ class ISeatReservationEventPublisher(ABC):
         total_price: int,
         event_id: UUID,
         ticket_details: List[dict],
+        seat_selection_mode: str,
     ) -> None:
         """
         發送座位預訂成功事件
@@ -28,6 +29,7 @@ class ISeatReservationEventPublisher(ABC):
         Args:
             ticket_details: Required list of dicts with seat_id and price
                            e.g., [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
+            seat_selection_mode: 'manual' or 'best_available'
         """
         pass
 

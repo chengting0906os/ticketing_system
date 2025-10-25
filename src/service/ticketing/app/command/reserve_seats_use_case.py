@@ -123,6 +123,7 @@ class ReserveSeatsUseCase:
                     total_price=total_price,
                     event_id=request.event_id,
                     ticket_details=ticket_details,
+                    seat_selection_mode=request.selection_mode,
                 )
 
                 return ReservationResult(

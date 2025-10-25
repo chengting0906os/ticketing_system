@@ -374,6 +374,9 @@ class TicketingMqConsumer:
             ticket_details = message.get(
                 'ticket_details', []
             )  # 新增：獲取 ticket 詳細資訊（含價格）
+            seat_selection_mode = message.get(
+                'seat_selection_mode', 'manual'
+            )  # Default to 'manual' for backward compatibility
 
             # Extract section and subsection from first seat
             # Seat format: 'section-subsection-row-seat' (e.g., 'A-1-1-3')
@@ -442,6 +445,7 @@ class TicketingMqConsumer:
                     subsection=subsection or 0,
                     seat_identifiers=seat_identifiers,
                     ticket_price=ticket_price,
+                    seat_selection_mode=seat_selection_mode,
                 )
 
     @Logger.io

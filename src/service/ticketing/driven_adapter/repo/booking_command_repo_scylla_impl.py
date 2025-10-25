@@ -338,6 +338,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
         subsection: int,
         seat_identifiers: list[str],
         ticket_price: int,
+        seat_selection_mode: str,
     ) -> tuple[Booking, List[TicketRef], int]:
         """
         Update tickets to RESERVED and booking to PENDING_PAYMENT
@@ -453,7 +454,7 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
                     section=section,
                     subsection=subsection,
                     quantity=len(seat_identifiers),
-                    seat_selection_mode='manual',
+                    seat_selection_mode=seat_selection_mode,
                     status=BookingStatus.PENDING_PAYMENT,
                     total_price=total_price,
                     seat_positions=seat_identifiers,
