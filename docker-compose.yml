@@ -242,7 +242,7 @@ services:
       JAEGER_HOST: jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       # Application
-      DEBUG: "true"
+      DEBUG: "false"
       # Timezone
       TZ: "Asia/Taipei"
     env_file:
@@ -308,7 +308,7 @@ services:
       JAEGER_HOST: jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       # Application
-      DEBUG: "true"
+      DEBUG: "false"
       # Timezone
       TZ: "Asia/Taipei"
     env_file:

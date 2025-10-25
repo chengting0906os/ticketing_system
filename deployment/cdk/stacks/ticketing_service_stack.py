@@ -44,8 +44,7 @@ class TicketingServiceStack(Stack):
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
         alb_listener: elbv2.IApplicationListener,
-        aurora_cluster_endpoint: str,
-        aurora_cluster_secret: secretsmanager.ISecret,
+        scylla_contact_points: list[str],
         namespace: servicediscovery.IPrivateDnsNamespace,
         config: dict,
         **kwargs,
@@ -57,8 +56,7 @@ class TicketingServiceStack(Stack):
             vpc: VPC for ECS tasks
             ecs_cluster: Shared ECS cluster
             alb_listener: Shared ALB listener
-            aurora_cluster_endpoint: Aurora endpoint
-            aurora_cluster_secret: Aurora credentials
+            scylla_contact_points: ScyllaDB node IPs
             namespace: Service Discovery namespace
             config: Environment configuration from config.yml
         """
@@ -128,6 +126,9 @@ class TicketingServiceStack(Stack):
             task_role=task_role,
         )
 
+        # Convert contact points to JSON array string
+        contact_points_json = '[' + ', '.join(f'"{ip}"' for ip in scylla_contact_points) + ']'
+
         # Main container
         container = task_def.add_container(
             'Container',
@@ -146,13 +147,20 @@ class TicketingServiceStack(Stack):
                 'WORKERS': str(config['ecs']['ticketing']['workers']),
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
-                'POSTGRES_SERVER': aurora_cluster_endpoint,
-                'POSTGRES_DB': 'ticketing_system_db',
-                'POSTGRES_PORT': '5432',
+                # ScyllaDB Configuration
+                'DATABASE_TYPE': 'scylladb',
+                'SCYLLA_CONTACT_POINTS': contact_points_json,
+                'SCYLLA_PORT': '9042',
+                'SCYLLA_KEYSPACE': 'ticketing_system',
+                'SCYLLA_USERNAME': 'cassandra',
+                'SCYLLA_PASSWORD': 'cassandra',  # TODO: Change in production!
+                # Kvrocks Configuration
                 'KVROCKS_HOST': 'kvrocks-master.ticketing.local',
                 'KVROCKS_PORT': '6666',
+                # Kafka Configuration
                 'ENABLE_KAFKA': 'false',
                 'KAFKA_BOOTSTRAP_SERVERS': 'localhost:9092',
+                # JWT Configuration
                 'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
                 'REFRESH_TOKEN_EXPIRE_DAYS': '7',
             },
@@ -165,10 +173,6 @@ class TicketingServiceStack(Stack):
                     app_secrets, 'VERIFICATION_TOKEN_SECRET'
                 ),
                 'ALGORITHM': ecs.Secret.from_secrets_manager(app_secrets, 'ALGORITHM'),
-                'POSTGRES_USER': ecs.Secret.from_secrets_manager(aurora_cluster_secret, 'username'),
-                'POSTGRES_PASSWORD': ecs.Secret.from_secrets_manager(
-                    aurora_cluster_secret, 'password'
-                ),
             },
             health_check=ecs.HealthCheck(
                 command=['CMD-SHELL', 'curl -f http://localhost:8100/health || exit 1'],

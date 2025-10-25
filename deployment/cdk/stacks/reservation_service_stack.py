@@ -45,21 +45,19 @@ class ReservationServiceStack(Stack):
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
         alb_listener: elbv2.IApplicationListener,
-        aurora_cluster_endpoint: str,
-        aurora_cluster_secret: secretsmanager.ISecret,
+        scylla_contact_points: list[str],
         namespace: servicediscovery.IPrivateDnsNamespace,
         config: dict,
         **kwargs,
     ) -> None:
         """
-        Initialize Seat Reservation Service Stack
+        Initialize Reservation Service Stack
 
         Args:
             vpc: VPC for ECS tasks
             ecs_cluster: Shared ECS cluster
             alb_listener: Shared ALB listener
-            aurora_cluster_endpoint: Aurora endpoint
-            aurora_cluster_secret: Aurora credentials
+            scylla_contact_points: ScyllaDB node IPs
             namespace: Service Discovery namespace
             config: Environment configuration from config.yml
         """
@@ -73,12 +71,6 @@ class ReservationServiceStack(Stack):
             secret_object_value={
                 'SECRET_KEY': SecretValue.unsafe_plain_text(
                     'of8uBXD-S4KJKvu7-C4KVUSxQICl8fg5eMDXVtvBFPw'
-                ),
-                'RESET_PASSWORD_TOKEN_SECRET': SecretValue.unsafe_plain_text(
-                    'FLcN0V9DQazw3YJI0yQOa84AkwPRQQlWt_3xYo0Rvv8'
-                ),
-                'VERIFICATION_TOKEN_SECRET': SecretValue.unsafe_plain_text(
-                    'NowtYFO5QY5w1dYfVl4whZpCXB12MTBaq9L9OHu08XU'
                 ),
                 'ALGORITHM': SecretValue.unsafe_plain_text('HS256'),
             },
@@ -109,7 +101,7 @@ class ReservationServiceStack(Stack):
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=['secretsmanager:GetSecretValue'],
-                resources=['arn:aws:secretsmanager:*:*:secret:ticketing/*'],
+                resources=['arn:aws:secretsmanager:*:*:secret:reservation/*'],
             )
         )
         task_role.add_to_policy(
@@ -129,6 +121,9 @@ class ReservationServiceStack(Stack):
             task_role=task_role,
         )
 
+        # Convert contact points to JSON array string
+        contact_points_json = '[' + ', '.join(f'"{ip}"' for ip in scylla_contact_points) + ']'
+
         # Main container
         container = task_def.add_container(
             'Container',
@@ -136,7 +131,7 @@ class ReservationServiceStack(Stack):
             command=[
                 'sh',
                 '-c',
-                f'uv run granian src.service.seat_reservation.main:app --interface asgi --host 0.0.0.0 --port 8200 --workers {config["ecs"]["reservation"]["workers"]}',
+                'uv run granian src.service.seat_reservation.main:app --interface asgi --host 0.0.0.0 --port 8200 --workers ${WORKERS}',
             ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='reservation', log_retention=logs.RetentionDays.ONE_WEEK
@@ -144,31 +139,26 @@ class ReservationServiceStack(Stack):
             environment={
                 'SERVICE_NAME': 'seat-reservation-service',
                 'LOG_LEVEL': config['log_level'],
+                'WORKERS': str(config['ecs']['reservation']['workers']),
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
-                'POSTGRES_SERVER': aurora_cluster_endpoint,
-                'POSTGRES_DB': 'ticketing_system_db',
-                'POSTGRES_PORT': '5432',
+                # ScyllaDB Configuration
+                'DATABASE_TYPE': 'scylladb',
+                'SCYLLA_CONTACT_POINTS': contact_points_json,
+                'SCYLLA_PORT': '9042',
+                'SCYLLA_KEYSPACE': 'ticketing_system',
+                'SCYLLA_USERNAME': 'cassandra',
+                'SCYLLA_PASSWORD': 'cassandra',  # TODO: Change in production!
+                # Kvrocks Configuration
                 'KVROCKS_HOST': 'kvrocks-master.ticketing.local',
                 'KVROCKS_PORT': '6666',
+                # Kafka Configuration
                 'ENABLE_KAFKA': 'false',
                 'KAFKA_BOOTSTRAP_SERVERS': 'localhost:9092',
-                'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
-                'REFRESH_TOKEN_EXPIRE_DAYS': '7',
             },
             secrets={
                 'SECRET_KEY': ecs.Secret.from_secrets_manager(app_secrets, 'SECRET_KEY'),
-                'RESET_PASSWORD_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
-                    app_secrets, 'RESET_PASSWORD_TOKEN_SECRET'
-                ),
-                'VERIFICATION_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
-                    app_secrets, 'VERIFICATION_TOKEN_SECRET'
-                ),
                 'ALGORITHM': ecs.Secret.from_secrets_manager(app_secrets, 'ALGORITHM'),
-                'POSTGRES_USER': ecs.Secret.from_secrets_manager(aurora_cluster_secret, 'username'),
-                'POSTGRES_PASSWORD': ecs.Secret.from_secrets_manager(
-                    aurora_cluster_secret, 'password'
-                ),
             },
             health_check=ecs.HealthCheck(
                 command=['CMD-SHELL', 'curl -f http://localhost:8200/health || exit 1'],
@@ -187,7 +177,7 @@ class ReservationServiceStack(Stack):
                 'public.ecr.aws/aws-observability/aws-otel-collector:latest'
             ),
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='adot-reservation', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='adot', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
                 'AWS_REGION': 'us-west-2',
@@ -227,7 +217,7 @@ service:
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             cloud_map_options=ecs.CloudMapOptions(
-                name='seat-reservation-service',
+                name='reservation-service',
                 cloud_map_namespace=namespace,
                 dns_record_type=servicediscovery.DnsRecordType.A,
             ),
@@ -258,7 +248,9 @@ service:
             ),
             deregistration_delay=Duration.seconds(30),
             priority=20,
-            conditions=[elbv2.ListenerCondition.path_patterns(['/api/reservation/*'])],
+            conditions=[
+                elbv2.ListenerCondition.path_patterns(['/api/reservation/*', '/api/ticket/*'])
+            ],
         )
 
         # ============= Outputs =============

@@ -43,19 +43,11 @@ production:
       task_memory: 4096   # 4 GB RAM
       workers: 1
 
-  # Aurora Serverless v2 Auto-scaling
-  aurora:
-    min_acu: 0.5        # Minimum Aurora Capacity Units (cost optimization)
-    max_acu: 64         # Maximum Aurora Capacity Units (peak load)
-    # Single master configuration for cost savings
-
-  # Database Connection Pool (single master - no read replicas)
-  database:
-    pool_size: 50           # Total connection pool size per task
-    pool_max_overflow: 20   # Max overflow connections
-    pool_timeout: 30        # Connection timeout (seconds)
-    pool_recycle: 3600      # Recycle connections every hour
-    pool_pre_ping: true     # Verify connections before use
+  # ScyllaDB Cluster Configuration
+  scylla:
+    node_count: 1           # Single node for cost optimization
+    instance_type: t3.xlarge  # 4 vCPU, 16 GB RAM (development config)
+    use_spot_instances: false  # Set to true for ~70% cost savings
 
   # Kvrocks Connection Pool
   kvrocks:
@@ -105,20 +97,24 @@ staging:
     max_tasks: 8
     cpu_threshold: 70
     memory_threshold: 80
-    task_cpu: 1024      # 1 vCPU (smaller than prod)
-    task_memory: 2048   # 2 GB RAM
-    workers: 2          # Workers per task
 
-  aurora:
-    min_acu: 0.5        # Lower minimum for cost savings
-    max_acu: 16
+    # Ticketing Service
+    ticketing:
+      task_cpu: 1024      # 1 vCPU
+      task_memory: 2048   # 2 GB RAM
+      workers: 2
 
-  database:
-    pool_size: 5000         # Total connection pool size per task
-    pool_max_overflow: 500  # Max overflow connections
-    pool_timeout: 30        # Connection timeout (seconds)
-    pool_recycle: 3600      # Recycle connections every hour
-    pool_pre_ping: true     # Verify connections before use
+    # Reservation Service
+    reservation:
+      task_cpu: 1024      # 1 vCPU
+      task_memory: 2048   # 2 GB RAM
+      workers: 2
+
+  # ScyllaDB Cluster Configuration
+  scylla:
+    node_count: 3           # 3-node cluster for production-like testing
+    instance_type: i3.xlarge  # 4 vCPU, 30.5 GB RAM, NVMe SSD
+    use_spot_instances: true  # Use Spot for 70% cost savings
 
   kvrocks:
     pool_max_connections: 10000
@@ -163,20 +159,24 @@ development:
     max_tasks: 4
     cpu_threshold: 80
     memory_threshold: 85
-    task_cpu: 1024      # 1 vCPU (same as production for consistency)
-    task_memory: 2048   # 2 GB RAM (same as production for consistency)
-    workers: 1          # Workers per task
 
-  aurora:
-    min_acu: 0.5
-    max_acu: 8
+    # Ticketing Service
+    ticketing:
+      task_cpu: 1024      # 1 vCPU
+      task_memory: 2048   # 2 GB RAM
+      workers: 1
 
-  database:
-    pool_size: 20           # Total connection pool size
-    pool_max_overflow: 100   # Max overflow connections
-    pool_timeout: 30        # Connection timeout (seconds)
-    pool_recycle: 3600      # Recycle connections every hour
-    pool_pre_ping: true     # Verify connections before use
+    # Reservation Service
+    reservation:
+      task_cpu: 1024      # 1 vCPU
+      task_memory: 2048   # 2 GB RAM
+      workers: 1
+
+  # ScyllaDB Cluster Configuration
+  scylla:
+    node_count: 1           # Single node for development
+    instance_type: t3.xlarge  # 4 vCPU, 16 GB RAM
+    use_spot_instances: false  # On-Demand for stability
 
   kvrocks:
     pool_max_connections: 10000
@@ -210,8 +210,7 @@ development:
 # =============================================================================
 #
 # What you DON'T need to configure (auto-injected by CDK):
-# - Database endpoints (Aurora writer/reader)
-# - Database credentials (from Secrets Manager)
+# - ScyllaDB endpoints (EC2 instances)
 # - Kafka bootstrap servers (from MSK)
 # - Kvrocks endpoints (from ECS Service Discovery)
 # - ALB DNS name
@@ -223,10 +222,10 @@ development:
 # 3. CDK will read this file and apply the configuration
 #
 # Cost estimate (production config):
-# - Aurora: ~$70/month (avg 8 ACU)
+# - ScyllaDB: ~$120/month (1 × t3.xlarge on-demand)
 # - MSK: ~$150/month (3 × kafka.m5.large)
-# - ECS: ~$60/month (8 tasks × 2 vCPU, 4GB)
-# - Kvrocks: ~$25/month (6 tasks × 1 vCPU, 2GB)
+# - ECS: ~$60/month (3 tasks × 1-2 vCPU, 2-4GB)
+# - Kvrocks: ~$25/month (2 tasks × 1 vCPU, 2GB)
 # - Other: ~$33/month (ALB, CloudWatch, etc.)
-# Total: ~$338/month
+# Total: ~$388/month
 #
