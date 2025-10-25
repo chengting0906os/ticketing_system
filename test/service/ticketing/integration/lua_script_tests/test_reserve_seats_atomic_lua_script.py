@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.ticketing.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (

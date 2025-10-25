@@ -11,13 +11,13 @@ from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
-from src.service.seat_reservation.app.query.list_all_subsection_status_use_case import (
+from src.service.ticketing.app.query.list_all_subsection_status_use_case import (
     ListAllSubSectionStatusUseCase,
 )
-from src.service.seat_reservation.app.query.list_section_seats_detail_use_case import (
+from src.service.ticketing.app.query.list_section_seats_detail_use_case import (
     ListSectionSeatsDetailUseCase,
 )
-from src.service.seat_reservation.driving_adapter.seat_schema import (
+from src.service.ticketing.driving_adapter.http_controller.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )

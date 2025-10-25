@@ -171,7 +171,7 @@ def run_server(port: int, env_vars: dict):
     for key, value in env_vars.items():
         os.environ[key] = value
 
-    from test.test_app import app
+    from test.test_main import app
 
     uvicorn.run(app, host='127.0.0.1', port=port, log_level='error')
 

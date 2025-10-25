@@ -9,19 +9,19 @@ from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.platform.message_queue.section_based_partition_strategy import (
     SectionBasedPartitionStrategy,
 )
-from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
+from src.service.ticketing.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentUseCase,
 )
-from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
-from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
-from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
+from src.service.ticketing.app.command.release_seat_use_case import ReleaseSeatUseCase
+from src.service.ticketing.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.ticketing.domain.seat_selection_domain import SeatSelectionDomain
+from src.service.ticketing.driven_adapter.message_queue.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
-from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.ticketing.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
-from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
+from src.service.ticketing.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase

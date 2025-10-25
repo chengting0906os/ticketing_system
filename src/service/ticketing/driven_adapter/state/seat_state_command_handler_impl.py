@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface import ISeatStateCommandHandler
-from src.service.seat_reservation.driven_adapter.lua_script import RESERVE_SEATS_SCRIPT
+from src.service.ticketing.driven_adapter.state.lua_script import RESERVE_SEATS_SCRIPT
 
 
 # Get key prefix from environment for test isolation

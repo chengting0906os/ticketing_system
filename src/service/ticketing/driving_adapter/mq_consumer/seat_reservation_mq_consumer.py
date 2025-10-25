@@ -27,11 +27,11 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaTopicBuilder,
 )
 from src.platform.metrics.ticketing_metrics import metrics
-from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
+from src.service.ticketing.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
 from src.service.ticketing.app.dto import ReleaseSeatsBatchRequest
-from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
+from src.service.ticketing.app.command.reserve_seats_use_case import ReservationRequest
 
 
 # 移除 RetryConfig - 使用 Quix Streams 的 on_processing_error callback 處理錯誤

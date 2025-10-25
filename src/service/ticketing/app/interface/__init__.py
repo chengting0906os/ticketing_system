@@ -22,6 +22,9 @@ from src.service.ticketing.app.interface.i_seat_state_command_handler import (
     ISeatStateCommandHandler,
 )
 from src.service.ticketing.app.interface.i_seat_state_query_handler import ISeatStateQueryHandler
+from src.service.ticketing.app.interface.i_seat_reservation_event_publisher import (
+    ISeatReservationEventPublisher,
+)
 from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
 from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 
@@ -36,6 +39,7 @@ __all__ = [
     'IMqInfraOrchestrator',
     'IPasswordHasher',
     'ISeatAvailabilityQueryHandler',
+    'ISeatReservationEventPublisher',
     'ISeatStateCommandHandler',
     'ISeatStateQueryHandler',
     'IUserCommandRepo',

@@ -45,7 +45,7 @@ os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 # Import Application and Test Components
 # =============================================================================
 # Import all BDD steps and service fixtures through consolidated modules
-from src.main import app  # noqa: E402
+from test.test_main import app  # noqa: E402
 from test.bdd_steps_loader import *  # noqa: E402, F403
 from test.fixture_loader import *  # noqa: E402, F403
 

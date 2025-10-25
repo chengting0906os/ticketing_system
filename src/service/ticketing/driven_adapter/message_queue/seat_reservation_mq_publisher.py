@@ -15,7 +15,7 @@ from typing import List
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
-from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
+from src.service.ticketing.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
 
