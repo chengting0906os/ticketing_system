@@ -137,6 +137,7 @@ jobs:
         env:
           SCYLLA_KEYSPACE: ticketing_system_test
           SCYLLA_CONTACT_POINTS: '["localhost"]'
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           uv run python script/reset_scylladb.py
 
@@ -146,6 +147,7 @@ jobs:
           SCYLLA_CONTACT_POINTS: '["localhost"]'
           KAFKA_BOOTSTRAP_SERVERS: localhost:9092
           KAFKA_REPLICATION_FACTOR: 1
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           make t-quick
 
