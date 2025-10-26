@@ -92,7 +92,7 @@ class ReserveSeatsUseCase:
             },
         ):
             try:
-                Logger.base.info(
+                Logger.base.debug(
                     f'🎯 [RESERVE] Processing reservation for booking {request.booking_id}, '
                     f'buyer {request.buyer_id}, event {request.event_id}'
                 )

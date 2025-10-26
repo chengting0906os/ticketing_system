@@ -530,7 +530,7 @@ class SeatReservationConsumer:
                 raise ValueError(error_msg)
 
             command = self._create_reservation_command(parsed)
-            Logger.base.info(f'🎯 [RESERVATION] booking_id={command["booking_id"]}')
+            Logger.base.debug(f'🎯 [RESERVATION] booking_id={command["booking_id"]}')
 
             await self._execute_reservation(command)
             return True

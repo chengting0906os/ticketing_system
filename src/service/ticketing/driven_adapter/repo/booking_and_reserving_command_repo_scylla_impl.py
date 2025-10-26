@@ -51,7 +51,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
         - best_available: 系統自動選擇最佳連續座位
         - manual: 用戶手動指定座位
         """
-        Logger.base.info(f'🎯 [SCYLLA] Routing reservation (mode={mode}) for booking {booking_id}')
+        Logger.base.debug(f'🎯 [SCYLLA] Routing reservation (mode={mode}) for booking {booking_id}')
 
         if mode == 'best_available':
             # Validate required parameters for best_available mode
@@ -100,7 +100,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
         3. 釋放鎖
         """
         start_time = time.perf_counter()
-        Logger.base.info(
+        Logger.base.debug(
             f'🎯 [SCYLLA] Manual reservation for booking {booking_id}, seats={len(seat_ids) if seat_ids else 0}'
         )
 
@@ -138,7 +138,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
                 'error_message': 'Failed to acquire lock, please retry',
             }
 
-        Logger.base.info(f'⏱️ [SCYLLA] Lock acquired in {lock_time:.2f}ms')
+        Logger.base.debug(f'⏱️ [SCYLLA] Lock acquired in {lock_time:.2f}ms')
 
         try:
             # Step 2: Reserve seats using ScyllaDB
@@ -238,7 +238,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
 
                     full_seat_id = f'{section}-{subsection}-{row}-{seat_num}'
                     reserved_seats.append(full_seat_id)
-                    Logger.base.info(f'✅ [SCYLLA] Reserved seat: {full_seat_id}')
+                    Logger.base.debug(f'✅ [SCYLLA] Reserved seat: {full_seat_id}')
 
                 # Step 3: Get ticket price (assume all seats in same subsection have same price)
                 price_start = time.perf_counter()
@@ -269,7 +269,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
                 price_time = (time.perf_counter() - price_start) * 1000
                 db_total_time = (time.perf_counter() - db_start) * 1000
 
-                Logger.base.info(
+                Logger.base.debug(
                     f'⏱️ [SCYLLA] DB operations: '
                     f'check={check_time_total:.2f}ms, '
                     f'update={update_time_total:.2f}ms, '
@@ -331,7 +331,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
             ):
                 await self.lock.release_lock(key=lock_key)
             release_time = (time.perf_counter() - release_start) * 1000
-            Logger.base.info(f'⏱️ [SCYLLA] Lock released in {release_time:.2f}ms')
+            Logger.base.debug(f'⏱️ [SCYLLA] Lock released in {release_time:.2f}ms')
 
     @Logger.io
     async def find_and_reserve_tickets_by_best_available_mode(
@@ -354,7 +354,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
         4. 釋放鎖
         """
         start_time = time.perf_counter()
-        Logger.base.info(
+        Logger.base.debug(
             f'🎯 [SCYLLA] Best-available reservation: booking={booking_id}, '
             f'section={section}, subsection={subsection}, qty={quantity}'
         )
@@ -382,7 +382,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
                 'error_message': 'Failed to acquire lock, please retry',
             }
 
-        Logger.base.info(f'⏱️ [SCYLLA] Lock acquired in {lock_time:.2f}ms')
+        Logger.base.debug(f'⏱️ [SCYLLA] Lock acquired in {lock_time:.2f}ms')
 
         try:
             # Step 2: Query available seats from ScyllaDB
@@ -423,7 +423,7 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
                 span.add_event('Query completed', attributes={'seats.found': len(available_seats)})
 
             query_time = (time.perf_counter() - query_start) * 1000
-            Logger.base.info(
+            Logger.base.debug(
                 f'⏱️ [SCYLLA] Query found {len(available_seats)} available seats in {query_time:.2f}ms'
             )
 
@@ -473,13 +473,13 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
 
             # Fallback: if no consecutive seats, just take first N available
             if not selected_seats:
-                Logger.base.info(
+                Logger.base.debug(
                     f'ℹ️ [SCYLLA] No consecutive seats, using first {quantity} available'
                 )
                 selected_seats = available_seats[:quantity]
 
             selection_time = (time.perf_counter() - selection_start) * 1000
-            Logger.base.info(f'⏱️ [SCYLLA] Seat selection took {selection_time:.2f}ms')
+            Logger.base.debug(f'⏱️ [SCYLLA] Seat selection took {selection_time:.2f}ms')
 
             # Step 4: Reserve selected seats
             reservation_start = time.perf_counter()
@@ -580,4 +580,4 @@ class BookingAndReservingCommandRepoScyllaImpl(IBookingAndReservingCommandRepo):
             ):
                 await self.lock.release_lock(key=lock_key)
             release_time = (time.perf_counter() - release_start) * 1000
-            Logger.base.info(f'⏱️ [SCYLLA] Lock released in {release_time:.2f}ms')
+            Logger.base.debug(f'⏱️ [SCYLLA] Lock released in {release_time:.2f}ms')

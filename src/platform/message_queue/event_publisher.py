@@ -150,7 +150,7 @@ async def publish_domain_event(
 
     current_span = trace.get_current_span()
     trace_id = format(current_span.get_span_context().trace_id, '032x') if current_span else 'none'
-    Logger.base.info(
+    Logger.base.debug(
         f'📤 Published {event.__class__.__name__} to {topic} '
         f'(key: {partition_key}, trace_id: {trace_id})'
     )
