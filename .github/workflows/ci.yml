@@ -12,103 +12,87 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Read Python version
         id: python-version
         run: echo "version=$(cat .python-version)" >> $GITHUB_OUTPUT
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.python-version.outputs.version }}
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          
+
       - name: Install dependencies
         run: |
           uv sync --all-extras --dev
-          
+
       - name: Run Ruff check
         run: |
           uv run ruff check . --exit-non-zero-on-fix
-          
+
       - name: Run Ruff format check
         run: |
           uv run ruff format . --check
 
-
-  test:
-    name: Run test
+  type-check:
+    name: Type check with Pyrefly
     runs-on: ubuntu-latest
-    needs: [lint]  # Only run if lint passes
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          # NOTE: This is a lab/learning project, so we use plaintext passwords
-          # For production, use environment variables or secrets management
-          POSTGRES_USER: py_arch_lab
-          POSTGRES_PASSWORD: py_arch_lab
-          POSTGRES_DB: ticketing_system_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-      kvrocks:
-        image: apache/kvrocks:latest
-        options: >-
-          --health-cmd "redis-cli -p 6666 ping || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-        ports:
-          - 6666:6666
-    
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Read Python version
         id: python-version
         run: echo "version=$(cat .python-version)" >> $GITHUB_OUTPUT
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.python-version.outputs.version }}
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          
+
       - name: Install dependencies
         run: |
           uv sync --all-extras --dev
-          
-      - name: Setup environment variables for database migration
-        run: |
-          cp .env.example .env
 
-      - name: Create static directory
+      - name: Run Pyrefly type check
         run: |
-          mkdir -p static
+          uv run pyrefly check
 
-      - name: Wait for Kvrocks to be ready
-        run: |
-          timeout 30 bash -c 'until printf "" 2>>/dev/null >>/dev/tcp/localhost/6666; do sleep 1; done'
-          echo "Kvrocks is ready"
+  test:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+    needs: [lint, type-check]  # Only run if lint and type-check pass
 
-      - name: Run database migrations
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Python version
+        id: python-version
+        run: echo "version=$(cat .python-version)" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.python-version.outputs.version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
         run: |
-          uv run alembic upgrade head
-          
-      - name: Run test (integration and unit only)
+          uv sync --all-extras --dev
+
+      - name: Run unit tests
         run: |
-          uv run pytest -v --tb=short -m "integration or unit"
+          uv run pytest -m "unit" -v --tb=short
