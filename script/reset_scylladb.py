@@ -82,6 +82,10 @@ def reset_scylladb_keyspace():
                     session.execute(statement)
                     print(f'   ✅ Keyspace created')
                     keyspace_created = True
+                    # Wait for keyspace to be fully created
+                    import time
+
+                    time.sleep(3)  # Give ScyllaDB time to sync schema
                     # Reconnect to the keyspace for subsequent table creation
                     session.shutdown()
                     session = cluster.connect(settings.SCYLLA_KEYSPACE)
