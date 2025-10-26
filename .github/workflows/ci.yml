@@ -68,7 +68,7 @@ jobs:
           uv run pyrefly check
 
   test:
-    name: Run unit tests
+    name: Run quick tests (unit + smoke)
     runs-on: ubuntu-latest
     needs: [lint, type-check]  # Only run if lint and type-check pass
 
@@ -93,6 +93,63 @@ jobs:
         run: |
           uv sync --all-extras --dev
 
-      - name: Run unit tests
+      - name: Setup environment
         run: |
-          uv run pytest -m "unit" -v --tb=short
+          cp .env.example .env
+          # Set single-broker Kafka for CI
+          echo "KAFKA_REPLICATION_FACTOR=1" >> .env
+          mkdir -p static logs
+
+      - name: Start services with docker-compose
+        run: |
+          # Start only essential services for testing
+          docker-compose up -d scylladb1 kvrocks kafka1
+
+      - name: Wait for services to be ready
+        run: |
+          echo "⏳ Waiting for services to be ready..."
+
+          # Wait for ScyllaDB (port 9042)
+          timeout 180 bash -c 'until docker exec scylladb1 cqlsh -e "describe keyspaces" > /dev/null 2>&1; do
+            echo "Waiting for ScyllaDB..."
+            sleep 5
+          done'
+          echo "✅ ScyllaDB ready"
+
+          # Wait for Kafka (port 9092)
+          timeout 60 bash -c 'until nc -z localhost 9092 2>/dev/null; do
+            echo "Waiting for Kafka..."
+            sleep 2
+          done'
+          echo "✅ Kafka ready"
+
+          # Wait for Kvrocks (port 6666)
+          timeout 30 bash -c 'until nc -z localhost 6666 2>/dev/null; do
+            echo "Waiting for Kvrocks..."
+            sleep 2
+          done'
+          echo "✅ Kvrocks ready"
+
+          # Extra buffer time
+          sleep 10
+
+      - name: Initialize database
+        env:
+          SCYLLA_KEYSPACE: ticketing_system_test
+          SCYLLA_CONTACT_POINTS: '["localhost"]'
+        run: |
+          uv run python script/reset_scylladb.py
+
+      - name: Run quick tests (unit + smoke)
+        env:
+          SCYLLA_KEYSPACE: ticketing_system_test
+          SCYLLA_CONTACT_POINTS: '["localhost"]'
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          KAFKA_REPLICATION_FACTOR: 1
+        run: |
+          make t-quick
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose down -v
