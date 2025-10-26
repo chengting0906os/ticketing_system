@@ -1,3 +1,4 @@
+from functools import partial
 from typing import List, Optional
 from uuid import UUID
 
@@ -121,13 +122,13 @@ class CreateBookingUseCase:
                 raise DomainError(f'Failed to create booking: {e}', 400)
             booking_created_event = await BookingCreatedDomainEvent.from_booking(created_booking)
 
-            # # Fire-and-forget: Use background TaskGroup if available, otherwise await synchronously
-            # if self.background_task_group:
-            #     publish_fn = partial(
-            #         self.event_publisher.publish_booking_created, event=booking_created_event
-            #     )
-            #     self.background_task_group.start_soon(publish_fn)
-            # else:
-            await self.event_publisher.publish_booking_created(event=booking_created_event)
+            # Fire-and-forget: Use background TaskGroup if available, otherwise await synchronously
+            if self.background_task_group:
+                publish_fn = partial(
+                    self.event_publisher.publish_booking_created, event=booking_created_event
+                )
+                self.background_task_group.start_soon(publish_fn)
+            else:
+                await self.event_publisher.publish_booking_created(event=booking_created_event)
 
             return created_booking
