@@ -21,6 +21,9 @@ from src.service.ticketing.domain.domain_event import MqDomainEvent
 # Global Quix Application instance
 _quix_app: Application | None = None
 
+# Global Kafka Producer instance (singleton for performance)
+_kafka_producer = None
+
 
 def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
@@ -65,6 +68,28 @@ def _get_quix_app() -> Application:
     return _quix_app
 
 
+def _get_kafka_producer():
+    """
+    Get global Kafka Producer instance (singleton pattern).
+
+    PERFORMANCE: Creating a new producer per request is expensive (100-500ms):
+    - TCP handshake + TLS
+    - Metadata fetch (brokers, partitions)
+    - Authentication
+
+    Reusing a single producer instance:
+    - Amortizes connection overhead
+    - Leverages internal connection pool
+    - Enables efficient batching (linger.ms)
+    - Thread-safe for concurrent use
+    """
+    global _kafka_producer
+    if _kafka_producer is None:
+        app = _get_quix_app()
+        _kafka_producer = app.get_producer()
+    return _kafka_producer
+
+
 async def publish_domain_event(
     event: MqDomainEvent,
     topic: str,
@@ -103,24 +128,25 @@ async def publish_domain_event(
         (k, v.encode('utf-8') if isinstance(v, str) else v) for k, v in headers.items()
     ]
 
-    # Publish event
-    with app.get_producer() as producer:
-        message = kafka_topic.serialize(
-            key=partition_key,
-            value=event_data,
-        )
+    # Serialize message
+    message = kafka_topic.serialize(
+        key=partition_key,
+        value=event_data,
+    )
 
-        producer.produce(
-            topic=kafka_topic.name,
-            key=message.key,
-            value=message.value,
-            headers=kafka_headers,  # Add trace context headers
-        )
+    # Use singleton producer (no context manager needed - producer is long-lived)
+    producer = _get_kafka_producer()
+    producer.produce(
+        topic=kafka_topic.name,
+        key=message.key,
+        value=message.value,
+        headers=kafka_headers,  # Add trace context headers
+    )
 
-        # Only critical events need immediate flush (e.g., payment confirmation)
-        # Normal events are auto-batched by linger.ms=50, no manual flush needed
-        if force_flush:
-            producer.flush(timeout=1.0)
+    # Only critical events need immediate flush (e.g., payment confirmation)
+    # Normal events are auto-batched by linger.ms=50, no manual flush needed
+    if force_flush:
+        producer.flush(timeout=1.0)
 
     current_span = trace.get_current_span()
     trace_id = format(current_span.get_span_context().trace_id, '032x') if current_span else 'none'
