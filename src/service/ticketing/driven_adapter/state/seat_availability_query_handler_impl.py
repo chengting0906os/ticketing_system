@@ -56,8 +56,15 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     """
 
     def __init__(self):
-        self.tracer = trace.get_tracer(__name__)
+        self._tracer: trace.Tracer | None = None
         self._cache: Dict[UUID, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
+
+    @property
+    def tracer(self) -> trace.Tracer:
+        """Lazy initialize tracer to ensure TracerProvider is set up"""
+        if self._tracer is None:
+            self._tracer = trace.get_tracer(__name__)
+        return self._tracer
 
     async def _fetch_all_stats(self, event_id: UUID) -> Dict[str, Dict]:
         """Fetch all subsection stats from Kvrocks"""
@@ -78,9 +85,11 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
         all_stats = {}
         for section_id, stats in zip(section_ids, results, strict=False):
             if stats:
+                # event_id in stats is a UUID string, not an integer
+                event_id_value = stats.get('event_id', str(event_id))
                 all_stats[section_id] = {
                     'section_id': stats.get('section_id'),
-                    'event_id': int(stats.get('event_id', 0)),
+                    'event_id': event_id_value,  # Keep as UUID string
                     'available': int(stats.get('available', 0)),
                     'reserved': int(stats.get('reserved', 0)),
                     'sold': int(stats.get('sold', 0)),

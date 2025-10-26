@@ -1,5 +1,8 @@
 """Application layer interfaces (Ports)"""
 
+from src.service.ticketing.app.interface.i_booking_and_reserving_command_repo import (
+    IBookingAndReservingCommandRepo,
+)
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
@@ -15,20 +18,27 @@ from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler 
 from src.service.ticketing.app.interface.i_kafka_config_service import IKafkaConfigService
 from src.service.ticketing.app.interface.i_mq_infra_orchestrator import IMqInfraOrchestrator
 from src.service.ticketing.app.interface.i_password_hasher import IPasswordHasher
+from src.service.ticketing.app.interface.i_payment_finalizing_command_repo import (
+    IPaymentFinalizingCommandRepo,
+)
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
 )
-from src.service.ticketing.app.interface.i_seat_state_command_handler import (
-    ISeatStateCommandHandler,
+from src.service.ticketing.app.interface.i_seat_initializing_command_repo import (
+    ISeatInitializingCommandRepo,
 )
-from src.service.ticketing.app.interface.i_seat_state_query_handler import ISeatStateQueryHandler
+from src.service.ticketing.app.interface.i_seat_releasing_command_repo import (
+    ISeatReleasingCommandRepo,
+)
 from src.service.ticketing.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
+from src.service.ticketing.app.interface.i_seat_state_query_handler import ISeatStateQueryHandler
 from src.service.ticketing.app.interface.i_user_command_repo import IUserCommandRepo
 from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 
 __all__ = [
+    'IBookingAndReservingCommandRepo',
     'IBookingCommandRepo',
     'IBookingEventPublisher',
     'IBookingQueryRepo',
@@ -38,9 +48,11 @@ __all__ = [
     'IKafkaConfigService',
     'IMqInfraOrchestrator',
     'IPasswordHasher',
+    'IPaymentFinalizingCommandRepo',
     'ISeatAvailabilityQueryHandler',
+    'ISeatInitializingCommandRepo',
+    'ISeatReleasingCommandRepo',
     'ISeatReservationEventPublisher',
-    'ISeatStateCommandHandler',
     'ISeatStateQueryHandler',
     'IUserCommandRepo',
     'IUserQueryRepo',

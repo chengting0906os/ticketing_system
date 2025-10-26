@@ -71,7 +71,7 @@ class TracingConfig:
 
         # Add OTLP exporter (works with Jaeger's OTLP receiver)
         if self.otlp_endpoint:
-            otlp_exporter = OTLPSpanExporter(endpoint=self.otlp_endpoint)
+            otlp_exporter = OTLPSpanExporter(endpoint=self.otlp_endpoint, insecure=True)
             self._provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
 
         # Add console exporter for debugging

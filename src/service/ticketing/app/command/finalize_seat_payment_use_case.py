@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.interface import ISeatStateCommandHandler
+from src.service.ticketing.app.interface import IPaymentFinalizingCommandRepo
 
 
 @dataclass
@@ -31,8 +31,8 @@ class FinalizeSeatPaymentResult:
 class FinalizeSeatPaymentUseCase:
     """座位支付完成用例"""
 
-    def __init__(self, seat_state_handler: ISeatStateCommandHandler):
-        self.seat_state_handler = seat_state_handler
+    def __init__(self, payment_finalizing_repo: IPaymentFinalizingCommandRepo):
+        self.payment_finalizing_repo = payment_finalizing_repo
 
     @Logger.io
     async def execute(self, request: FinalizeSeatPaymentRequest) -> FinalizeSeatPaymentResult:
@@ -40,7 +40,7 @@ class FinalizeSeatPaymentUseCase:
         try:
             Logger.base.info(f'💰 [FINALIZE-SEAT] Finalizing payment for seat {request.seat_id}')
 
-            success = await self.seat_state_handler.finalize_payment(
+            success = await self.payment_finalizing_repo.finalize_payment(
                 seat_id=request.seat_id,
                 event_id=request.event_id,
                 timestamp=request.timestamp,

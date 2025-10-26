@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from uuid import UUID
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+from opentelemetry import context as context_api
+from opentelemetry import trace
+from opentelemetry.propagate import extract
 from quixstreams import Application
 
 
@@ -127,6 +130,9 @@ class SeatReservationConsumer:
         self.reserve_seats_use_case: Any = None
         self.release_seat_use_case: Any = None
         self.finalize_seat_payment_use_case: Any = None
+
+        # OpenTelemetry tracer
+        self.tracer = trace.get_tracer(__name__)
 
     def set_portal(self, portal: 'BlockingPortal') -> None:
         """設置 BlockingPortal 用於同步調用 async 函數"""
@@ -305,32 +311,76 @@ class SeatReservationConsumer:
         event_id = message.get('event_id', self.event_id)
         section = message.get('section', 'unknown')
         mode = message.get('seat_selection_mode', 'unknown')
+        booking_id = message.get('booking_id', 'unknown')
 
         # Extract partition info from Quix Streams context
         partition_info = ''
         if hasattr(context, 'topic') and hasattr(context, 'partition'):
             partition_info = f' | partition={context.partition}, offset={context.offset}'
 
-        booking_id = message.get('booking_id', 'unknown')
-        Logger.base.info(
-            f'\033[94m🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}\033[0m'
+        # Extract trace context from Kafka message headers
+        headers_dict = {}
+        if hasattr(context, 'headers') and context.headers:
+            # Convert Kafka headers (list of tuples) to dict for extract()
+            for key_bytes, value_bytes in context.headers:
+                if isinstance(key_bytes, bytes):
+                    key_str = key_bytes.decode('utf-8')
+                else:
+                    key_str = str(key_bytes)
+
+                if isinstance(value_bytes, bytes):
+                    value_str = value_bytes.decode('utf-8')
+                else:
+                    value_str = str(value_bytes)
+
+                headers_dict[key_str] = value_str
+
+        # Extract trace context and create span
+        ctx = extract(headers_dict)  # Extract propagated trace context
+
+        # IMPORTANT: Create a wrapper that preserves the span context for async call
+        # BlockingPortal.call() doesn't automatically propagate OpenTelemetry context
+        span = self.tracer.start_span(
+            'consumer.process_reservation',
+            context=ctx,  # Link to producer's trace
+            attributes={
+                'messaging.system': 'kafka',
+                'messaging.operation': 'process',
+                'booking.id': str(booking_id),
+                'event.id': str(event_id),
+                'seat.selection_mode': mode,
+                'partition': context.partition if hasattr(context, 'partition') else -1,
+            },
         )
 
-        # 執行預訂邏輯（拋出異常會被 on_processing_error 捕獲）
-        # pyrefly: ignore  # missing-attribute
-        result = self.portal.call(self._handle_reservation_async, message)
+        with trace.use_span(span, end_on_exit=True):
+            # Attach span to current context so portal.call() can access it
+            Logger.base.info(
+                f'\033[94m🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}\033[0m'
+            )
 
-        # 記錄成功的預訂
-        processing_time = time.time() - start_time
-        metrics.record_seat_reservation(
-            event_id=event_id,
-            section=section,
-            mode=mode,
-            result='success',
-            duration=processing_time,
-        )
+            # Get current OpenTelemetry context to pass to async function
+            current_context = trace.get_current_span().get_span_context()
 
-        return {'success': True, 'result': result}
+            # 執行預訂邏輯（拋出異常會被 on_processing_error 捕獲）
+            # pyrefly: ignore  # missing-attribute
+            # Pass trace context explicitly to async function
+            result = self.portal.call(self._handle_reservation_async, message, current_context)
+
+            # 記錄成功的預訂
+            processing_time = time.time() - start_time
+            metrics.record_seat_reservation(
+                event_id=event_id,
+                section=section,
+                mode=mode,
+                result='success',
+                duration=processing_time,
+            )
+
+            span.set_status(trace.Status(trace.StatusCode.OK))
+            span.add_event('Reservation processed successfully')
+
+            return {'success': True, 'result': result}
 
     @Logger.io
     def _process_release_seat(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
@@ -457,23 +507,36 @@ class SeatReservationConsumer:
     # ========== Reservation Logic ==========
 
     @Logger.io
-    async def _handle_reservation_async(self, event_data: Any) -> bool:
+    async def _handle_reservation_async(
+        self, event_data: Any, parent_span_context: Any = None
+    ) -> bool:
         """
         處理座位預訂事件 - 只負責路由到 use case
 
         Note: 不捕獲異常，讓它傳播到上層的重試邏輯
         """
-        parsed = self._parse_event_data(event_data)
-        if not parsed:
-            error_msg = 'Failed to parse event data'
-            Logger.base.error(f'❌ [RESERVATION] {error_msg}')
-            raise ValueError(error_msg)
+        # Restore parent trace context if provided
+        if parent_span_context:
+            ctx = trace.set_span_in_context(trace.NonRecordingSpan(parent_span_context))
+            token = context_api.attach(ctx)
+        else:
+            token = None
 
-        command = self._create_reservation_command(parsed)
-        Logger.base.info(f'🎯 [RESERVATION] booking_id={command["booking_id"]}')
+        try:
+            parsed = self._parse_event_data(event_data)
+            if not parsed:
+                error_msg = 'Failed to parse event data'
+                Logger.base.error(f'❌ [RESERVATION] {error_msg}')
+                raise ValueError(error_msg)
 
-        await self._execute_reservation(command)
-        return True
+            command = self._create_reservation_command(parsed)
+            Logger.base.info(f'🎯 [RESERVATION] booking_id={command["booking_id"]}')
+
+            await self._execute_reservation(command)
+            return True
+        finally:
+            if token:
+                context_api.detach(token)
 
     @Logger.io
     def _parse_event_data(self, event_data: Any) -> Optional[Dict]:
@@ -508,10 +571,11 @@ class SeatReservationConsumer:
         if not all([booking_id, buyer_id, event_id]):
             raise ValueError('Missing required fields in event data')
 
+        # Convert string UUIDs from Kafka back to UUID objects for cassandra-driver
         return {
-            'booking_id': booking_id,
-            'buyer_id': buyer_id,
-            'event_id': event_id,
+            'booking_id': UUID(booking_id) if isinstance(booking_id, str) else booking_id,
+            'buyer_id': UUID(buyer_id) if isinstance(buyer_id, str) else buyer_id,
+            'event_id': UUID(event_id) if isinstance(event_id, str) else event_id,
             'section': event_data.get('section', ''),
             'subsection': event_data.get('subsection', 0),
             'quantity': event_data.get('quantity', 2),

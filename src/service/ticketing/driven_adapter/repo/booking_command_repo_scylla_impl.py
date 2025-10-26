@@ -31,7 +31,14 @@ class BookingCommandRepoScyllaImpl(IBookingCommandRepo):
     """
 
     def __init__(self):
-        self.tracer = trace.get_tracer(__name__)
+        self._tracer: trace.Tracer | None = None
+
+    @property
+    def tracer(self) -> trace.Tracer:
+        """Lazy initialize tracer to ensure TracerProvider is set up"""
+        if self._tracer is None:
+            self._tracer = trace.get_tracer(__name__)
+        return self._tracer
 
     @staticmethod
     def _row_to_entity(row) -> Booking:

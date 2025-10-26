@@ -32,8 +32,15 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     """
 
     def __init__(self):
-        self.tracer = trace.get_tracer(__name__)
+        self._tracer: trace.Tracer | None = None
         self.partition_strategy = SubSectionBasedPartitionStrategy()
+
+    @property
+    def tracer(self) -> trace.Tracer:
+        """Lazy initialize tracer to ensure TracerProvider is set up"""
+        if self._tracer is None:
+            self._tracer = trace.get_tracer(__name__)
+        return self._tracer
 
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
         """Publish BookingCreated event to ticket reservation topic"""

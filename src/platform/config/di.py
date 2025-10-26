@@ -41,6 +41,9 @@ from src.service.ticketing.driven_adapter.message_queue.seat_reservation_mq_publ
 )
 
 # ScyllaDB Repositories
+from src.service.ticketing.driven_adapter.repo.booking_and_reserving_command_repo_scylla_impl import (
+    BookingAndReservingCommandRepoScyllaImpl,
+)
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_scylla_impl import (
     BookingCommandRepoScyllaImpl,
 )
@@ -53,6 +56,15 @@ from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_scyl
 from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_scylla_impl import (
     EventTicketingQueryRepoScyllaImpl,
 )
+from src.service.ticketing.driven_adapter.repo.payment_finalizing_command_repo_scylla_impl import (
+    PaymentFinalizingCommandRepoScyllaImpl,
+)
+from src.service.ticketing.driven_adapter.repo.seat_initializing_command_repo_scylla_impl import (
+    SeatInitializingCommandRepoScyllaImpl,
+)
+from src.service.ticketing.driven_adapter.repo.seat_releasing_command_repo_scylla_impl import (
+    SeatReleasingCommandRepoScyllaImpl,
+)
 from src.service.ticketing.driven_adapter.repo.user_command_repo_scylla_impl import (
     UserCommandRepoScyllaImpl,
 )
@@ -64,9 +76,6 @@ from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_han
 )
 from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
     SeatAvailabilityQueryHandlerImpl,
-)
-from src.service.ticketing.driven_adapter.state.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
 )
 from src.service.ticketing.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
@@ -93,6 +102,14 @@ class Container(containers.DeclarativeContainer):
     event_ticketing_command_repo = providers.Singleton(EventTicketingCommandRepoScyllaImpl)
     event_ticketing_query_repo = providers.Singleton(EventTicketingQueryRepoScyllaImpl)
 
+    # Seat Command Repositories (Singleton because they are stateless)
+    booking_and_reserving_command_repo = providers.Singleton(
+        BookingAndReservingCommandRepoScyllaImpl
+    )
+    seat_releasing_command_repo = providers.Singleton(SeatReleasingCommandRepoScyllaImpl)
+    payment_finalizing_command_repo = providers.Singleton(PaymentFinalizingCommandRepoScyllaImpl)
+    seat_initializing_command_repo = providers.Singleton(SeatInitializingCommandRepoScyllaImpl)
+
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
@@ -103,7 +120,6 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Singleton(SeatSelectionDomain)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
-    seat_state_command_handler = providers.Singleton(SeatStateCommandHandlerImpl)
 
     # Ticketing Service - Init State Handler (Singleton because it's stateless)
     init_event_and_tickets_state_handler = providers.Singleton(
@@ -124,16 +140,16 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Use Cases (Singleton because they are stateless)
     reserve_seats_use_case = providers.Singleton(
         ReserveSeatsUseCase,
-        seat_state_handler=seat_state_command_handler,
+        booking_and_reserving_repo=booking_and_reserving_command_repo,
         mq_publisher=seat_reservation_mq_publisher,
     )
     release_seat_use_case = providers.Singleton(
         ReleaseSeatUseCase,
-        seat_state_handler=seat_state_command_handler,
+        seat_releasing_repo=seat_releasing_command_repo,
     )
     finalize_seat_payment_use_case = providers.Singleton(
         FinalizeSeatPaymentUseCase,
-        seat_state_handler=seat_state_command_handler,
+        payment_finalizing_repo=payment_finalizing_command_repo,
     )
 
     # Ticketing Service - Command Use Cases (Singleton because they are stateless)

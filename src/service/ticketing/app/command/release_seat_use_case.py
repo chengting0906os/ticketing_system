@@ -4,7 +4,7 @@ Release Seat Use Case
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.app.interface import ISeatStateCommandHandler
+from src.service.ticketing.app.interface import ISeatReleasingCommandRepo
 from src.service.ticketing.app.dto import (
     ReleaseSeatRequest,
     ReleaseSeatResult,
@@ -16,8 +16,8 @@ from src.service.ticketing.app.dto import (
 class ReleaseSeatUseCase:
     """座位釋放用例"""
 
-    def __init__(self, seat_state_handler: ISeatStateCommandHandler):
-        self.seat_state_handler = seat_state_handler
+    def __init__(self, seat_releasing_repo: ISeatReleasingCommandRepo):
+        self.seat_releasing_repo = seat_releasing_repo
 
     @Logger.io
     async def execute(self, request: ReleaseSeatRequest) -> ReleaseSeatResult:
@@ -25,7 +25,7 @@ class ReleaseSeatUseCase:
         try:
             Logger.base.info(f'🔓 [RELEASE-SEAT] Releasing seat {request.seat_id}')
 
-            results = await self.seat_state_handler.release_seats(
+            results = await self.seat_releasing_repo.release_seats(
                 seat_ids=[request.seat_id], event_id=request.event_id
             )
 
@@ -62,7 +62,7 @@ class ReleaseSeatUseCase:
             )
 
             # Single call to release all seats
-            results = await self.seat_state_handler.release_seats(
+            results = await self.seat_releasing_repo.release_seats(
                 seat_ids=request.seat_ids, event_id=request.event_id
             )
 

@@ -25,5 +25,4 @@ def load_lua_script(*, script_name: str) -> str:
 
 
 # Pre-load commonly used scripts for better performance
-RESERVE_SEATS_SCRIPT = load_lua_script(script_name='reserve_seats')
 INITIALIZE_SEATS_SCRIPT = load_lua_script(script_name='initialize_seats')
