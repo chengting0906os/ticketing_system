@@ -106,47 +106,28 @@ dsu:  ## 🚀 Start Docker stack
 	@echo "   🔀 Load Balancer: http://localhost (nginx)"
 	@echo "   🌐 API Gateway:   http://localhost:8000"
 	@echo "   📚 Ticketing:     http://localhost:8100/docs"
-	@echo "   🪑 Seat Res:      http://localhost:8200/docs"
 	@echo "   📊 Kafka UI:      http://localhost:8080"
 	@echo "   📈 Grafana:       http://localhost:3000"
 
-.PHONY: dsd
-dsd:  ## 🛑 Stop Docker stack
+.PHONY: d-cd
+d-cd:  ## 🛑 Stop Docker stack
 	@docker-compose down
 
-.PHONY: dsr
-dsr:  ## 🔄 Restart services
-	@docker-compose restart ticketing-service seat-reservation-service
+.PHONY: d-rs
+d-rs:  ## 🔄 Restart services
+	@docker-compose restart ticketing-service
 
-.PHONY: dr
-dr:  ## 🔨 Rebuild services
-	@docker-compose build ticketing-service seat-reservation-service
-	@docker-compose up -d ticketing-service seat-reservation-service
+.PHONY: d-bs
+d-bs:  ## 🔨 Rebuild services
+	@docker-compose build ticketing-service
+	@docker-compose up -d ticketing-service 
 
 # ==============================================================================
 # 📈 SERVICE SCALING (Nginx Load Balancer)
 # ==============================================================================
 
-.PHONY: scale-up
-scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
-	@if [ -z "$(T)" ] || [ -z "$(R)" ]; then \
-		echo "Usage: make scale-up T=<ticketing_count> R=<reservation_count>"; \
-		echo "Example: make scale-up T=3 R=2"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling services: ticketing=$(T), reservation=$(R)"
-	@docker-compose up -d --scale ticketing-service=$(T) --scale seat-reservation-service=$(R) --no-recreate
-	@echo "✅ Scaled successfully!"
-	@docker-compose ps ticketing-service seat-reservation-service
-
-.PHONY: scale-down
-scale-down:  ## 📉 Scale down to 1 instance each
-	@echo "📉 Scaling down to 1 instance each..."
-	@docker-compose up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
-	@echo "✅ Scaled down successfully!"
-
 .PHONY: scale-ticketing
-scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
+scale-ticketing:  ## 🎫 Scale ticketing service (usage: make scale-ticketing N=3)
 	@if [ -z "$(N)" ]; then \
 		echo "Usage: make scale-ticketing N=<count>"; \
 		echo "Example: make scale-ticketing N=5"; \
@@ -157,22 +138,16 @@ scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticket
 	@echo "✅ Done!"
 	@docker-compose ps ticketing-service
 
-.PHONY: scale-reservation
-scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
-	@if [ -z "$(N)" ]; then \
-		echo "Usage: make scale-reservation N=<count>"; \
-		echo "Example: make scale-reservation N=3"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling seat-reservation-service to $(N) instances..."
-	@docker-compose up -d --scale seat-reservation-service=$(N) --no-recreate
-	@echo "✅ Done!"
-	@docker-compose ps seat-reservation-service
+.PHONY: scale-down
+scale-down:  ## 📉 Scale down to 1 instance
+	@echo "📉 Scaling down to 1 instance..."
+	@docker-compose up -d --scale ticketing-service=1 --no-recreate
+	@echo "✅ Scaled down successfully!"
 
 .PHONY: scale-status
 scale-status:  ## 📊 Show current scaling status
 	@echo "📊 Current service instances:"
-	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
+	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|nginx)"
 
 .PHONY: dra
 dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
@@ -250,7 +225,7 @@ dsh:  ## 🐚 Shell into Ticketing Service
 
 .PHONY: dal
 dal:  ## 📋 View application logs
-	@docker-compose logs -f ticketing-service seat-reservation-service
+	@docker-compose logs -f ticketing-service
 
 # ==============================================================================
 # ⚡ LOAD TESTING
@@ -368,7 +343,7 @@ cdk-ls:  ## 📋 List all CDK stacks
 # ==============================================================================
 
 .PHONY: monitor mon
-monitor mon:  ## 📊 Monitor all ECS services (ticketing, seat-reservation, kvrocks)
+monitor mon:  ## 📊 Monitor all ECS services (ticketing, kvrocks)
 	@echo "📊 Monitoring all ECS services..."
 	@./script/monitor/all_services.sh
 
@@ -393,10 +368,6 @@ ecr-push-ticketing:  ## 🎫 Build and push ticketing service to ECR (production
 	@echo "🎫 Building and pushing ticketing-service to ECR (production)..."
 	@./deployment/script/ecr-push.sh production ticketing
 
-.PHONY: ecr-push-reservation
-ecr-push-reservation:  ## 🪑 Build and push seat-reservation service to ECR (production)
-	@echo "🪑 Building and pushing seat-reservation-service to ECR (production)..."
-	@./deployment/script/ecr-push.sh production seat-reservation
 
 .PHONY: ecr-push-staging
 ecr-push-staging:  ## 🧪 Build and push all services to ECR (staging)
@@ -418,9 +389,6 @@ ecr-login:  ## 🔐 Login to AWS ECR
 ecr-list:  ## 📋 List Docker images in ECR repositories
 	@echo "📋 Images in ticketing-service repository:"
 	@aws ecr list-images --repository-name ticketing-service --region $(AWS_REGION) --output table || echo "Repository not found"
-	@echo ""
-	@echo "📋 Images in seat-reservation-service repository:"
-	@aws ecr list-images --repository-name seat-reservation-service --region $(AWS_REGION) --output table || echo "Repository not found"
 
 .PHONY: ecr-cleanup
 ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
@@ -428,13 +396,11 @@ ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
 	@echo "⚠️  This will keep only the last 10 images per environment tag"
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
-	@for repo in ticketing-service seat-reservation-service; do \
-		echo "Cleaning $$repo..."; \
-		aws ecr list-images --repository-name $$repo --region $(AWS_REGION) \
-			--query 'imageIds[?type(imageTag)!=`null`]|sort_by(@, &imageTag)|[0:-10].[imageDigest]' \
-			--output text | xargs -I {} aws ecr batch-delete-image \
-			--repository-name $$repo --region $(AWS_REGION) --image-ids imageDigest={} || true; \
-	done
+	@echo "Cleaning ticketing-service..."
+	@aws ecr list-images --repository-name ticketing-service --region $(AWS_REGION) \
+		--query 'imageIds[?type(imageTag)!=`null`]|sort_by(@, &imageTag)|[0:-10].[imageDigest]' \
+		--output text | xargs -I {} aws ecr batch-delete-image \
+		--repository-name ticketing-service --region $(AWS_REGION) --image-ids imageDigest={} || true
 	@echo "✅ Cleanup completed"
 
 # ==============================================================================
