@@ -130,16 +130,8 @@ jobs:
           done'
           echo "✅ Kvrocks ready"
 
-          # Extra buffer time
+          # Extra buffer time for services to stabilize
           sleep 10
-
-      - name: Initialize database
-        env:
-          SCYLLA_KEYSPACE: ticketing_system_test
-          SCYLLA_CONTACT_POINTS: '["localhost"]'
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          uv run python script/reset_scylladb.py
 
       - name: Run quick tests (unit + smoke)
         env:
