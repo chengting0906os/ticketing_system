@@ -100,10 +100,10 @@ jobs:
           echo "KAFKA_REPLICATION_FACTOR=1" >> .env
           mkdir -p static logs
 
-      - name: Start services with docker-compose
+      - name: Start services with docker compose
         run: |
           # Start only essential services for testing
-          docker-compose up -d scylladb1 kvrocks kafka1
+          docker compose up -d scylladb1 kvrocks kafka1
 
       - name: Wait for services to be ready
         run: |
@@ -152,4 +152,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
