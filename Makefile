@@ -246,7 +246,7 @@ lts:  ## 🧪 Small load test (10 requests, 10 workers, 10 clients)
 .PHONY: ltm
 ltm:  ## ⚡ Medium load test (2 processes × 250 requests, 25 workers each)
 	@cd script/go_client && \
-		./loadtest -requests 250 -concurrency 25 -clients 25 & \
+		./loadtest -requests 1000 -concurrency 25 -clients 25 & \
 
 .PHONY: ltl
 ltl:  ## ⚡ Large load test (2 processes × 250 requests, 25 workers each)
