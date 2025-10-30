@@ -12,6 +12,7 @@ Feature: Get Event with Seat Availability
       | email           | password |
       | seller@test.com | P@ssw0rd |
 
+  @smoke
   Scenario: Get event with seat availability for all subsections
     Given an event exists with seating config:
       | name         | description | venue_name   | seating_config                                                                                                                                                                                              |

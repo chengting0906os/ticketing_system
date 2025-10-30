@@ -4,6 +4,7 @@ Feature: User Creation
   I want to create new users
   So that they can access the system
 
+  @smoke
   Scenario: Create a new buyer user
     When I send api
       | email            | password | name     | role  |

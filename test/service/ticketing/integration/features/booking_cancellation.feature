@@ -12,6 +12,7 @@ Feature: Booking Cancellation
       | email          | password | name       | role  |
       | buyer@test.com | P@ssw0rd | Test Buyer | buyer |
 
+  @smoke
   Scenario: Successfully cancel unpaid booking
     Given an event exists:
       | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |

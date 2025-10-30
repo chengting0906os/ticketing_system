@@ -12,6 +12,7 @@ Feature: Event Creation
       | email           | password |
       | seller@test.com | P@ssw0rd |
 
+  @smoke
   Scenario: Create a new event successfully
     When I create a event with
       | name         | description                  | venue_name   | seating_config                                                                                                |

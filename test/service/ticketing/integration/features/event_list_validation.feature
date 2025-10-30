@@ -18,6 +18,7 @@ Feature: Event List
     Then the seller should see 5 events
     And the events should include all statuses
 
+  @smoke
   Scenario: Buyer sees only active and available events
     Given a seller with events:
       | name          | description        | is_active | status    | venue_name   | seating_config                                                                                                |

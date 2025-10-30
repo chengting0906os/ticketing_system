@@ -18,6 +18,7 @@ Feature: Booking with Seat Selection
       | name         | venue_name   | seating_config                                                                                               |
       | Test Concert | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 5, "seats_per_row": 10}]}]} |
 
+  @smoke
   Scenario: Manual seat selection - happy path
     When buyer creates booking with manual seat selection:
       | seat_selection_mode | seat_positions  |

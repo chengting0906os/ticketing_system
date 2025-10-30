@@ -56,6 +56,14 @@ psql:  ## 🐘 Connect to PostgreSQL
 test:  ## 🧪 Run unit tests (excludes CDK and E2E)
 	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
+.PHONY: t-smoke
+t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
+	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: t-unit
+t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
+	@uv run pytest test/service/ticketing/unit test/service/seat_reservation/unit -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+
 .PHONY: test-verbose
 test-verbose:  ## 🧪 Run tests with output (-vs, excludes CDK and E2E)
 	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -vs $(filter-out $@,$(MAKECMDGOALS))
@@ -122,10 +130,9 @@ dsd:  ## 🛑 Stop Docker stack
 dsr:  ## 🔄 Restart services
 	@docker-compose restart ticketing-service seat-reservation-service
 
-.PHONY: dr
-dr:  ## 🔨 Rebuild services
+.PHONY: d-build
+d-build:  ## 🔨 Rebuild services
 	@docker-compose build ticketing-service seat-reservation-service
-	@docker-compose up -d ticketing-service seat-reservation-service
 
 # ==============================================================================
 # 📈 SERVICE SCALING (Nginx Load Balancer)
@@ -260,8 +267,8 @@ dal:  ## 📋 View application logs
 # ⚡ LOAD TESTING
 # ==============================================================================
 
-.PHONY: ltb
-ltb:  ## 🔨 Build Go load test binary
+.PHONY: go-build
+go-build:  ## 🔨 Build Go load test binary
 	@cd script/go_client && go build -o loadtest main.go
 
 .PHONY: ltt
