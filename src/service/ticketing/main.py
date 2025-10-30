@@ -20,6 +20,7 @@ from src.platform.database.asyncpg_setting import (
 )
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.event_publisher import flush_all_messages
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.command import (
@@ -212,6 +213,17 @@ async def lifespan(_app: FastAPI):
 
     # Shutdown
     Logger.base.info('🛑 [Ticketing Service] Shutting down...')
+
+    # Flush all pending Kafka messages before shutdown
+    if enable_kafka:
+        try:
+            remaining = flush_all_messages(timeout=5.0)
+            if remaining > 0:
+                Logger.base.warning(
+                    f'⚠️  [Ticketing Service] {remaining} messages not delivered before shutdown'
+                )
+        except Exception as e:
+            Logger.base.error(f'❌ [Ticketing Service] Failed to flush Kafka messages: {e}')
 
     # Stop consumer
     consumer_task.cancel_scope.cancel()

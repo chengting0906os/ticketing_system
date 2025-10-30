@@ -1,8 +1,7 @@
 """
 Domain Event Publisher
-領域事件發布器
 
-簡化版事件發布接口 - 直接使用 Quix Streams
+Simplified event publishing interface - using Quix Streams directly
 """
 
 from datetime import datetime
@@ -16,15 +15,25 @@ from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
 
-# 全域 Quix Application 實例
+# Global Quix Application instance
 _quix_app: Application | None = None
+_global_producer = None  # Global producer instance
+
+
+def _get_global_producer():
+    """Get global producer instance - avoid creating new producer on every publish"""
+    global _global_producer
+    if _global_producer is None:
+        app = _get_quix_app()
+        _global_producer = app.get_producer()
+    return _global_producer
 
 
 def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
-    自定義序列化器 - 將 datetime 轉換為 timestamp
+    Custom serializer - convert datetime to timestamp
 
-    用於 attrs.asdict 的 value_serializer 參數
+    Used as value_serializer parameter for attrs.asdict
     """
     if isinstance(value, datetime):
         return int(value.timestamp())
@@ -32,23 +41,27 @@ def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
 
 
 def _get_quix_app() -> Application:
-    """取得全域 Quix Application 實例 - 支援 Exactly-Once 語義"""
+    """Get global Quix Application instance - supports Exactly-Once semantics"""
     global _quix_app
     if _quix_app is None:
-        # 產生唯一的事務 ID (用於 exactly-once)
+        # Generate unique transaction ID (for exactly-once)
         instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
         transactional_id = f'ticketing-producer-{instance_id}'
 
         _quix_app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
-            processing_guarantee='exactly-once',  # 🆕 啟用 exactly-once
+            processing_guarantee='exactly-once',  # Enable exactly-once
             producer_extra_config={
                 'enable.idempotence': True,
                 'acks': 'all',
                 'retries': 3,
                 'compression.type': 'snappy',
-                'transactional.id': transactional_id,  # 🆕 事務 ID
-                'max.in.flight.requests.per.connection': 5,  # 🆕 exactly-once 優化
+                'transactional.id': transactional_id,  # Transaction ID
+                'max.in.flight.requests.per.connection': 5,  # Exactly-once optimization
+                # Batching configuration for optimal throughput
+                'linger.ms': 10,  # Wait up to 10ms to batch messages
+                'batch.size': 32768,  # 32KB batch size (default: 16KB)
+                'batch.num.messages': 1000,  # Max messages per batch
             },
         )
     return _quix_app
@@ -61,17 +74,17 @@ async def publish_domain_event(
     partition_key: str,
 ) -> Literal[True]:
     """
-    發布領域事件到 Kafka
+    Publish domain event to Kafka
 
     Args:
-        event: 領域事件對象
-        topic: Kafka topic 名稱
-        partition_key: 分區鍵（確保相同實體的事件順序處理）
+        event: Domain event object
+        topic: Kafka topic name
+        partition_key: Partition key (ensures ordered processing for same entity)
 
     Returns:
-        True（永遠成功，失敗會拋出異常）
+        True (always succeeds, failures raise exceptions)
 
-    範例:
+    Example:
         await publish_domain_event(
             event=BookingCreated(booking_id=123, ...),
             topic=KafkaTopicBuilder.ticket_reserving_request(...),
@@ -80,14 +93,14 @@ async def publish_domain_event(
     """
     app = _get_quix_app()
 
-    # 創建 topic（Quix 會自動處理重複創建）
+    # Create topic (Quix automatically handles duplicate creation)
     kafka_topic = app.topic(
         name=topic,
         key_serializer='str',
         value_serializer='json',
     )
 
-    # 準備事件數據 - 使用 attrs.asdict 並確保 datetime 轉換為 timestamp
+    # Prepare event data - use attrs.asdict and ensure datetime is converted to timestamp
     event_dict = attrs.asdict(event, value_serializer=_serialize_value)
 
     event_data = {
@@ -97,25 +110,51 @@ async def publish_domain_event(
         **event_dict,
     }
 
-    # 移除已包含的欄位
+    # Remove already included fields
     event_data.pop('aggregate_id', None)
     event_data.pop('occurred_at', None)
 
-    # 發布事件
-    with app.get_producer() as producer:
-        message = kafka_topic.serialize(
-            key=partition_key,
-            value=event_data,
-        )
+    # Publish event - use global producer instance
+    producer = _get_global_producer()
+    message = kafka_topic.serialize(
+        key=partition_key,
+        value=event_data,
+    )
 
-        producer.produce(
-            topic=kafka_topic.name,
-            key=message.key,
-            value=message.value,
-        )
+    producer.produce(
+        topic=kafka_topic.name,
+        key=message.key,
+        value=message.value,
+    )
 
-        producer.flush(timeout=5.0)
+    # No flush here - let Kafka batch messages automatically
+    # Messages will be sent when batch.size or linger.ms threshold is reached
+    # This significantly improves throughput for high-frequency events
 
     Logger.base.info(f'📤 Published {event.__class__.__name__} to {topic} (key: {partition_key})')
 
     return True
+
+
+def flush_all_messages(timeout: float = 10.0) -> int:
+    """
+    Flush all pending messages - call this before application shutdown
+
+    Args:
+        timeout: Maximum time to wait for flush (seconds)
+
+    Returns:
+        Number of messages still pending after timeout
+
+    Example:
+        # In FastAPI shutdown event
+        @app.on_event("shutdown")
+        async def shutdown_event():
+            remaining = flush_all_messages(timeout=5.0)
+            if remaining > 0:
+                logger.warning(f"{remaining} messages not delivered")
+    """
+    producer = _get_global_producer()
+    remaining = producer.flush(timeout=timeout)
+    Logger.base.info(f'🔄 Flushed producer, {remaining} messages remaining')
+    return remaining
