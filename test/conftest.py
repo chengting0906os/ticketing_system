@@ -146,14 +146,26 @@ def get_scylla_session():
 
 
 async def setup_test_database():
-    """Create test keyspace and tables for ScyllaDB"""
+    """Create test keyspace and tables for ScyllaDB with robust schema synchronization"""
     cluster, session = get_scylla_session()
 
     try:
         keyspace = SCYLLA_CONFIG['keyspace']
 
+        # Use shorter wait times for local dev, longer for CI
+        import os
+
+        is_ci = os.getenv('CI', '').lower() == 'true'
+        drop_wait = 30 if is_ci else 5
+        keyspace_wait = 30 if is_ci else 5
+        table_wait = 60 if is_ci else 10
+        index_wait = 60 if is_ci else 10
+
         # Drop and recreate keyspace for clean state
         session.execute(f'DROP KEYSPACE IF EXISTS {keyspace}')
+
+        # Wait for DROP to propagate (critical for multi-node clusters)
+        cluster.control_connection.wait_for_schema_agreement(wait_time=drop_wait)
 
         # Create keyspace with RF=1 for testing
         session.execute(f"""
@@ -163,6 +175,9 @@ async def setup_test_database():
                 'datacenter1': 1
             }} AND TABLETS = {{'enabled': false}}
         """)
+
+        # Wait for keyspace creation to propagate
+        cluster.control_connection.wait_for_schema_agreement(wait_time=keyspace_wait)
 
         # Use the keyspace
         session.set_keyspace(keyspace)
@@ -179,8 +194,12 @@ async def setup_test_database():
         clean_lines = [line for line in lines if not line.strip().startswith('--')]
         schema_sql_clean = '\n'.join(clean_lines)
 
-        # Parse and execute table creation statements (skip keyspace creation)
+        # Separate CREATE TABLE and CREATE INDEX statements for batched execution
         statements = [stmt.strip() for stmt in schema_sql_clean.split(';') if stmt.strip()]
+
+        create_tables = []
+        create_indexes = []
+
         for statement in statements:
             # Skip CREATE KEYSPACE and USE keyspace statements
             if any(keyword in statement.upper() for keyword in ['CREATE KEYSPACE', 'USE ']):
@@ -189,27 +208,53 @@ async def setup_test_database():
             # Replace any hardcoded keyspace references
             statement = statement.replace('ticketing_system.', f'{keyspace}.')
 
-            if statement:
-                try:
-                    session.execute(statement)
-                except Exception as e:
-                    # Print full statement for debugging
-                    print('\n❌ Failed to execute statement:')
-                    print(f'Statement: {statement}')
-                    print(f'Error: {e}\n')
-                    raise  # Re-raise to catch schema errors early
+            if 'CREATE TABLE' in statement.upper():
+                create_tables.append(statement)
+            elif 'CREATE INDEX' in statement.upper():
+                create_indexes.append(statement)
 
+        # Execute all CREATE TABLE statements
+        print(f'🏗️  Creating {len(create_tables)} tables...')
+        for statement in create_tables:
+            try:
+                session.execute(statement)
+            except Exception as e:
+                print(f'\n❌ Failed to create table:\n{statement}\nError: {e}\n')
+                raise
+
+        # Wait for all tables to propagate
+        print('⏳ Waiting for table schema agreement...')
+        cluster.control_connection.wait_for_schema_agreement(wait_time=table_wait)
+
+        # Execute all CREATE INDEX statements
+        print(f'📇 Creating {len(create_indexes)} indexes...')
+        for statement in create_indexes:
+            try:
+                session.execute(statement)
+            except Exception as e:
+                print(f'\n❌ Failed to create index:\n{statement}\nError: {e}\n')
+                raise
+
+        # Wait for all indexes to propagate (indexes take longer than tables)
+        print('⏳ Waiting for index schema agreement...')
+        cluster.control_connection.wait_for_schema_agreement(wait_time=index_wait)
+
+        # Functional verification: actually query each table to ensure it's usable
         await verify_tables_created(session)
+
+        print('✅ Schema setup complete and verified')
 
     finally:
         cluster.shutdown()
 
 
 async def verify_tables_created(session):
-    """Verify all required tables exist"""
+    """Verify all required tables and indexes exist and are queryable"""
     required_tables = ['user', 'event', 'booking', 'ticket']
+    required_indexes = ['users_email_idx', 'events_seller_id_idx', 'tickets_buyer_id_idx']
     keyspace = SCYLLA_CONFIG['keyspace']
 
+    # Verify tables exist in system schema
     result = session.execute(f"""
         SELECT table_name FROM system_schema.tables
         WHERE keyspace_name = '{keyspace}'
@@ -224,6 +269,45 @@ async def verify_tables_created(session):
         raise RuntimeError(
             f'Table creation failed: missing {missing_tables}. Found: {existing_tables}'
         )
+
+    # Verify indexes exist in system schema
+    result = session.execute(f"""
+        SELECT index_name FROM system_schema.indexes
+        WHERE keyspace_name = '{keyspace}'
+    """)
+    existing_indexes = [row.index_name for row in result]
+
+    missing_indexes = [idx for idx in required_indexes if idx not in existing_indexes]
+    if missing_indexes:
+        raise RuntimeError(
+            f'Index creation failed: missing {missing_indexes}. Found: {existing_indexes}'
+        )
+
+    # Functional verification: actually query each table to ensure it's usable
+    # This catches cases where schema exists but tables aren't ready yet
+    print('🔍 Functionally verifying tables are queryable...')
+    import time
+
+    max_retries = 5
+    retry_delay = 2  # seconds
+
+    for table in required_tables:
+        for attempt in range(max_retries):
+            try:
+                # Simple SELECT to verify table is accessible
+                session.execute(f'SELECT * FROM {keyspace}.{table} LIMIT 1')
+                break  # Success, move to next table
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(
+                        f'Table {table} exists in schema but is not queryable after {max_retries} attempts: {e}'
+                    )
+                print(
+                    f'⚠️  Table {table} not ready (attempt {attempt + 1}/{max_retries}), retrying...'
+                )
+                time.sleep(retry_delay)
+
+    print(f'✅ All {len(required_tables)} tables verified and queryable')
 
 
 async def clean_all_tables():
@@ -258,13 +342,33 @@ async def clean_all_tables():
 # =============================================================================
 # Pytest Hooks for Parallel Testing
 # =============================================================================
+def pytest_sessionfinish(session, exitstatus):
+    """
+    Clean up after all tests complete
+
+    Ensures ScyllaDB driver background threads finish logging before exit
+    to avoid "I/O operation on closed file" errors
+    """
+    import time
+
+    # Give ScyllaDB driver threads time to finish logging
+    # This prevents "I/O operation on closed file" errors from background threads
+    time.sleep(0.5)
+
+
 def pytest_configure(config):
     """
     Setup database with file-based locking for parallel testing
 
     Uses file lock to ensure only ONE process (master or worker)
     creates the database at a time, preventing race conditions
+
+    NOTE: Skips database setup when SKIP_DB_SETUP=1 (e.g., for unit-only CI runs)
     """
+    # Skip database setup if explicitly disabled (for unit tests in CI)
+    if os.environ.get('SKIP_DB_SETUP') == '1':
+        print('\n⚡ SKIP_DB_SETUP=1 - skipping database setup')
+        return
 
     from filelock import FileLock
 
@@ -334,12 +438,18 @@ async def clean_kvrocks():
 
 
 @pytest.fixture(autouse=True, scope='function')
-async def clean_database():
+async def clean_database(request):
     """
     Clean all ScyllaDB tables after each test
 
     Critical for test isolation - ensures each test starts with clean state
+    Only runs for integration tests (marked with @pytest.mark.integration)
     """
+    # Skip database cleanup for unit tests (they use mocks, not real DB)
+    if 'unit' in request.keywords:
+        yield
+        return
+
     await clean_all_tables()
     yield
     await clean_all_tables()

@@ -53,6 +53,7 @@ from src.service.ticketing.driven_adapter.repo.booking_command_repo_scylla_impl 
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_scylla_impl import (
     BookingQueryRepoScyllaImpl,
 )
+from src.service.ticketing.driven_adapter.sse import sse_broadcaster
 
 
 class KafkaConfig:
@@ -207,17 +208,15 @@ class TicketingMqConsumer:
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
-        # 定義 topic 配置
+        # 定義 topic 配置 (Notification Pattern)
         topics = {
-            'pending_payment_and_reserved': (
-                KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-                    event_id=self.event_id
-                ),
-                self._process_pending_payment_and_reserved,
+            'seats_reserved': (
+                KafkaTopicBuilder.seats_reserved_notification(event_id=self.event_id),
+                self._process_seats_reserved,
             ),
-            'failed': (
-                KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
-                self._process_failed,
+            'booking_failed': (
+                KafkaTopicBuilder.booking_failed_notification(event_id=self.event_id),
+                self._process_booking_failed,
             ),
         }
 
@@ -275,10 +274,15 @@ class TicketingMqConsumer:
 
     # ========== Message Handlers ==========
 
-    def _process_pending_payment_and_reserved(
-        self, message: Dict, key: Any = None, context: Any = None
-    ) -> Dict:
-        """處理 Booking → PENDING_PAYMENT + Ticket → RESERVED (原子操作)"""
+    def _process_seats_reserved(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
+        """
+        處理 seats_reserved 通知
+
+        NOTIFICATION: Seat Reservation Service 已完成座位預訂
+        Database state: Booking=PENDING_PAYMENT, Ticket=RESERVED, Seat=LOCKED
+
+        This handler performs follow-up actions (side effects)
+        """
         booking_id = message.get('booking_id')
         reserved_seats = message.get('reserved_seats', [])
 
@@ -302,7 +306,7 @@ class TicketingMqConsumer:
 
         # Create a linked span (connects to parent trace from HTTP request)
         with self.tracer.start_as_current_span(
-            'CONSUMER.PROCESS_PENDING_PAYMENT_AND_RESERVED',
+            'CONSUMER.PROCESS_SEATS_RESERVED_NOTIFICATION',
             context=parent_context,
             kind=SpanKind.CONSUMER,
             attributes={
@@ -317,36 +321,39 @@ class TicketingMqConsumer:
         ):
             try:
                 Logger.base.info(
-                    f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                    f'📥 [SEATS-RESERVED-{self.instance_id}] Processing notification: booking_id={booking_id}{partition_info}'
                 )
 
                 with self.tracer.start_as_current_span('consumer.call_async_handler'):
                     # Use portal to call async function (ensures proper async context)
                     # pyrefly: ignore  # missing-attribute
-                    self.portal.call(self._handle_pending_payment_and_reserved_async, message)
+                    self.portal.call(self._handle_seats_reserved_async, message)
 
                 Logger.base.info(
-                    f'✅ [BOOKING+TICKET] Completed: booking_id={booking_id}, tickets={len(reserved_seats)}'
+                    f'✅ [SEATS-RESERVED] Notification processed: booking_id={booking_id}, tickets={len(reserved_seats)}'
                 )
                 return {'success': True}
 
             except Exception as e:
-                Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
+                Logger.base.error(f'❌ [SEATS-RESERVED] Failed: booking_id={booking_id}, error={e}')
                 trace.get_current_span().set_attribute('error', True)
                 trace.get_current_span().set_attribute('error.message', str(e))
                 return {'success': False, 'error': str(e)}
 
-    async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
+    async def _handle_seats_reserved_async(self, message: Dict[str, Any]):
         """
-        Async handler for pending payment and reserved
+        Async handler for seats_reserved notification
 
-        Note: Repositories use asyncpg and manage their own connections.
+        NOTIFICATION: Seats have already been reserved in ScyllaDB
+        This handler performs side effects and follow-up actions
+
+        Note: Repositories use cassandra-driver and manage their own connections.
         Use case directly depends on repositories, no UoW needed.
         """
-        Logger.base.info(f'🔧 [BOOKING+TICKET] Handling async message: {message} ')
+        Logger.base.info(f'🔧 [SEATS-RESERVED] Handling notification async: {message} ')
 
         with self.tracer.start_as_current_span(
-            'consumer.handle_pending_payment_async',
+            'consumer.handle_seats_reserved_notification',
             attributes={
                 'booking_id': str(message.get('booking_id'))
                 if message.get('booking_id')
@@ -408,14 +415,14 @@ class TicketingMqConsumer:
                 # ticket_details format: [{'seat_id': 'A-1-1-1', 'price': 1000}, ...]
                 if not ticket_details or len(ticket_details) == 0:
                     Logger.base.error(
-                        f'❌ [BOOKING+TICKET] No ticket_details in message for booking {booking_id}'
+                        f'❌ [SEATS-RESERVED] No ticket_details in message for booking {booking_id}'
                     )
                     raise ValueError('ticket_details is required in SeatsReservedEvent')
 
                 ticket_price = ticket_details[0].get('price')
                 if ticket_price is None:
                     Logger.base.error(
-                        f'❌ [BOOKING+TICKET] No price in ticket_details for booking {booking_id}'
+                        f'❌ [SEATS-RESERVED] No price in ticket_details for booking {booking_id}'
                     )
                     raise ValueError('price is required in ticket_details')
 
@@ -448,9 +455,34 @@ class TicketingMqConsumer:
                     seat_selection_mode=seat_selection_mode,
                 )
 
+            # Broadcast to SSE (Event-Driven notification)
+            with self.tracer.start_as_current_span('consumer.broadcast_sse'):
+                await sse_broadcaster.broadcast(
+                    booking_id=booking_id,
+                    status_update={
+                        'event_type': 'seats_reserved',
+                        'status': 'PENDING_PAYMENT',
+                        'reserved_seats': reserved_seats,
+                        'total_price': ticket_price * len(seat_identifiers),
+                        'details': {
+                            'seat_selection_mode': seat_selection_mode,
+                            'section': section or '',
+                            'subsection': subsection or 0,
+                        },
+                    },
+                )
+                Logger.base.info(f'📤 [SSE] Broadcasted seats_reserved to booking {booking_id}')
+
     @Logger.io
-    def _process_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
-        """處理 Booking → FAILED"""
+    def _process_booking_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
+        """
+        處理 booking_failed 通知
+
+        NOTIFICATION: Seat Reservation Service 預訂失敗
+        Database state: Booking=FAILED, seats released
+
+        This handler performs follow-up actions (side effects)
+        """
         booking_id = message.get('booking_id')
 
         # Extract partition info from Quix Streams context
@@ -460,25 +492,28 @@ class TicketingMqConsumer:
 
         try:
             Logger.base.info(
-                f'📥 [BOOKING-FAILED-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                f'📥 [BOOKING-FAILED-{self.instance_id}] Processing notification: booking_id={booking_id}{partition_info}'
             )
 
             # Use portal to call async function (ensures proper async context)
             # pyrefly: ignore  # missing-attribute
-            self.portal.call(self._handle_failed_async, message)
+            self.portal.call(self._handle_booking_failed_async, message)
 
-            Logger.base.info(f'✅ [BOOKING-FAILED] Completed: {booking_id}')
+            Logger.base.info(f'✅ [BOOKING-FAILED] Notification processed: {booking_id}')
             return {'success': True}
 
         except Exception as e:
             Logger.base.error(f'❌ [BOOKING-FAILED] Failed: booking_id={booking_id}, error={e}')
             return {'success': False, 'error': str(e)}
 
-    async def _handle_failed_async(self, message: Dict[str, Any]):
+    async def _handle_booking_failed_async(self, message: Dict[str, Any]):
         """
-        Async handler for failed booking
+        Async handler for booking_failed notification
 
-        Note: Repositories use asyncpg and manage their own connections.
+        NOTIFICATION: Booking has already failed in ScyllaDB
+        This handler performs side effects (e.g., notify user, log metrics)
+
+        Note: Repositories use cassandra-driver and manage their own connections.
         Use case directly depends on repositories, no UoW needed.
         """
         # Extract and parse UUIDs from message
@@ -505,6 +540,19 @@ class TicketingMqConsumer:
             booking_command_repo=booking_command_repo,
         )
         await use_case.execute(booking_id=booking_id, buyer_id=buyer_id, error_message=reason)
+
+        # Broadcast to SSE (Event-Driven notification)
+        await sse_broadcaster.broadcast(
+            booking_id=booking_id,
+            status_update={
+                'event_type': 'booking_failed',
+                'status': 'FAILED',
+                'details': {
+                    'error_message': reason,
+                },
+            },
+        )
+        Logger.base.info(f'📤 [SSE] Broadcasted booking_failed to booking {booking_id}')
 
     # ========== Lifecycle ==========
 

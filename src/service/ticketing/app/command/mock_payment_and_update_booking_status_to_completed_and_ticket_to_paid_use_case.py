@@ -1,15 +1,17 @@
+from datetime import datetime, timezone
 import random
 import string
 from typing import Any, Dict
 from uuid import UUID
 
-from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
-from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
-from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
+from src.service.ticketing.app.interface.i_sse_broadcaster import ISSEBroadcaster
+from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
+from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 
 
 class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
@@ -17,8 +19,10 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         self,
         *,
         booking_command_repo: IBookingCommandRepo,
+        sse_broadcaster: ISSEBroadcaster,
     ):
         self.booking_command_repo = booking_command_repo
+        self.sse_broadcaster = sse_broadcaster
 
     @Logger.io
     async def pay_booking(
@@ -69,7 +73,6 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
 
             if ticket_ids:
                 # Create and publish BookingPaidEvent
-                from datetime import datetime, timezone
 
                 paid_event = BookingPaidEvent(
                     booking_id=booking_id,
@@ -98,6 +101,23 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         payment_id = (
             f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'
         )
+
+        # Broadcast to SSE (Event-Driven notification)
+        await self.sse_broadcaster.broadcast(
+            booking_id=booking_id,
+            status_update={
+                'event_type': 'payment_completed',
+                'status': 'COMPLETED',
+                'details': {
+                    'payment_id': payment_id,
+                    'paid_at': (
+                        updated_booking.paid_at.isoformat() if updated_booking.paid_at else None
+                    ),
+                    'total_amount': updated_booking.total_price,
+                },
+            },
+        )
+        Logger.base.info(f'📤 [SSE] Broadcasted payment_completed to booking {booking_id}')
 
         return {
             'booking_id': updated_booking.id,

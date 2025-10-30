@@ -6,6 +6,7 @@ from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
+from src.service.ticketing.app.interface.i_sse_broadcaster import ISSEBroadcaster
 from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
     IEventTicketingQueryRepo,
 )
@@ -29,47 +30,49 @@ class UpdateBookingToCancelledUseCase:
         *,
         booking_command_repo: IBookingCommandRepo,
         event_ticketing_query_repo: IEventTicketingQueryRepo,
+        sse_broadcaster: ISSEBroadcaster,
     ):
         self.booking_command_repo = booking_command_repo
         self.event_ticketing_query_repo = event_ticketing_query_repo
+        self.sse_broadcaster = sse_broadcaster
 
     @Logger.io
     async def execute(self, *, booking_id: UUID, buyer_id: UUID) -> Booking:
         """
-        執行訂單狀態更新為取消
+        Execute the booking cancellation workflow.
 
         Args:
-            booking_id: 訂單 ID
-            buyer_id: 買家 ID
+            booking_id: Booking identifier.
+            buyer_id: Buyer identifier.
 
         Returns:
-            更新後的訂單
+            Booking after cancellation.
 
         Raises:
-            NotFoundError: 訂單不存在
-            ForbiddenError: 無權取消此訂單
-            DomainError: 訂單狀態不允許取消（由 domain 層拋出）
+            NotFoundError: Booking does not exist.
+            ForbiddenError: Buyer is not authorized to cancel this booking.
+            DomainError: Booking state does not allow cancellation (raised by domain layer).
         """
-        # 查詢訂單（Fail Fast）
+        # Fetch booking (fail fast).
         booking = await self.booking_command_repo.get_by_id(booking_id=booking_id)
         if not booking:
             raise NotFoundError('Booking not found')
 
-        # 驗證所有權（Fail Fast）
+        # Verify ownership (fail fast).
         if booking.buyer_id != buyer_id:
             raise ForbiddenError('Only the buyer can cancel this booking')
 
-        # 標記為取消狀態（domain 會驗證狀態轉換）
+        # Mark as cancelled (domain validates state transition).
         cancelled_booking = await booking.cancel()
         updated_booking = await self.booking_command_repo.update_status_to_cancelled(
             booking=cancelled_booking
         )
 
-        # 查詢關聯的 tickets（透過 seat_positions）
+        # Query related tickets (via seat_positions).
         tickets = await self.booking_command_repo.get_tickets_by_booking_id(booking_id=booking_id)
         ticket_ids = [ticket.id for ticket in tickets if ticket.id]
 
-        # 取得座位位置資訊（從 tickets 建構完整的 seat identifiers）
+        # Build full seat identifiers from tickets.
         # Format: section-subsection-row-seat (e.g., "A-1-1-1")
         seat_positions = [
             f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}' for ticket in tickets
@@ -78,7 +81,7 @@ class UpdateBookingToCancelledUseCase:
             f'🎫 [CANCEL] Found {len(seat_positions)} seat positions: {seat_positions}'
         )
 
-        # 發送 BookingCancelledEvent 到 Kafka（釋放 Kvrocks 座位）
+        # Publish BookingCancelledEvent to Kafka (release Kvrocks seats).
         if ticket_ids:
             Logger.base.info(
                 f'🔓 [CANCEL] Publishing cancellation event for {len(ticket_ids)} tickets'
@@ -103,6 +106,20 @@ class UpdateBookingToCancelledUseCase:
             )
 
             Logger.base.info(f'✅ [CANCEL] Published BookingCancelledEvent to {topic_name}')
+
+        # Broadcast to SSE (event-driven notification).
+        await self.sse_broadcaster.broadcast(
+            booking_id=booking_id,
+            status_update={
+                'event_type': 'booking_cancelled',
+                'status': 'CANCELLED',
+                'details': {
+                    'cancelled_at': datetime.now(timezone.utc).isoformat(),
+                    'seat_positions': seat_positions,
+                },
+            },
+        )
+        Logger.base.info(f'📤 [SSE] Broadcasted booking_cancelled to booking {booking_id}')
 
         Logger.base.info(f'🎯 [CANCEL] Booking {booking_id} cancelled successfully')
         return updated_booking

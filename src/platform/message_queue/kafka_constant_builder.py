@@ -2,17 +2,17 @@ from uuid import UUID
 
 
 class ServiceNames:
-    """服務名稱常數"""
+    """Service name constants."""
 
-    TICKETING_SERVICE = 'ticketing-service'  # 整合 booking + event_ticketing
+    TICKETING_SERVICE = 'ticketing-service'  # Combines booking and event_ticketing.
     SEAT_RESERVATION_SERVICE = 'seat-reservation-service'
 
 
 class KafkaTopicBuilder:
     """
-    Kafka Topic 命名統一建構器
+    Unified Kafka topic naming builder.
 
-    使用格式: event-id-{event_id}______{action}______{from_service}___to___{to_service}
+    Format: event-id-{event_id}______{action}______{from_service}___to___{to_service}
     """
 
     # ====== To Seat Reservation Service =======
@@ -28,18 +28,44 @@ class KafkaTopicBuilder:
     def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: UUID) -> str:
         return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
-    # ====== To Ticketing Service (包含 Booking + Event Ticketing) =======
+    # ====== To Ticketing Service (includes Booking + Event Ticketing) =======
+    # NOTIFICATION PATTERN: These events represent completed actions, not commands
+    # The database writes are already completed by the sender before publishing
 
     @staticmethod
-    def update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-        *, event_id: UUID
-    ) -> str:
-        """座位預訂成功後，同時更新 Booking 和 Ticket 狀態（原子操作）"""
-        return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
+    def seats_reserved_notification(*, event_id: UUID) -> str:
+        """
+        NOTIFICATION: Seat Reservation Service successfully reserved seats (PAST TENSE).
+
+        What already happened (atomic ScyllaDB batch write):
+        - Ticket status → RESERVED
+        - Booking status → PENDING_PAYMENT
+        - Seat state → locked
+
+        Listeners can react by:
+        - Sending confirmation emails
+        - Updating caches
+        - Triggering payment reminders
+        - Recording analytics
+        """
+        return f'event-id-{event_id}______seats-reserved-notification______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
-    def update_booking_status_to_failed(*, event_id: UUID) -> str:
-        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
+    def booking_failed_notification(*, event_id: UUID) -> str:
+        """
+        NOTIFICATION: Seat Reservation Service failed to complete booking (PAST TENSE).
+
+        What already happened:
+        - Validation failed or timeout occurred
+        - Booking status → FAILED
+        - Seats released back to available pool
+
+        Listeners can react by:
+        - Notifying user of failure
+        - Logging error metrics
+        - Triggering retry logic if applicable
+        """
+        return f'event-id-{event_id}______booking-failed-notification______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
     def ticketing_dlq(*, event_id: UUID) -> str:
@@ -54,15 +80,13 @@ class KafkaTopicBuilder:
     @staticmethod
     def get_all_topics(*, event_id: UUID) -> list[str]:
         return [
-            # To Seat Reservation Service
+            # To Seat Reservation Service (Commands)
             KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(event_id=event_id),
             KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event_id),
-            # To Ticketing Service
-            KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-                event_id=event_id
-            ),
-            KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
+            # To Ticketing Service (Notifications)
+            KafkaTopicBuilder.seats_reserved_notification(event_id=event_id),
+            KafkaTopicBuilder.booking_failed_notification(event_id=event_id),
             # Dead Letter Queues
             KafkaTopicBuilder.ticketing_dlq(event_id=event_id),
             KafkaTopicBuilder.seat_reservation_dlq(event_id=event_id),
@@ -71,14 +95,14 @@ class KafkaTopicBuilder:
 
 class KafkaConsumerGroupBuilder:
     """
-    Kafka Consumer Group 命名統一建構器
+    Unified Kafka consumer group naming builder.
 
-    使用格式: event-id-{event_id}_____{service_name}-{event_id}
+    Format: event-id-{event_id}_____{service_name}-{event_id}
     """
 
     @staticmethod
     def ticketing_service(*, event_id: UUID) -> str:
-        """Ticketing Service (整合 booking + event_ticketing)"""
+        """Ticketing Service (combines booking + event_ticketing)."""
         return f'event-id-{event_id}_____{ServiceNames.TICKETING_SERVICE}--{event_id}'
 
     @staticmethod
@@ -87,7 +111,7 @@ class KafkaConsumerGroupBuilder:
 
     @staticmethod
     def get_all_consumer_groups(*, event_id: UUID) -> list[str]:
-        """獲取所有 consumer groups (Ticketing + Seat Reservation)"""
+        """Retrieve all consumer groups (Ticketing + Seat Reservation)."""
         return [
             KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
@@ -96,12 +120,12 @@ class KafkaConsumerGroupBuilder:
 
 class KafkaProducerTransactionalIdBuilder:
     """
-    Kafka Producer Transactional ID 命名統一建構器
+    Unified Kafka producer transactional ID naming builder.
 
-    Transactional ID 是 Kafka exactly-once 語義的核心：
-    - 確保 producer 冪等性 (防止重複寫入)
-    - 每個 producer instance 必須有唯一的 transactional.id
-    - 格式: {service_name}-producer-event-{event_id}-instance-{instance_id}
+    Transactional IDs are the core of Kafka exactly-once semantics:
+    - Ensure producer idempotency (prevent duplicate writes)
+    - Every producer instance must have a unique transactional.id
+    - Format: {service_name}-producer-event-{event_id}-instance-{instance_id}
 
     Environment Variables:
     - KAFKA_PRODUCER_INSTANCE_ID: Producer instance identifier (default: "1")
@@ -120,9 +144,9 @@ class KafkaProducerTransactionalIdBuilder:
 
 class PartitionKeyBuilder:
     """
-    Partition Key 命名統一建構器
+    Unified partition key naming builder.
 
-    使用格式: event-{event_id}-section-{section}-partition-{partition_number}
+    Format: event-{event_id}-section-{section}-partition-{partition_number}
     """
 
     @staticmethod

@@ -30,7 +30,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_cql_
     # Fallback to table data for backward compatibility with other tests
     buyer_id_raw = booking_state.get('buyer', {}).get('id') or booking_data['buyer_id']
     buyer_id = UUID(buyer_id_raw) if isinstance(buyer_id_raw, str) else buyer_id_raw
-    total_price = int(booking_data['total_price'])
+    total_price = int(booking_data.get('total_price', 2000))  # Default 2000 if not provided
 
     # Get denormalized data for ScyllaDB
     buyer = booking_state.get('buyer', {})

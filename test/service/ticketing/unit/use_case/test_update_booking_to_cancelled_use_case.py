@@ -115,6 +115,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act
@@ -148,6 +149,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act & Assert
@@ -168,6 +170,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act & Assert
@@ -204,6 +207,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act & Assert
@@ -237,6 +241,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act & Assert
@@ -299,6 +304,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act
@@ -338,6 +344,7 @@ class TestUpdateBookingToCancelled:
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=repo_mocks.booking_command_repo,
             event_ticketing_query_repo=repo_mocks.event_ticketing_query_repo,
+            sse_broadcaster=repo_mocks.sse_broadcaster,
         )
 
         # Act

@@ -50,17 +50,25 @@ class TestCreateBookingExecutionOrder:
         return task_group
 
     @pytest.fixture
+    def mock_booking_tracker(self):
+        tracker = AsyncMock()
+        tracker.notify_booking_created = AsyncMock()
+        return tracker
+
+    @pytest.fixture
     def use_case(
         self,
         mock_booking_command_repo,
         mock_event_publisher,
         mock_seat_availability_handler,
+        mock_booking_tracker,
         mock_background_task_group,
     ):
         return CreateBookingUseCase(
             booking_command_repo=mock_booking_command_repo,
             event_publisher=mock_event_publisher,
             seat_availability_handler=mock_seat_availability_handler,
+            booking_tracker=mock_booking_tracker,
             background_task_group=mock_background_task_group,
         )
 
@@ -169,7 +177,6 @@ class TestCreateBookingExecutionOrder:
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason='Seat availability check is currently disabled')
 class TestSeatAvailabilityCheck:
     """測試座位可用性檢查 (Fail Fast)"""
 
@@ -200,17 +207,26 @@ class TestSeatAvailabilityCheck:
         return task_group
 
     @pytest.fixture
+    def mock_booking_tracker(self):
+        """Mock booking tracker for SSE notifications"""
+        tracker = AsyncMock()
+        tracker.notify_booking_created = AsyncMock()
+        return tracker
+
+    @pytest.fixture
     def use_case(
         self,
         mock_booking_command_repo,
         mock_event_publisher,
         mock_seat_availability_handler,
+        mock_booking_tracker,
         mock_background_task_group,
     ):
         return CreateBookingUseCase(
             booking_command_repo=mock_booking_command_repo,
             event_publisher=mock_event_publisher,
             seat_availability_handler=mock_seat_availability_handler,
+            booking_tracker=mock_booking_tracker,
             background_task_group=mock_background_task_group,
         )
 
@@ -340,5 +356,5 @@ class TestSeatAvailabilityCheck:
         result = await use_case.create_booking(**valid_booking_data)
 
         # Then: Booking should be created successfully
-        assert result.id == 999
+        assert result.id == created_booking.id
         mock_booking_command_repo.create.assert_called_once()

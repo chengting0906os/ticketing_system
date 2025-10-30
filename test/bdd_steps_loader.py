@@ -32,6 +32,9 @@ from test.service.ticketing.integration.steps.seat_reservation.when import *  # 
 from test.service.ticketing.integration.steps.booking.given import *  # noqa: E402, F403
 from test.service.ticketing.integration.steps.booking.then import *  # noqa: E402, F403
 from test.service.ticketing.integration.steps.booking.when import *  # noqa: E402, F403
+from test.service.ticketing.integration.steps.booking_sse.given import *  # noqa: E402, F403
+from test.service.ticketing.integration.steps.booking_sse.then import *  # noqa: E402, F403
+from test.service.ticketing.integration.steps.booking_sse.when import *  # noqa: E402, F403
 from test.service.ticketing.integration.steps.event_ticketing.given import *  # noqa: E402, F403
 from test.service.ticketing.integration.steps.event_ticketing.then import *  # noqa: E402, F403
 from test.service.ticketing.integration.steps.event_ticketing.when import *  # noqa: E402, F403

@@ -71,6 +71,7 @@ from src.service.ticketing.driven_adapter.repo.user_command_repo_scylla_impl imp
 from src.service.ticketing.driven_adapter.repo.user_query_repo_scylla_impl import (
     UserQueryRepoScyllaImpl,
 )
+from src.service.ticketing.driven_adapter.state.booking_tracker_impl import BookingTrackerImpl
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -79,6 +80,9 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
 )
 from src.service.ticketing.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
+)
+from src.service.ticketing.driven_adapter.sse.booking_sse_broadcaster_impl import (
+    BookingSSEBroadcasterImpl,
 )
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
 
@@ -131,6 +135,16 @@ class Container(containers.DeclarativeContainer):
         SeatAvailabilityQueryHandlerImpl,
     )
 
+    # Booking Tracker (Factory - uses Kvrocks client from current event loop)
+    booking_tracker = providers.Factory(
+        BookingTrackerImpl,
+    )
+
+    # SSE Broadcaster (Singleton - manages all SSE connections)
+    sse_broadcaster = providers.Singleton(
+        BookingSSEBroadcasterImpl,
+    )
+
     # MQ Infrastructure Orchestrator
     mq_infra_orchestrator = providers.Factory(
         MqInfraOrchestrator,
@@ -158,6 +172,7 @@ class Container(containers.DeclarativeContainer):
         booking_command_repo=booking_command_repo,
         event_publisher=booking_event_publisher,
         seat_availability_handler=seat_availability_query_handler,
+        booking_tracker=booking_tracker,
         background_task_group=background_task_group,
     )
     create_event_and_tickets_use_case = providers.Singleton(
@@ -170,10 +185,12 @@ class Container(containers.DeclarativeContainer):
         UpdateBookingToCancelledUseCase,
         booking_command_repo=booking_command_repo,
         event_ticketing_query_repo=event_ticketing_query_repo,
+        sse_broadcaster=sse_broadcaster,
     )
     mock_payment_use_case = providers.Singleton(
         MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
         booking_command_repo=booking_command_repo,
+        sse_broadcaster=sse_broadcaster,
     )
 
     # Ticketing Service - Query Use Cases (Singleton because they are stateless)

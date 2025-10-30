@@ -1,12 +1,16 @@
+import json
 from typing import List
 from uuid import UUID
 
+import anyio
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, status
 from opentelemetry import trace
+from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.driven_adapter.sse import sse_broadcaster
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
@@ -162,3 +166,122 @@ async def pay_booking(
         status=result['status'],
         paid_at=result['paid_at'],
     )
+
+
+# ============================ SSE Endpoint ============================
+
+
+@router.get('/{booking_id}/status/sse', status_code=status.HTTP_200_OK)
+@Logger.io
+@inject
+async def stream_booking_status(
+    booking_id: UUID,
+    current_user: UserEntity = Depends(get_current_user),
+    booking_query_use_case: GetBookingUseCase = Depends(Provide[Container.get_booking_use_case]),
+):
+    """
+    SSE real-time booking status updates
+
+    Architecture: Event-Driven SSE (Kafka notification → SSE Manager → Client)
+
+    Flow:
+    1. Client connects → Query current booking status (initial_status)
+    2. Subscribe to SSE Manager for this booking_id
+    3. Wait for Kafka notifications → SSE Manager broadcasts → Push to client
+
+    Event Types:
+    - initial_status: First event with current booking state
+    - seats_reserved: Seats successfully reserved (PENDING_PAYMENT)
+    - booking_failed: Reservation failed (FAILED)
+    - payment_completed: Payment successful (COMPLETED)
+    - booking_cancelled: Booking cancelled (CANCELLED)
+
+    Returns:
+        EventSourceResponse with booking status updates
+
+    Raises:
+        HTTPException 403: If user doesn't own this booking
+        HTTPException 404: If booking not found
+    """
+    # Verify booking exists and user owns it
+    try:
+        booking = await booking_query_use_case.get_booking(booking_id=booking_id)
+    except Exception as e:
+        Logger.base.warning(f'❌ [SSE] Booking {booking_id} not found: {e}')
+        raise HTTPException(status_code=404, detail='Booking not found')
+
+    # Authorization: Only booking owner can access SSE stream
+    if not current_user.id:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+
+    if booking.buyer_id != current_user.id:
+        Logger.base.warning(
+            f'⛔ [SSE] User {current_user.id} attempted to access booking {booking_id} '
+            f'(owner: {booking.buyer_id})'
+        )
+        raise HTTPException(status_code=403, detail='Forbidden')
+
+    async def event_generator():
+        """Generate SSE events for booking status changes"""
+        queue = None
+
+        try:
+            # Subscribe to SSE broadcaster
+            queue = await sse_broadcaster.subscribe(booking_id=booking_id)
+
+            Logger.base.info(
+                f'📡 [SSE] User {current_user.id} connected to booking {booking_id} stream'
+            )
+
+            # Send initial status event
+            initial_event = {
+                'event_type': 'initial_status',
+                'booking_id': str(booking_id),
+                'status': booking.status.value,
+                'created_at': booking.created_at.isoformat() if booking.created_at else None,
+                'total_price': booking.total_price,
+                'seat_positions': booking.seat_positions or [],
+            }
+            yield {'event': 'initial_status', 'data': json.dumps(initial_event)}
+
+            # Listen for status updates
+            while True:
+                try:
+                    # Wait for next event from SSE manager
+                    update = await queue.get()
+
+                    # Check for close sentinel
+                    if update.get('event_type') == '_close':
+                        Logger.base.info(f'📡 [SSE] Close signal received for booking {booking_id}')
+                        break
+
+                    # Send status update to client
+                    event_type = update.get('event_type', 'status_update')
+                    yield {'event': event_type, 'data': json.dumps(update)}
+
+                except anyio.get_cancelled_exc_class():
+                    Logger.base.info(f'🔌 [SSE] Client disconnected from booking {booking_id}')
+                    break
+                except Exception as e:
+                    Logger.base.error(
+                        f'❌ [SSE] Error in event stream for booking {booking_id}: {e}'
+                    )
+                    # Send error to client
+                    error_event = {
+                        'event_type': 'error',
+                        'error': str(e),
+                    }
+                    yield {'event': 'error', 'data': json.dumps(error_event)}
+                    break
+
+        except anyio.get_cancelled_exc_class():
+            Logger.base.info(f'🔌 [SSE] Connection cancelled for booking {booking_id}')
+        except Exception as e:
+            Logger.base.error(f'💥 [SSE] Fatal error for booking {booking_id}: {e}')
+        finally:
+            # Unsubscribe from SSE broadcaster
+            if queue:
+                await sse_broadcaster.unsubscribe(booking_id=booking_id)
+            Logger.base.info(f'🧹 [SSE] Cleanup completed for booking {booking_id}')
+
+    return EventSourceResponse(event_generator())

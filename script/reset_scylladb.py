@@ -20,10 +20,9 @@ from cassandra.cluster import Cluster
 
 from src.platform.config.core_setting import settings
 from src.platform.constant.path import BASE_DIR
-
+import redis.asyncio as aioredis
 
 def reset_scylladb_keyspace():
-    """完全刪除並重新創建 ScyllaDB keyspace"""
 
     print(f'📊 Connecting to ScyllaDB: {settings.SCYLLA_CONTACT_POINTS}')
 
@@ -82,14 +81,27 @@ def reset_scylladb_keyspace():
                     session.execute(statement)
                     print(f'   ✅ Keyspace created')
                     keyspace_created = True
-                    # Wait for keyspace to be fully created
+                    # Wait and retry connection to new keyspace
                     import time
 
-                    time.sleep(3)  # Give ScyllaDB time to sync schema
-                    # Reconnect to the keyspace for subsequent table creation
                     session.shutdown()
-                    session = cluster.connect(settings.SCYLLA_KEYSPACE)
-                    print(f'   🔌 Connected to keyspace "{settings.SCYLLA_KEYSPACE}"')
+
+                    # Retry connecting to keyspace with exponential backoff
+                    max_retries = 10
+                    retry_delay = 1.0
+                    for attempt in range(max_retries):
+                        try:
+                            time.sleep(retry_delay)
+                            session = cluster.connect(settings.SCYLLA_KEYSPACE)
+                            print(f'   🔌 Connected to keyspace "{settings.SCYLLA_KEYSPACE}" (attempt {attempt + 1})')
+                            break
+                        except Exception as retry_err:
+                            if attempt < max_retries - 1:
+                                print(f'   ⏳ Waiting for schema sync... (attempt {attempt + 1}/{max_retries})')
+                                retry_delay = min(retry_delay * 1.5, 10)  # Cap at 10 seconds
+                            else:
+                                print(f'   ❌ Failed to connect after {max_retries} attempts: {str(retry_err)}')
+                                raise
                 except Exception as e:
                     print(f'   ❌ Failed to create keyspace: {str(e)}')
                     raise
@@ -119,8 +131,6 @@ def reset_scylladb_keyspace():
 async def flush_kvrocks():
     """清空 Kvrocks 所有資料"""
     try:
-        import redis.asyncio as aioredis
-
         print('🗑️  Flushing Kvrocks...')
         client = await aioredis.from_url(
             f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',

@@ -183,17 +183,17 @@ dm:  ## 🗄️ Initialize ScyllaDB schema in Docker
 
 .PHONY: ds
 ds:  ## 🌱 Seed data in Docker
-	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
+	@docker-compose exec ticketing-service-1 sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
 .PHONY: drk
 drk:  ## 🌊 Reset Kafka in Docker
 	@echo "🌊 Resetting Kafka..."
-	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
+	@docker-compose exec ticketing-service-1 sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
 
 .PHONY: tdt
 tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
-	@docker-compose exec ticketing-service uv run pytest test/ \
+	@docker-compose exec ticketing-service-1 uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
@@ -202,17 +202,17 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 
 .PHONY: tde2e
 tde2e:  ## 🧪 Run E2E tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/service/e2e -v
+	@docker-compose exec ticketing-service-1 uv run pytest test/service/e2e -v
 
 .PHONY: tdinfra
 tdinfra:  ## 🏗️ Run infrastructure tests in Docker
 	@echo "🏗️  Testing infrastructure components in Docker..."
-	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
+	@docker-compose exec ticketing-service-1 uv run pytest test/infrastructure/ -v --tb=short
 	@echo "✅ Infrastructure tests complete!"
 
 .PHONY: tdci
 tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
-	@docker-compose exec ticketing-service uv run pytest test/ \
+	@docker-compose exec ticketing-service-1 uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/infrastructure \
 		--ignore=test/deployment \
@@ -221,11 +221,11 @@ tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 
 .PHONY: dsh
 dsh:  ## 🐚 Shell into Ticketing Service
-	@docker-compose exec ticketing-service bash
+	@docker-compose exec ticketing-service-1 bash
 
 .PHONY: dal
 dal:  ## 📋 View application logs
-	@docker-compose logs -f ticketing-service
+	@docker-compose logs -f ticketing-service-1 ticketing-service-2
 
 # ==============================================================================
 # ⚡ LOAD TESTING

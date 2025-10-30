@@ -83,14 +83,12 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
 
         await publish_domain_event(
             event=event,
-            topic=KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-                event_id=event_id
-            ),
+            topic=KafkaTopicBuilder.seats_reserved_notification(event_id=event_id),
             partition_key=str(booking_id),
         )
 
         Logger.base.info(
-            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved 事件發送完成！\033[0m'
+            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved notification sent (database write already completed)\033[0m'
         )
 
     async def publish_reservation_failed(
@@ -111,10 +109,10 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
 
         await publish_domain_event(
             event=event,
-            topic=KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
+            topic=KafkaTopicBuilder.booking_failed_notification(event_id=event_id),
             partition_key=str(booking_id),
         )
 
         Logger.base.info(
-            '\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed 事件發送完成\033[0m'
+            '\033[91m❌ [SEAT-RESERVATION Publisher] BookingFailed notification sent (database write already completed)\033[0m'
         )

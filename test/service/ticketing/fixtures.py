@@ -47,6 +47,17 @@ def reservation_state():
     return ReservationState()
 
 
+@pytest.fixture
+def sse_state():
+    return {
+        'connection': None,
+        'connection_active': False,
+        'booking_id': None,
+        'last_event': None,
+        'events': [],
+    }
+
+
 @pytest.fixture(autouse=True, scope='function')
 def mock_kafka_infrastructure(request):
     """

@@ -124,6 +124,7 @@ class TestUpdateBookingToPendingPayment:
             subsection=1,
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
             ticket_price=1500,
+            seat_selection_mode='manual',
         )
 
         # Then
@@ -138,6 +139,7 @@ class TestUpdateBookingToPendingPayment:
             subsection=1,
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
             ticket_price=1500,
+            seat_selection_mode='manual',
         )
 
     @pytest.mark.asyncio
@@ -169,6 +171,7 @@ class TestUpdateBookingToPendingPayment:
                 subsection=1,
                 seat_identifiers=['A-1-1-1'],
                 ticket_price=1500,
+                seat_selection_mode='manual',
             )
 
     @pytest.mark.asyncio
@@ -200,4 +203,5 @@ class TestUpdateBookingToPendingPayment:
                 subsection=1,
                 seat_identifiers=['A-1-1-1', 'A-1-1-2'],
                 ticket_price=1500,
+                seat_selection_mode='manual',
             )

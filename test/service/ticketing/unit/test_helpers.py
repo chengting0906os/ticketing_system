@@ -73,6 +73,9 @@ class RepositoryMocks:
         self.event_ticketing_query_repo = AsyncMock()
         self.event_ticketing_query_repo.get_tickets_by_ids = AsyncMock(return_value=tickets)
 
+        # SSE broadcaster
+        self.sse_broadcaster = AsyncMock()
+
     async def _update_booking(self, *, booking: Booking) -> Booking:
         """Mock: Return booking as-is (simulates successful persistence)"""
         return booking

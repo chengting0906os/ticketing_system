@@ -248,18 +248,6 @@ def buyer_lists_tickets_with_detail(step, context, client):
     context['response'] = response
 
 
-@when('buyer cancels the booking')
-def buyer_cancels_booking(client, context):
-    """Buyer cancels their booking."""
-    booking_id = context.get('booking_id')
-    if not booking_id:
-        raise ValueError('No booking_id found in context')
-
-    # Cancel the booking
-    response = client.delete(f'/api/booking/{booking_id}')
-    context['response'] = response
-
-
 @when('I get the event details')
 def get_event_details(client: TestClient, event_state):
     """Get event details by ID."""
