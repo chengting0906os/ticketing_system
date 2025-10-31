@@ -103,8 +103,11 @@ class TestUpdateBookingToPendingPayment:
             return_value=(updated_booking, reserved_tickets, 3000)
         )
 
+        event_broadcaster = AsyncMock()  # Mock broadcaster
+
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
+            event_broadcaster=event_broadcaster,
         )
 
         # When
@@ -139,9 +142,11 @@ class TestUpdateBookingToPendingPayment:
         # Given
         booking_command_repo = AsyncMock()
         booking_command_repo.get_by_id = AsyncMock(return_value=None)
+        event_broadcaster = AsyncMock()
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
+            event_broadcaster=event_broadcaster,
         )
 
         # When/Then
@@ -164,9 +169,11 @@ class TestUpdateBookingToPendingPayment:
         # Given
         booking_command_repo = AsyncMock()
         booking_command_repo.get_by_id = AsyncMock(return_value=existing_booking)
+        event_broadcaster = AsyncMock()
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
+            event_broadcaster=event_broadcaster,
         )
 
         # When/Then

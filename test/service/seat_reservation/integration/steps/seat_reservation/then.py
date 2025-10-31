@@ -152,3 +152,21 @@ def all_users_see_same_stats(step, context):
         assert section['reserved'] == expected_reserved, (
             f'Reserved mismatch for user {conn["user_id"]}'
         )
+
+
+# Note: 'section tickets should be returned with count:' step is defined in
+# test/service/ticketing/integration/steps/event_ticketing/then.py
+# and imported via bdd_steps_loader.py
+# The ticketing version expects 'total_count' and 'tickets' in response
+
+
+# Note: 'available tickets should be returned with count:' step is defined in
+# test/service/ticketing/integration/steps/event_ticketing/then.py
+# and imported via bdd_steps_loader.py
+# The ticketing version checks 'total_count' field and validates ticket status
+
+
+# Note: 'tickets should include detailed information:' step is defined in
+# test/service/ticketing/integration/steps/event_ticketing/then.py
+# and imported via bdd_steps_loader.py
+# The ticketing version checks for 'seat_identifier', 'price', and 'section' fields

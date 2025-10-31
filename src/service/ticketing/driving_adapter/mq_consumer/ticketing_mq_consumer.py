@@ -50,6 +50,7 @@ from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import 
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
     BookingQueryRepoImpl,
 )
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 
 
 class KafkaConfig:
@@ -117,7 +118,7 @@ class TicketingMqConsumer:
     全部都是 PostgreSQL 操作，無狀態處理
     """
 
-    def __init__(self):
+    def __init__(self, *, event_broadcaster: IInMemoryEventBroadcaster):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
         base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
@@ -131,6 +132,7 @@ class TicketingMqConsumer:
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
+        self.event_broadcaster = event_broadcaster
 
         # DLQ configuration
         self.dlq_topic = KafkaTopicBuilder.ticketing_dlq(event_id=self.event_id)
@@ -328,9 +330,10 @@ class TicketingMqConsumer:
         # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = BookingCommandRepoImpl()
 
-        # Create and execute use case with direct repository injection
+        # Create and execute use case with direct repository injection + broadcaster
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
+            event_broadcaster=self.event_broadcaster,
         )
 
         # Validate and convert booking_id
@@ -384,10 +387,11 @@ class TicketingMqConsumer:
         booking_command_repo = BookingCommandRepoImpl()
         booking_query_repo = BookingQueryRepoImpl()
 
-        # Create and execute use case with direct repository injection
+        # Create and execute use case with direct repository injection + broadcaster
         use_case = UpdateBookingToFailedUseCase(
             booking_query_repo=booking_query_repo,
             booking_command_repo=booking_command_repo,
+            event_broadcaster=self.event_broadcaster,
         )
 
         # Validate and convert booking_id
@@ -474,7 +478,11 @@ class TicketingMqConsumer:
 
 def main():
     """主程序入口"""
-    consumer = TicketingMqConsumer()
+    # Initialize broadcaster (shared instance for SSE)
+    from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
+
+    broadcaster = InMemoryEventBroadcasterImpl()
+    consumer = TicketingMqConsumer(event_broadcaster=broadcaster)
 
     try:
         # 啟動 BlockingPortal，創建共享的 event loop

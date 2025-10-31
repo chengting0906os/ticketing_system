@@ -196,6 +196,11 @@ def multiple_users_connect(client: TestClient, context, http_server):
     )
 
 
+# Note: 'seller lists tickets by section with:' step is defined in
+# test/service/ticketing/integration/steps/event_ticketing/when.py
+# and imported via bdd_steps_loader.py
+
+
 def parse_sse_response(response) -> List[dict]:
     """Parse SSE response into events list (read limited data)."""
     events = []

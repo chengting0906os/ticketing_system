@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 from pydantic import UUID7 as UUID
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
@@ -11,14 +13,17 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
 
     Dependencies:
     - booking_command_repo: For atomic reservation operation
+    - event_broadcaster: For real-time SSE updates (optional)
     """
 
     def __init__(
         self,
         *,
         booking_command_repo: IBookingCommandRepo,
+        event_broadcaster: IInMemoryEventBroadcaster,
     ):
         self.booking_command_repo = booking_command_repo
+        self.event_broadcaster = event_broadcaster
 
     @Logger.io
     async def execute(
@@ -72,5 +77,35 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             f'✅ [BOOKING] Atomically reserved {len(reserved_tickets)} tickets '
             f'and updated booking {booking_id} to PENDING_PAYMENT (total: {total_price})'
         )
+
+        # Broadcast SSE event for real-time updates
+        try:
+            await self.event_broadcaster.broadcast(
+                booking_id=booking_id,
+                event_data={
+                    'event_type': 'status_update',
+                    'booking_id': str(booking_id),
+                    'status': 'pending_payment',
+                    'total_price': total_price,
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                    'tickets': [
+                        {
+                            'id': ticket.id,
+                            'section': ticket.section,
+                            'subsection': ticket.subsection,
+                            'row': ticket.row,
+                            'seat_num': ticket.seat,
+                            'price': ticket.price,
+                            'status': ticket.status.value,
+                            'seat_identifier': ticket.seat_identifier,
+                        }
+                        for ticket in reserved_tickets
+                    ],
+                },
+            )
+            Logger.base.debug(f'📡 [SSE] Broadcasted status update for booking {booking_id}')
+        except Exception as e:
+            # Don't fail use case if broadcast fails
+            Logger.base.warning(f'⚠️ [SSE] Failed to broadcast event: {e}')
 
         return updated_booking

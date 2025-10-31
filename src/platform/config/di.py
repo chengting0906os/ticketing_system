@@ -54,6 +54,7 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
     SeatAvailabilityQueryHandlerImpl,
 )
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
+from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 
 
 class Container(containers.DeclarativeContainer):
@@ -91,6 +92,9 @@ class Container(containers.DeclarativeContainer):
 
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
+
+    # In-memory Event Broadcaster for SSE (Singleton for shared state)
+    booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
 
     # Message Queue Publishers
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)

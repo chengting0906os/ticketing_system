@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 from pydantic import UUID7 as UUID
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
@@ -12,6 +14,7 @@ class UpdateBookingToFailedUseCase:
     Dependencies:
     - booking_query_repo: For reading booking state
     - booking_command_repo: For updating booking status
+    - event_broadcaster: For real-time SSE updates (optional)
     """
 
     def __init__(
@@ -19,9 +22,11 @@ class UpdateBookingToFailedUseCase:
         *,
         booking_query_repo: IBookingQueryRepo,
         booking_command_repo: IBookingCommandRepo,
+        event_broadcaster: IInMemoryEventBroadcaster,
     ):
         self.booking_query_repo = booking_query_repo
         self.booking_command_repo = booking_command_repo
+        self.event_broadcaster = event_broadcaster
 
     @Logger.io
     async def execute(
@@ -58,6 +63,24 @@ class UpdateBookingToFailedUseCase:
         )
 
         Logger.base.info(f'✅ 訂單已標記為失敗: booking_id={booking_id}, error={error_message}')
+
+        # Broadcast SSE event for real-time updates
+        try:
+            await self.event_broadcaster.broadcast(
+                booking_id=booking_id,
+                event_data={
+                    'event_type': 'status_update',
+                    'booking_id': str(booking_id),
+                    'status': 'failed',
+                    'error_message': error_message,
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            Logger.base.debug(f'📡 [SSE] Broadcasted failed status for booking {booking_id}')
+        except Exception as e:
+            # Don't fail use case if broadcast fails
+            Logger.base.warning(f'⚠️ [SSE] Failed to broadcast event: {e}')
+
         return updated_booking
 
     @Logger.io
