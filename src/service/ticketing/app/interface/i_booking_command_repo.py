@@ -43,10 +43,6 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:
-        pass
-
-    @abstractmethod
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
         pass
 

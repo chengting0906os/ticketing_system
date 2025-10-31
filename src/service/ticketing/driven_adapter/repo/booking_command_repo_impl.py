@@ -101,33 +101,6 @@ class IBookingCommandRepoImpl(IBookingCommandRepo):
                 return created_booking
 
     @Logger.io
-    async def update_status_to_pending_payment(self, *, booking: Booking) -> Booking:
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                UPDATE booking
-                SET status = $1,
-                    total_price = $2,
-                    seat_positions = $3,
-                    updated_at = $4
-                WHERE id = $5
-                RETURNING id, buyer_id, event_id, section, subsection, quantity,
-                          total_price, seat_selection_mode, seat_positions, status,
-                          created_at, updated_at, paid_at
-                """,
-                booking.status.value,
-                booking.total_price,
-                booking.seat_positions,
-                booking.updated_at,
-                booking.id,
-            )
-
-            if not row:
-                raise ValueError(f'Booking with id {booking.id} not found')
-
-            return self._row_to_entity(row)
-
-    @Logger.io
     async def update_status_to_cancelled(self, *, booking: Booking) -> Booking:
         async with (await get_asyncpg_pool()).acquire() as conn:
             row = await conn.fetchrow(
