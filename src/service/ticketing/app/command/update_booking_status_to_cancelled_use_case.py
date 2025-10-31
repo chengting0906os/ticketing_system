@@ -1,3 +1,4 @@
+from pydantic import UUID7 as UUID
 from datetime import datetime, timezone
 
 from dependency_injector.wiring import Provide, inject
@@ -54,7 +55,7 @@ class UpdateBookingToCancelledUseCase:
         )
 
     @Logger.io
-    async def execute(self, *, booking_id: int, buyer_id: int) -> Booking:
+    async def execute(self, *, booking_id: UUID, buyer_id: int) -> Booking:
         """
         執行訂單狀態更新為取消
 

@@ -23,6 +23,7 @@ import json
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
+from pydantic import UUID7 as UUID
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from quixstreams import Application
@@ -44,7 +45,7 @@ from src.service.ticketing.app.command.update_booking_status_to_pending_payment_
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
 )
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
-    IBookingCommandRepoImpl,
+    BookingCommandRepoImpl,
 )
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
     BookingQueryRepoImpl,
@@ -325,14 +326,19 @@ class TicketingMqConsumer:
                 )
 
         # Create repository (asyncpg-based, no session management needed)
-        booking_command_repo = IBookingCommandRepoImpl()
+        booking_command_repo = BookingCommandRepoImpl()
 
         # Create and execute use case with direct repository injection
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
         )
+
+        # Validate and convert booking_id
+        if not booking_id:
+            raise ValueError('booking_id is required')
+
         await use_case.execute(
-            booking_id=booking_id or 0,
+            booking_id=UUID(booking_id) if isinstance(booking_id, str) else booking_id,
             buyer_id=buyer_id or 0,
             seat_identifiers=seat_identifiers,
         )
@@ -375,7 +381,7 @@ class TicketingMqConsumer:
         reason = message.get('error_message', 'Unknown')
 
         # Create repositories (they manage their own asyncpg connections)
-        booking_command_repo = IBookingCommandRepoImpl()
+        booking_command_repo = BookingCommandRepoImpl()
         booking_query_repo = BookingQueryRepoImpl()
 
         # Create and execute use case with direct repository injection
@@ -383,8 +389,15 @@ class TicketingMqConsumer:
             booking_query_repo=booking_query_repo,
             booking_command_repo=booking_command_repo,
         )
+
+        # Validate and convert booking_id
+        if not booking_id:
+            raise ValueError('booking_id is required')
+
         await use_case.execute(
-            booking_id=booking_id or 0, buyer_id=buyer_id or 0, error_message=reason
+            booking_id=UUID(booking_id) if isinstance(booking_id, str) else booking_id,
+            buyer_id=buyer_id or 0,
+            error_message=reason,
         )
 
     # ========== Lifecycle ==========

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from pydantic import UUID7 as UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
@@ -9,11 +10,11 @@ class IBookingQueryRepo(ABC):
     """Repository interface for booking read operations"""
 
     @abstractmethod
-    async def get_by_id(self, *, booking_id: int) -> Optional[Booking]:
+    async def get_by_id(self, *, booking_id: UUID) -> Optional[Booking]:
         pass
 
     @abstractmethod
-    async def get_by_id_with_details(self, *, booking_id: int) -> Optional[dict]:
+    async def get_by_id_with_details(self, *, booking_id: UUID) -> Optional[dict]:
         """Get booking by ID with full details (event, user info)"""
         pass
 
@@ -26,5 +27,5 @@ class IBookingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List['TicketRef']:
         pass

@@ -152,12 +152,7 @@ async def start_seat_reservation_consumer() -> None:
     topic_initializer = KafkaTopicInitializer()
     topic_initializer.ensure_topics_exist(event_id=event_id)
 
-    # Initialize consumer with use cases from DI container
     consumer = SeatReservationConsumer()
-    consumer.reserve_seats_use_case = container.reserve_seats_use_case()
-    consumer.release_seat_use_case = container.release_seat_use_case()
-    consumer.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
-    consumer._setup_topics()
 
     async def run_consumer_with_portal() -> None:
         """Run consumer in thread with BlockingPortal for async-to-sync calls"""
@@ -176,7 +171,7 @@ async def start_seat_reservation_consumer() -> None:
                     )
                     raise
 
-                # Mock signal handlers
+                # Mock signal handlers (consumer runs in thread, not main thread)
                 original_signal = signal.signal
 
                 def mock_signal(*args: object, **kwargs: object) -> object:
@@ -184,8 +179,7 @@ async def start_seat_reservation_consumer() -> None:
 
                 signal.signal = mock_signal  # type: ignore[bad-assignment]
                 try:
-                    if consumer.kafka_app:
-                        consumer.kafka_app.run()
+                    consumer.start()
                 finally:
                     signal.signal = original_signal
                     try:
@@ -195,8 +189,7 @@ async def start_seat_reservation_consumer() -> None:
 
         await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
 
-    if consumer.kafka_app:
-        await run_consumer_with_portal()
+    await run_consumer_with_portal()
 
 
 @asynccontextmanager

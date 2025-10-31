@@ -6,6 +6,7 @@ Simplified event publishing interface - using Quix Streams directly
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 import attrs
 from quixstreams import Application
@@ -31,12 +32,19 @@ def _get_global_producer():
 
 def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
-    Custom serializer - convert datetime to timestamp
+    Custom serializer - convert datetime and UUID to JSON-serializable types
 
     Used as value_serializer parameter for attrs.asdict
+
+    Handles:
+    - datetime -> Unix timestamp (int)
+    - UUID -> str (includes UUID7)
     """
     if isinstance(value, datetime):
         return int(value.timestamp())
+    # UUID (including UUID7) is already JSON-serializable via str()
+    if isinstance(value, UUID):
+        return str(value)
     return value
 
 
@@ -59,7 +67,7 @@ def _get_quix_app() -> Application:
                 'transactional.id': transactional_id,  # Transaction ID
                 'max.in.flight.requests.per.connection': 5,  # Exactly-once optimization
                 # Batching configuration for optimal throughput
-                'linger.ms': 10,  # Wait up to 10ms to batch messages
+                'linger.ms': 50,  # Wait up to 10ms to batch messages
                 'batch.size': 32768,  # 32KB batch size (default: 16KB)
                 'batch.num.messages': 1000,  # Max messages per batch
             },
@@ -67,7 +75,6 @@ def _get_quix_app() -> Application:
     return _quix_app
 
 
-@Logger.io
 async def publish_domain_event(
     event: MqDomainEvent,
     topic: str,

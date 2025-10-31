@@ -38,21 +38,29 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
             event_id=event.event_id
         )
 
+        # Use section-subsection as partition key to ensure all reservations
+        # for the same section are processed sequentially by the same consumer
+        # This eliminates race conditions without needing Lua scripts
+        partition_key = f'{event.event_id}:{event.section}-{event.subsection}'
+
         Logger.base.info(
-            f'\033[92m📤 [BOOKING Publisher] 發送 BookingCreated 到 Topic: {topic}\033[0m'
+            f'\033[92m📤 [BOOKING Publisher] Publishing BookingCreated to Topic: {topic}\033[0m'
         )
         Logger.base.info(
-            f'\033[92m📦 [BOOKING Publisher] 事件內容: event_id={event.event_id}, '
-            f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}\033[0m'
+            f'\033[92m📦 [BOOKING Publisher] Event content: event_id={event.event_id}, '
+            f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}, '
+            f'partition_key={partition_key}\033[0m'
         )
 
         await publish_domain_event(
             event=event,
             topic=topic,
-            partition_key=str(event.booking_id),
+            partition_key=partition_key,
         )
 
-        Logger.base.info('\033[92m✅ [BOOKING Publisher] BookingCreated 事件發送完成！\033[0m')
+        Logger.base.info(
+            '\033[92m✅ [BOOKING Publisher] BookingCreated event published successfully\033[0m'
+        )
 
     @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:

@@ -1,5 +1,6 @@
 import random
 import string
+from pydantic import UUID7 as UUID
 from typing import Any, Dict
 
 from dependency_injector.wiring import Provide, inject
@@ -35,7 +36,9 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         return cls(booking_command_repo=booking_command_repo)
 
     @Logger.io
-    async def pay_booking(self, booking_id: int, buyer_id: int, card_number: str) -> Dict[str, Any]:
+    async def pay_booking(
+        self, booking_id: UUID, buyer_id: int, card_number: str
+    ) -> Dict[str, Any]:
         # In a real implementation, card_number would be used for payment processing
         # For mock payment, we just validate it's present
         if not card_number:

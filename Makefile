@@ -60,9 +60,13 @@ test:  ## 🧪 Run unit tests (excludes CDK and E2E)
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
 	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
+.PHONY: t-quick
+t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
+	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+
 .PHONY: t-unit
 t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
-	@uv run pytest test/service/ticketing/unit test/service/seat_reservation/unit -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest -m unit -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: test-verbose
 test-verbose:  ## 🧪 Run tests with output (-vs, excludes CDK and E2E)

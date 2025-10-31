@@ -1,10 +1,12 @@
 """
 Init Event And Tickets State Handler Implementation
 
-座位初始化狀態處理器實作 - 直接使用 Lua script 初始化 Kvrocks
+Seat initialization state handler implementation - Using Pipeline for batch initialization
 """
 
 import os
+from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Dict
 
 from src.platform.logging.loguru_io import Logger
@@ -12,7 +14,6 @@ from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
     IInitEventAndTicketsStateHandler,
 )
-from src.service.ticketing.driven_adapter.state.lua_script import INITIALIZE_SEATS_SCRIPT
 
 
 # Get key prefix from environment for test isolation
@@ -26,21 +27,21 @@ def _make_key(key: str) -> str:
 
 class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     """
-    座位初始化狀態處理器實作
+    Seat Initialization State Handler Implementation
 
-    職責：
-    - 從 seating_config 生成所有座位數據
-    - 使用 Lua script 批量寫入 Kvrocks
-    - 建立 event_sections 索引和 section_stats 統計
+    Responsibilities:
+    - Generate all seat data from seating_config
+    - Batch write to Kvrocks using Pipeline
+    - Create event_sections index and section_stats statistics
     """
 
     @Logger.io
     def _generate_all_seats_from_config(self, seating_config: dict, event_id: int) -> list[dict]:
         """
-        從 seating_config 生成所有座位數據
+        Generate all seat data from seating_config
 
         Args:
-            seating_config: 座位配置，格式:
+            seating_config: Seat configuration, format:
                 {
                     "sections": [
                         {
@@ -54,10 +55,10 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                         ...
                     ]
                 }
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            座位列表
+            List of seat data dictionaries
         """
         all_seats = []
 
@@ -70,7 +71,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                 rows = subsection['rows']
                 seats_per_row = subsection['seats_per_row']
 
-                # 生成該 subsection 的所有座位
+                # Generate all seats for this subsection
                 for row in range(1, rows + 1):
                     for seat_num in range(1, seats_per_row + 1):
                         seat_index = (row - 1) * seats_per_row + (seat_num - 1)
@@ -83,6 +84,8 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                                 'seat_num': seat_num,
                                 'seat_index': seat_index,
                                 'price': section_price,
+                                'rows': rows,
+                                'seats_per_row': seats_per_row,
                             }
                         )
 
@@ -92,18 +95,17 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     @Logger.io
     async def initialize_seats_from_config(self, *, event_id: int, seating_config: Dict) -> Dict:
         """
-        從 seating_config 初始化座位（使用單一 Lua 腳本）
+        Initialize seats from seating_config using Pipeline for batch operations
 
         Steps:
-        1. 從 seating_config 生成所有座位數據
-        2. 準備 Lua 腳本參數
-        3. 執行 Lua 腳本批量寫入 Kvrocks
-        4. 建立 event_sections 索引
-        5. 建立 section_stats 統計
+        1. Generate all seat data from seating_config
+        2. Use Pipeline to batch write all seat bitfields and metadata
+        3. Create event_sections index
+        4. Create section_stats statistics
 
         Args:
-            event_id: 活動 ID
-            seating_config: 座位配置
+            event_id: Event ID
+            seating_config: Seat configuration
 
         Returns:
             {
@@ -114,7 +116,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             }
         """
         try:
-            # Step 1: 生成所有座位數據
+            # Step 1: Generate all seat data
             all_seats = self._generate_all_seats_from_config(seating_config, event_id)
 
             if not all_seats:
@@ -125,40 +127,89 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                     'error': 'No seats generated from config',
                 }
 
-            # Step 2: 獲取 Kvrocks client (from initialized pool)
+            # Step 2: Get Kvrocks client
             client = kvrocks_client.get_client()
 
-            # Step 3: 準備 Lua 腳本參數
-            args = [_KEY_PREFIX, str(event_id)]
+            # Step 3: Prepare section statistics and configurations
+            section_stats: Dict[str, int] = defaultdict(int)
+            section_configs: Dict[str, Dict] = {}
 
+            # Build stats and configs from seat data
             for seat in all_seats:
-                args.extend(
-                    [
-                        seat['section'],
-                        str(seat['subsection']),
-                        str(seat['row']),
-                        str(seat['seat_num']),
-                        str(seat['seat_index']),
-                        str(seat['price']),
-                    ]
-                )
+                section_id = f'{seat["section"]}-{seat["subsection"]}'
+                section_stats[section_id] += 1
 
-            Logger.base.info(f'⚙️  [INIT-HANDLER] Executing Lua script with {len(all_seats)} seats')
-
-            # Step 4: 執行 Lua 腳本
-            success_count: int = await client.eval(INITIALIZE_SEATS_SCRIPT, 0, *args)  # type: ignore[misc]
+                if section_id not in section_configs:
+                    section_configs[section_id] = {
+                        'rows': seat['rows'],
+                        'seats_per_row': seat['seats_per_row'],
+                    }
 
             Logger.base.info(
-                f'✅ [INIT-HANDLER] Initialized {success_count}/{len(all_seats)} seats'
+                f'⚙️  [INIT-HANDLER] Initializing {len(all_seats)} seats using Pipeline'
             )
 
-            # Step 5: 驗證結果
+            # Step 4: Use Pipeline to batch write all operations
+            pipe = client.pipeline()
+            timestamp = str(int(datetime.now(timezone.utc).timestamp()))
+
+            # Write all seat bitfields and metadata
+            for seat in all_seats:
+                section_id = f'{seat["section"]}-{seat["subsection"]}'
+                bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+                meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{seat["row"]}')
+                offset = seat['seat_index'] * 2
+
+                # Set seat status to AVAILABLE (00)
+                pipe.setbit(bf_key, offset, 0)
+                pipe.setbit(bf_key, offset + 1, 0)
+
+                # Store seat metadata (price)
+                pipe.hset(meta_key, str(seat['seat_num']), str(seat['price']))
+
+            # Create section indexes and statistics
+            for section_id, total_seats in section_stats.items():
+                # Add section to event's section index
+                pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
+
+                # Initialize section statistics
+                stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+                pipe.hset(
+                    stats_key,
+                    mapping={
+                        'section_id': section_id,
+                        'event_id': str(event_id),
+                        'available': str(total_seats),
+                        'reserved': '0',
+                        'sold': '0',
+                        'total': str(total_seats),
+                        'updated_at': timestamp,
+                    },
+                )
+
+                # Store section configuration
+                config = section_configs[section_id]
+                config_key = _make_key(f'section_config:{event_id}:{section_id}')
+                pipe.hset(
+                    config_key,
+                    mapping={
+                        'rows': str(config['rows']),
+                        'seats_per_row': str(config['seats_per_row']),
+                    },
+                )
+
+            # Execute all operations in pipeline
+            await pipe.execute()
+
+            Logger.base.info(f'✅ [INIT-HANDLER] Initialized {len(all_seats)} seats')
+
+            # Step 5: Verify results
             sections_count = await client.zcard(_make_key(f'event_sections:{event_id}'))
             Logger.base.info(f'📋 [INIT-HANDLER] Created {sections_count} sections in index')
 
             return {
                 'success': True,
-                'total_seats': int(success_count),
+                'total_seats': len(all_seats),
                 'sections_count': int(sections_count),
                 'error': None,
             }

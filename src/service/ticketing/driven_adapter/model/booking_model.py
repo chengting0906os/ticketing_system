@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
+from pydantic import UUID7 as UUID
 
 from sqlalchemy import ARRAY, DateTime, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
 class BookingModel(Base):
     __tablename__ = 'booking'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)  # UUID7
     buyer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     event_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     section: Mapped[str] = mapped_column(String(10), nullable=False)

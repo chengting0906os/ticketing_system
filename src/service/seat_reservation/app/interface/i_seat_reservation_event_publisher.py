@@ -1,6 +1,7 @@
 """
 Seat Reservation Event Publisher Interface
-座位預訂事件發布器介面 - 定義事件發布的抽象
+
+Defines the abstraction for publishing seat reservation events.
 """
 
 from abc import ABC, abstractmethod
@@ -8,29 +9,29 @@ from typing import List
 
 
 class ISeatReservationEventPublisher(ABC):
-    """座位預訂事件發布器介面"""
+    """Seat reservation event publisher interface"""
 
     @abstractmethod
     async def publish_seats_reserved(
         self,
         *,
-        booking_id: int,
+        booking_id: str,
         buyer_id: int,
         reserved_seats: List[str],
         total_price: int,
         event_id: int,
     ) -> None:
-        """發送座位預訂成功事件"""
+        """Publish seat reservation success event"""
         pass
 
     @abstractmethod
     async def publish_reservation_failed(
         self,
         *,
-        booking_id: int,
+        booking_id: str,
         buyer_id: int,
         error_message: str,
         event_id: int,
     ) -> None:
-        """發送座位預訂失敗事件"""
+        """Publish seat reservation failure event"""
         pass

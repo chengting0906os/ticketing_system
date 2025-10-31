@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
+from pydantic import UUID7 as UUID
 
 import attrs
 
@@ -35,7 +36,7 @@ class Booking:
     seat_selection_mode: str
     seat_positions: Optional[List[str]] = attrs.field(factory=list)
     status: BookingStatus = BookingStatus.PROCESSING
-    id: Optional[int] = None
+    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
@@ -45,7 +46,7 @@ class Booking:
     def create(
         cls,
         *,
-        id: int = 0,
+        id: UUID,
         buyer_id: int,
         event_id: int,
         total_price: int = 0,
@@ -120,7 +121,7 @@ class Booking:
             status=BookingStatus.PROCESSING,
             seat_positions=seat_positions,
             quantity=quantity,
-            id=0 if id == 0 else id,
+            id=None if id == 0 else id,  # Convert 0 to None for UUID compatibility
         )
 
     @Logger.io

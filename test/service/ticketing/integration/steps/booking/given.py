@@ -7,6 +7,7 @@ from pytest_bdd import given
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
+from uuid_v7.base import uuid7
 
 from src.platform.constant.route_constant import EVENT_BASE, EVENT_TICKETS_BY_SUBSECTION
 
@@ -21,14 +22,18 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     buyer_id = int(booking_data['buyer_id'])
     total_price = int(booking_data['total_price'])
 
+    # Generate UUID7 for booking ID
+    booking_id = str(uuid7())
+
     # Directly insert booking into database with pending_payment status
     execute_sql_statement(
         """
-        INSERT INTO "booking" (buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, created_at, updated_at)
-        VALUES (:buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, NOW(), NOW())
+        INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, created_at, updated_at)
+        VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, NOW(), NOW())
         RETURNING id
         """,
         {
+            'id': booking_id,
             'buyer_id': buyer_id,
             'event_id': event_id,
             'section': 'A',
@@ -39,14 +44,6 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
             'seat_selection_mode': 'manual',
         },
     )
-
-    # Get the created booking ID
-    result = execute_sql_statement(
-        'SELECT id FROM booking ORDER BY id DESC LIMIT 1',
-        {},
-        fetch=True,
-    )
-    booking_id = result[0]['id'] if result else 1
 
     # Create reserved tickets for this booking
     # Find available tickets from the event
@@ -249,11 +246,23 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
     rows = data_table.rows
     headers = [cell.value for cell in rows[0].cells]
 
+    # Initialize bookings dict if not exists
+    if 'bookings' not in booking_state:
+        booking_state['bookings'] = {}
+
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         booking_data = dict(zip(headers, values, strict=True))
 
-        booking_id = int(booking_data['booking_id'])
+        # Generate UUID7 for booking_id (old test data used int, now we use UUID7 string)
+        booking_id_input = booking_data['booking_id']
+        # If it looks like an integer, generate a UUID7; otherwise use as-is
+        try:
+            int(booking_id_input)
+            booking_id = str(uuid7())
+        except ValueError:
+            booking_id = booking_id_input
+
         buyer_id = int(booking_data['buyer_id'])
         event_id = int(booking_data['event_id'])
         section = booking_data['section']
@@ -348,6 +357,9 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
                 },
             )
 
+        # Store booking reference (use original input as key for test lookup)
+        booking_state['bookings'][int(booking_data['booking_id'])] = {'id': booking_id}
+
 
 @given('bookings exist:')
 def create_bookings(step, booking_state, execute_sql_statement):
@@ -364,7 +376,14 @@ def create_bookings(step, booking_state, execute_sql_statement):
             event_id = booking_state['events'][event_key]['id']
         else:
             event_id = event_key
-        booking_id = int(booking_data['id'])
+
+        # Generate UUID7 for booking_id (old test data used int, now we use UUID7 string)
+        booking_id_input = booking_data['id']
+        try:
+            int(booking_id_input)
+            booking_id = str(uuid7())
+        except ValueError:
+            booking_id = booking_id_input
 
         # Get section/subsection/quantity/seat_selection_mode/seat_positions from table if provided
         if 'section' in booking_data:
@@ -429,8 +448,6 @@ def create_bookings(step, booking_state, execute_sql_statement):
                     'seat_positions': seat_positions,
                 },
             )
+        # Store booking reference (use original input as key for test lookup)
         booking_state['bookings'][int(booking_data['id'])] = {'id': booking_id}
-    execute_sql_statement(
-        'SELECT setval(\'booking_id_seq\', (SELECT COALESCE(MAX(id), 0) + 1 FROM "booking"), false)',
-        {},
-    )
+    # Note: No need to reset sequence since we're using UUID7 for booking.id

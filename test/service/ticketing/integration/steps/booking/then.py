@@ -649,9 +649,15 @@ def verify_bookings_include(step, booking_state):
 
     for expected in expected_bookings:
         found = False
+        # Get the actual UUID7 booking ID from the booking_state mapping
+        expected_id_key = int(expected['id'])
+        actual_booking_id = (
+            booking_state.get('bookings', {}).get(expected_id_key, {}).get('id', expected['id'])
+        )
+
         for actual in actual_bookings:
-            # Match by booking ID
-            if str(actual.get('id')) == expected['id']:
+            # Match by booking ID (UUID7 string)
+            if str(actual.get('id')) == str(actual_booking_id):
                 # Verify all expected fields
                 if 'event_name' in expected:
                     assert actual.get('event_name') == expected['event_name'], (
@@ -753,7 +759,14 @@ def verify_booking_details_include(step, booking_state):
 
     # Verify all expected fields
     if 'id' in expected_data:
-        assert booking.get('id') == int(expected_data['id'])
+        # Get the actual UUID7 booking ID from the booking_state mapping
+        expected_id_key = int(expected_data['id'])
+        expected_booking_id = (
+            booking_state.get('bookings', {})
+            .get(expected_id_key, {})
+            .get('id', str(expected_id_key))
+        )
+        assert str(booking.get('id')) == str(expected_booking_id)
     if 'event_name' in expected_data:
         assert booking.get('event_name') == expected_data['event_name']
     if 'venue_name' in expected_data:
@@ -826,8 +839,13 @@ def verify_booking_seat_positions(step, booking_state, booking_id: int):
     response = booking_state['response']
     bookings = response.json()
 
-    # Find the booking with the specified ID
-    booking = next((b for b in bookings if b['id'] == booking_id), None)
+    # Get the actual UUID7 booking ID from the booking_state mapping
+    actual_booking_id = (
+        booking_state.get('bookings', {}).get(booking_id, {}).get('id', str(booking_id))
+    )
+
+    # Find the booking with the specified ID (UUID7 string)
+    booking = next((b for b in bookings if str(b['id']) == str(actual_booking_id)), None)
     assert booking is not None, f'Booking {booking_id} not found in response'
 
     # Verify seat_positions field exists and is a list

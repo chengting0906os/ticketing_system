@@ -33,7 +33,7 @@ from src.service.ticketing.driven_adapter.message_queue.mq_infra_orchestrator_im
     MqInfraOrchestrator,
 )
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
-    IBookingCommandRepoImpl,
+    BookingCommandRepoImpl,
 )
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import BookingQueryRepoImpl
 from src.service.ticketing.driven_adapter.repo.event_ticketing_command_repo_impl import (
@@ -44,6 +44,9 @@ from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl i
 )
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
+from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
+    BookingMetadataHandlerImpl,
+)
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -66,7 +69,7 @@ class Container(containers.DeclarativeContainer):
 
     # Repositories - session will be injected by use cases
     # Command repos use raw SQL with asyncpg (no session needed)
-    booking_command_repo = providers.Factory(IBookingCommandRepoImpl)
+    booking_command_repo = providers.Factory(BookingCommandRepoImpl)
     event_ticketing_command_repo = providers.Factory(EventTicketingCommandRepoImpl)
     # Query repos still use SQLAlchemy for complex queries
     booking_query_repo = providers.Factory(
@@ -103,6 +106,9 @@ class Container(containers.DeclarativeContainer):
     seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
     )
+
+    # Ticketing Service - Booking Metadata Handler (Kvrocks)
+    booking_metadata_handler = providers.Factory(BookingMetadataHandlerImpl)
 
     # MQ Infrastructure Orchestrator
     mq_infra_orchestrator = providers.Factory(

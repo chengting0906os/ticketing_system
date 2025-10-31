@@ -99,8 +99,10 @@ def seller_tries_cancel_buyer_booking(step, client: TestClient, booking_state):
 
 @when('the buyer tries to cancel a non-existent booking')
 def buyer_tries_cancel_nonexistent(step, client: TestClient, booking_state):
-    # Use a booking ID that doesn't exist (999999)
-    response = client.patch(BOOKING_CANCEL.format(booking_id=999999))
+    # Use a valid UUID7 format that doesn't exist in database
+    # UUID7 has version bits set to 0111 (7) in the time_hi_and_version field
+    nonexistent_uuid = '01900000-0000-7000-8000-000000000000'
+    response = client.patch(BOOKING_CANCEL.format(booking_id=nonexistent_uuid))
     booking_state['response'] = response
 
 
@@ -165,10 +167,16 @@ def buyer_requests_booking_details(
 ):
     from src.platform.constant.route_constant import BOOKING_GET
 
+    # Get the actual UUID7 booking ID from the booking_state mapping
+    actual_booking_id = (
+        booking_state.get('bookings', {}).get(booking_id, {}).get('id', str(booking_id))
+    )
+
     login_user(client, get_user_email_by_id(buyer_id), DEFAULT_PASSWORD)
-    response = client.get(BOOKING_GET.format(booking_id=booking_id))
+    response = client.get(BOOKING_GET.format(booking_id=actual_booking_id))
     booking_state['response'] = response
     booking_state['booking_id'] = booking_id
+    booking_state['actual_booking_id'] = actual_booking_id
 
 
 @when('buyer creates booking with manual seat selection:')

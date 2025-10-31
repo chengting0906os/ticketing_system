@@ -21,7 +21,7 @@ class ISeatStateCommandHandler(ABC):
         self,
         *,
         event_id: int,
-        booking_id: int,
+        booking_id: str,
         buyer_id: int,
         mode: str,  # 'manual' or 'best_available'
         seat_ids: Optional[List[str]] = None,  # for manual mode

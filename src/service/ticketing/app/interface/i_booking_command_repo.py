@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List
+from pydantic import UUID7 as UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
@@ -13,9 +14,9 @@ class IBookingCommandRepo(ABC):
     """Repository interface for booking write operations"""
 
     @abstractmethod
-    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         """
-        查詢單筆 booking（用於 command 操作前的驗證）
+        Get single booking by ID (for validation before command operations)
 
         Args:
             booking_id: Booking ID
@@ -26,9 +27,9 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
         """
-        查詢 booking 關聯的 tickets（用於 command 操作）
+        Get tickets associated with booking (for command operations)
 
         Args:
             booking_id: Booking ID
@@ -70,7 +71,7 @@ class IBookingCommandRepo(ABC):
     async def reserve_tickets_and_update_booking_atomically(
         self,
         *,
-        booking_id: int,
+        booking_id: UUID,
         buyer_id: int,
         event_id: int,
         section: str,
@@ -101,5 +102,47 @@ class IBookingCommandRepo(ABC):
         Raises:
             ValueError: If booking not found or ticket count mismatch
             ForbiddenError: If buyer_id doesn't match booking owner
+        """
+        pass
+
+    @abstractmethod
+    async def create_booking_with_tickets_directly(
+        self,
+        *,
+        booking_id: UUID,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_selection_mode: str,
+        reserved_seats: list[str],
+        seat_prices: dict[str, int],
+        total_price: int,
+    ) -> Booking:
+        """
+        Directly create booking in PENDING_PAYMENT status with tickets in RESERVED status.
+        This method is called by Seat Reservation Service after successful Kvrocks reservation.
+
+        Flow:
+        1. Create booking record (status=PENDING_PAYMENT, total_price, seat_positions)
+        2. Create ticket records (status=RESERVED) with individual prices
+        Both in single transaction.
+
+        Args:
+            booking_id: UUID7 booking ID (from CreateBookingUseCase)
+            buyer_id: Buyer ID
+            event_id: Event ID
+            section: Section identifier
+            subsection: Subsection number
+            seat_selection_mode: 'manual' or 'best_available'
+            reserved_seats: List of reserved seat identifiers (format: "row-seat")
+            seat_prices: Dict mapping seat_id -> price
+            total_price: Sum of all seat prices
+
+        Returns:
+            Created booking entity with tickets
+
+        Raises:
+            DomainError: If booking already exists or transaction fails
         """
         pass

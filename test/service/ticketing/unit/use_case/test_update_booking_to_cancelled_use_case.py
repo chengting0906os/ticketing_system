@@ -9,6 +9,7 @@ Unit tests for UpdateBookingToCancelledUseCase
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -21,6 +22,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from test.service.ticketing.unit.test_helpers import RepositoryMocks
 
 
+@pytest.mark.unit
 class TestUpdateBookingToCancelled:
     """測試更新 booking 到 cancelled 狀態"""
 
@@ -28,7 +30,7 @@ class TestUpdateBookingToCancelled:
     def pending_payment_booking(self):
         """待付款的 booking（可取消）"""
         return Booking(
-            id=10,
+            id=UUID('00000000-0000-0000-0000-00000000000a'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -106,17 +108,19 @@ class TestUpdateBookingToCancelled:
         )
 
         # Act
-        result = await use_case.execute(booking_id=10, buyer_id=2)
+        result = await use_case.execute(
+            booking_id=UUID('00000000-0000-0000-0000-00000000000a'), buyer_id=2
+        )
 
         # Assert
         assert result.status == BookingStatus.CANCELLED
-        assert result.id == 10
+        assert result.id == UUID('00000000-0000-0000-0000-00000000000a')
 
         # 驗證發送了 event
         mock_publish.assert_called_once()
         call_args = mock_publish.call_args
         event = call_args.kwargs['event']
-        assert event.booking_id == 10
+        assert event.booking_id == UUID('00000000-0000-0000-0000-00000000000a')
         assert event.buyer_id == 2
         assert event.event_id == 1
         assert event.ticket_ids == [201, 202]
@@ -140,7 +144,9 @@ class TestUpdateBookingToCancelled:
 
         # Act & Assert
         with pytest.raises(NotFoundError, match='Booking not found'):
-            await use_case.execute(booking_id=999, buyer_id=2)
+            await use_case.execute(
+                booking_id=UUID('00000000-0000-0000-0000-0000000003e7'), buyer_id=2
+            )
 
     @pytest.mark.asyncio
     async def test_fail_when_not_booking_owner(self, pending_payment_booking):
@@ -160,7 +166,9 @@ class TestUpdateBookingToCancelled:
 
         # Act & Assert
         with pytest.raises(ForbiddenError, match='Only the buyer can cancel this booking'):
-            await use_case.execute(booking_id=10, buyer_id=3)  # 不同的 buyer_id
+            await use_case.execute(
+                booking_id=UUID('00000000-0000-0000-0000-00000000000a'), buyer_id=3
+            )  # 不同的 buyer_id
 
     @pytest.mark.asyncio
     async def test_fail_when_booking_already_completed(self):
@@ -173,7 +181,7 @@ class TestUpdateBookingToCancelled:
         """
         # Arrange
         completed_booking = Booking(
-            id=11,
+            id=UUID('00000000-0000-0000-0000-00000000000b'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -194,7 +202,9 @@ class TestUpdateBookingToCancelled:
 
         # Act & Assert
         with pytest.raises(DomainError, match='Cannot cancel completed booking'):
-            await use_case.execute(booking_id=11, buyer_id=2)
+            await use_case.execute(
+                booking_id=UUID('00000000-0000-0000-0000-00000000000b'), buyer_id=2
+            )
 
     @pytest.mark.asyncio
     async def test_fail_when_booking_already_cancelled(self):
@@ -207,7 +217,7 @@ class TestUpdateBookingToCancelled:
         """
         # Arrange
         cancelled_booking = Booking(
-            id=12,
+            id=UUID('00000000-0000-0000-0000-00000000000c'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -227,7 +237,9 @@ class TestUpdateBookingToCancelled:
 
         # Act & Assert
         with pytest.raises(DomainError, match='Booking already cancelled'):
-            await use_case.execute(booking_id=12, buyer_id=2)
+            await use_case.execute(
+                booking_id=UUID('00000000-0000-0000-0000-00000000000c'), buyer_id=2
+            )
 
     @pytest.mark.asyncio
     @patch(
@@ -288,7 +300,7 @@ class TestUpdateBookingToCancelled:
         )
 
         # Act
-        await use_case.execute(booking_id=10, buyer_id=2)
+        await use_case.execute(booking_id=UUID('00000000-0000-0000-0000-00000000000a'), buyer_id=2)
 
         # Assert
         mock_publish.assert_called_once()
@@ -327,7 +339,9 @@ class TestUpdateBookingToCancelled:
         )
 
         # Act
-        result = await use_case.execute(booking_id=10, buyer_id=2)
+        result = await use_case.execute(
+            booking_id=UUID('00000000-0000-0000-0000-00000000000a'), buyer_id=2
+        )
 
         # Assert
         assert result.status == BookingStatus.CANCELLED

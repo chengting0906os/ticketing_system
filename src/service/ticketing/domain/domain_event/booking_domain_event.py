@@ -7,6 +7,7 @@ be handled by other bounded contexts (like event_ticketing).
 
 from datetime import datetime
 from typing import List
+from pydantic import UUID7 as UUID
 
 import attrs
 
@@ -56,7 +57,7 @@ class BookingCreatedDomainEvent:
 class BookingPaidEvent:
     """Published when a booking is successfully paid"""
 
-    booking_id: int
+    booking_id: UUID
     buyer_id: int
     event_id: int
     ticket_ids: List[int]
@@ -64,7 +65,7 @@ class BookingPaidEvent:
     total_amount: float
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @property
@@ -80,7 +81,7 @@ class BookingPaidEvent:
 class BookingCancelledEvent:
     """Published when a booking is cancelled"""
 
-    booking_id: int
+    booking_id: UUID
     buyer_id: int
     event_id: int
     ticket_ids: List[int]
@@ -88,7 +89,7 @@ class BookingCancelledEvent:
     cancelled_at: datetime
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @property

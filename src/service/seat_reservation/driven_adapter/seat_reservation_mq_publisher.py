@@ -1,11 +1,12 @@
 """
 Seat Reservation Event Publisher
-座位預訂事件發布器 - 負責發送座位預訂相關的領域事件
 
-職責：
-- 發送座位預訂成功事件
-- 發送座位預訂失敗事件
-- 封裝 Kafka 發布邏輯
+Responsible for publishing seat reservation-related domain events.
+
+Responsibilities:
+- Publish seat reservation success events
+- Publish seat reservation failure events
+- Encapsulate Kafka publishing logic
 """
 
 import attrs
@@ -22,9 +23,9 @@ from src.service.seat_reservation.app.interface.i_seat_reservation_event_publish
 
 @attrs.define
 class SeatsReservedEvent:
-    """座位預訂成功事件"""
+    """Seat reservation success event"""
 
-    booking_id: int
+    booking_id: str
     buyer_id: int
     reserved_seats: List[str]
     total_price: int
@@ -32,38 +33,38 @@ class SeatsReservedEvent:
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> str:
         return self.booking_id
 
 
 @attrs.define
 class SeatReservationFailedEvent:
-    """座位預訂失敗事件"""
+    """Seat reservation failure event"""
 
-    booking_id: int
+    booking_id: str
     buyer_id: int
     error_message: str
     status: str = 'seat_reservation_failed'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> str:
         return self.booking_id
 
 
 class SeatReservationEventPublisher(ISeatReservationEventPublisher):
-    """座位預訂事件發布器實作"""
+    """Seat reservation event publisher implementation"""
 
     async def publish_seats_reserved(
         self,
         *,
-        booking_id: int,
+        booking_id: str,
         buyer_id: int,
         reserved_seats: List[str],
         total_price: int,
         event_id: int,
     ) -> None:
-        """發送座位預訂成功事件"""
+        """Publish seat reservation success event"""
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
@@ -80,18 +81,18 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         )
 
         Logger.base.info(
-            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved 事件發送完成！\033[0m'
+            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved event published successfully\033[0m'
         )
 
     async def publish_reservation_failed(
         self,
         *,
-        booking_id: int,
+        booking_id: str,
         buyer_id: int,
         error_message: str,
         event_id: int,
     ) -> None:
-        """發送座位預訂失敗事件"""
+        """Publish seat reservation failure event"""
         event = SeatReservationFailedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
@@ -105,5 +106,5 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         )
 
         Logger.base.info(
-            '\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed 事件發送完成\033[0m'
+            '\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed event published\033[0m'
         )

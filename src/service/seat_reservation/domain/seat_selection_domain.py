@@ -5,18 +5,11 @@ Seat Selection Domain
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List, Optional
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-
-
-class SelectionMode(Enum):
-    """座位選擇模式"""
-
-    MANUAL = 'manual'
-    BEST_AVAILABLE = 'best_available'
+from src.service.seat_reservation.domain.selection_mode import SelectionMode
 
 
 @dataclass

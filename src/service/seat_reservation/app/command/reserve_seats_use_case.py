@@ -18,7 +18,7 @@ from src.service.seat_reservation.app.interface.i_seat_reservation_event_publish
 class ReservationRequest:
     """座位預訂請求"""
 
-    booking_id: int
+    booking_id: str  # Changed to str for UUID7
     buyer_id: int
     event_id: int
     selection_mode: str  # 'manual' or 'best_available'
@@ -33,7 +33,7 @@ class ReservationResult:
     """座位預訂結果"""
 
     success: bool
-    booking_id: int
+    booking_id: str  # Changed to str for UUID7
     reserved_seats: Optional[List[str]] = None
     total_price: int = 0
     error_message: Optional[str] = None
@@ -42,11 +42,25 @@ class ReservationResult:
 
 class ReserveSeatsUseCase:
     """
-    座位預訂用例
+    座位預訂用例 - Event-Driven Non-Blocking Flow
 
-    使用 Lua 腳本在 Kvrocks 中原子性地：
-    1. manual mode: 預訂指定座位
-    2. best_available mode: 查找並預訂連續座位
+    Responsibility: Seat Reservation Service (Kvrocks only)
+
+    Flow:
+    1. Reserve seats in Kvrocks (atomic operation, returns prices)
+    2. Fire-and-forget: Publish event to Ticketing Service
+       → Ticketing Service handles PostgreSQL persistence
+    3. Return immediately (non-blocking)
+
+    Design Principles:
+    - Single Responsibility: Only manages Kvrocks state
+    - Separation of Concerns: Each service manages its own storage
+    - Non-blocking: No database I/O in critical path
+    - Event-driven: Communication via Kafka events
+
+    Dependencies:
+    - seat_state_handler: For Kvrocks seat reservation
+    - mq_publisher: For event publishing (fire-and-forget)
     """
 
     def __init__(
@@ -60,20 +74,25 @@ class ReserveSeatsUseCase:
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
         """
-        執行座位預訂 - 直接使用 Lua 腳本原子性操作
+        執行座位預訂 - Non-blocking Event-Driven Flow
 
-        流程：
-        1. 驗證請求
-        2. 根據模式調用對應的 Lua 腳本：
-           - manual: 預訂指定座位
-           - best_available: 自動查找並預訂連續座位
-        3. 處理結果並發送事件
+        Flow:
+        1. Validate request
+        2. Reserve seats in Kvrocks (atomic operation, returns prices)
+        3. Fire-and-forget: Publish event to Ticketing Service
+           → Ticketing Service handles PostgreSQL write (Booking + Tickets)
+        4. Return immediately (non-blocking)
+
+        Design Rationale:
+        - Seat Reservation Service: Only manages Kvrocks state (fast, non-blocking)
+        - Ticketing Service: Handles PostgreSQL persistence (via event)
+        - Separation of concerns: Each service manages its own storage
 
         Args:
             request: 預訂請求
 
         Returns:
-            預訂結果
+            預訂結果 (from Kvrocks only)
         """
         try:
             Logger.base.info(
@@ -81,50 +100,58 @@ class ReserveSeatsUseCase:
                 f'buyer {request.buyer_id}, event {request.event_id}'
             )
 
-            # 1. 驗證請求
+            # Step 1: Validate request
             self._validate_request(request)
 
-            # 2. 統一調用 Command Handler（Lua 腳本處理冪等性和座位預訂）
+            # Step 2: Reserve seats in Kvrocks (Pipeline, returns prices)
             result = await self.seat_state_handler.reserve_seats_atomic(
                 event_id=request.event_id,
                 booking_id=request.booking_id,
                 buyer_id=request.buyer_id,
                 mode=request.selection_mode,
                 seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
-                section=request.section_filter,  # 兩種模式都需要 section
-                subsection=request.subsection_filter,  # 兩種模式都需要 subsection
+                section=request.section_filter,
+                subsection=request.subsection_filter,
                 quantity=request.quantity if request.selection_mode == 'best_available' else None,
             )
 
-            # 3. 處理結果並發送事件（價格計算由 Ticketing Service 負責）
+            # Step 3: Handle result
             if result['success']:
                 reserved_seats = result['reserved_seats']
+                total_price = result['total_price']
 
                 Logger.base.info(
                     f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
-                    f'for booking {request.booking_id}'
+                    f'in Kvrocks for booking {request.booking_id} (total: {total_price})'
                 )
 
-                # 發送座位預訂成功事件（不包含 total_price，由 Ticketing Service 計算）
+                # Step 4: Fire-and-forget event to Ticketing Service
+                # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
                 await self.mq_publisher.publish_seats_reserved(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
                     reserved_seats=reserved_seats,
-                    total_price=0,  # Placeholder，實際價格由 Ticketing Service 計算
+                    total_price=total_price,
                     event_id=request.event_id,
+                )
+
+                Logger.base.info(
+                    f'📤 [RESERVE] Published seats_reserved event for booking {request.booking_id}'
                 )
 
                 return ReservationResult(
                     success=True,
                     booking_id=request.booking_id,
                     reserved_seats=reserved_seats,
-                    total_price=0,  # Placeholder，實際價格由 Ticketing Service 計算
+                    total_price=total_price,
                     event_id=request.event_id,
                 )
             else:
                 error_msg = result.get('error_message', 'Reservation failed')
 
-                # 發送座位預訂失敗事件
+                Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
+
+                # Send failure notification
                 await self.mq_publisher.publish_reservation_failed(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,

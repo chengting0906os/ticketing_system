@@ -49,24 +49,29 @@ def mock_kafka_infrastructure(request):
     This follows clean architecture - tests depend on abstractions.
 
     Only enabled for feature tests and tests using 'client' fixture.
+    Skips unit tests in test/service/*/unit/ directories.
     """
-    # Skip for lua_script tests (they don't need mocking)
-    if 'lua_script_tests' in request.node.nodeid:
+    # Skip for unit tests - they should test implementation directly
+    if '/unit/' in str(request.fspath):
         yield
         return
 
     async def mock_initialize_seats(self, *, event_id: int, seating_config: dict) -> dict:
         """
-        Test implementation: Direct Kvrocks writes via Lua script.
+        Test implementation: Direct Kvrocks writes via Pipeline.
         Bypasses async Kafka processing for faster, deterministic tests.
         """
         import os
+        from collections import defaultdict
+        from datetime import datetime, timezone
 
         from src.platform.state.kvrocks_client import kvrocks_client_sync
-        from src.service.ticketing.driven_adapter.state.lua_script import INITIALIZE_SEATS_SCRIPT
 
         # Get key prefix
         _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+
+        def _make_key(key: str) -> str:
+            return f'{_KEY_PREFIX}{key}'
 
         # Generate seat data (same logic as real handler)
         all_seats = []
@@ -89,31 +94,77 @@ def mock_kafka_infrastructure(request):
                                 'seat_num': seat_num,
                                 'seat_index': seat_index,
                                 'price': price,
+                                'rows': rows,
+                                'seats_per_row': seats_per_row,
                             }
                         )
 
-        # Prepare Lua script args
-        args = [_KEY_PREFIX, str(event_id)]
+        # Prepare section statistics and configurations
+        section_stats = defaultdict(int)
+        section_configs = {}
+
         for seat in all_seats:
-            args.extend(
-                [
-                    seat['section'],
-                    str(seat['subsection']),
-                    str(seat['row']),
-                    str(seat['seat_num']),
-                    str(seat['seat_index']),
-                    str(seat['price']),
-                ]
-            )
+            section_id = f'{seat["section"]}-{seat["subsection"]}'
+            section_stats[section_id] += 1
 
-        # Execute Lua script (sync)
+            if section_id not in section_configs:
+                section_configs[section_id] = {
+                    'rows': seat['rows'],
+                    'seats_per_row': seat['seats_per_row'],
+                }
+
+        # Use Pipeline to batch write all operations (sync version)
         client = kvrocks_client_sync.connect()
-        success_count = client.eval(INITIALIZE_SEATS_SCRIPT, 0, *args)
+        pipe = client.pipeline()
+        timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 
-        if not success_count or success_count != len(all_seats):
-            raise Exception(
-                f'Seat initialization failed: expected {len(all_seats)}, got {success_count}'
+        # Write all seat bitfields and metadata
+        for seat in all_seats:
+            section_id = f'{seat["section"]}-{seat["subsection"]}'
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{seat["row"]}')
+            offset = seat['seat_index'] * 2
+
+            # Set seat status to AVAILABLE (00)
+            pipe.setbit(bf_key, offset, 0)
+            pipe.setbit(bf_key, offset + 1, 0)
+
+            # Store seat metadata (price)
+            pipe.hset(meta_key, str(seat['seat_num']), str(seat['price']))
+
+        # Create section indexes and statistics
+        for section_id, total_seats in section_stats.items():
+            # Add section to event's section index
+            pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
+
+            # Initialize section statistics
+            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
+            pipe.hset(
+                stats_key,
+                mapping={
+                    'section_id': section_id,
+                    'event_id': str(event_id),
+                    'available': str(total_seats),
+                    'reserved': '0',
+                    'sold': '0',
+                    'total': str(total_seats),
+                    'updated_at': timestamp,
+                },
             )
+
+            # Store section configuration
+            config = section_configs[section_id]
+            config_key = _make_key(f'section_config:{event_id}:{section_id}')
+            pipe.hset(
+                config_key,
+                mapping={
+                    'rows': str(config['rows']),
+                    'seats_per_row': str(config['seats_per_row']),
+                },
+            )
+
+        # Execute pipeline
+        pipe.execute()
 
         return {
             'success': True,

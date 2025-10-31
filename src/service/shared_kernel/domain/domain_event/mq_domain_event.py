@@ -1,5 +1,7 @@
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Protocol, Union, runtime_checkable
+
+from pydantic import UUID7 as UUID
 
 
 @runtime_checkable
@@ -13,8 +15,8 @@ class MqDomainEvent(Protocol):
     """
 
     @property
-    def aggregate_id(self) -> int:
-        """業務聚合根ID，用於分區和關聯"""
+    def aggregate_id(self) -> Union[int, str, UUID]:
+        """業務聚合根ID，用於分區和關聯 (支援 int, str, UUID)"""
         ...
 
     @property

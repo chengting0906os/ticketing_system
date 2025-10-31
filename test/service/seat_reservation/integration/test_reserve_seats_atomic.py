@@ -1,9 +1,9 @@
 """
-Integration test for reserve_seats_atomic Lua script
+Integration test for reserve_seats_atomic using Pipeline
 
-測試統一的座位預訂 Lua 腳本，支援兩種模式：
-1. manual mode - 手動指定座位 ID
-2. best_available mode - 自動查找並預訂連續座位
+Tests the unified seat reservation implementation supporting two modes:
+1. manual mode - Reserve specific seat IDs
+2. best_available mode - Automatically find and reserve consecutive seats
 """
 
 import os
@@ -57,7 +57,7 @@ def unique_event_id(kvrocks_client_sync_for_test):
 
 
 class TestReserveSeatsAtomicManualMode:
-    """測試 reserve_seats_atomic() - Manual Mode (手動選擇座位)"""
+    """Test reserve_seats_atomic() - Manual Mode (manual seat selection)"""
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -347,7 +347,7 @@ class TestReserveSeatsAtomicManualMode:
 
 
 class TestReserveSeatsAtomicBestAvailableMode:
-    """測試 reserve_seats_atomic() - Best Available Mode (自動找連續座位)"""
+    """Test reserve_seats_atomic() - Best Available Mode (auto-find consecutive seats)"""
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -483,7 +483,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
 
         # Then: Should fail
         assert result['success'] is False
-        assert 'no consecutive seats' in result['error_message'].lower()
+        assert 'consecutive seats available' in result['error_message'].lower()
 
     @pytest.mark.integration
     @pytest.mark.asyncio

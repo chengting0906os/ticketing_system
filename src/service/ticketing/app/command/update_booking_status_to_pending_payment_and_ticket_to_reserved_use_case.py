@@ -1,3 +1,4 @@
+from pydantic import UUID7 as UUID
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
@@ -21,7 +22,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
 
     @Logger.io
     async def execute(
-        self, *, booking_id: int, buyer_id: int, seat_identifiers: list[str]
+        self, *, booking_id: UUID, buyer_id: int, seat_identifiers: list[str]
     ) -> Booking:
         """
         Atomically reserve tickets and update booking to PENDING_PAYMENT (1 DB round-trip)

@@ -1,3 +1,4 @@
+from pydantic import UUID7 as UUID
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_query_repo import IBookingQueryRepo
@@ -24,7 +25,7 @@ class UpdateBookingToFailedUseCase:
 
     @Logger.io
     async def execute(
-        self, *, booking_id: int, buyer_id: int, error_message: str | None = None
+        self, *, booking_id: UUID, buyer_id: int, error_message: str | None = None
     ) -> Booking | None:
         """
         執行訂單狀態更新為失敗

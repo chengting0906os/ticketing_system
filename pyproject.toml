@@ -10,31 +10,25 @@ dependencies = [
     "granian[reload]",
     "uvloop",
     "sse-starlette>=3.0.2",
-
     # Database
     "sqlalchemy",
     "asyncpg",
     "psycopg2-binary>=2.9.10",
     "alembic>=1.16.4",
     "greenlet>=3.2.4",
-
     # Data Validation
     "pydantic",
     "pydantic-settings",
     "email-validator>=2.3.0",
-
     # Messaging & Streaming
     "quixstreams[protobuf]>=3.23.0",
     "grpcio-tools>=1.0.0",
-
     # Cache
     "redis>=6.4.0",
     "async-lru>=2.0.5",
-
     # Security
     "pyjwt>=2.10.1",
     "bcrypt>=5.0.0",
-
     # Utilities
     "uuid-v7>=1.0.0",
     "orjson>=3.11.3",
@@ -42,7 +36,6 @@ dependencies = [
     "attrs>=24.0.0",
     "dependency-injector>=4.48.2",
     "loguru>=0.7.3",
-
     # Monitoring
     "prometheus-client>=0.20.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
@@ -52,6 +45,7 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
     "opentelemetry-instrumentation-redis>=0.51b0",
     "opentelemetry-exporter-otlp>=1.30.0",
+    "uuid-utils>=0.11.1",
 ]
 
 [dependency-groups]

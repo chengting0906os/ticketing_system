@@ -1,3 +1,4 @@
+from pydantic import UUID7 as UUID
 from typing import List
 
 from fastapi import APIRouter, Depends, status
@@ -81,7 +82,7 @@ async def create_booking(
 @router.get('/{booking_id}')
 @Logger.io
 async def get_booking(
-    booking_id: int,
+    booking_id: UUID,  # UUID7
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
 ) -> BookingDetailResponse:
@@ -92,7 +93,7 @@ async def get_booking(
 @router.patch('/{booking_id}', status_code=status.HTTP_200_OK)
 @Logger.io
 async def cancel_booking(
-    booking_id: int,
+    booking_id: UUID,  # UUID7
     current_user: UserEntity = Depends(require_buyer),
     use_case: UpdateBookingToCancelledUseCase = Depends(UpdateBookingToCancelledUseCase.depends),
 ):
@@ -110,7 +111,7 @@ async def cancel_booking(
 @router.post('/{booking_id}/pay')
 @Logger.io
 async def pay_booking(
-    booking_id: int,
+    booking_id: UUID,  # UUID7
     request: PaymentRequest,
     current_user: UserEntity = Depends(require_buyer),
     use_case: MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase = Depends(

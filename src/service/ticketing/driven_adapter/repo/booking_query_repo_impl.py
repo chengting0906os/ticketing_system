@@ -1,3 +1,4 @@
+from pydantic import UUID7 as UUID
 from contextlib import asynccontextmanager
 from typing import AsyncContextManager, AsyncIterator, Callable, List
 
@@ -107,7 +108,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         }
 
     @Logger.io
-    async def get_by_id(self, *, booking_id: int) -> Booking | None:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         async with self._get_session() as session:
             result = await session.execute(
                 select(BookingModel).where(BookingModel.id == booking_id)
@@ -120,7 +121,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             return BookingQueryRepoImpl._to_entity(db_booking)
 
     @Logger.io
-    async def get_by_id_with_details(self, *, booking_id: int) -> dict | None:
+    async def get_by_id_with_details(self, *, booking_id: UUID) -> dict | None:
         """Get booking by ID with full details (event, user, seller info)"""
 
         async with self._get_session() as session:
@@ -240,7 +241,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             return bookings_with_tickets
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: int) -> List['TicketRef']:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List['TicketRef']:
         """
         Get all tickets for a booking using seat_positions
 

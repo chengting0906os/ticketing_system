@@ -9,6 +9,7 @@ Testing Focus:
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 
@@ -21,6 +22,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
+@pytest.mark.unit
 class TestUpdateBookingToPendingPayment:
     """測試更新 booking 到 pending_payment 狀態"""
 
@@ -28,7 +30,7 @@ class TestUpdateBookingToPendingPayment:
     def existing_booking(self):
         """現有的 processing 狀態 booking"""
         return Booking(
-            id=4,
+            id=UUID('00000000-0000-0000-0000-000000000004'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -82,7 +84,7 @@ class TestUpdateBookingToPendingPayment:
         """
         # Given: Mock the new atomic method
         updated_booking = Booking(
-            id=4,
+            id=UUID('00000000-0000-0000-0000-000000000004'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -107,7 +109,7 @@ class TestUpdateBookingToPendingPayment:
 
         # When
         result = await use_case.execute(
-            booking_id=4,
+            booking_id=UUID('00000000-0000-0000-0000-000000000004'),
             buyer_id=2,
             seat_identifiers=['A-1-1-1', 'A-1-1-2'],
         )
@@ -117,7 +119,7 @@ class TestUpdateBookingToPendingPayment:
         assert result.status == BookingStatus.PENDING_PAYMENT
         # Verify atomic method was called with correct parameters
         booking_command_repo.reserve_tickets_and_update_booking_atomically.assert_called_once_with(
-            booking_id=4,
+            booking_id=UUID('00000000-0000-0000-0000-000000000004'),
             buyer_id=2,
             event_id=1,
             section='A',
@@ -145,7 +147,7 @@ class TestUpdateBookingToPendingPayment:
         # When/Then
         with pytest.raises(NotFoundError, match='Booking not found'):
             await use_case.execute(
-                booking_id=999,
+                booking_id=UUID('00000000-0000-0000-0000-0000000003e7'),
                 buyer_id=2,
                 seat_identifiers=['A-1-1-1'],
             )
@@ -170,7 +172,7 @@ class TestUpdateBookingToPendingPayment:
         # When/Then
         with pytest.raises(ForbiddenError, match='Booking owner mismatch'):
             await use_case.execute(
-                booking_id=4,
+                booking_id=UUID('00000000-0000-0000-0000-000000000004'),
                 buyer_id=3,  # Wrong buyer_id
                 seat_identifiers=['A-1-1-1', 'A-1-1-2'],
             )
