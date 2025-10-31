@@ -227,8 +227,9 @@ services:
   # Each service has its own API + Consumer following Bounded Context principle
   # =============================================================================
 
-  # ============= TICKETING SERVICE =============
-  # Handles: User Auth, Event Management, Booking Operations
+  # ============= UNIFIED TICKETING SERVICE =============
+  # Combines: User Auth, Event Management, Booking, Seat Reservation
+  # Architecture: Single process for lower overhead and shared resources
 
   ticketing-service:
     build:
@@ -236,7 +237,7 @@ services:
       target: development
     # Note: No container_name to allow scaling with --scale
     ports:
-      - "8100:8000" # Port range for scaled instances
+      - "8100:8000" # Main port for unified service
     expose:
       - "8000"
     environment:
@@ -248,8 +249,8 @@ services:
       POSTGRES_PORT: 5432
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
-      KAFKA_CONSUMER_INSTANCE_ID: "consumer-ticketing-1"
-      # Kvrocks (for seed script initialization)
+      KAFKA_CONSUMER_INSTANCE_ID: "consumer-unified-1"
+      # Kvrocks
       KVROCKS_HOST: kvrocks
       KVROCKS_PORT: 6666
       # Event selection (default to event 1, can override)
@@ -268,77 +269,9 @@ services:
       - ./script:/app/script:ro # Scripts for seeding and utilities
       - ./test:/app/test # Tests need write access for test logs
       - ./logs:/app/logs # Share logs with promtail
-      - ./pyproject.toml:/app/pyproject.toml:ro # Pytest config and dependencies
-    command: [ "uv", "run", "granian", "src.service.ticketing.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka1:
-        condition: service_started
-      kafka2:
-        condition: service_started
-      kafka3:
-        condition: service_started
-    networks:
-      - ticketing-network
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
-
-  # ============= SEAT RESERVATION SERVICE =============
-  # Handles: Seat Allocation, Reservation via Kvrocks
-
-  seat-reservation-service:
-    build:
-      context: .
-      target: development
-    # Note: No container_name to allow scaling with --scale
-    ports:
-      - "8200:8000" # Port range for scaled instances
-    expose:
-      - "8000"
-    environment:
-      # Database (for event metadata)
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_PORT: 5432
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
-      KAFKA_CONSUMER_INSTANCE_ID: "consumer-seat-reservation-1"
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
-      KVROCKS_PORT: 6666
-      # Event selection (default to event 1, can override)
-      EVENT_ID: "${EVENT_ID:-1}"
-      # OpenTelemetry / Jaeger
-      JAEGER_HOST: jaeger
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      # Application
-      DEBUG: "false"
-      # Timezone
-      TZ: "Asia/Taipei"
-    env_file:
-      - .env.example
-    volumes:
-      - ./src:/app/src:ro # Hot-reload: mount source code
-      - ./test:/app/test # Tests need write access for test logs
-      - ./logs:/app/logs # Share logs
       - ./state:/app/state # Quix Streams state directory
-    command: [ "uv", "run", "granian", "src.service.seat_reservation.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
+      - ./pyproject.toml:/app/pyproject.toml:ro # Pytest config and dependencies
+    command: [ "uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -384,8 +317,6 @@ services:
       - ticketing-network
     depends_on:
       ticketing-service:
-        condition: service_healthy
-      seat-reservation-service:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-q", "--spider", "http://localhost/health" ]

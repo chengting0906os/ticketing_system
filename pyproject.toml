@@ -154,7 +154,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:gherkin.gherkin_line",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 10"
+addopts = "-v --tb=short --strict-markers -n 6"
 
 [tool.pyright]
 

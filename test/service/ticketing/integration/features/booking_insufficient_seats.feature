@@ -1,11 +1,8 @@
 @integration
-@skip
 Feature: Booking with Insufficient Seats
   As a system
   I want to check seat availability before creating bookings
   So that users get immediate feedback about insufficient seats
-
-  # NOTE: This feature is currently skipped because seat availability check is disabled
 
   Background:
     Given a seller exists:

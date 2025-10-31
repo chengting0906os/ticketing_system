@@ -59,8 +59,10 @@ os.environ['ASYNCPG_POOL_MAX_SIZE'] = '10'
 # =============================================================================
 # Import Application and Test Components
 # =============================================================================
+# Import test-specific app (no Kafka consumers, no polling tasks)
+from test.test_main import app  # noqa: E402
+
 # Import all BDD steps and service fixtures through consolidated modules
-from src.main import app  # noqa: E402
 from test.bdd_steps_loader import *  # noqa: E402, F403
 from test.fixture_loader import *  # noqa: E402, F403
 
