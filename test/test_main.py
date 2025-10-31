@@ -11,6 +11,7 @@ This module provides a FastAPI app specifically for testing that:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,6 +106,15 @@ async def lifespan_for_tests(app: FastAPI):
     # Initialize asyncpg connection pool (skip warmup for faster test startup)
     await get_asyncpg_pool()
     Logger.base.info('🏊 [Test App] Asyncpg pool initialized')
+
+    # Create mock task group for fire-and-forget event publishing (tests only)
+    # Use mock instead of real anyio task_group to avoid event loop issues in tests
+    mock_task_group = MagicMock()
+    mock_task_group.start_soon = MagicMock()
+
+    # Inject mock task group into DI container
+    container.task_group.override(mock_task_group)
+    Logger.base.info('🔄 [Test App] Mock task group injected into DI container')
 
     Logger.base.info('✅ [Test App] Startup complete (no Kafka, no polling)')
 

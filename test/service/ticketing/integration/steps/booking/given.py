@@ -2,12 +2,12 @@ from datetime import datetime
 import json
 
 import bcrypt
+import uuid_utils as uuid
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
-from uuid_v7.base import uuid7
 
 from src.platform.constant.route_constant import EVENT_BASE, EVENT_TICKETS_BY_SUBSECTION
 
@@ -23,7 +23,7 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
     total_price = int(booking_data['total_price'])
 
     # Generate UUID7 for booking ID
-    booking_id = str(uuid7())
+    booking_id = str(uuid.uuid7())
 
     # Directly insert booking into database with pending_payment status
     execute_sql_statement(
@@ -259,7 +259,7 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
         # If it looks like an integer, generate a UUID7; otherwise use as-is
         try:
             int(booking_id_input)
-            booking_id = str(uuid7())
+            booking_id = str(uuid.uuid7())
         except ValueError:
             booking_id = booking_id_input
 
@@ -381,7 +381,7 @@ def create_bookings(step, booking_state, execute_sql_statement):
         booking_id_input = booking_data['id']
         try:
             int(booking_id_input)
-            booking_id = str(uuid7())
+            booking_id = str(uuid.uuid7())
         except ValueError:
             booking_id = booking_id_input
 

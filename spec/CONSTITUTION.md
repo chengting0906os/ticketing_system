@@ -18,6 +18,14 @@
 
 - **Imports**: Always at top of file, never inside functions
 - **Async**: Prefer `anyio` > `asyncio`, prefer `async` > `sync`
+- **UUID Generation**: Always use `uuid_utils` library for generating UUIDs
+
+  ```python
+  # ✅ Correct - Generation
+  import uuid_utils as uuid
+  booking_id = uuid.uuid7()  # Returns uuid_utils.UUID 
+  ```
+
 - **Function Parameters**: Use keyword-first style for clarity (func(*, key=value)).
 - **Dependency Inversion**: High-level modules depend on abstractions, not low-level modules
 - **Transaction Management**: Use cases commit, repositories only do CRUD

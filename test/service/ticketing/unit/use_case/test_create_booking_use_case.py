@@ -9,13 +9,21 @@ Tests the optimized booking creation flow:
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID
 
+from pydantic import UUID7 as UUID
 import pytest
 
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.domain.entity.booking_entity import Booking
+
+
+@pytest.fixture
+def mock_task_group():
+    """Mock anyio task group for testing"""
+    task_group = MagicMock()
+    task_group.start_soon = MagicMock()
+    return task_group
 
 
 @pytest.fixture
@@ -57,6 +65,7 @@ def create_booking_use_case(
     mock_booking_command_repo,
     mock_event_publisher,
     mock_seat_availability_handler,
+    mock_task_group,
 ):
     """Create instance of CreateBookingUseCase with mocked dependencies"""
     return CreateBookingUseCase(
@@ -64,6 +73,7 @@ def create_booking_use_case(
         booking_command_repo=mock_booking_command_repo,
         event_publisher=mock_event_publisher,
         seat_availability_handler=mock_seat_availability_handler,
+        task_group=mock_task_group,
     )
 
 
@@ -105,7 +115,9 @@ class TestCreateBookingUseCase:
         mock_booking_command_repo.create.return_value = mock_booking
 
         # Act
-        with patch('src.service.ticketing.app.command.create_booking_use_case.uuid7') as mock_uuid7:
+        with patch(
+            'src.service.ticketing.app.command.create_booking_use_case.uuid.uuid7'
+        ) as mock_uuid7:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')  # Valid UUID7
             mock_uuid7.return_value = test_uuid
 
@@ -247,7 +259,9 @@ class TestCreateBookingUseCase:
         mock_booking_command_repo.create.side_effect = capture_booking
 
         # Act
-        with patch('src.service.ticketing.app.command.create_booking_use_case.uuid7') as mock_uuid7:
+        with patch(
+            'src.service.ticketing.app.command.create_booking_use_case.uuid.uuid7'
+        ) as mock_uuid7:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')
             mock_uuid7.return_value = test_uuid
 

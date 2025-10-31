@@ -3,9 +3,9 @@ Seat Reservation Controller
 處理座位預訂相關的 API 端點，包括實時狀態更新
 """
 
-import asyncio
 import json
 
+import anyio
 from fastapi import APIRouter, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
@@ -189,15 +189,15 @@ async def stream_all_section_stats(event_id: int):
                     is_first_event = False
 
                     # 等待 0.5 秒
-                    await asyncio.sleep(0.5)
+                    await anyio.sleep(0.5)
 
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming all sections: {e}')
                     # 發送錯誤訊息
                     yield {'data': json.dumps({'error': str(e)})}
-                    await asyncio.sleep(0.5)
+                    await anyio.sleep(0.5)
 
-        except asyncio.CancelledError:
+        except anyio.get_cancelled_exc_class():
             Logger.base.info(f'🔌 [SSE] Client disconnected from event {event_id}')
             raise
 
@@ -292,15 +292,15 @@ async def stream_subsection_seats(
                     yield {'data': json.dumps(response_data)}
 
                     # 等待 0.5 秒
-                    await asyncio.sleep(0.5)
+                    await anyio.sleep(0.5)
 
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming seats: {e}')
                     # 發送錯誤訊息
                     yield {'data': json.dumps({'error': str(e)})}
-                    await asyncio.sleep(0.5)
+                    await anyio.sleep(0.5)
 
-        except asyncio.CancelledError:
+        except anyio.get_cancelled_exc_class():
             Logger.base.info(f'🔌 [SSE] Client disconnected: {section}-{subsection}')
             raise
 

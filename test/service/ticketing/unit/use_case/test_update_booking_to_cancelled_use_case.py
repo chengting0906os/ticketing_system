@@ -9,9 +9,9 @@ Unit tests for UpdateBookingToCancelledUseCase
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
-from uuid import UUID
 
 import pytest
+from pydantic import UUID7 as UUID
 
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case import (

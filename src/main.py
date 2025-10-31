@@ -12,6 +12,7 @@ This unified architecture provides:
 from contextlib import asynccontextmanager
 from pathlib import Path
 import signal
+from typing import TypeVar
 
 import anyio
 from anyio.from_thread import start_blocking_portal
@@ -21,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.platform.config.core_setting import settings
 from src.platform.config.di import container
@@ -72,6 +74,17 @@ from src.service.ticketing.driving_adapter.http_controller.user_controller impor
 from src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer import (
     TicketingMqConsumer,
 )
+
+# Generic middleware wrapper to satisfy type checker
+T = TypeVar('T', bound=BaseHTTPMiddleware)
+
+
+def as_middleware(middleware_class: type[T]) -> type[T]:
+    """
+    Type-safe wrapper for middleware classes.
+    Helps Pyre understand that middleware classes are compatible with add_middleware.
+    """
+    return middleware_class
 
 
 async def start_ticketing_consumer() -> None:
@@ -244,38 +257,45 @@ async def lifespan(app: FastAPI):
     await warmup_asyncpg_pool()
     Logger.base.info('🔥 [Unified Service] Asyncpg pool warmed up to MAX_SIZE')
 
-    # Start Kafka consumers (graceful failure if Kafka unavailable)
+    Logger.base.info('✅ [Unified Service] All services initialized')
 
-    try:
-        consumer_task_group = anyio.create_task_group()
-        await consumer_task_group.__aenter__()
+    # Use async with to manage task group lifecycle
+    async with anyio.create_task_group() as background_task_group:
+        # Inject task group into DI container for fire-and-forget event publishing
+        container.task_group.override(background_task_group)
+        Logger.base.info('🔄 [Unified Service] Task group injected into DI container')
 
-        # Start both consumers
-        consumer_task_group.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
-        consumer_task_group.start_soon(start_seat_reservation_consumer)  # type: ignore[arg-type]
-        Logger.base.info(
-            '📨 [Unified Service] Kafka consumers started (ticketing + seat reservation)'
-        )
-    except Exception as e:
-        Logger.base.warning(
-            f'⚠️  [Unified Service] Kafka unavailable at startup: {e}'
-            '\n   Continuing without Kafka - messaging features disabled'
-        )
-        consumer_task_group = anyio.create_task_group()
-        await consumer_task_group.__aenter__()
+        # Start Kafka consumers (graceful failure if Kafka unavailable)
+        try:
+            # Start both consumers in the unified task group
+            background_task_group.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
+            background_task_group.start_soon(start_seat_reservation_consumer)  # type: ignore[arg-type]
+            Logger.base.info(
+                '📨 [Unified Service] Kafka consumers started (ticketing + seat reservation)'
+            )
+        except Exception as e:
+            Logger.base.warning(
+                f'⚠️  [Unified Service] Kafka unavailable at startup: {e}'
+                '\n   Continuing without Kafka - messaging features disabled'
+            )
 
-    # Start polling tasks
-    seat_availability_handler = container.seat_availability_query_handler()
-    consumer_task_group.start_soon(seat_availability_handler.start_polling)  # type: ignore[arg-type]
-    Logger.base.info('🔄 [Unified Service] Seat availability polling started')
+        # Start polling tasks in the same task group
+        seat_availability_handler = container.seat_availability_query_handler()
+        background_task_group.start_soon(seat_availability_handler.start_polling)  # type: ignore[arg-type]
+        Logger.base.info('🔄 [Unified Service] Seat availability polling started')
 
-    seat_state_handler = container.seat_state_query_handler()
-    consumer_task_group.start_soon(seat_state_handler.start_polling)  # type: ignore[arg-type]
-    Logger.base.info('🔄 [Unified Service] Seat state polling started')
+        seat_state_handler = container.seat_state_query_handler()
+        background_task_group.start_soon(seat_state_handler.start_polling)  # type: ignore[arg-type]
+        Logger.base.info('🔄 [Unified Service] Seat state polling started')
 
-    Logger.base.info('✅ [Unified Service] Startup complete')
+        Logger.base.info('✅ [Unified Service] All background tasks started')
 
-    yield
+        # Yield inside async with - FastAPI will keep running until shutdown
+        # When shutdown is triggered, async with will automatically cancel task group
+        yield
+
+    # Task group automatically cancelled and cleaned up by async with above
+    Logger.base.info('🛑 [Unified Service] All background tasks stopped')
 
     # ============================================================================
     # SHUTDOWN
@@ -291,11 +311,6 @@ async def lifespan(app: FastAPI):
             )
     except Exception as e:
         Logger.base.error(f'❌ [Unified Service] Failed to flush Kafka messages: {e}')
-
-    # Stop all consumers and polling tasks
-    consumer_task_group.cancel_scope.cancel()
-    await consumer_task_group.__aexit__(None, None, None)
-    Logger.base.info('🛑 [Unified Service] Consumers and polling tasks stopped')
 
     # Close asyncpg pools
     await close_all_asyncpg_pools()
@@ -329,7 +344,7 @@ tracing_config.instrument_fastapi(app=app)
 
 # Add CORS middleware
 app.add_middleware(
-    CORSMiddleware,  # type: ignore
+    as_middleware(CORSMiddleware),
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=['*'],

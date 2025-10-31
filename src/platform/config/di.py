@@ -67,6 +67,10 @@ class Container(containers.DeclarativeContainer):
     kafka_service = providers.Singleton(KafkaConfigService)
     partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
+    # Background task group (set by main.py lifespan)
+    # Used for fire-and-forget tasks like event publishing
+    task_group = providers.Object(None)
+
     # Repositories - session will be injected by use cases
     # Command repos use raw SQL with asyncpg (no session needed)
     booking_command_repo = providers.Factory(BookingCommandRepoImpl)
@@ -121,6 +125,7 @@ class Container(containers.DeclarativeContainer):
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
         mq_publisher=seat_reservation_mq_publisher,
+        task_group=task_group,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

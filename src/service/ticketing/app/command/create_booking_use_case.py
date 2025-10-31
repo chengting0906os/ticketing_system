@@ -1,10 +1,11 @@
-import asyncio
 from typing import List
 
+import anyio.abc
+import uuid_utils as uuid
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from opentelemetry import trace
-from uuid_v7.base import uuid7
+from pydantic import UUID7 as UUID
 
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
@@ -47,11 +48,13 @@ class CreateBookingUseCase:
         booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
+        task_group: anyio.abc.TaskGroup,
     ):
         self.booking_metadata_handler = booking_metadata_handler
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
+        self.task_group = task_group
         self.tracer = trace.get_tracer(__name__)
 
     @classmethod
@@ -70,12 +73,14 @@ class CreateBookingUseCase:
         seat_availability_handler: ISeatAvailabilityQueryHandler = Depends(
             Provide[Container.seat_availability_query_handler]
         ),
+        task_group: anyio.abc.TaskGroup = Depends(Provide[Container.task_group]),
     ):
         return cls(
             booking_metadata_handler=booking_metadata_handler,
             booking_command_repo=booking_command_repo,
             event_publisher=event_publisher,
             seat_availability_handler=seat_availability_handler,
+            task_group=task_group,
         )
 
     @Logger.io
@@ -118,7 +123,7 @@ class CreateBookingUseCase:
         """
         with self.tracer.start_as_current_span('use_case.create_booking'):
             # Step 1: Generate UUID7 booking ID
-            booking_id_uuid = uuid7()
+            booking_id_uuid = UUID(str(uuid.uuid7()))  # Generate and convert to pydantic UUID7
             booking_id_str = str(booking_id_uuid)
 
             Logger.base.info(
@@ -186,17 +191,18 @@ class CreateBookingUseCase:
                     pass  # Best effort cleanup
                 raise DomainError(f'Failed to create booking: {e}', 500)
 
-            # Step 5: Publish domain event to Kafka
-            # Fire-and-forget: Don't block response waiting for event publishing
+            # Step 5: Publish domain event to Kafka (fire-and-forget)
+            # Use task_group for non-blocking event publishing
             # The event will use section-subsection as partition key for ordering
             booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
 
-            asyncio.create_task(
-                self.event_publisher.publish_booking_created(event=booking_created_event)
-            )
+            # Wrapper function for fire-and-forget event publishing
+            async def _publish_event() -> None:
+                await self.event_publisher.publish_booking_created(event=booking_created_event)
 
+            self.task_group.start_soon(_publish_event)  # type: ignore[arg-type]
             Logger.base.info(
-                f'🚀 [CREATE-BOOKING] Published BookingCreated event for {booking_id_str}'
+                f'🚀 [CREATE-BOOKING] Scheduled BookingCreated event for {booking_id_str}'
             )
 
             return created_booking
