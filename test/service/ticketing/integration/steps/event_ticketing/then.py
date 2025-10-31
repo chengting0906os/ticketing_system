@@ -1,5 +1,4 @@
-import json
-
+import orjson
 from pytest_bdd import then
 
 from test.shared.then import get_state_with_response
@@ -26,7 +25,7 @@ def verify_event_created(step, event_state=None, context=None):
             assert response_json[field] == int(expected_value)
         elif field == 'seating_config':
             # Handle JSON comparison for seating_config
-            expected_json = json.loads(expected_value)
+            expected_json = orjson.loads(expected_value)
             assert response_json[field] == expected_json, (
                 f'seating_config mismatch: expected {expected_json}, got {response_json[field]}'
             )

@@ -7,11 +7,11 @@ Features:
 - 死信隊列：無法處理的訊息發送至 DLQ
 """
 
-import json
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+import orjson
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from quixstreams import Application
 
@@ -268,7 +268,7 @@ class SeatReservationConsumer:
 
             # 發送到 DLQ（使用 aggregate_id 作為 key，保持順序）
             # 序列化訊息為 JSON
-            serialized_message = json.dumps(dlq_message).encode('utf-8')
+            serialized_message = orjson.dumps(dlq_message)
 
             with self.kafka_app.get_producer() as producer:
                 producer.produce(
@@ -478,7 +478,7 @@ class SeatReservationConsumer:
             if isinstance(event_data, dict):
                 return event_data
             if isinstance(event_data, str):
-                return json.loads(event_data)
+                return orjson.loads(event_data)
             if hasattr(event_data, '__dict__'):
                 return dict(vars(event_data))
 

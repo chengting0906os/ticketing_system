@@ -8,9 +8,10 @@ Performance: Using raw SQL with asyncpg for maximum performance
 """
 
 from datetime import datetime, timezone
-import json
 import time
 from typing import List, Optional
+
+import orjson
 
 from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
@@ -52,7 +53,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     event_aggregate.event.description,
                     event_aggregate.event.seller_id,
                     event_aggregate.event.venue_name,
-                    json.dumps(event_aggregate.event.seating_config),
+                    orjson.dumps(event_aggregate.event.seating_config).decode(),
                     event_aggregate.event.is_active,
                     event_aggregate.event.status.value,
                 )
@@ -235,7 +236,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     event_aggregate.event.name,
                     event_aggregate.event.description,
                     event_aggregate.event.venue_name,
-                    json.dumps(event_aggregate.event.seating_config),
+                    orjson.dumps(event_aggregate.event.seating_config).decode(),
                     event_aggregate.event.is_active,
                     event_aggregate.event.status.value,
                     event_aggregate.event.id,

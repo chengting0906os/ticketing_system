@@ -19,13 +19,13 @@ Features:
 - 死信隊列：無法處理的訊息發送至 DLQ
 """
 
-import json
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
-from pydantic import UUID7 as UUID
 
+import orjson
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+from uuid_utils import UUID
 from quixstreams import Application
 
 
@@ -251,7 +251,7 @@ class TicketingMqConsumer:
             }
 
             # 發送到 DLQ（使用 booking_id 作為 key，保持順序）
-            serialized_message = json.dumps(dlq_message).encode('utf-8')
+            serialized_message = orjson.dumps(dlq_message)
 
             with self.kafka_app.get_producer() as producer:
                 producer.produce(

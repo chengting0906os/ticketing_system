@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 from opentelemetry import trace
 
@@ -85,7 +85,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                               total_price, seat_selection_mode, seat_positions, status,
                               created_at, updated_at, paid_at
                     """,
-                    booking.id,  # UUID7 string from use case
+                    booking.id,  # uuid_utils.UUID (encoder converts to str)
                     booking.buyer_id,
                     booking.event_id,
                     booking.section,

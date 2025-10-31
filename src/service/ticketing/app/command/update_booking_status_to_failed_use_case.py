@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo

@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import UUID7 as UUID
 from pydantic import BaseModel
+
+from src.platform.types import UtilsUUID7
 
 
 class BookingCreateRequest(BaseModel):
@@ -30,16 +31,8 @@ class BookingCreateRequest(BaseModel):
 
 
 class BookingResponse(BaseModel):
-    id: UUID  # UUID7
-    buyer_id: int
-    event_id: int
-    total_price: int
-    status: str
-    created_at: datetime
-    paid_at: Optional[datetime] = None
-
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        'json_schema_extra': {
             'example': {
                 'id': '01936d8f-5e73-7c4e-a9c5-123456789abc',  # UUID7
                 'buyer_id': 2,
@@ -49,7 +42,16 @@ class BookingResponse(BaseModel):
                 'created_at': '2025-01-10T10:30:00',
                 'paid_at': None,
             }
-        }
+        },
+    }
+
+    id: UtilsUUID7  # UUID7
+    buyer_id: int
+    event_id: int
+    total_price: int
+    status: str
+    created_at: datetime
+    paid_at: Optional[datetime] = None
 
 
 class BookingStatusUpdateRequest(BaseModel):
@@ -67,20 +69,22 @@ class PaymentRequest(BaseModel):
 
 
 class PaymentResponse(BaseModel):
-    booking_id: UUID  # UUID7
-    payment_id: str
-    status: str
-    paid_at: Optional[str]
-
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        'arbitrary_types_allowed': True,
+        'json_schema_extra': {
             'example': {
                 'booking_id': '01936d8f-5e73-7c4e-a9c5-123456789abc',  # UUID7
                 'payment_id': 'PAY-123456789',
                 'status': 'success',
                 'paid_at': '2025-01-10T10:35:00',
             }
-        }
+        },
+    }
+
+    booking_id: UtilsUUID7  # UUID7
+    payment_id: str
+    status: str
+    paid_at: Optional[str]
 
 
 class CancelReservationResponse(BaseModel):
@@ -91,7 +95,7 @@ class CancelReservationResponse(BaseModel):
 class BookingWithDetailsResponse(BaseModel):
     """Booking response with event and user details"""
 
-    id: UUID  # UUID7
+    id: UtilsUUID7  # UUID7
     buyer_id: int
     event_id: int
     total_price: int
@@ -124,7 +128,7 @@ class TicketDetail(BaseModel):
 class BookingDetailResponse(BaseModel):
     """Detailed booking response with all information and tickets"""
 
-    id: UUID  # UUID7
+    id: UtilsUUID7  # UUID7
     buyer_id: int
     event_id: int
     total_price: int

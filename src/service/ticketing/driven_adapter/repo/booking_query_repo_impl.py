@@ -1,4 +1,4 @@
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 from contextlib import asynccontextmanager
 from typing import AsyncContextManager, AsyncIterator, Callable, List
 

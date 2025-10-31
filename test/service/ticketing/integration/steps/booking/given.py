@@ -1,7 +1,7 @@
 from datetime import datetime
-import json
 
 import bcrypt
+import orjson
 import uuid_utils as uuid
 from fastapi.testclient import TestClient
 from pytest_bdd import given
@@ -125,7 +125,7 @@ def create_event_with_seating_config(
     login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
 
     # Create event with seating configuration
-    seating_config = json.loads(event_data['seating_config'])
+    seating_config = orjson.loads(event_data['seating_config'])
     event_response = client.post(
         EVENT_BASE,
         json={
@@ -393,9 +393,7 @@ def create_bookings(step, booking_state, execute_sql_statement):
             seat_selection_mode = booking_data.get('seat_selection_mode', 'best_available')
             # Parse seat_positions from JSON string if provided
             if 'seat_positions' in booking_data:
-                import json
-
-                seat_positions = json.loads(booking_data['seat_positions'])
+                seat_positions = orjson.loads(booking_data['seat_positions'])
             else:
                 seat_positions = []
         else:

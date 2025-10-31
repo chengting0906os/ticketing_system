@@ -7,7 +7,8 @@ from Kafka consumer use cases to SSE endpoints.
 
 import asyncio
 from typing import Dict, List
-from pydantic import UUID7 as UUID
+
+from uuid_utils import UUID
 
 from src.platform.logging.loguru_io import Logger
 

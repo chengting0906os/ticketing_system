@@ -63,6 +63,32 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
     # Convert SQLAlchemy URL to asyncpg format
     dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
 
+    # UUID Codec Configuration:
+    # PostgreSQL stores UUIDs in 16-byte binary format internally.
+    # By default, asyncpg converts PostgreSQL UUIDs to Python's standard uuid.UUID.
+    # We register a custom binary codec to use uuid_utils.UUID throughout our application
+    # for consistency and to leverage its additional features (e.g., v7 support).
+    from uuid_utils import UUID
+
+    async def init_connection(conn):
+        """Initialize each connection with UUID codec"""
+
+        def _uuid_decoder(value: bytes) -> UUID:
+            """Decode PostgreSQL UUID binary data to uuid_utils.UUID"""
+            return UUID(bytes=value)
+
+        def _uuid_encoder(value: UUID) -> bytes:
+            """Encode uuid_utils.UUID to binary for PostgreSQL"""
+            return value.bytes
+
+        await conn.set_type_codec(
+            'uuid',
+            encoder=_uuid_encoder,
+            decoder=_uuid_decoder,
+            schema='pg_catalog',
+            format='binary',
+        )
+
     pool = await asyncpg.create_pool(
         dsn,
         min_size=settings.ASYNCPG_POOL_MIN_SIZE,
@@ -72,6 +98,7 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
         timeout=settings.ASYNCPG_POOL_TIMEOUT,
         max_queries=settings.ASYNCPG_POOL_MAX_QUERIES,  # default is 50000
         loop=current_loop,  # Explicitly bind pool to this event loop
+        init=init_connection,  # Initialize each connection with UUID codec
     )
 
     asyncpg_pools[loop_id] = pool

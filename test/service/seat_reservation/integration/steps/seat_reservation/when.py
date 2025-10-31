@@ -1,12 +1,13 @@
 """When steps for seat reservation SSE test"""
 
-import json
 import threading
 from typing import List
 
 from fastapi.testclient import TestClient
 import httpx
+import orjson
 from pytest_bdd import when
+
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, SELLER1_EMAIL
 
@@ -37,8 +38,8 @@ def read_sse_events_in_thread(
                     elif line.startswith('data:'):
                         data_str = line.split(':', 1)[1].strip()
                         try:
-                            current_event['data'] = json.loads(data_str)
-                        except json.JSONDecodeError:
+                            current_event['data'] = orjson.loads(data_str)
+                        except orjson.JSONDecodeError:
                             # Try parsing Python dict repr (single quotes) by using ast.literal_eval
                             import ast
 
@@ -234,8 +235,8 @@ def parse_sse_response(response) -> List[dict]:
                 elif line.startswith('data:'):
                     data_str = line.split(':', 1)[1].strip()
                     try:
-                        current_event['data'] = json.loads(data_str)
-                    except json.JSONDecodeError:
+                        current_event['data'] = orjson.loads(data_str)
+                    except orjson.JSONDecodeError:
                         current_event['data'] = data_str
         except Exception:
             pass  # Stop reading on any error
@@ -258,8 +259,8 @@ def parse_sse_response(response) -> List[dict]:
             elif line.startswith('data:'):
                 data_str = line.split(':', 1)[1].strip()
                 try:
-                    current_event['data'] = json.loads(data_str)
-                except json.JSONDecodeError:
+                    current_event['data'] = orjson.loads(data_str)
+                except orjson.JSONDecodeError:
                     current_event['data'] = data_str
 
     return events

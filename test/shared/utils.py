@@ -1,6 +1,6 @@
-import json
 from typing import Any, Dict
 
+import orjson
 from fastapi.testclient import TestClient
 from test.event_test_constants import (
     DEFAULT_SEATING_CONFIG,
@@ -79,8 +79,8 @@ def parse_seating_config(seating_config_str: str | None) -> dict:
     if not seating_config_str:
         return DEFAULT_SEATING_CONFIG
     try:
-        return json.loads(seating_config_str)
-    except (json.JSONDecodeError, TypeError):
+        return orjson.loads(seating_config_str)
+    except (orjson.JSONDecodeError, TypeError):
         return DEFAULT_SEATING_CONFIG
 
 

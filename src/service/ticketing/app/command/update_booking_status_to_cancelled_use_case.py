@@ -1,4 +1,4 @@
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 from datetime import datetime, timezone
 
 from dependency_injector.wiring import Provide, inject

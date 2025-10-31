@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (

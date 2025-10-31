@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 import attrs
 
@@ -27,6 +27,7 @@ class BookingStatus(StrEnum):
 
 @attrs.define
 class Booking:
+    id: UUID
     buyer_id: int
     event_id: int
     total_price: int
@@ -36,7 +37,6 @@ class Booking:
     seat_selection_mode: str
     seat_positions: Optional[List[str]] = attrs.field(factory=list)
     status: BookingStatus = BookingStatus.PROCESSING
-    id: Optional[UUID] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     paid_at: Optional[datetime] = None
@@ -121,7 +121,7 @@ class Booking:
             status=BookingStatus.PROCESSING,
             seat_positions=seat_positions,
             quantity=quantity,
-            id=None if id == 0 else id,  # Convert 0 to None for UUID compatibility
+            id=id,
         )
 
     @Logger.io
@@ -132,14 +132,14 @@ class Booking:
         seat_positions: list[str],
     ) -> 'Booking':
         """
-        將 booking 標記為待付款狀態，同時更新總價和座位資訊
+        Mark booking as pending payment and update price and seat info
 
         Args:
-            total_price: 計算後的總價
-            seat_positions: 確認的座位列表
+            total_price: Calculated total price
+            seat_positions: Confirmed seat positions
 
         Returns:
-            更新後的 Booking
+            Updated Booking
         """
         now = datetime.now()
         return attrs.evolve(
@@ -158,10 +158,10 @@ class Booking:
     @Logger.io
     def validate_can_be_paid(self) -> None:
         """
-        驗證訂單是否可以支付（Domain 層驗證邏輯）
+        Validate if booking can be paid (Domain layer validation logic)
 
         Raises:
-            DomainError: 當訂單狀態不允許支付時
+            DomainError: When booking status does not allow payment
         """
         if self.status == BookingStatus.COMPLETED:
             raise DomainError('Booking already paid')
@@ -178,12 +178,12 @@ class Booking:
     @Logger.io
     def cancel(self) -> 'Booking':
         """
-        取消訂單（Domain 驗證）
+        Cancel booking (Domain validation)
 
         Raises:
-            DomainError: 當訂單狀態不允許取消時
+            DomainError: When booking status does not allow cancellation
         """
-        # Domain 規則：只有 PROCESSING 或 PENDING_PAYMENT 狀態可以取消
+        # Domain rule: Only PROCESSING or PENDING_PAYMENT status can be cancelled
         if self.status == BookingStatus.COMPLETED:
             raise DomainError('Cannot cancel completed booking')
         elif self.status == BookingStatus.CANCELLED:

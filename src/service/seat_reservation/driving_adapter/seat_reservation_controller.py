@@ -3,9 +3,8 @@ Seat Reservation Controller
 處理座位預訂相關的 API 端點，包括實時狀態更新
 """
 
-import json
-
 import anyio
+import orjson
 from fastapi import APIRouter, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
@@ -184,7 +183,7 @@ async def stream_all_section_stats(event_id: int):
                     }
 
                     # 發送 SSE 事件
-                    yield {'event': event_type, 'data': json.dumps(response_data)}
+                    yield {'event': event_type, 'data': orjson.dumps(response_data).decode()}
 
                     is_first_event = False
 
@@ -194,7 +193,7 @@ async def stream_all_section_stats(event_id: int):
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming all sections: {e}')
                     # 發送錯誤訊息
-                    yield {'data': json.dumps({'error': str(e)})}
+                    yield {'data': orjson.dumps({'error': str(e)}).decode()}
                     await anyio.sleep(0.5)
 
         except anyio.get_cancelled_exc_class():
@@ -289,7 +288,7 @@ async def stream_subsection_seats(
                     }
 
                     # 發送 SSE 事件
-                    yield {'data': json.dumps(response_data)}
+                    yield {'data': orjson.dumps(response_data).decode()}
 
                     # 等待 0.5 秒
                     await anyio.sleep(0.5)
@@ -297,7 +296,7 @@ async def stream_subsection_seats(
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming seats: {e}')
                     # 發送錯誤訊息
-                    yield {'data': json.dumps({'error': str(e)})}
+                    yield {'data': orjson.dumps({'error': str(e)}).decode()}
                     await anyio.sleep(0.5)
 
         except anyio.get_cancelled_exc_class():

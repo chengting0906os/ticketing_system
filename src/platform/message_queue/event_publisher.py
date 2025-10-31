@@ -6,10 +6,10 @@ Simplified event publishing interface - using Quix Streams directly
 
 from datetime import datetime
 from typing import Any, Literal
-from uuid import UUID
 
 import attrs
 from quixstreams import Application
+from uuid_utils import UUID
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger

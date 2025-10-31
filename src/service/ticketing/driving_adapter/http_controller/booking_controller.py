@@ -1,17 +1,18 @@
 import asyncio
-import json
 from datetime import datetime, timezone
+from typing import List
 
 import anyio
 from dependency_injector.wiring import Provide
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import UUID7 as UUID
+import orjson
 from sse_starlette.sse import EventSourceResponse
-from typing import List
+import uuid_utils
 
 from src.platform.config.di import Container
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
+from src.platform.types import UtilsUUID7
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
@@ -90,7 +91,7 @@ async def create_booking(
 @router.get('/{booking_id}')
 @Logger.io
 async def get_booking(
-    booking_id: UUID,  # UUID7
+    booking_id: UtilsUUID7,
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
 ) -> BookingDetailResponse:
@@ -101,7 +102,7 @@ async def get_booking(
 @router.patch('/{booking_id}', status_code=status.HTTP_200_OK)
 @Logger.io
 async def cancel_booking(
-    booking_id: UUID,  # UUID7
+    booking_id: UtilsUUID7,
     current_user: UserEntity = Depends(require_buyer),
     use_case: UpdateBookingToCancelledUseCase = Depends(UpdateBookingToCancelledUseCase.depends),
 ):
@@ -119,7 +120,7 @@ async def cancel_booking(
 @router.post('/{booking_id}/pay')
 @Logger.io
 async def pay_booking(
-    booking_id: UUID,  # UUID7
+    booking_id: UtilsUUID7,
     request: PaymentRequest,
     current_user: UserEntity = Depends(require_buyer),
     use_case: MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase = Depends(
@@ -144,7 +145,7 @@ async def pay_booking(
 @router.get('/{booking_id}/sse', status_code=status.HTTP_200_OK)
 @Logger.io
 async def stream_booking_status(
-    booking_id: UUID,  # UUID7
+    booking_id: UtilsUUID7,
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
     event_broadcaster: IInMemoryEventBroadcaster = Depends(
@@ -211,10 +212,12 @@ async def stream_booking_status(
     - Heartbeat timeout: 30 seconds
     - Auto-close when booking reaches final state
     """
+    # Convert Pydantic UUID to uuid_utils.UUID for use case
+    booking_id_uuid = uuid_utils.UUID(str(booking_id))
 
     # Verify booking exists and user has access
     try:
-        initial_booking = await use_case.get_booking_with_details(booking_id)
+        initial_booking = await use_case.get_booking_with_details(booking_id_uuid)
 
         # Authorization check: Only booking owner or seller can view
         if not (
@@ -228,7 +231,7 @@ async def stream_booking_status(
         raise HTTPException(status_code=404, detail='Booking not found')
 
     # Subscribe to broadcaster for real-time updates
-    queue = await event_broadcaster.subscribe(booking_id=booking_id)
+    queue = await event_broadcaster.subscribe(booking_id=booking_id_uuid)
     Logger.base.info(f'📡 [SSE] Client subscribed to booking {booking_id}')
 
     async def event_generator():
@@ -264,7 +267,7 @@ async def stream_booking_status(
                 ],
             }
 
-            yield {'event': 'initial_status', 'data': json.dumps(initial_data)}
+            yield {'event': 'initial_status', 'data': orjson.dumps(initial_data).decode()}
 
             # Check if already in final state
             if initial_booking['status'] in final_states:
@@ -273,9 +276,9 @@ async def stream_booking_status(
                 )
                 yield {
                     'event': 'close',
-                    'data': json.dumps(
+                    'data': orjson.dumps(
                         {'message': f'Booking already in final state: {initial_booking["status"]}'}
-                    ),
+                    ).decode(),
                 }
                 return
 
@@ -286,7 +289,7 @@ async def stream_booking_status(
                     event_data = await asyncio.wait_for(queue.get(), timeout=30.0)
 
                     # Send SSE event
-                    yield {'event': 'status_update', 'data': json.dumps(event_data)}
+                    yield {'event': 'status_update', 'data': orjson.dumps(event_data).decode()}
 
                     Logger.base.debug(
                         f'📡 [SSE] Sent event to client: booking_id={booking_id}, status={event_data.get("status")}'
@@ -299,11 +302,11 @@ async def stream_booking_status(
                         )
                         yield {
                             'event': 'close',
-                            'data': json.dumps(
+                            'data': orjson.dumps(
                                 {
                                     'message': f'Booking reached final state: {event_data.get("status")}'
                                 }
-                            ),
+                            ).decode(),
                         }
                         break
 
@@ -311,13 +314,15 @@ async def stream_booking_status(
                     # Heartbeat: Send keepalive to prevent connection timeout
                     yield {
                         'event': 'heartbeat',
-                        'data': json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()}),
+                        'data': orjson.dumps(
+                            {'timestamp': datetime.now(timezone.utc).isoformat()}
+                        ).decode(),
                     }
                     Logger.base.debug(f'💓 [SSE] Heartbeat sent to booking {booking_id}')
 
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming booking {booking_id}: {e}')
-                    yield {'data': json.dumps({'error': str(e)})}
+                    yield {'data': orjson.dumps({'error': str(e)}).decode()}
                     break
 
         except anyio.get_cancelled_exc_class():
@@ -326,7 +331,7 @@ async def stream_booking_status(
 
         finally:
             # Cleanup: unsubscribe from broadcaster
-            await event_broadcaster.unsubscribe(booking_id=booking_id, queue=queue)
+            await event_broadcaster.unsubscribe(booking_id=booking_id_uuid, queue=queue)
             Logger.base.info(f'🔌 [SSE] Unsubscribed from booking {booking_id}')
 
     return EventSourceResponse(event_generator())

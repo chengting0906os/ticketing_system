@@ -1,7 +1,7 @@
-import json
 import os
 from unittest.mock import patch
 
+import orjson
 from fastapi.testclient import TestClient
 from pytest_bdd import given
 
@@ -111,7 +111,7 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
         if 'venue_name' in event_data:
             request_json['venue_name'] = event_data['venue_name']
         if 'seating_config' in event_data:
-            request_json['seating_config'] = json.loads(event_data['seating_config'])
+            request_json['seating_config'] = orjson.loads(event_data['seating_config'])
         create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
@@ -148,7 +148,7 @@ def create_no_available_events(step, client: TestClient, event_state, execute_sq
         if 'venue_name' in event_data:
             request_json['venue_name'] = event_data['venue_name']
         if 'seating_config' in event_data:
-            request_json['seating_config'] = json.loads(event_data['seating_config'])
+            request_json['seating_config'] = orjson.loads(event_data['seating_config'])
         create_response = client.post(EVENT_BASE, json=request_json)
         if create_response.status_code == 201:
             created_event = create_response.json()
@@ -204,7 +204,7 @@ def event_exists(step, execute_sql_statement):
         'name': 'Test Event',
         'description': 'Test Description',
         'venue_name': 'Large Arena',
-        'seating_config': json.dumps(seating_config),
+        'seating_config': orjson.dumps(seating_config).decode(),
     }
 
     # Insert event with specific ID

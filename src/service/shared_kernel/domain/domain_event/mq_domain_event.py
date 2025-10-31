@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Protocol, Union, runtime_checkable
 
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 
 @runtime_checkable

@@ -4,10 +4,11 @@ Booking Metadata Handler Implementation
 Kvrocks-based implementation for managing booking metadata.
 """
 
-import json
 import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
+
+import orjson
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -79,7 +80,7 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
                 'subsection': str(subsection),
                 'quantity': str(quantity),
                 'seat_selection_mode': seat_selection_mode,
-                'seat_positions': json.dumps(seat_positions),
+                'seat_positions': orjson.dumps(seat_positions).decode(),
                 'status': 'PENDING_RESERVATION',
                 'created_at': now,
                 'updated_at': now,

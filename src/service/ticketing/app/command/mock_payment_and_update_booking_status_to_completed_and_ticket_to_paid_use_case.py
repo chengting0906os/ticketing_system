@@ -1,6 +1,6 @@
 import random
 import string
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 from typing import Any, Dict
 
 from dependency_injector.wiring import Provide, inject

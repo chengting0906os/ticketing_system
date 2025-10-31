@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef

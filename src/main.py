@@ -102,7 +102,9 @@ async def start_ticketing_consumer() -> None:
     topic_initializer = KafkaTopicInitializer()
     topic_initializer.ensure_topics_exist(event_id=event_id)
 
-    consumer = TicketingMqConsumer()
+    # Get event broadcaster from DI container
+    event_broadcaster = container.booking_event_broadcaster()
+    consumer = TicketingMqConsumer(event_broadcaster=event_broadcaster)
 
     async def run_consumer_with_portal() -> None:
         """Run consumer in thread with BlockingPortal for async-to-sync calls"""

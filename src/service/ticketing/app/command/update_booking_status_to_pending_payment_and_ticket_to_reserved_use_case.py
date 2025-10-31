@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
@@ -97,7 +97,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
                             'seat_num': ticket.seat,
                             'price': ticket.price,
                             'status': ticket.status.value,
-                            'seat_identifier': ticket.seat_identifier,
+                            'seat_identifier': f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}',
                         }
                         for ticket in reserved_tickets
                     ],

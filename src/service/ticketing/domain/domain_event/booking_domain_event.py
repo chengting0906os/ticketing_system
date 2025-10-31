@@ -7,7 +7,7 @@ be handled by other bounded contexts (like event_ticketing).
 
 from datetime import datetime
 from typing import List
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 import attrs
 
@@ -18,7 +18,7 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 class BookingCreatedDomainEvent:
     """Domain event fired when a booking is created"""
 
-    booking_id: int
+    booking_id: UUID
     buyer_id: int
     event_id: int
     total_price: int
@@ -31,7 +31,7 @@ class BookingCreatedDomainEvent:
     occurred_at: datetime  # Required by DomainEvent protocol
 
     @property
-    def aggregate_id(self) -> int:
+    def aggregate_id(self) -> UUID:
         return self.booking_id
 
     @classmethod
@@ -39,7 +39,7 @@ class BookingCreatedDomainEvent:
         from datetime import datetime, timezone
 
         return cls(
-            booking_id=booking.id,  # type: ignore
+            booking_id=booking.id,
             buyer_id=booking.buyer_id,
             event_id=booking.event_id,
             total_price=booking.total_price,

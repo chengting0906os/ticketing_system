@@ -10,7 +10,7 @@ Tests the optimized booking creation flow:
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 import pytest
 
 from src.platform.exception.exceptions import DomainError
@@ -116,7 +116,7 @@ class TestCreateBookingUseCase:
 
         # Act
         with patch(
-            'src.service.ticketing.app.command.create_booking_use_case.uuid.uuid7'
+            'src.service.ticketing.app.command.create_booking_use_case.uuid_utils.uuid7'
         ) as mock_uuid7:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')  # Valid UUID7
             mock_uuid7.return_value = test_uuid
@@ -260,7 +260,7 @@ class TestCreateBookingUseCase:
 
         # Act
         with patch(
-            'src.service.ticketing.app.command.create_booking_use_case.uuid.uuid7'
+            'src.service.ticketing.app.command.create_booking_use_case.uuid_utils.uuid7'
         ) as mock_uuid7:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')
             mock_uuid7.return_value = test_uuid

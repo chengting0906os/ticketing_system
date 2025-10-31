@@ -12,10 +12,10 @@ Marks: smoke, integration
 
 import asyncio
 from datetime import datetime, timezone
-from uuid import UUID
 
 import pytest
 import uuid_utils as uuid
+from uuid_utils import UUID
 
 from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 

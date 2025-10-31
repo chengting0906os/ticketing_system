@@ -1,11 +1,10 @@
 from typing import List
 
 import anyio.abc
-import uuid_utils as uuid
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from opentelemetry import trace
-from pydantic import UUID7 as UUID
+import uuid_utils
 
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
@@ -123,7 +122,7 @@ class CreateBookingUseCase:
         """
         with self.tracer.start_as_current_span('use_case.create_booking'):
             # Step 1: Generate UUID7 booking ID
-            booking_id_uuid = UUID(str(uuid.uuid7()))  # Generate and convert to pydantic UUID7
+            booking_id_uuid = uuid_utils.uuid7()  # Generate UUID7
             booking_id_str = str(booking_id_uuid)
 
             Logger.base.info(

@@ -7,7 +7,8 @@ from Kafka consumers to SSE endpoints within the same process.
 
 import asyncio
 from typing import Protocol
-from pydantic import UUID7 as UUID
+
+from uuid_utils import UUID
 
 
 class IInMemoryEventBroadcaster(Protocol):

@@ -12,9 +12,10 @@
 """
 
 import asyncio
-import json
 import os
 import sys
+
+import orjson
 
 
 # Add project root to Python path
@@ -70,7 +71,7 @@ def send_invalid_reservation_request(event_id: int):
     producer.produce(
         topic=topic,
         key='test-invalid-booking-001',
-        value=json.dumps(invalid_message).encode('utf-8'),
+        value=orjson.dumps(invalid_message),
     )
 
     producer.flush()
@@ -97,7 +98,7 @@ def monitor_dlq(event_id: int, timeout: int = 30):
                 continue
 
             # 解析 DLQ 訊息
-            dlq_data = json.loads(msg.value().decode('utf-8'))
+            dlq_data = orjson.loads(msg.value())
 
             Logger.base.info('📮 [DLQ] Received failed message:')
             Logger.base.info(f'   Original message: {dlq_data.get("original_message")}')

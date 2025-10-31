@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
-from pydantic import UUID7 as UUID
+from uuid_utils import UUID
 
 from sqlalchemy import ARRAY, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
