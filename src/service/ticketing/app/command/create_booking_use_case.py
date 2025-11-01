@@ -29,13 +29,13 @@ class CreateBookingUseCase:
     1. Generate UUID7 booking_id
     2. Validate seat availability (Fail Fast)
     3. Save booking metadata to Kvrocks (fast, temporary storage)
-    4. Save minimal booking record to PostgreSQL (status=PENDING_RESERVATION)
-    5. Publish event to Kafka (with section-subsection partition key)
-    6. Return booking_id immediately to frontend (can start SSE subscription)
+    4. Publish event to Kafka (with section-subsection partition key)
+    5. Return booking_id immediately to frontend (can start SSE subscription)
+    6. Seat Reservation Service consumes event → reserves seats in Kvrocks → publishes SeatsReserved
+    7. Ticketing Service consumes SeatsReserved → upserts booking to PostgreSQL
 
     Dependencies:
     - booking_metadata_handler: For Kvrocks metadata operations
-    - booking_command_repo: For persisting booking to PostgreSQL
     - event_publisher: For publishing domain events
     - seat_availability_handler: For checking seat availability
     """
@@ -95,15 +95,14 @@ class CreateBookingUseCase:
         quantity: int,
     ) -> Booking:
         """
-        Create booking with optimized flow - Kvrocks + PostgreSQL + Kafka
+        Create booking with optimized flow - Kvrocks + Kafka (PostgreSQL upsert by Reservation Service)
 
         Flow:
         1. Generate UUID7 as booking_id
         2. Validate seat availability (Fail Fast)
         3. Save booking metadata to Kvrocks (temporary, for Seat Reservation Service)
-        4. Save booking to PostgreSQL (status=PENDING_RESERVATION)
-        5. Publish BookingCreated event to Kafka
-        6. Return booking with UUID7 id
+        4. Publish BookingCreated event to Kafka
+        5. Return booking with UUID7 id (PostgreSQL insertion happens later via event consumer)
 
         Args:
             buyer_id: ID of the buyer
@@ -118,7 +117,7 @@ class CreateBookingUseCase:
             Created booking entity with UUID7 id
 
         Raises:
-            DomainError: If seat availability check fails or creation fails
+            DomainError: If seat availability check fails or metadata save fails
         """
         with self.tracer.start_as_current_span('use_case.create_booking'):
             # Step 1: Generate UUID7 booking ID
@@ -160,8 +159,8 @@ class CreateBookingUseCase:
                 Logger.base.error(f'❌ [CREATE-BOOKING] Failed to save Kvrocks metadata: {e}')
                 raise DomainError(f'Failed to save booking metadata: {e}', 500)
 
-            # Step 4: Create and persist booking to PostgreSQL
-            # Note: Using domain entity's create method with UUID7
+            # Step 4: Create booking entity (for event publishing)
+            # Note: Booking will be created by Seat Reservation Service after successful reservation
             booking = Booking.create(
                 id=booking_id_uuid,  # UUID7 object
                 buyer_id=buyer_id,
@@ -173,27 +172,10 @@ class CreateBookingUseCase:
                 quantity=quantity,
             )
 
-            try:
-                created_booking = await self.booking_command_repo.create(booking=booking)
-                Logger.base.info(
-                    f'✅ [CREATE-BOOKING] Saved booking {booking_id_str} to PostgreSQL'
-                )
-
-            except Exception as e:
-                Logger.base.error(f'❌ [CREATE-BOOKING] Failed to save to PostgreSQL: {e}')
-                # Cleanup Kvrocks metadata on DB failure
-                try:
-                    await self.booking_metadata_handler.delete_booking_metadata(
-                        booking_id=booking_id_str
-                    )
-                except Exception:
-                    pass  # Best effort cleanup
-                raise DomainError(f'Failed to create booking: {e}', 500)
-
             # Step 5: Publish domain event to Kafka (fire-and-forget)
             # Use task_group for non-blocking event publishing
             # The event will use section-subsection as partition key for ordering
-            booking_created_event = BookingCreatedDomainEvent.from_booking(created_booking)
+            booking_created_event = BookingCreatedDomainEvent.from_booking(booking)
 
             # Wrapper function for fire-and-forget event publishing
             async def _publish_event() -> None:
@@ -204,4 +186,4 @@ class CreateBookingUseCase:
                 f'🚀 [CREATE-BOOKING] Scheduled BookingCreated event for {booking_id_str}'
             )
 
-            return created_booking
+            return booking

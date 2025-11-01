@@ -10,12 +10,11 @@ Tests the optimized booking creation flow:
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from uuid_utils import UUID
 import pytest
+from uuid_utils import UUID
 
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
-from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 @pytest.fixture
@@ -109,11 +108,6 @@ class TestCreateBookingUseCase:
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = True
 
-        # Create a mock booking with UUID7 ID
-        mock_booking = MagicMock(spec=Booking)
-        mock_booking.id = None  # Will be set by use case
-        mock_booking_command_repo.create.return_value = mock_booking
-
         # Act
         with patch(
             'src.service.ticketing.app.command.create_booking_use_case.uuid_utils.uuid7'
@@ -121,7 +115,7 @@ class TestCreateBookingUseCase:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')  # Valid UUID7
             mock_uuid7.return_value = test_uuid
 
-            await create_booking_use_case.create_booking(**valid_booking_params)
+            result = await create_booking_use_case.create_booking(**valid_booking_params)
 
         # Assert - UUID7 was generated
         mock_uuid7.assert_called_once()
@@ -135,8 +129,11 @@ class TestCreateBookingUseCase:
         assert call_kwargs['section'] == valid_booking_params['section']
         assert call_kwargs['subsection'] == valid_booking_params['subsection']
 
-        # Assert - Booking saved to PostgreSQL
-        mock_booking_command_repo.create.assert_awaited_once()
+        # Assert - PostgreSQL NOT called (deferred to event consumer)
+        mock_booking_command_repo.create.assert_not_awaited()
+
+        # Assert - Returned booking has correct UUID7
+        assert result.id == test_uuid
 
     @pytest.mark.asyncio
     async def test_create_booking_fail__insufficient_seats(
@@ -161,28 +158,27 @@ class TestCreateBookingUseCase:
         mock_booking_metadata_handler.save_booking_metadata.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_create_booking_fail__kvrocks_error_cleanup(
+    async def test_create_booking_success__event_published(
         self,
         create_booking_use_case,
         mock_seat_availability_handler,
         mock_booking_metadata_handler,
-        mock_booking_command_repo,
+        mock_task_group,
         valid_booking_params,
     ):
-        """Test Kvrocks metadata cleanup when PostgreSQL fails"""
+        """Test booking creation publishes event via task group"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = True
-        mock_booking_metadata_handler.save_booking_metadata.return_value = None  # Success
-        mock_booking_command_repo.create.side_effect = Exception('Database connection error')
 
-        # Act & Assert
-        with pytest.raises(DomainError) as exc_info:
-            await create_booking_use_case.create_booking(**valid_booking_params)
+        # Act
+        await create_booking_use_case.create_booking(**valid_booking_params)
 
-        assert 'Failed to create booking' in str(exc_info.value)
+        # Assert - Event scheduled via task_group
+        mock_task_group.start_soon.assert_called_once()
 
-        # Assert - Cleanup was attempted
-        mock_booking_metadata_handler.delete_booking_metadata.assert_awaited_once()
+        # Verify the callback function is async
+        scheduled_fn = mock_task_group.start_soon.call_args[0][0]
+        assert callable(scheduled_fn)
 
     @pytest.mark.asyncio
     async def test_create_booking_fail__kvrocks_save_error(
@@ -216,7 +212,6 @@ class TestCreateBookingUseCase:
         create_booking_use_case,
         mock_seat_availability_handler,
         mock_booking_metadata_handler,
-        mock_booking_command_repo,
         valid_booking_params,
     ):
         """Test booking creation with manual seat selection mode"""
@@ -225,9 +220,6 @@ class TestCreateBookingUseCase:
         valid_booking_params['seat_positions'] = ['1-1', '1-2']
 
         mock_seat_availability_handler.check_subsection_availability.return_value = True
-        mock_booking = MagicMock(spec=Booking)
-        mock_booking.id = 'test-uuid'
-        mock_booking_command_repo.create.return_value = mock_booking
 
         # Act
         await create_booking_use_case.create_booking(**valid_booking_params)
@@ -242,21 +234,11 @@ class TestCreateBookingUseCase:
         self,
         create_booking_use_case,
         mock_seat_availability_handler,
-        mock_booking_command_repo,
         valid_booking_params,
     ):
         """Test that booking entity receives custom UUID7 id"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = True
-
-        captured_booking = None
-
-        async def capture_booking(booking):
-            nonlocal captured_booking
-            captured_booking = booking
-            return booking
-
-        mock_booking_command_repo.create.side_effect = capture_booking
 
         # Act
         with patch(
@@ -265,8 +247,8 @@ class TestCreateBookingUseCase:
             test_uuid = UUID('01936d8f-5e73-7c4e-a9c5-123456789abc')
             mock_uuid7.return_value = test_uuid
 
-            await create_booking_use_case.create_booking(**valid_booking_params)
+            result = await create_booking_use_case.create_booking(**valid_booking_params)
 
         # Assert - Booking entity has UUID7 as id
-        assert captured_booking is not None
-        assert captured_booking.id == test_uuid  # UUID object, not string
+        assert result is not None
+        assert result.id == test_uuid  # UUID object, not string

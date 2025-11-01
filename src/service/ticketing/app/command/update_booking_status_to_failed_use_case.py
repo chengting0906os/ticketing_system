@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+
 from uuid_utils import UUID
+
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
@@ -81,17 +83,4 @@ class UpdateBookingToFailedUseCase:
             # Don't fail use case if broadcast fails
             Logger.base.warning(f'⚠️ [SSE] Failed to broadcast event: {e}')
 
-        return updated_booking
-
-    @Logger.io
-    async def update_to_failed(self, booking: Booking) -> Booking:
-        """
-        舊方法 - 保留向後兼容性 (FastAPI 使用)
-
-        TODO: 逐步遷移到 execute() 方法
-        """
-        failed_booking = booking.mark_as_failed()  # type: ignore
-        updated_booking = await self.booking_command_repo.update_status_to_failed(
-            booking=failed_booking
-        )
         return updated_booking

@@ -27,7 +27,12 @@ class SeatsReservedEvent:
 
     booking_id: str
     buyer_id: int
+    event_id: int
+    section: str
+    subsection: int
+    seat_selection_mode: str
     reserved_seats: List[str]
+    seat_prices: dict[str, int]
     total_price: int
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
@@ -60,15 +65,24 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         *,
         booking_id: str,
         buyer_id: int,
-        reserved_seats: List[str],
-        total_price: int,
         event_id: int,
+        section: str,
+        subsection: int,
+        seat_selection_mode: str,
+        reserved_seats: List[str],
+        seat_prices: dict[str, int],
+        total_price: int,
     ) -> None:
         """Publish seat reservation success event"""
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+            seat_selection_mode=seat_selection_mode,
             reserved_seats=reserved_seats,
+            seat_prices=seat_prices,
             total_price=total_price,
         )
 

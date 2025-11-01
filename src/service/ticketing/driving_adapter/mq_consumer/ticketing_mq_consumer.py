@@ -303,7 +303,7 @@ class TicketingMqConsumer:
 
     async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
         """
-        Async handler for pending payment and reserved
+        Async handler for pending payment and reserved - Upsert booking with tickets
 
         Note: Repositories use asyncpg and manage their own connections.
         Use case directly depends on repositories, no UoW needed.
@@ -311,21 +311,13 @@ class TicketingMqConsumer:
 
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
+        event_id = message.get('event_id')
+        section = message.get('section')
+        subsection = message.get('subsection')
+        seat_selection_mode = message.get('seat_selection_mode')
         reserved_seats = message.get('reserved_seats', [])
-
-        # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
-        # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
-        # Atomic CTE expects: ['1-3', '1-4']
-        seat_identifiers = []
-        for seat_id in reserved_seats:
-            parts = seat_id.split('-')
-            if len(parts) == 4:  # section-subsection-row-seat
-                row_seat = f'{parts[2]}-{parts[3]}'  # Extract row-seat only
-                seat_identifiers.append(row_seat)
-            else:
-                Logger.base.warning(
-                    f'⚠️ [BOOKING+TICKET] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
-                )
+        seat_prices = message.get('seat_prices', {})
+        total_price = message.get('total_price', 0)
 
         # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = BookingCommandRepoImpl()
@@ -343,7 +335,13 @@ class TicketingMqConsumer:
         await use_case.execute(
             booking_id=UUID(booking_id) if isinstance(booking_id, str) else booking_id,
             buyer_id=buyer_id or 0,
-            seat_identifiers=seat_identifiers,
+            event_id=event_id or 0,
+            section=section or '',
+            subsection=subsection or 0,
+            seat_selection_mode=seat_selection_mode or 'manual',
+            reserved_seats=reserved_seats,
+            seat_prices=seat_prices,
+            total_price=total_price,
         )
 
     @Logger.io

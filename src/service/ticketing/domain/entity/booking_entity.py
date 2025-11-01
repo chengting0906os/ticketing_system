@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import List, Optional
 from uuid_utils import UUID
@@ -111,6 +111,7 @@ class Booking:
         if seat_selection_mode == 'manual' and not seat_positions:
             raise DomainError('No tickets selected for booking', 400)
 
+        now = datetime.now(timezone.utc)
         return cls(
             buyer_id=buyer_id,
             event_id=event_id,
@@ -122,6 +123,8 @@ class Booking:
             seat_positions=seat_positions,
             quantity=quantity,
             id=id,
+            created_at=now,
+            updated_at=now,
         )
 
     @Logger.io
@@ -141,7 +144,7 @@ class Booking:
         Returns:
             Updated Booking
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         return attrs.evolve(
             self,
             status=BookingStatus.PENDING_PAYMENT,
@@ -152,7 +155,7 @@ class Booking:
 
     @Logger.io
     def mark_as_failed(self) -> 'Booking':
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
 
     @Logger.io
@@ -172,7 +175,7 @@ class Booking:
 
     @Logger.io
     def mark_as_completed(self) -> 'Booking':
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         return attrs.evolve(self, status=BookingStatus.COMPLETED, paid_at=now, updated_at=now)
 
     @Logger.io
@@ -191,5 +194,5 @@ class Booking:
         elif self.status == BookingStatus.FAILED:
             raise DomainError('Cannot cancel failed booking')
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         return attrs.evolve(self, status=BookingStatus.CANCELLED, updated_at=now)

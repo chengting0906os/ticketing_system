@@ -122,6 +122,7 @@ class ReserveSeatsUseCase:
             # Step 3: Handle result
             if result['success']:
                 reserved_seats = result['reserved_seats']
+                seat_prices = result['seat_prices']
                 total_price = result['total_price']
 
                 Logger.base.info(
@@ -135,9 +136,13 @@ class ReserveSeatsUseCase:
                     await self.mq_publisher.publish_seats_reserved(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
-                        reserved_seats=reserved_seats,
-                        total_price=total_price,
                         event_id=request.event_id,
+                        section=request.section_filter or '',
+                        subsection=request.subsection_filter or 0,
+                        seat_selection_mode=request.selection_mode,
+                        reserved_seats=reserved_seats,
+                        seat_prices=seat_prices,
+                        total_price=total_price,
                     )
 
                 self.task_group.start_soon(_publish_success)  # type: ignore[arg-type]

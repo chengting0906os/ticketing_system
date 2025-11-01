@@ -1,21 +1,14 @@
 from datetime import datetime, timezone
+
 from uuid_utils import UUID
+
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
-from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
-    """
-    Update booking to PENDING_PAYMENT and tickets to RESERVED using atomic operation
-
-    Dependencies:
-    - booking_command_repo: For atomic reservation operation
-    - event_broadcaster: For real-time SSE updates (optional)
-    """
-
     def __init__(
         self,
         *,
@@ -27,55 +20,74 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
 
     @Logger.io
     async def execute(
-        self, *, booking_id: UUID, buyer_id: int, seat_identifiers: list[str]
+        self,
+        *,
+        booking_id: UUID,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_selection_mode: str,
+        reserved_seats: list[str],
+        seat_prices: dict[str, int],
+        total_price: int,
     ) -> Booking:
         """
-        Atomically reserve tickets and update booking to PENDING_PAYMENT (1 DB round-trip)
-
-        Args:
-            booking_id: Booking ID
-            buyer_id: Buyer ID
-            seat_identifiers: Seat identifiers (e.g., ['A-1-1-1', 'A-1-1-2'])
-
-        Returns:
-            Updated booking
-
-        Raises:
-            NotFoundError: Booking or tickets not found
-            ForbiddenError: Booking ownership mismatch
-            ValueError: Invalid seat identifiers or ticket availability
+        Flow:
+        1. Check if booking exists
+        2. If exists: return existing booking (idempotency)
+        3. If not exists: create booking + tickets atomically
         """
-        # Quick validation - Fail Fast
-        booking = await self.booking_command_repo.get_by_id(booking_id=booking_id)
-        if not booking:
-            raise NotFoundError(f'Booking not found: booking_id={booking_id}')
+        # Validation - Fail Fast
+        if not reserved_seats:
+            raise ValueError('reserved_seats cannot be empty')
 
-        if booking.buyer_id != buyer_id:
-            raise ForbiddenError(
-                f'Booking owner mismatch: booking.buyer_id={booking.buyer_id}, buyer_id={buyer_id}'
-            )
+        # Convert seat identifiers from 'section-subsection-row-seat' to 'row-seat' format
+        # Seat Reservation Service sends: ['A-1-1-3', 'A-1-1-4']
+        # PostgreSQL expects: ['1-3', '1-4']
+        seat_positions = []
+        for seat_id in reserved_seats:
+            parts = seat_id.split('-')
+            if len(parts) == 4:  # section-subsection-row-seat
+                row_seat = f'{parts[2]}-{parts[3]}'  # Extract row-seat only
+                seat_positions.append(row_seat)
+            else:
+                Logger.base.warning(
+                    f'⚠️ [UPSERT-BOOKING] Invalid seat format: {seat_id} (expected section-subsection-row-seat)'
+                )
 
-        if not seat_identifiers:
-            raise ValueError('seat_identifiers cannot be empty')
+        if not seat_positions:
+            raise ValueError('No valid seat positions after conversion')
 
-        # Use atomic operation: reserve tickets + update booking in 1 DB round-trip
-        # This replaces 5 separate queries with a single CTE
-        (
-            updated_booking,
-            reserved_tickets,
-            total_price,
-        ) = await self.booking_command_repo.reserve_tickets_and_update_booking_atomically(
+        # Convert seat_prices keys from 'section-subsection-row-seat' to 'row-seat'
+        converted_prices = {}
+        for seat_id, price in seat_prices.items():
+            parts = seat_id.split('-')
+            if len(parts) == 4:
+                row_seat = f'{parts[2]}-{parts[3]}'
+                converted_prices[row_seat] = price
+
+        # Use atomic upsert operation: create booking + tickets in 1 DB round-trip
+        # This method is idempotent - if booking exists, returns existing
+        # Returns dict with booking and tickets to avoid extra query
+        result = await self.booking_command_repo.create_booking_with_tickets_directly(
             booking_id=booking_id,
             buyer_id=buyer_id,
-            event_id=booking.event_id,
-            section=booking.section,
-            subsection=booking.subsection,
-            seat_identifiers=seat_identifiers,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+            seat_selection_mode=seat_selection_mode,
+            reserved_seats=seat_positions,
+            seat_prices=converted_prices,
+            total_price=total_price,
         )
 
+        upserted_booking = result['booking']
+        tickets = result['tickets']
+
         Logger.base.info(
-            f'✅ [BOOKING] Atomically reserved {len(reserved_tickets)} tickets '
-            f'and updated booking {booking_id} to PENDING_PAYMENT (total: {total_price})'
+            f'✅ [UPSERT-BOOKING] Created/updated booking {booking_id} to PENDING_PAYMENT '
+            f'with {len(tickets)} RESERVED tickets (total: {total_price})'
         )
 
         # Broadcast SSE event for real-time updates
@@ -99,7 +111,7 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
                             'status': ticket.status.value,
                             'seat_identifier': f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}',
                         }
-                        for ticket in reserved_tickets
+                        for ticket in tickets
                     ],
                 },
             )
@@ -108,4 +120,4 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             # Don't fail use case if broadcast fails
             Logger.base.warning(f'⚠️ [SSE] Failed to broadcast event: {e}')
 
-        return updated_booking
+        return upserted_booking

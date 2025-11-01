@@ -17,9 +17,13 @@ class ISeatReservationEventPublisher(ABC):
         *,
         booking_id: str,
         buyer_id: int,
-        reserved_seats: List[str],
-        total_price: int,
         event_id: int,
+        section: str,
+        subsection: int,
+        seat_selection_mode: str,
+        reserved_seats: List[str],
+        seat_prices: dict[str, int],
+        total_price: int,
     ) -> None:
         """Publish seat reservation success event"""
         pass
