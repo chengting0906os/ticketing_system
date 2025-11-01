@@ -1,10 +1,10 @@
 """
 Unit tests for UpdateBookingToCancelledUseCase
 
-測試重點：
-1. Domain 驗證：只有 PROCESSING/PENDING_PAYMENT 可取消
-2. Event 發送：取消後發送 BookingCancelledEvent 釋放座位
-3. Fail Fast: booking 不存在、權限不符、狀態不允許
+Test Focus:
+1. Domain validation: Only PROCESSING/PENDING_PAYMENT bookings can be cancelled
+2. Event emission: BookingCancelledEvent is sent after cancellation to release seats
+3. Fail Fast: booking not found, permission denied, invalid status
 """
 
 from datetime import datetime, timezone
@@ -19,16 +19,13 @@ from src.service.ticketing.app.command.update_booking_status_to_cancelled_use_ca
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Ticket, TicketStatus
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
-from test.service.ticketing.unit.test_helpers import RepositoryMocks
+from test.service.ticketing.unit.helpers import RepositoryMocks
 
 
 @pytest.mark.unit
 class TestUpdateBookingToCancelled:
-    """測試更新 booking 到 cancelled 狀態"""
-
     @pytest.fixture
     def pending_payment_booking(self):
-        """待付款的 booking（可取消）"""
         return Booking(
             id=UUID('00000000-0000-0000-0000-00000000000a'),
             buyer_id=2,
@@ -45,7 +42,6 @@ class TestUpdateBookingToCancelled:
 
     @pytest.fixture
     def reserved_tickets(self):
-        """兩張已預訂的票券"""
         return [
             Ticket(
                 id=201,
@@ -79,14 +75,14 @@ class TestUpdateBookingToCancelled:
         self, mock_publish, pending_payment_booking, reserved_tickets
     ):
         """
-        核心測試：成功取消待付款訂單
+        Core test: Successfully cancel pending payment booking
 
-        Given: PENDING_PAYMENT 狀態的 booking
-        When: buyer 執行取消操作
+        Given: Booking with PENDING_PAYMENT status
+        When: Buyer executes cancellation
         Then:
-          - booking 狀態變為 CANCELLED
-          - 發送 BookingCancelledEvent
-          - event 包含 ticket_ids 和 seat_positions
+          - Booking status changes to CANCELLED
+          - BookingCancelledEvent is sent
+          - Event contains ticket_ids and seat_positions
         """
         # Arrange
         cancelled_booking = pending_payment_booking.cancel()
@@ -116,7 +112,7 @@ class TestUpdateBookingToCancelled:
         assert result.status == BookingStatus.CANCELLED
         assert result.id == UUID('00000000-0000-0000-0000-00000000000a')
 
-        # 驗證發送了 event
+        # Verify event was sent
         mock_publish.assert_called_once()
         call_args = mock_publish.call_args
         event = call_args.kwargs['event']
@@ -129,11 +125,11 @@ class TestUpdateBookingToCancelled:
     @pytest.mark.asyncio
     async def test_fail_when_booking_not_found(self):
         """
-        Fail Fast: booking 不存在
+        Fail Fast: Booking does not exist
 
-        Given: 不存在的 booking_id
-        When: 執行取消操作
-        Then: 拋出 NotFoundError
+        Given: Non-existent booking_id
+        When: Execute cancellation
+        Then: Raises NotFoundError
         """
         # Arrange
         repo_mocks = RepositoryMocks(booking=None)
@@ -151,11 +147,11 @@ class TestUpdateBookingToCancelled:
     @pytest.mark.asyncio
     async def test_fail_when_not_booking_owner(self, pending_payment_booking):
         """
-        Fail Fast: 非訂單擁有者
+        Fail Fast: Not the booking owner
 
-        Given: buyer_id=2 的 booking
-        When: buyer_id=3 嘗試取消
-        Then: 拋出 ForbiddenError
+        Given: Booking with buyer_id=2
+        When: buyer_id=3 attempts to cancel
+        Then: Raises ForbiddenError
         """
         # Arrange
         repo_mocks = RepositoryMocks(booking=pending_payment_booking)
@@ -168,16 +164,16 @@ class TestUpdateBookingToCancelled:
         with pytest.raises(ForbiddenError, match='Only the buyer can cancel this booking'):
             await use_case.execute(
                 booking_id=UUID('00000000-0000-0000-0000-00000000000a'), buyer_id=3
-            )  # 不同的 buyer_id
+            )  # Different buyer_id
 
     @pytest.mark.asyncio
     async def test_fail_when_booking_already_completed(self):
         """
-        Domain 驗證：已完成的訂單不能取消
+        Domain validation: Completed bookings cannot be cancelled
 
-        Given: COMPLETED 狀態的 booking
-        When: 執行取消操作
-        Then: 拋出 DomainError
+        Given: Booking with COMPLETED status
+        When: Execute cancellation
+        Then: Raises DomainError
         """
         # Arrange
         completed_booking = Booking(
@@ -209,11 +205,11 @@ class TestUpdateBookingToCancelled:
     @pytest.mark.asyncio
     async def test_fail_when_booking_already_cancelled(self):
         """
-        Domain 驗證：已取消的訂單不能再次取消
+        Domain validation: Already cancelled bookings cannot be cancelled again
 
-        Given: CANCELLED 狀態的 booking
-        When: 執行取消操作
-        Then: 拋出 DomainError
+        Given: Booking with CANCELLED status
+        When: Execute cancellation
+        Then: Raises DomainError
         """
         # Arrange
         cancelled_booking = Booking(
@@ -249,11 +245,11 @@ class TestUpdateBookingToCancelled:
         self, mock_publish, pending_payment_booking
     ):
         """
-        Event 內容驗證：seat_positions 正確提取
+        Event content validation: seat_positions correctly extracted
 
-        Given: booking 關聯 2 張有座位號的票
-        When: 取消訂單
-        Then: event 的 seat_positions 包含正確的座位識別符
+        Given: Booking associated with 2 tickets with seat numbers
+        When: Cancel booking
+        Then: Event's seat_positions contains correct seat identifiers
         """
         # Arrange
         tickets_with_seats = [
@@ -306,7 +302,7 @@ class TestUpdateBookingToCancelled:
         mock_publish.assert_called_once()
         event = mock_publish.call_args.kwargs['event']
 
-        # seat_identifier 格式為 "A-1-1-1" (section-subsection-row-seat)
+        # seat_identifier format: "A-1-1-1" (section-subsection-row-seat)
         expected_seat_ids = ['A-1-1-1', 'A-1-1-2']
         assert event.seat_positions == expected_seat_ids
 
@@ -316,11 +312,11 @@ class TestUpdateBookingToCancelled:
     )
     async def test_no_event_published_when_no_tickets(self, mock_publish, pending_payment_booking):
         """
-        邊界測試：沒有票券時不發送 event
+        Edge case test: No event sent when there are no tickets
 
-        Given: booking 沒有關聯任何票券
-        When: 取消訂單
-        Then: 不發送 event
+        Given: Booking has no associated tickets
+        When: Cancel booking
+        Then: No event is sent
         """
         # Arrange
         cancelled_booking = pending_payment_booking.cancel()
@@ -345,4 +341,4 @@ class TestUpdateBookingToCancelled:
 
         # Assert
         assert result.status == BookingStatus.CANCELLED
-        mock_publish.assert_not_called()  # 沒有票券，不發送 event
+        mock_publish.assert_not_called()  # No tickets, no event sent

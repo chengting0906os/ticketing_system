@@ -8,11 +8,13 @@ from datetime import datetime
 from typing import Any, Literal
 
 import attrs
+from opentelemetry import trace
 from quixstreams import Application
 from uuid_utils import UUID
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+from src.platform.observability.tracing import inject_trace_context
 from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
 
@@ -42,7 +44,6 @@ def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
     """
     if isinstance(value, datetime):
         return int(value.timestamp())
-    # UUID (including UUID7) is already JSON-serializable via str()
     if isinstance(value, UUID):
         return str(value)
     return value
@@ -81,7 +82,7 @@ async def publish_domain_event(
     partition_key: str,
 ) -> Literal[True]:
     """
-    Publish domain event to Kafka
+    Publish domain event to Kafka with distributed tracing support
 
     Args:
         event: Domain event object
@@ -98,49 +99,68 @@ async def publish_domain_event(
             partition_key="booking-123"
         )
     """
-    app = _get_quix_app()
+    tracer = trace.get_tracer(__name__)
 
-    # Create topic (Quix automatically handles duplicate creation)
-    kafka_topic = app.topic(
-        name=topic,
-        key_serializer='str',
-        value_serializer='json',
-    )
+    with tracer.start_as_current_span(
+        'kafka.publish',
+        attributes={
+            'messaging.system': 'kafka',
+            'messaging.destination': topic,
+            'messaging.destination_kind': 'topic',
+            'messaging.kafka.partition_key': partition_key,
+            'event.type': event.__class__.__name__,
+            'event.aggregate_id': str(event.aggregate_id),
+        },
+    ):
+        app = _get_quix_app()
 
-    # Prepare event data - use attrs.asdict and ensure datetime is converted to timestamp
-    event_dict = attrs.asdict(event, value_serializer=_serialize_value)
+        # Create topic (Quix automatically handles duplicate creation)
+        kafka_topic = app.topic(
+            name=topic,
+            key_serializer='str',
+            value_serializer='json',
+        )
 
-    event_data = {
-        'event_type': event.__class__.__name__,
-        'aggregate_id': str(event.aggregate_id),
-        'occurred_at': int(event.occurred_at.timestamp()),
-        **event_dict,
-    }
+        # Prepare event data - use attrs.asdict and ensure datetime is converted to timestamp
+        event_dict = attrs.asdict(event, value_serializer=_serialize_value)
 
-    # Remove already included fields
-    event_data.pop('aggregate_id', None)
-    event_data.pop('occurred_at', None)
+        event_data = {
+            'event_type': event.__class__.__name__,
+            'aggregate_id': str(event.aggregate_id),
+            'occurred_at': int(event.occurred_at.timestamp()),
+            **event_dict,
+        }
 
-    # Publish event - use global producer instance
-    producer = _get_global_producer()
-    message = kafka_topic.serialize(
-        key=partition_key,
-        value=event_data,
-    )
+        # Remove already included fields
+        event_data.pop('aggregate_id', None)
+        event_data.pop('occurred_at', None)
 
-    producer.produce(
-        topic=kafka_topic.name,
-        key=message.key,
-        value=message.value,
-    )
+        # Inject trace context into event data for distributed tracing
+        trace_headers = inject_trace_context()
+        event_data['_trace_headers'] = trace_headers
 
-    # No flush here - let Kafka batch messages automatically
-    # Messages will be sent when batch.size or linger.ms threshold is reached
-    # This significantly improves throughput for high-frequency events
+        # Publish event - use global producer instance
+        producer = _get_global_producer()
+        message = kafka_topic.serialize(
+            key=partition_key,
+            value=event_data,
+        )
 
-    Logger.base.info(f'📤 Published {event.__class__.__name__} to {topic} (key: {partition_key})')
+        producer.produce(
+            topic=kafka_topic.name,
+            key=message.key,
+            value=message.value,
+        )
 
-    return True
+        # No flush here - let Kafka batch messages automatically
+        # Messages will be sent when batch.size or linger.ms threshold is reached
+        # This significantly improves throughput for high-frequency events
+
+        Logger.base.info(
+            f'📤 Published {event.__class__.__name__} to {topic} (key: {partition_key})'
+        )
+
+        return True
 
 
 def flush_all_messages(timeout: float = 10.0) -> int:

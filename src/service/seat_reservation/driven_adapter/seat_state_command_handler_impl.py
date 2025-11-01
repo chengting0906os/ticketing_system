@@ -5,11 +5,23 @@ CQRS Command Side implementation for seat state management.
 """
 
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor import (
+    AtomicReservationExecutor,
+)
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.booking_status_manager import (
+    BookingStatusManager,
+)
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.seat_finder import (
+    SeatFinder,
+)
 from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
+    IBookingMetadataHandler,
+)
 
 
 # Get key prefix from environment for test isolation
@@ -37,17 +49,86 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     """
     Seat State Command Handler Implementation (CQRS Command)
 
-    Responsibility: Only handles write operations, modifying seat state.
+    Responsibility: Orchestrates seat reservation workflow using specialized components:
+    - BookingStatusManager: Handles idempotency and status management
+    - SeatFinder: Finds consecutive available seats
+    - LuaReservationExecutor: Executes atomic seat reservation
     """
+
+    def __init__(self, booking_metadata_handler: Optional[IBookingMetadataHandler] = None):
+        # If no booking_metadata_handler provided, use default implementation
+        if booking_metadata_handler is None:
+            from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
+                BookingMetadataHandlerImpl,
+            )
+
+            booking_metadata_handler = BookingMetadataHandlerImpl()
+
+        self.booking_metadata_handler = booking_metadata_handler
+        self.status_manager = BookingStatusManager(
+            booking_metadata_handler=booking_metadata_handler
+        )
+        self.seat_finder = SeatFinder()
+        self.reservation_executor = AtomicReservationExecutor()
+
+        # Section config cache: (event_id, section_id) -> config dict
+        self._config_cache: Dict[tuple[int, str], Dict] = {}
+
+    # ========== Helper Methods ==========
 
     @staticmethod
     def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
         """Calculate seat index in Bitfield"""
         return (row - 1) * seats_per_row + (seat_num - 1)
 
+    @staticmethod
+    def _decode_int(value: Any) -> int:
+        """Decode bytes/str to int, return 0 if None"""
+        if not value:
+            return 0
+        if isinstance(value, bytes):
+            return int(value.decode())
+        return int(value)
+
+    @staticmethod
+    def _error_result(message: str) -> Dict:
+        """Create standardized error result"""
+        return {
+            'success': False,
+            'reserved_seats': [],
+            'seat_prices': {},
+            'total_price': 0,
+            'subsection_stats': {},
+            'event_stats': {},
+            'error_message': message,
+        }
+
+    # ========== Config & Validation ==========
+
     @Logger.io
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
-        """Get section configuration from Redis"""
+        """
+        Get section configuration from Kvrocks with instance-level cache
+
+        Section configs rarely change, so we cache them in memory to avoid repeated Kvrocks reads.
+        Cache lifetime: Same as handler instance (typically request/consumer lifecycle)
+
+        Args:
+            event_id: Event ID
+            section_id: Section identifier (e.g., 'A-1')
+
+        Returns:
+            Dict with 'rows' and 'seats_per_row'
+
+        Raises:
+            ValueError: If section config not found in Kvrocks
+        """
+        # Check cache first
+        cache_key = (event_id, section_id)
+        if cache_key in self._config_cache:
+            return self._config_cache[cache_key]
+
+        # Cache miss - fetch from Kvrocks
         try:
             client = kvrocks_client.get_client()
             config_key = _make_key(f'section_config:{event_id}:{section_id}')
@@ -56,11 +137,78 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             if not config:
                 raise ValueError(f'Section config not found: {section_id}')
 
-            return {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
+            result = {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
+
+            # Store in cache
+            self._config_cache[cache_key] = result
+            return result
 
         except Exception as e:
             Logger.base.error(f'❌ [CMD] Failed to get section config: {e}')
             raise
+
+    def _parse_seat_positions(
+        self, *, seat_ids: List[str], section: str, subsection: int, seats_per_row: int
+    ) -> List[tuple]:
+        """
+        Parse seat IDs to (row, seat_num, seat_index, seat_id) format
+
+        Accepts two formats:
+        1. Short format: 'row-seat' (e.g., '1-1')  → Requires section & subsection params
+        2. Full format: 'section-subsection-row-seat' (e.g., 'A-1-1-1')
+        """
+        seats_to_reserve = []
+
+        for seat_id_input in seat_ids:
+            parts = seat_id_input.split('-')
+
+            # Handle short format: 'row-seat'
+            if len(parts) == 2:
+                row = int(parts[0])
+                seat_num = int(parts[1])
+                seat_id = f'{section}-{subsection}-{row}-{seat_num}'
+
+            # Handle full format: 'section-subsection-row-seat'
+            elif len(parts) == 4:
+                if parts[0] != section or int(parts[1]) != subsection:
+                    Logger.base.warning(
+                        f'⚠️ [CMD] Seat ID {seat_id_input} does not match section {section}-{subsection}'
+                    )
+                    continue
+                row = int(parts[2])
+                seat_num = int(parts[3])
+                seat_id = seat_id_input
+
+            else:
+                Logger.base.warning(f'⚠️ [CMD] Invalid seat ID format: {seat_id_input}')
+                continue
+
+            seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
+            seats_to_reserve.append((row, seat_num, seat_index, seat_id))
+
+        return seats_to_reserve
+
+    async def _verify_seats_available(
+        self, *, bf_key: str, seats_to_reserve: List[tuple]
+    ) -> Optional[str]:
+        """Verify all requested seats are available"""
+        client = kvrocks_client.get_client()
+
+        for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
+            offset = seat_index * 2
+
+            # Read 2 bits for seat status
+            bit1 = await client.getbit(bf_key, offset)
+            bit2 = await client.getbit(bf_key, offset + 1)
+
+            # Check if seat is AVAILABLE (00)
+            if bit1 != 0 or bit2 != 0:
+                status = 'RESERVED' if bit1 == 0 and bit2 == 1 else 'SOLD'
+                return f'Seat {seat_id} is already {status}'
+
+        return None
+
+    # ========== Public Interface ==========
 
     @Logger.io
     async def reserve_seats_atomic(
@@ -76,27 +224,12 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         quantity: Optional[int] = None,
     ) -> Dict:
         """
-        Atomically reserve seats - Using Pipeline (partition guarantees ordering)
+        Atomic seat reservation - Entry point
 
-        Since Kafka partition key is section-subsection, requests for the same area
-        are processed serially, so we don't need Lua script atomic protection.
-        Pipeline is sufficient.
-
-        Supports two modes:
-        1. manual: Reserve specified seats
-        2. best_available: Automatically find and reserve consecutive seats
-
-        Returns:
-            {
-                'success': bool,
-                'reserved_seats': List[str],  # Format: 'section-subsection-row-seat'
-                'seat_prices': Dict[str, int],  # seat_id -> price
-                'total_price': int,
-                'error_message': Optional[str]
-            }
+        Modes:
+        - manual: Reserve specific seats (seat_ids required)
+        - best_available: Auto-find consecutive seats (section, subsection, quantity required)
         """
-        Logger.base.info(f'🎯 [CMD] Reserving seats (mode={mode}) for booking {booking_id}')
-
         if mode == 'manual':
             return await self._reserve_manual_seats(
                 event_id=event_id,
@@ -116,13 +249,9 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 quantity=quantity,
             )
         else:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': f'Invalid mode: {mode}',
-            }
+            return self._error_result(f'Invalid mode: {mode}')
+
+    # ========== Reservation Workflows ==========
 
     async def _reserve_manual_seats(
         self,
@@ -135,126 +264,82 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         seat_ids: Optional[List[str]],
     ) -> Dict:
         """Reserve specified seats - Manual Mode"""
+        # Validate inputs
         if not seat_ids or not section or subsection is None:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': 'Manual mode requires seat_ids, section, and subsection',
-            }
+            error_msg = 'Manual mode requires seat_ids, section, and subsection'
+            await self.status_manager.save_reservation_failure(
+                booking_id=booking_id, error_message=error_msg
+            )
+            return self._error_result(error_msg)
 
-        client = kvrocks_client.get_client()
-        section_id = f'{section}-{subsection}'
+        # Check idempotency first
+        existing = await self.status_manager.check_booking_status(booking_id=booking_id)
+        if existing:
+            return existing
 
-        # Get section config
-        config = await self._get_section_config(event_id, section_id)
-        seats_per_row = config['seats_per_row']
+        try:
+            section_id = f'{section}-{subsection}'
 
-        # Parse seat positions
-        seats_to_reserve = []  # [(row, seat_num, seat_index, seat_id)]
-        for seat_id in seat_ids:
-            parts = seat_id.split('-')
-            if len(parts) == 2:
-                row, seat = int(parts[0]), int(parts[1])
-                seat_index = self._calculate_seat_index(row, seat, seats_per_row)
-                full_seat_id = f'{section}-{subsection}-{row}-{seat}'
-                seats_to_reserve.append((row, seat, seat_index, full_seat_id))
-            else:
-                Logger.base.warning(f'⚠️ Invalid seat format: {seat_id}')
+            # Get config and parse seats
+            config = await self._get_section_config(event_id, section_id)
+            seats_to_reserve = self._parse_seat_positions(
+                seat_ids=seat_ids,
+                section=section,
+                subsection=subsection,
+                seats_per_row=config['seats_per_row'],
+            )
 
-        if not seats_to_reserve:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': 'No valid seats to reserve',
-            }
+            if not seats_to_reserve:
+                error_msg = 'No valid seats to reserve'
+                await self.status_manager.save_reservation_failure(
+                    booking_id=booking_id, error_message=error_msg
+                )
+                return self._error_result(error_msg)
 
-        # Step 1: Check all seats are available (read phase) - batch check
-        bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-        pipe = client.pipeline()
+            # Verify availability
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            error = await self._verify_seats_available(
+                bf_key=bf_key, seats_to_reserve=seats_to_reserve
+            )
+            if error:
+                await self.status_manager.save_reservation_failure(
+                    booking_id=booking_id, error_message=error
+                )
+                return self._error_result(error)
 
-        for _row, _seat_num, seat_index, _seat_id in seats_to_reserve:
-            offset = seat_index * 2  # 2 bits per seat
-            pipe.getbit(bf_key, offset)  # Get first bit
-            pipe.getbit(bf_key, offset + 1)  # Get second bit
+            # Pre-fetch seat prices
+            seat_prices, total_price = await self.reservation_executor.fetch_seat_prices(
+                event_id=event_id,
+                section_id=section_id,
+                seats_to_reserve=seats_to_reserve,
+            )
 
-        # Execute all checks at once
-        bits_results = await pipe.execute()
+            # Execute atomic reservation
+            result = await self.reservation_executor.execute_atomic_reservation(
+                event_id=event_id,
+                section_id=section_id,
+                booking_id=booking_id,
+                bf_key=bf_key,
+                seats_to_reserve=seats_to_reserve,
+                seat_prices=seat_prices,
+                total_price=total_price,
+            )
 
-        # Validate all seats
-        for i, (_row, _seat_num, _seat_index, seat_id) in enumerate(seats_to_reserve):
-            bit1 = bits_results[i * 2]
-            bit2 = bits_results[i * 2 + 1]
-            status = (bit1 << 1) | bit2
+            # Log success with sold out indicators
+            Logger.base.info(
+                f'✅ [CMD] Reserved {len(result["reserved_seats"])} seats (manual), total: ${total_price}'
+                f'{" 🎉 SUBSECTION SOLD OUT!" if result["subsection_stats"].get("available") == 0 else ""}'
+                f'{" 🎊 EVENT SOLD OUT!" if result["event_stats"].get("available") == 0 else ""}'
+            )
 
-            if status != SEAT_STATUS_AVAILABLE:
-                return {
-                    'success': False,
-                    'reserved_seats': [],
-                    'seat_prices': {},
-                    'total_price': 0,
-                    'error_message': f'Seat {seat_id} is not available',
-                }
+            return result
 
-        # Step 2: Reserve all seats (write phase) + get prices
-        stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-        reserved_seats = []
-        seat_prices = {}
-
-        pipe = client.pipeline()
-
-        for row, seat_num, seat_index, seat_id in seats_to_reserve:
-            # Update bitfield: AVAILABLE (00) → RESERVED (01)
-            offset = seat_index * 2
-            pipe.setbit(bf_key, offset, 0)
-            pipe.setbit(bf_key, offset + 1, 1)
-
-            # Get price from seat_meta
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
-            pipe.hget(meta_key, str(seat_num))
-
-            reserved_seats.append(seat_id)
-
-        # Update stats
-        num_seats = len(seats_to_reserve)
-        pipe.hincrby(stats_key, 'available', -num_seats)
-        pipe.hincrby(stats_key, 'reserved', num_seats)
-
-        # Execute pipeline
-        results = await pipe.execute()
-
-        # Extract prices from results
-        # Results: [setbit, setbit, price, setbit, setbit, price, ..., hincrby, hincrby]
-        price_indices = [
-            i for i in range(2, len(results) - 2, 3)
-        ]  # Every 3rd result starting from index 2
-        total_price = 0
-
-        for i, seat_id in enumerate(reserved_seats):
-            price_bytes = results[price_indices[i]]
-            if price_bytes:
-                price = int(price_bytes.decode() if isinstance(price_bytes, bytes) else price_bytes)
-                seat_prices[seat_id] = price
-                total_price += price
-            else:
-                # Fallback: price not found in metadata
-                seat_prices[seat_id] = 0
-                Logger.base.warning(f'⚠️ Price not found for seat {seat_id}')
-
-        Logger.base.info(
-            f'✅ [CMD] Reserved {len(reserved_seats)} seats (manual), total: ${total_price}'
-        )
-
-        return {
-            'success': True,
-            'reserved_seats': reserved_seats,
-            'seat_prices': seat_prices,
-            'total_price': total_price,
-            'error_message': None,
-        }
+        except Exception as e:
+            error_msg = f'Reservation error: {str(e)}'
+            await self.status_manager.save_reservation_failure(
+                booking_id=booking_id, error_message=error_msg
+            )
+            raise
 
     async def _reserve_best_available_seats(
         self,
@@ -267,139 +352,81 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         quantity: Optional[int],
     ) -> Dict:
         """Automatically find and reserve consecutive seats - Best Available Mode"""
+        # Validate inputs
         if not section or subsection is None or not quantity:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': 'Best available mode requires section, subsection, and quantity',
-            }
+            error_msg = 'Best available mode requires section, subsection, and quantity'
+            await self.status_manager.save_reservation_failure(
+                booking_id=booking_id, error_message=error_msg
+            )
+            return self._error_result(error_msg)
 
-        client = kvrocks_client.get_client()
-        section_id = f'{section}-{subsection}'
+        # Check idempotency first
+        existing = await self.status_manager.check_booking_status(booking_id=booking_id)
+        if existing:
+            return existing
 
-        # Get section config
-        config = await self._get_section_config(event_id, section_id)
-        rows = config['rows']
-        seats_per_row = config['seats_per_row']
+        try:
+            section_id = f'{section}-{subsection}'
 
-        # Read bitfield to find consecutive seats
-        bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            # Get config
+            config = await self._get_section_config(event_id, section_id)
+            rows = config['rows']
+            seats_per_row = config['seats_per_row']
 
-        # Get entire bitfield
-        bitfield_bytes_raw = await client.get(bf_key)
+            # Find consecutive seats using SeatFinder
+            bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+            found_seats = await self.seat_finder.find_consecutive_seats(
+                bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=quantity
+            )
 
-        if not bitfield_bytes_raw:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': 'Section not initialized',
-            }
+            if not found_seats:
+                error_msg = f'No {quantity} consecutive seats available'
+                await self.status_manager.save_reservation_failure(
+                    booking_id=booking_id, error_message=error_msg
+                )
+                return self._error_result(error_msg)
 
-        # Ensure bitfield is bytes (Redis may return str or bytes)
-        if isinstance(bitfield_bytes_raw, str):
-            bitfield_bytes = bitfield_bytes_raw.encode('latin-1')
-        else:
-            bitfield_bytes = bitfield_bytes_raw
+            # Convert to reservation format
+            seats_to_reserve = [
+                (row, seat_num, seat_index, f'{section}-{subsection}-{row}-{seat_num}')
+                for row, seat_num, seat_index in found_seats
+            ]
 
-        # Find consecutive available seats
-        found_seats = []
-        for row in range(1, rows + 1):
-            consecutive_count = 0
-            row_seats = []
+            # Pre-fetch seat prices
+            seat_prices, total_price = await self.reservation_executor.fetch_seat_prices(
+                event_id=event_id,
+                section_id=section_id,
+                seats_to_reserve=seats_to_reserve,
+            )
 
-            for seat_num in range(1, seats_per_row + 1):
-                seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
-                offset = seat_index * 2
+            # Execute atomic reservation
+            result = await self.reservation_executor.execute_atomic_reservation(
+                event_id=event_id,
+                section_id=section_id,
+                booking_id=booking_id,
+                bf_key=bf_key,
+                seats_to_reserve=seats_to_reserve,
+                seat_prices=seat_prices,
+                total_price=total_price,
+            )
 
-                # Extract 2 bits
-                byte_index = offset // 8
-                bit_offset = offset % 8
+            # Log success with sold out indicators
+            Logger.base.info(
+                f'✅ [CMD] Reserved {len(result["reserved_seats"])} consecutive seats (best_available), total: ${total_price}'
+                f'{" 🎉 SUBSECTION SOLD OUT!" if result["subsection_stats"].get("available") == 0 else ""}'
+                f'{" 🎊 EVENT SOLD OUT!" if result["event_stats"].get("available") == 0 else ""}'
+            )
 
-                if byte_index < len(bitfield_bytes):
-                    byte_val = bitfield_bytes[byte_index]
-                    bit1 = (byte_val >> (7 - bit_offset)) & 1
-                    bit2 = (byte_val >> (6 - bit_offset)) & 1 if bit_offset < 7 else 0
-                    status = (bit1 << 1) | bit2
+            return result
 
-                    if status == SEAT_STATUS_AVAILABLE:
-                        consecutive_count += 1
-                        row_seats.append((row, seat_num, seat_index))
+        except Exception as e:
+            error_msg = f'Reservation error: {str(e)}'
+            await self.status_manager.save_reservation_failure(
+                booking_id=booking_id, error_message=error_msg
+            )
+            raise
 
-                        if consecutive_count == quantity:
-                            found_seats = row_seats
-                            break
-                    else:
-                        consecutive_count = 0
-                        row_seats = []
-
-            if found_seats:
-                break
-
-        if not found_seats:
-            return {
-                'success': False,
-                'reserved_seats': [],
-                'seat_prices': {},
-                'total_price': 0,
-                'error_message': f'No {quantity} consecutive seats available',
-            }
-
-        # Reserve found seats
-        stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-        reserved_seats = []
-        seat_prices = {}
-
-        pipe = client.pipeline()
-
-        for row, seat_num, seat_index in found_seats:
-            seat_id = f'{section}-{subsection}-{row}-{seat_num}'
-
-            # Update bitfield
-            offset = seat_index * 2
-            pipe.setbit(bf_key, offset, 0)
-            pipe.setbit(bf_key, offset + 1, 1)
-
-            # Get price
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
-            pipe.hget(meta_key, str(seat_num))
-
-            reserved_seats.append(seat_id)
-
-        # Update stats
-        pipe.hincrby(stats_key, 'available', -quantity)
-        pipe.hincrby(stats_key, 'reserved', quantity)
-
-        # Execute
-        results = await pipe.execute()
-
-        # Extract prices
-        price_indices = [i for i in range(2, len(results) - 2, 3)]
-        total_price = 0
-
-        for i, seat_id in enumerate(reserved_seats):
-            price_bytes = results[price_indices[i]]
-            if price_bytes:
-                price = int(price_bytes.decode() if isinstance(price_bytes, bytes) else price_bytes)
-                seat_prices[seat_id] = price
-                total_price += price
-            else:
-                seat_prices[seat_id] = 0
-
-        Logger.base.info(
-            f'✅ [CMD] Reserved {len(reserved_seats)} consecutive seats (best_available), total: ${total_price}'
-        )
-
-        return {
-            'success': True,
-            'reserved_seats': reserved_seats,
-            'seat_prices': seat_prices,
-            'total_price': total_price,
-            'error_message': None,
-        }
+    # ========== Other Command Methods ==========
 
     async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """Release seats (RESERVED -> AVAILABLE)"""

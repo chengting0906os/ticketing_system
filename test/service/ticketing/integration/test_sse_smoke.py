@@ -1,18 +1,6 @@
-"""
-SSE Event-Driven Smoke Test
-
-Verifies the complete flow:
-1. Kafka Consumer receives message
-2. Use Case updates DB and broadcasts event
-3. SSE endpoint receives event via broadcaster
-4. Event data is correct
-
-Marks: smoke, integration
-"""
-
-import asyncio
 from datetime import datetime, timezone
 
+from anyio import fail_after, move_on_after
 import pytest
 import uuid_utils as uuid
 from uuid_utils import UUID
@@ -38,11 +26,8 @@ async def test_sse_realtime_broadcast_smoke():
     broadcaster = InMemoryEventBroadcasterImpl()
     booking_id = UUID(str(uuid.uuid7()))
 
-    print(f'\n📦 Booking ID: {booking_id}')
-
     # Act: Subscribe to booking updates (like SSE endpoint would)
-    queue = await broadcaster.subscribe(booking_id=booking_id)
-    print(f'✅ SSE endpoint subscribed to booking {booking_id}')
+    stream = await broadcaster.subscribe(booking_id=booking_id)
 
     # Simulate Use Case broadcasting event after DB update
     event_data = {
@@ -76,14 +61,10 @@ async def test_sse_realtime_broadcast_smoke():
     }
 
     await broadcaster.broadcast(booking_id=booking_id, event_data=event_data)
-    print('📤 Use Case broadcasted status update')
 
     # Assert: SSE endpoint receives event within 100ms (event-driven!)
-    try:
-        received_event = await asyncio.wait_for(queue.get(), timeout=0.1)
-        print('✅ SSE received event in <100ms')
-    except asyncio.TimeoutError:
-        pytest.fail('❌ SSE did not receive event within 100ms (should be <10ms)')
+    with fail_after(0.1):
+        received_event = await stream.receive()
 
     # Verify event data integrity
     assert received_event['event_type'] == 'status_update'
@@ -93,13 +74,9 @@ async def test_sse_realtime_broadcast_smoke():
     assert len(received_event['tickets']) == 2
     assert received_event['tickets'][0]['status'] == 'reserved'
     assert received_event['tickets'][1]['status'] == 'reserved'
-    print('✅ Event data verified')
 
     # Cleanup
-    await broadcaster.unsubscribe(booking_id=booking_id, queue=queue)
-    print(f'🔌 Unsubscribed from booking {booking_id}')
-
-    print('\n🎉 SMOKE TEST PASSED: SSE event-driven flow works correctly!')
+    await broadcaster.unsubscribe(booking_id=booking_id, stream=stream)
 
 
 @pytest.mark.smoke
@@ -120,13 +97,9 @@ async def test_multiple_subscribers_isolation_smoke():
     booking_a = UUID(str(uuid.uuid7()))
     booking_b = UUID(str(uuid.uuid7()))
 
-    print(f'\n📦 Booking A: {booking_a}')
-    print(f'📦 Booking B: {booking_b}')
-
     # Subscribe both buyers
-    queue_a = await broadcaster.subscribe(booking_id=booking_a)
-    queue_b = await broadcaster.subscribe(booking_id=booking_b)
-    print('✅ Both SSE endpoints subscribed')
+    stream_a = await broadcaster.subscribe(booking_id=booking_a)
+    stream_b = await broadcaster.subscribe(booking_id=booking_b)
 
     # Act: Broadcast to Booking A only
     event_a = {
@@ -137,92 +110,75 @@ async def test_multiple_subscribers_isolation_smoke():
     }
 
     await broadcaster.broadcast(booking_id=booking_a, event_data=event_a)
-    print('📤 Broadcasted update to Booking A')
 
     # Assert: Only Booking A receives event
-    try:
-        received_a = await asyncio.wait_for(queue_a.get(), timeout=0.1)
+    with fail_after(0.1):
+        received_a = await stream_a.receive()
         assert received_a['booking_id'] == str(booking_a)
-        print('✅ Booking A received its event')
-    except asyncio.TimeoutError:
-        pytest.fail('❌ Booking A should have received event')
 
-    # Booking B should NOT receive anything
-    assert queue_b.qsize() == 0, "Booking B should not receive Booking A's event"
-    print('✅ Booking B correctly isolated (no event received)')
+    # Booking B should NOT receive anything (timeout after 0.1s)
+    received_b = None
+    with move_on_after(0.1):
+        received_b = await stream_b.receive()
+    assert received_b is None, "Booking B should not receive Booking A's event"
 
     # Cleanup
-    await broadcaster.unsubscribe(booking_id=booking_a, queue=queue_a)
-    await broadcaster.unsubscribe(booking_id=booking_b, queue=queue_b)
-
-    print('\n🎉 SMOKE TEST PASSED: Multiple subscribers properly isolated!')
+    await broadcaster.unsubscribe(booking_id=booking_a, stream=stream_a)
+    await broadcaster.unsubscribe(booking_id=booking_b, stream=stream_b)
 
 
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_broadcaster_memory_cleanup_smoke():
-    """
-    Smoke test: Verify broadcaster cleans up after unsubscribe
-
-    Ensures no memory leaks when SSE connections close
-    """
-
     # Arrange
     broadcaster = InMemoryEventBroadcasterImpl()
     booking_id = UUID(str(uuid.uuid7()))
 
-    print(f'\n📦 Booking ID: {booking_id}')
-
     # Subscribe and unsubscribe 10 times
     for _ in range(10):
-        queue = await broadcaster.subscribe(booking_id=booking_id)
-        await broadcaster.unsubscribe(booking_id=booking_id, queue=queue)
+        stream = await broadcaster.subscribe(booking_id=booking_id)
+        await broadcaster.unsubscribe(booking_id=booking_id, stream=stream)
 
     # Assert: Subscriber dict should be clean
     assert (
         booking_id not in broadcaster._subscribers or len(broadcaster._subscribers[booking_id]) == 0
     ), 'Broadcaster should clean up empty subscriber lists'
 
-    print('✅ Memory cleanup verified (10 subscribe/unsubscribe cycles)')
-    print('\n🎉 SMOKE TEST PASSED: No memory leaks detected!')
-
 
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_queue_full_handling_smoke():
-    """
-    Smoke test: Verify queue full handling (drop policy)
-
-    Ensures system doesn't crash when SSE client is slow
-    """
-
-    # Arrange: Create broadcaster with small queue
+async def test_stream_full_handling_smoke():
+    # Arrange: Create broadcaster (stream buffer size is 10)
     broadcaster = InMemoryEventBroadcasterImpl()
     booking_id = UUID(str(uuid.uuid7()))
-    queue = await broadcaster.subscribe(booking_id=booking_id)
+    stream = await broadcaster.subscribe(booking_id=booking_id)
 
-    print(f'\n📦 Booking ID: {booking_id}')
-    print(f'📊 Queue max size: {queue.maxsize}')
-
-    # Act: Broadcast 15 events (queue max is 10)
+    # Act: Broadcast 15 events (stream buffer max is 10)
     for i in range(15):
         event_data = {'event_type': 'status_update', 'sequence': i}
         await broadcaster.broadcast(booking_id=booking_id, event_data=event_data)
 
-    # Assert: Queue should have 10 events (newest 5 dropped due to queue full)
-    assert queue.qsize() == 10, f'Queue should be full (10 events), got {queue.qsize()}'
-    print(f'✅ Queue full: {queue.qsize()}/10 events (5 newest dropped)')
+    # Assert: Stream should have first 10 events (newer 5 dropped due to buffer full)
+    # Verify we can receive 10 items
+    received_items = []
+    for _ in range(10):
+        with fail_after(1.0):
+            item = await stream.receive()
+            received_items.append(item)
 
-    # Verify: Queue has events 0-9 (events 10-14 were dropped)
-    first_event = await queue.get()
-    assert first_event['sequence'] == 0, 'Queue should contain first 10 events (0-9)'
-    print(
-        f'✅ Drop policy verified: first event sequence={first_event["sequence"]} (newer events dropped)'
-    )
+    assert len(received_items) == 10, f'Stream should have 10 events, got {len(received_items)}'
+
+    # Verify: Stream has events 0-9 (events 10-14 were dropped)
+    assert received_items[0]['sequence'] == 0, 'Stream should contain first 10 events (0-9)'
+    assert received_items[9]['sequence'] == 9, 'Last event should be sequence 9'
+
+    # No more items should be available
+    received = None
+    with move_on_after(0.1):
+        received = await stream.receive()
+    assert received is None, 'No more events should be available'
 
     # Cleanup
-    await broadcaster.unsubscribe(booking_id=booking_id, queue=queue)
-
-    print('\n🎉 SMOKE TEST PASSED: Queue full handling works correctly!')
+    await broadcaster.unsubscribe(booking_id=booking_id, stream=stream)

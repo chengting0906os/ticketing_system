@@ -1,22 +1,21 @@
 """
 Ticketing MQ Consumer - Unified PostgreSQL State Manager
-票務 MQ 消費者 - 統一 PostgreSQL 狀態管理器
 
-整合職責 (2 個 topics)：
-1. Booking + Ticket 狀態同步 (原子操作):
-   - pending_payment_and_reserved: 座位預訂成功後，同時更新 Booking 為 PENDING_PAYMENT 和 Ticket 為 RESERVED
+Integrated Responsibilities (2 topics):
+1. Booking + Ticket State Sync (Atomic Operation):
+   - pending_payment_and_reserved: After successful seat reservation, simultaneously update Booking to PENDING_PAYMENT and Ticket to RESERVED
 
-2. Booking 失敗處理:
-   - failed: 座位預訂失敗後更新訂單狀態
+2. Booking Failure Handling:
+   - failed: Update order status after seat reservation failure
 
-重要：
-- 這個 consumer **只操作 PostgreSQL**，不碰 Kvrocks！
-- Kvrocks 狀態管理是 seat_reservation_consumer 的職責
-- 合併 topic 確保 Booking 和 Ticket 狀態更新的原子性
+Important:
+- This consumer **only operates on PostgreSQL**, doesn't touch Kvrocks!
+- Kvrocks state management is the responsibility of seat_reservation_consumer
+- Merged topics ensure atomicity of Booking and Ticket state updates
 
 Features:
-- 錯誤處理：使用 Quix Streams callback 處理錯誤
-- 死信隊列：無法處理的訊息發送至 DLQ
+- Error Handling: Use Quix Streams callback to handle errors
+- Dead Letter Queue: Failed messages sent to DLQ
 """
 
 import os
@@ -25,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import orjson
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+from opentelemetry import trace
 from uuid_utils import UUID
 from quixstreams import Application
 
@@ -38,6 +38,7 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+from src.platform.observability.tracing import extract_trace_context
 from src.service.ticketing.app.command.update_booking_status_to_failed_use_case import (
     UpdateBookingToFailedUseCase,
 )
@@ -54,14 +55,14 @@ from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 
 
 class KafkaConfig:
-    """Kafka 配置 - 支援 Exactly-Once 語義"""
+    """Kafka configuration - Supports Exactly-Once semantics"""
 
     def __init__(self, *, event_id: int, instance_id: str, retries: int = 3):
         """
         Args:
-            event_id: 活動 ID
-            instance_id: Consumer instance ID (用於生成唯一的 transactional.id)
-            retries: Producer 重試次數
+            event_id: Event ID
+            instance_id: Consumer instance ID (used to generate unique transactional.id)
+            retries: Producer retry count
         """
         from src.platform.message_queue.kafka_constant_builder import (
             KafkaProducerTransactionalIdBuilder,
@@ -77,22 +78,22 @@ class KafkaConfig:
     @property
     def producer_config(self) -> Dict:
         """
-        Producer 配置 - 啟用事務支援
+        Producer configuration - Enable transaction support
 
         Note: Quix Streams with processing_guarantee='exactly-once' requires:
-        - transactional.id: 唯一識別此 producer，實現 exactly-once
-        - enable.idempotence = True (自動設置)
-        - acks = 'all' (自動設置)
+        - transactional.id: Uniquely identifies this producer, enabling exactly-once
+        - enable.idempotence = True (set automatically)
+        - acks = 'all' (set automatically)
         """
         return {
-            'transactional.id': self.transactional_id,  # 🔑 Exactly-Once 的關鍵
+            'transactional.id': self.transactional_id,  # 🔑 Key for Exactly-Once
             'retries': self.retries,
         }
 
     @property
     def consumer_config(self) -> Dict:
         """
-        Consumer 配置
+        Consumer configuration
 
         Note: Quix Streams with processing_guarantee='exactly-once' already sets:
         - enable.auto.commit = False (manual commit via transactions)
@@ -109,16 +110,21 @@ class KafkaConfig:
 
 class TicketingMqConsumer:
     """
-    整合的票務 MQ 消費者 (PostgreSQL 狀態管理)
+    Integrated Ticketing MQ Consumer (PostgreSQL State Management)
 
-    處理 2 個 topics：
-    - Booking + Ticket 原子更新 (pending_payment + reserved)
-    - Booking 失敗處理 (failed)
+    Handles 2 topics:
+    - Booking + Ticket atomic update (pending_payment + reserved)
+    - Booking failure handling (failed)
 
-    全部都是 PostgreSQL 操作，無狀態處理
+    All PostgreSQL operations, stateless processing
     """
 
-    def __init__(self, *, event_broadcaster: IInMemoryEventBroadcaster):
+    def __init__(
+        self,
+        *,
+        event_broadcaster: IInMemoryEventBroadcaster,
+        seat_availability_cache: Any = None,
+    ):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
         base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
@@ -133,34 +139,36 @@ class TicketingMqConsumer:
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
         self.event_broadcaster = event_broadcaster
+        self.seat_availability_cache = seat_availability_cache
+        self.tracer = trace.get_tracer(__name__)
 
         # DLQ configuration
         self.dlq_topic = KafkaTopicBuilder.ticketing_dlq(event_id=self.event_id)
 
-        # Use cases (延遲初始化)
+        # Use cases (lazy initialization)
         self.update_booking_to_pending_payment_use_case: Any = None
         self.update_booking_to_failed_use_case: Any = None
 
     def set_portal(self, portal: 'BlockingPortal') -> None:
-        """設置 BlockingPortal 用於同步調用 async 函數"""
+        """Set BlockingPortal for calling async functions from sync code"""
         self.portal = portal
 
     def _on_processing_error(self, exc: Exception, row: Any, _logger: Any) -> bool:
         """
-        Quix Streams 錯誤處理 callback
+        Quix Streams error handling callback
 
-        當訊息處理失敗時，此 callback 會被調用。
-        錯誤訊息直接發送到 DLQ，不在此層進行重試。
+        This callback is called when message processing fails.
+        Error messages are sent directly to DLQ, no retry at this layer.
 
         Returns:
-            True: 忽略錯誤，提交 offset（訊息被發送到 DLQ）
-            False: 傳播錯誤，不提交 offset（停止 consumer）
+            True: Ignore error and commit offset (message sent to DLQ)
+            False: Propagate error and don't commit offset (stop consumer)
         """
         error_msg = str(exc)
 
         Logger.base.error(f'❌ [TICKETING-ERROR-CALLBACK] Processing error, sending to DLQ: {exc}')
 
-        # 發送到 DLQ
+        # Send to DLQ
         if row and hasattr(row, 'value'):
             message = row.value
             self._send_to_dlq(
@@ -170,20 +178,20 @@ class TicketingMqConsumer:
                 retry_count=0,
             )
 
-        # 返回 True：提交 offset，訊息已發送到 DLQ
+        # Return True: Commit offset, message sent to DLQ
         return True
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
-        """創建支援 Exactly-Once 的 Kafka 應用，配置錯誤處理"""
+        """Create Kafka application with Exactly-Once support and error handling configuration"""
         app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
             consumer_group=self.consumer_group_id,
-            processing_guarantee='exactly-once',  # 🆕 啟用 exactly-once 處理
-            commit_interval=0,  # 🆕 禁用自動提交間隔，讓事務管理
+            processing_guarantee='exactly-once',  # 🆕 Enable exactly-once processing
+            commit_interval=0,  # 🆕 Disable auto-commit interval, let transactions manage
             producer_extra_config=self.kafka_config.producer_config,
             consumer_extra_config=self.kafka_config.consumer_config,
-            on_processing_error=self._on_processing_error,  # 🆕 錯誤處理 callback
+            on_processing_error=self._on_processing_error,  # 🆕 Error handling callback
         )
 
         Logger.base.info(
@@ -198,11 +206,11 @@ class TicketingMqConsumer:
 
     @Logger.io
     def _setup_topics(self):
-        """設置 2 個 topic 的處理邏輯 - 使用 Kafka 事務實現 Exactly Once"""
+        """Setup processing logic for 2 topics - Use Kafka transactions for Exactly Once"""
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
-        # 定義 topic 配置
+        # Define topic configuration
         topics = {
             'pending_payment_and_reserved': (
                 KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
@@ -216,7 +224,7 @@ class TicketingMqConsumer:
             ),
         }
 
-        # 註冊所有 topics - 使用 stateless 模式，依賴 Kafka 事務
+        # Register all topics - Use stateless mode, rely on Kafka transactions
         for name, (topic_name, handler) in topics.items():
             topic = self.kafka_app.topic(
                 name=topic_name,
@@ -224,7 +232,7 @@ class TicketingMqConsumer:
                 value_serializer='json',
             )
 
-            # 使用 stateless 處理，依賴 Kafka 事務的 exactly once 保證
+            # Use stateless processing, rely on Kafka transactions for exactly once guarantee
             self.kafka_app.dataframe(topic=topic).apply(handler, stateful=False)
             Logger.base.info(f'   ✓ {name.capitalize()} topic configured (stateless + transaction)')
 
@@ -234,13 +242,13 @@ class TicketingMqConsumer:
 
     @Logger.io
     def _send_to_dlq(self, *, message: Dict, original_topic: str, error: str, retry_count: int):
-        """發送失敗訊息到 DLQ"""
+        """Send failed message to DLQ"""
         if not self.kafka_app:
             Logger.base.error('❌ [TICKETING-DLQ] Kafka app not initialized')
             return
 
         try:
-            # 構建 DLQ 訊息（包含原始訊息和錯誤信息）
+            # Build DLQ message (includes original message and error info)
             dlq_message = {
                 'original_message': message,
                 'original_topic': original_topic,
@@ -250,7 +258,7 @@ class TicketingMqConsumer:
                 'instance_id': self.instance_id,
             }
 
-            # 發送到 DLQ（使用 booking_id 作為 key，保持順序）
+            # Send to DLQ (use booking_id as key to maintain order)
             serialized_message = orjson.dumps(dlq_message)
 
             with self.kafka_app.get_producer() as producer:
@@ -274,7 +282,12 @@ class TicketingMqConsumer:
     def _process_pending_payment_and_reserved(
         self, message: Dict, key: Any = None, context: Any = None
     ) -> Dict:
-        """處理 Booking → PENDING_PAYMENT + Ticket → RESERVED (原子操作)"""
+        """Process Booking → PENDING_PAYMENT + Ticket → RESERVED (atomic operation)"""
+        # Extract trace context from message for distributed tracing
+        trace_headers = message.get('_trace_headers', {})
+        if trace_headers:
+            extract_trace_context(headers=trace_headers)
+
         booking_id = message.get('booking_id')
         reserved_seats = message.get('reserved_seats', [])
 
@@ -284,18 +297,27 @@ class TicketingMqConsumer:
             partition_info = f' | partition={context.partition}'
 
         try:
-            Logger.base.info(
-                f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
-            )
+            with self.tracer.start_as_current_span(
+                'consumer.process_pending_payment',
+                attributes={
+                    'messaging.system': 'kafka',
+                    'messaging.operation': 'process',
+                    'booking.id': str(booking_id) if booking_id else 'unknown',
+                    'tickets.count': len(reserved_seats) if reserved_seats else 0,
+                },
+            ):
+                Logger.base.info(
+                    f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                )
 
-            # Use portal to call async function (ensures proper async context)
-            # pyrefly: ignore  # missing-attribute
-            self.portal.call(self._handle_pending_payment_and_reserved_async, message)
+                # Use portal to call async function (ensures proper async context)
+                # pyrefly: ignore  # missing-attribute
+                self.portal.call(self._handle_pending_payment_and_reserved_async, message)
 
-            Logger.base.info(
-                f'✅ [BOOKING+TICKET] Completed: booking_id={booking_id}, tickets={len(reserved_seats)}'
-            )
-            return {'success': True}
+                Logger.base.info(
+                    f'✅ [BOOKING+TICKET] Completed: booking_id={booking_id}, tickets={len(reserved_seats)}'
+                )
+                return {'success': True}
 
         except Exception as e:
             Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
@@ -318,6 +340,32 @@ class TicketingMqConsumer:
         reserved_seats = message.get('reserved_seats', [])
         seat_prices = message.get('seat_prices', {})
         total_price = message.get('total_price', 0)
+        subsection_stats = message.get('subsection_stats', {})
+        event_stats = message.get('event_stats', {})
+
+        # Update cache with stats from Kvrocks (event-driven cache update)
+        if self.seat_availability_cache and subsection_stats:
+            section_id = f'{section}-{subsection}'
+            self.seat_availability_cache.update_cache(
+                event_id=event_id,
+                section_id=section_id,
+                stats=subsection_stats,
+            )
+            Logger.base.debug(
+                f'📊 [CACHE-UPDATE] Updated cache for {section_id}: '
+                f'available={subsection_stats.get("available")}'
+            )
+
+        # Log event-level stats for observability
+        if event_stats:
+            event_available = event_stats.get('available', 0)
+            event_total = event_stats.get('total', 0)
+            is_event_sold_out = event_available == 0
+
+            Logger.base.info(
+                f'📊 [EVENT-STATS] Event {event_id}: {event_available}/{event_total} available'
+                f'{" 🎊 EVENT SOLD OUT!" if is_event_sold_out else ""}'
+            )
 
         # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = BookingCommandRepoImpl()
@@ -342,11 +390,13 @@ class TicketingMqConsumer:
             reserved_seats=reserved_seats,
             seat_prices=seat_prices,
             total_price=total_price,
+            subsection_stats=subsection_stats if subsection_stats else None,
+            event_stats=event_stats if event_stats else None,
         )
 
     @Logger.io
     def _process_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
-        """處理 Booking → FAILED"""
+        """Process Booking → FAILED"""
         booking_id = message.get('booking_id')
 
         # Extract partition info from Quix Streams context
@@ -405,7 +455,7 @@ class TicketingMqConsumer:
     # ========== Lifecycle ==========
 
     def start(self):
-        """啟動服務 - 支援 topic metadata 同步重試"""
+        """Start service - Support topic metadata sync retry"""
         import time
 
         max_retries = 5
@@ -413,7 +463,7 @@ class TicketingMqConsumer:
 
         for attempt in range(1, max_retries + 1):
             try:
-                # 設置 Kafka topics
+                # Setup Kafka topics
                 self._setup_topics()
 
                 Logger.base.info(
@@ -454,7 +504,7 @@ class TicketingMqConsumer:
                     raise
 
     def stop(self):
-        """停止服務"""
+        """Stop service"""
         if not self.running:
             return
 
@@ -475,15 +525,21 @@ class TicketingMqConsumer:
 
 
 def main():
-    """主程序入口"""
+    """Main program entry point"""
     # Initialize broadcaster (shared instance for SSE)
     from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
+    from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
+        SeatAvailabilityQueryHandlerImpl,
+    )
 
     broadcaster = InMemoryEventBroadcasterImpl()
-    consumer = TicketingMqConsumer(event_broadcaster=broadcaster)
+    seat_cache = SeatAvailabilityQueryHandlerImpl()
+    consumer = TicketingMqConsumer(
+        event_broadcaster=broadcaster, seat_availability_cache=seat_cache
+    )
 
     try:
-        # 啟動 BlockingPortal，創建共享的 event loop
+        # Start BlockingPortal and create shared event loop
         with start_blocking_portal() as portal:
             consumer.set_portal(portal)
             consumer.start()

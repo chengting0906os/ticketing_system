@@ -75,6 +75,7 @@ from src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer imp
     TicketingMqConsumer,
 )
 
+
 # Generic middleware wrapper to satisfy type checker
 T = TypeVar('T', bound=BaseHTTPMiddleware)
 
@@ -281,15 +282,6 @@ async def lifespan(app: FastAPI):
                 '\n   Continuing without Kafka - messaging features disabled'
             )
 
-        # Start polling tasks in the same task group
-        seat_availability_handler = container.seat_availability_query_handler()
-        background_task_group.start_soon(seat_availability_handler.start_polling)  # type: ignore[arg-type]
-        Logger.base.info('🔄 [Unified Service] Seat availability polling started')
-
-        seat_state_handler = container.seat_state_query_handler()
-        background_task_group.start_soon(seat_state_handler.start_polling)  # type: ignore[arg-type]
-        Logger.base.info('🔄 [Unified Service] Seat state polling started')
-
         Logger.base.info('✅ [Unified Service] All background tasks started')
 
         # Yield inside async with - FastAPI will keep running until shutdown
@@ -371,17 +363,14 @@ app.include_router(seat_reservation_router)  # Already has /api/reservation pref
 
 @app.get('/')
 async def root():
-    """Root endpoint - redirect to static index"""
     return RedirectResponse(url='/static/index.html')
 
 
 @app.get('/health')
 async def health_check():
-    """Health check endpoint for container orchestration"""
     return {'status': 'healthy', 'service': 'Unified Ticketing System'}
 
 
 @app.get('/metrics')
 async def get_metrics():
-    """Prometheus metrics endpoint"""
     return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

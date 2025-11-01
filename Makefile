@@ -58,7 +58,7 @@ test:  ## 🧪 Run unit tests (excludes CDK and E2E)
 
 .PHONY: t-smoke
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
-	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+	@uv run pytest  -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
 .PHONY: t-quick
 t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
@@ -130,8 +130,8 @@ dsu:  ## 🚀 Start Docker stack
 dsd:  ## 🛑 Stop Docker stack
 	@docker-compose down
 
-.PHONY: dsr
-dsr:  ## 🔄 Restart services
+.PHONY: d-srs
+d-srs:  ## 🔄 Restart services
 	@docker-compose restart ticketing-service seat-reservation-service
 
 .PHONY: d-build
@@ -281,12 +281,12 @@ ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
 
 .PHONY: lts
 lts:  ## 🧪 Small load test (10 requests, 10 workers, 10 clients)
-	@cd script/go_client && ./loadtest -requests 50 -concurrency 5 -clients 5
+	@cd script/go_client && ./loadtest -requests 100 -concurrency 10 -clients 10
 
 .PHONY: ltm
 ltm:  ## ⚡ Medium load test (2 processes × 250 requests, 25 workers each)
 	@cd script/go_client && \
-		./loadtest -requests 250 -concurrency 25 -clients 25 & \
+		./loadtest -requests 500 -concurrency 25 -clients 25 & \
 
 .PHONY: ltl
 ltl:  ## ⚡ Large load test (2 processes × 250 requests, 25 workers each)

@@ -103,7 +103,14 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
-    seat_state_command_handler = providers.Factory(SeatStateCommandHandlerImpl)
+
+    # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler
+    booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)
+
+    seat_state_command_handler = providers.Singleton(
+        SeatStateCommandHandlerImpl,
+        booking_metadata_handler=booking_metadata_handler,
+    )
 
     # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Factory(
@@ -114,9 +121,6 @@ class Container(containers.DeclarativeContainer):
     seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
     )
-
-    # Ticketing Service - Booking Metadata Handler (Kvrocks)
-    booking_metadata_handler = providers.Factory(BookingMetadataHandlerImpl)
 
     # MQ Infrastructure Orchestrator
     mq_infra_orchestrator = providers.Factory(

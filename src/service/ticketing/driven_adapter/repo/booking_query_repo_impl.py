@@ -46,8 +46,11 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
         """
         Convert BookingModel to Booking entity
 
-        Note: ticket_ids are managed via booking_ticket_mapping association table,
-        not stored in the Booking entity itself.
+        Note:
+        - ticket_ids are managed via booking_ticket_mapping association table,
+          not stored in the Booking entity itself.
+        - SQLAlchemy with as_uuid=True returns stdlib uuid.UUID, but Pydantic expects string or uuid_utils.UUID.
+          We convert to string to ensure compatibility.
         """
         return Booking(
             buyer_id=db_booking.buyer_id,
@@ -59,7 +62,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             seat_selection_mode=db_booking.seat_selection_mode or 'manual',
             seat_positions=db_booking.seat_positions or [],
             status=BookingStatus(db_booking.status),
-            id=db_booking.id,
+            id=UUID(str(db_booking.id)),  # Convert stdlib uuid.UUID to uuid_utils.UUID
             created_at=db_booking.created_at,
             updated_at=db_booking.updated_at,
             paid_at=db_booking.paid_at,
@@ -88,7 +91,9 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             tickets_data = []
 
         return {
-            'id': db_booking.id,
+            'id': str(
+                db_booking.id
+            ),  # Convert uuid.UUID (stdlib) to string for Pydantic validation
             'buyer_id': db_booking.buyer_id,
             'event_id': db_booking.event_id,
             'total_price': db_booking.total_price,

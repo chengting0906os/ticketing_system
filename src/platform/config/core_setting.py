@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     # Formula: PostgreSQL max_connections (200) × 0.8 = 160 total
     # Distributed across 8 workers (4 ticketing + 4 seat_reservation)
     # Per worker: 160 / 8 = 20 connections
-    DB_POOL_SIZE_WRITE: int = 5  # Write pool per worker
-    DB_POOL_SIZE_READ: int = 5  # Read pool per worker
+    DB_POOL_SIZE_WRITE: int = 1  # Write pool per worker
+    DB_POOL_SIZE_READ: int = 1  # Read pool per worker
     DB_POOL_MAX_OVERFLOW: int = 10  # Max overflow per worker (total: 20 per worker)
     DB_POOL_TIMEOUT: int = 5  # Fail fast: 5 seconds
     DB_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour

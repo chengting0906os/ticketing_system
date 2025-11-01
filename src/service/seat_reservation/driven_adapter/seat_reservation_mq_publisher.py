@@ -34,6 +34,16 @@ class SeatsReservedEvent:
     reserved_seats: List[str]
     seat_prices: dict[str, int]
     total_price: int
+    # Subsection stats from Kvrocks (for cache update in Ticketing Service)
+    # Check subsection_stats['available'] == 0 to know if subsection is sold out
+    subsection_stats: dict[str, int] = attrs.Factory(
+        dict
+    )  # {'available': 95, 'reserved': 5, 'sold': 0, 'total': 100}
+    # Event-level stats from Kvrocks (for tracking total event sellout)
+    # Check event_stats['available'] == 0 to know if entire event is sold out
+    event_stats: dict[str, int] = attrs.Factory(
+        dict
+    )  # {'available': 49950, 'reserved': 50, 'sold': 0, 'total': 50000}
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
@@ -72,6 +82,8 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         reserved_seats: List[str],
         seat_prices: dict[str, int],
         total_price: int,
+        subsection_stats: dict[str, int],
+        event_stats: dict[str, int],
     ) -> None:
         """Publish seat reservation success event"""
         event = SeatsReservedEvent(
@@ -84,6 +96,8 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             reserved_seats=reserved_seats,
             seat_prices=seat_prices,
             total_price=total_price,
+            subsection_stats=subsection_stats,
+            event_stats=event_stats,
         )
 
         await publish_domain_event(

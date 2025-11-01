@@ -1,12 +1,12 @@
 """
-Reserve Seats Use Case
-座位預訂用例 - 基於 Lua 腳本的原子性操作
+Reserve Seats Use Case - Atomic operations based on Lua scripts
 """
 
 from dataclasses import dataclass
 from typing import List, Optional
 
 import anyio.abc
+from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
@@ -18,7 +18,7 @@ from src.service.seat_reservation.app.interface.i_seat_reservation_event_publish
 
 @dataclass
 class ReservationRequest:
-    """座位預訂請求"""
+    """Seat reservation request"""
 
     booking_id: str  # Changed to str for UUID7
     buyer_id: int
@@ -32,7 +32,7 @@ class ReservationRequest:
 
 @dataclass
 class ReservationResult:
-    """座位預訂結果"""
+    """Seat reservation result"""
 
     success: bool
     booking_id: str  # Changed to str for UUID7
@@ -44,7 +44,7 @@ class ReservationResult:
 
 class ReserveSeatsUseCase:
     """
-    座位預訂用例 - Event-Driven Non-Blocking Flow
+    Reserve Seats Use Case - Event-Driven Non-Blocking Flow
 
     Responsibility: Seat Reservation Service (Kvrocks only)
 
@@ -74,11 +74,12 @@ class ReserveSeatsUseCase:
         self.seat_state_handler = seat_state_handler
         self.mq_publisher = mq_publisher
         self.task_group = task_group
+        self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
         """
-        執行座位預訂 - Non-blocking Event-Driven Flow
+        Execute seat reservation - Non-blocking Event-Driven Flow
 
         Flow:
         1. Validate request
@@ -93,77 +94,117 @@ class ReserveSeatsUseCase:
         - Separation of concerns: Each service manages its own storage
 
         Args:
-            request: 預訂請求
+            request: Reservation request
 
         Returns:
-            預訂結果 (from Kvrocks only)
+            Reservation result (from Kvrocks only)
         """
-        try:
-            Logger.base.info(
-                f'🎯 [RESERVE] Processing reservation for booking {request.booking_id}, '
-                f'buyer {request.buyer_id}, event {request.event_id}'
-            )
-
-            # Step 1: Validate request
-            self._validate_request(request)
-
-            # Step 2: Reserve seats in Kvrocks (Pipeline, returns prices)
-            result = await self.seat_state_handler.reserve_seats_atomic(
-                event_id=request.event_id,
-                booking_id=request.booking_id,
-                buyer_id=request.buyer_id,
-                mode=request.selection_mode,
-                seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
-                section=request.section_filter,
-                subsection=request.subsection_filter,
-                quantity=request.quantity if request.selection_mode == 'best_available' else None,
-            )
-
-            # Step 3: Handle result
-            if result['success']:
-                reserved_seats = result['reserved_seats']
-                seat_prices = result['seat_prices']
-                total_price = result['total_price']
-
+        with self.tracer.start_as_current_span(
+            'use_case.reserve_seats',
+            attributes={
+                'booking.id': request.booking_id,
+                'event.id': request.event_id,
+                'buyer.id': request.buyer_id,
+                'seat.mode': request.selection_mode,
+                'seat.quantity': request.quantity or 0,
+            },
+        ):
+            try:
                 Logger.base.info(
-                    f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
-                    f'in Kvrocks for booking {request.booking_id} (total: {total_price})'
+                    f'🎯 [RESERVE] Processing reservation for booking {request.booking_id}, '
+                    f'buyer {request.buyer_id}, event {request.event_id}'
                 )
 
-                # Step 4: Fire-and-forget event to Ticketing Service
-                # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
-                async def _publish_success() -> None:
-                    await self.mq_publisher.publish_seats_reserved(
-                        booking_id=request.booking_id,
-                        buyer_id=request.buyer_id,
-                        event_id=request.event_id,
-                        section=request.section_filter or '',
-                        subsection=request.subsection_filter or 0,
-                        seat_selection_mode=request.selection_mode,
-                        reserved_seats=reserved_seats,
-                        seat_prices=seat_prices,
-                        total_price=total_price,
+                # Step 1: Validate request
+                self._validate_request(request)
+
+                # Step 2: Reserve seats in Kvrocks (Pipeline, returns prices)
+                result = await self.seat_state_handler.reserve_seats_atomic(
+                    event_id=request.event_id,
+                    booking_id=request.booking_id,
+                    buyer_id=request.buyer_id,
+                    mode=request.selection_mode,
+                    seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
+                    section=request.section_filter,
+                    subsection=request.subsection_filter,
+                    quantity=request.quantity
+                    if request.selection_mode == 'best_available'
+                    else None,
+                )
+
+                # Step 3: Handle result
+                if result['success']:
+                    reserved_seats = result['reserved_seats']
+                    seat_prices = result['seat_prices']
+                    total_price = result['total_price']
+                    subsection_stats = result.get('subsection_stats', {})
+                    event_stats = result.get('event_stats', {})
+
+                    Logger.base.info(
+                        f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
+                        f'in Kvrocks for booking {request.booking_id} (total: {total_price})'
+                        f'{" 🎉 SUBSECTION SOLD OUT!" if subsection_stats.get("available", 1) == 0 else ""}'
+                        f'{" 🎊 EVENT SOLD OUT!" if event_stats.get("available", 1) == 0 else ""}'
                     )
 
-                self.task_group.start_soon(_publish_success)  # type: ignore[arg-type]
-                Logger.base.info(
-                    f'📤 [RESERVE] Scheduled seats_reserved event for booking {request.booking_id}'
-                )
+                    # Step 4: Fire-and-forget event to Ticketing Service
+                    # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
+                    async def _publish_success() -> None:
+                        await self.mq_publisher.publish_seats_reserved(
+                            booking_id=request.booking_id,
+                            buyer_id=request.buyer_id,
+                            event_id=request.event_id,
+                            section=request.section_filter or '',
+                            subsection=request.subsection_filter or 0,
+                            seat_selection_mode=request.selection_mode,
+                            reserved_seats=reserved_seats,
+                            seat_prices=seat_prices,
+                            total_price=total_price,
+                            subsection_stats=subsection_stats,
+                            event_stats=event_stats,
+                        )
 
-                return ReservationResult(
-                    success=True,
-                    booking_id=request.booking_id,
-                    reserved_seats=reserved_seats,
-                    total_price=total_price,
-                    event_id=request.event_id,
-                )
-            else:
-                error_msg = result.get('error_message', 'Reservation failed')
+                    self.task_group.start_soon(_publish_success)  # type: ignore[arg-type]
+                    Logger.base.info(
+                        f'📤 [RESERVE] Scheduled seats_reserved event for booking {request.booking_id}'
+                    )
 
-                Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
+                    return ReservationResult(
+                        success=True,
+                        booking_id=request.booking_id,
+                        reserved_seats=reserved_seats,
+                        total_price=total_price,
+                        event_id=request.event_id,
+                    )
+                else:
+                    error_msg = result.get('error_message', 'Reservation failed')
 
-                # Send failure notification (fire-and-forget)
-                async def _publish_failed() -> None:
+                    Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
+
+                    # Send failure notification (fire-and-forget)
+                    async def _publish_failed() -> None:
+                        await self.mq_publisher.publish_reservation_failed(
+                            booking_id=request.booking_id,
+                            buyer_id=request.buyer_id,
+                            error_message=error_msg,
+                            event_id=request.event_id,
+                        )
+
+                    self.task_group.start_soon(_publish_failed)  # type: ignore[arg-type]
+
+                    return ReservationResult(
+                        success=False,
+                        booking_id=request.booking_id,
+                        error_message=error_msg,
+                        event_id=request.event_id,
+                    )
+
+            except DomainError as e:
+                Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
+                error_msg = str(e)
+
+                # Fire-and-forget error notification
+                async def _publish_domain_error() -> None:
                     await self.mq_publisher.publish_reservation_failed(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
@@ -171,7 +212,28 @@ class ReserveSeatsUseCase:
                         event_id=request.event_id,
                     )
 
-                self.task_group.start_soon(_publish_failed)  # type: ignore[arg-type]
+                self.task_group.start_soon(_publish_domain_error)  # type: ignore[arg-type]
+
+                return ReservationResult(
+                    success=False,
+                    booking_id=request.booking_id,
+                    error_message=error_msg,
+                    event_id=request.event_id,
+                )
+            except Exception as e:
+                Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
+                error_msg = 'Internal server error'
+
+                # Fire-and-forget error notification
+                async def _publish_unexpected_error() -> None:
+                    await self.mq_publisher.publish_reservation_failed(
+                        booking_id=request.booking_id,
+                        buyer_id=request.buyer_id,
+                        error_message=error_msg,
+                        event_id=request.event_id,
+                    )
+
+                self.task_group.start_soon(_publish_unexpected_error)  # type: ignore[arg-type]
 
                 return ReservationResult(
                     success=False,
@@ -180,51 +242,8 @@ class ReserveSeatsUseCase:
                     event_id=request.event_id,
                 )
 
-        except DomainError as e:
-            Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
-            error_msg = str(e)
-
-            # Fire-and-forget error notification
-            async def _publish_domain_error() -> None:
-                await self.mq_publisher.publish_reservation_failed(
-                    booking_id=request.booking_id,
-                    buyer_id=request.buyer_id,
-                    error_message=error_msg,
-                    event_id=request.event_id,
-                )
-
-            self.task_group.start_soon(_publish_domain_error)  # type: ignore[arg-type]
-
-            return ReservationResult(
-                success=False,
-                booking_id=request.booking_id,
-                error_message=error_msg,
-                event_id=request.event_id,
-            )
-        except Exception as e:
-            Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
-            error_msg = 'Internal server error'
-
-            # Fire-and-forget error notification
-            async def _publish_unexpected_error() -> None:
-                await self.mq_publisher.publish_reservation_failed(
-                    booking_id=request.booking_id,
-                    buyer_id=request.buyer_id,
-                    error_message=error_msg,
-                    event_id=request.event_id,
-                )
-
-            self.task_group.start_soon(_publish_unexpected_error)  # type: ignore[arg-type]
-
-            return ReservationResult(
-                success=False,
-                booking_id=request.booking_id,
-                error_message=error_msg,
-                event_id=request.event_id,
-            )
-
     def _validate_request(self, request: ReservationRequest) -> None:
-        """驗證預訂請求"""
+        """Validate reservation request"""
         if request.selection_mode == 'manual':
             if not request.seat_positions:
                 raise DomainError('Manual selection requires seat positions', 400)

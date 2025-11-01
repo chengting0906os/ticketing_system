@@ -34,6 +34,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
     def _row_to_entity(row) -> Booking:
         """
         Convert asyncpg Record to Booking entity
+
+        Note: PostgreSQL returns uuid.UUID (stdlib), but Pydantic expects string or uuid_utils.UUID.
+              We convert to string to ensure compatibility.
         """
         return Booking(
             buyer_id=row['buyer_id'],
@@ -45,7 +48,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             seat_selection_mode=row['seat_selection_mode'] or 'manual',
             seat_positions=row['seat_positions'] or [],
             status=BookingStatus(row['status']),
-            id=row['id'],
+            id=UUID(str(row['id'])),  # Convert stdlib uuid.UUID to uuid_utils.UUID
             created_at=row['created_at'],
             updated_at=row['updated_at'],
             paid_at=row['paid_at'],
@@ -53,8 +56,11 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
 
     @Logger.io
     async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
-        """查詢單筆 booking（用於 command 操作前的驗證）"""
+        """Query single booking (used for validation before command operations)"""
         async with (await get_asyncpg_pool()).acquire() as conn:
+            # Convert string to UUID if needed (for asyncpg compatibility)
+            booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
+
             row = await conn.fetchrow(
                 """
                 SELECT id, buyer_id, event_id, section, subsection, quantity,
@@ -63,7 +69,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 FROM booking
                 WHERE id = $1
                 """,
-                booking_id,
+                booking_uuid,
             )
 
             if not row:
@@ -86,6 +92,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             ValueError: If booking not found
         """
         async with (await get_asyncpg_pool()).acquire() as conn:
+            # Convert string ID back to UUID for asyncpg
+            booking_uuid = UUID(booking.id) if isinstance(booking.id, str) else booking.id
+
             result = await conn.execute(
                 """
                 UPDATE booking
@@ -95,7 +104,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 """,
                 booking.status.value,
                 booking.updated_at,
-                booking.id,
+                booking_uuid,
             )
 
             if result == 'UPDATE 0':
@@ -107,6 +116,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
     @Logger.io
     async def update_status_to_failed(self, *, booking: Booking) -> None:
         async with (await get_asyncpg_pool()).acquire() as conn:
+            # Convert string ID back to UUID for asyncpg
+            booking_uuid = UUID(booking.id) if isinstance(booking.id, str) else booking.id
+
             result = await conn.execute(
                 """
                 UPDATE booking
@@ -116,7 +128,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 """,
                 booking.status.value,
                 booking.updated_at,
-                booking.id,
+                booking_uuid,
             )
 
             if result == 'UPDATE 0':
@@ -146,6 +158,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
         now = datetime.now(timezone.utc)
 
         async with (await get_asyncpg_pool()).acquire() as conn:
+            # Convert string ID back to UUID for asyncpg
+            booking_uuid = UUID(booking.id) if isinstance(booking.id, str) else booking.id
+
             # Use CTE to atomically update booking and tickets in a single statement
             booking_row = await conn.fetchrow(
                 """
@@ -173,7 +188,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 booking.status.value,
                 booking.updated_at,
                 booking.paid_at,
-                booking.id,
+                booking_uuid,
             )
 
             if not booking_row:
@@ -188,7 +203,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
     @Logger.io
     async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
         """
-        查詢 booking 關聯的 tickets（用於 command 操作）
+        Query tickets associated with booking (used for command operations)
 
         Uses booking's event_id, section, subsection, and seat_positions to find matching tickets
         via the unique constraint (event_id, section, subsection, row_number, seat_number)
@@ -200,6 +215,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             List of ticket references with full details
         """
         async with (await get_asyncpg_pool()).acquire() as conn:
+            # Convert string to UUID if needed (for asyncpg compatibility)
+            booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
+
             # First, get booking info
             booking_row = await conn.fetchrow(
                 """
@@ -207,7 +225,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 FROM booking
                 WHERE id = $1
                 """,
-                booking_id,
+                booking_uuid,
             )
 
             if not booking_row or not booking_row['seat_positions']:
@@ -292,134 +310,163 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
         Raises:
             ValueError: If booking already exists or transaction fails
         """
-        now = datetime.now(timezone.utc)
+        with self.tracer.start_as_current_span(
+            'repo.create_booking_with_tickets',
+            attributes={
+                'booking.id': str(booking_id),
+                'event.id': event_id,
+                'buyer.id': buyer_id,
+                'seat.section': section,
+                'seat.subsection': subsection,
+                'seat.mode': seat_selection_mode,
+                'seats.count': len(reserved_seats),
+                'booking.total_price': total_price,
+                'db.system': 'postgresql',
+                'db.operation': 'insert',
+            },
+        ):
+            now = datetime.now(timezone.utc)
 
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            # Check if booking already exists (idempotency)
-            existing = await conn.fetchrow(
-                """
-                SELECT id FROM booking WHERE id = $1
-                """,
-                booking_id,
-            )
+            async with (await get_asyncpg_pool()).acquire() as conn:
+                # Convert string to UUID if needed (for asyncpg compatibility)
+                booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
 
-            if existing:
-                Logger.base.warning(
-                    f'⚠️ [IDEMPOTENCY] Booking {booking_id} already exists - returning existing booking and tickets'
+                # Check if booking already exists (idempotency)
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id FROM booking WHERE id = $1
+                    """,
+                    booking_uuid,
                 )
-                # Return existing booking and tickets
-                existing_booking = await self.get_by_id(booking_id=booking_id)
-                existing_tickets = await self.get_tickets_by_booking_id(booking_id=booking_id)
-                return {
-                    'booking': existing_booking,
-                    'tickets': existing_tickets,
-                }
 
-            # Use CTE to atomically create booking and update tickets, returning both
-            result = await conn.fetch(
-                """
-                WITH inserted_booking AS (
-                    INSERT INTO booking (
-                        id, buyer_id, event_id, section, subsection, quantity,
-                        total_price, seat_selection_mode, seat_positions, status,
-                        created_at, updated_at
+                if existing:
+                    Logger.base.warning(
+                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} already exists - returning existing booking and tickets'
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                    RETURNING id, buyer_id, event_id, section, subsection, quantity,
-                              total_price, seat_selection_mode, seat_positions, status,
-                              created_at, updated_at, paid_at
-                ),
-                updated_tickets AS (
-                    UPDATE ticket
-                    SET status = 'reserved',
-                        buyer_id = $2,
-                        updated_at = $11,
-                        reserved_at = $11
-                    WHERE event_id = $3
-                      AND section = $4
-                      AND subsection = $5
-                      AND (row_number || '-' || seat_number) = ANY($9::text[])
-                      AND status = 'available'
-                    RETURNING id, event_id, section, subsection, row_number, seat_number,
-                              price, status, buyer_id, created_at, updated_at, reserved_at
+                    # Return existing booking and tickets
+                    existing_booking = await self.get_by_id(booking_id=booking_uuid)
+                    existing_tickets = await self.get_tickets_by_booking_id(booking_id=booking_uuid)
+                    return {
+                        'booking': existing_booking,
+                        'tickets': existing_tickets,
+                    }
+
+                # Use CTE to atomically create booking and update tickets, returning both
+                result = await conn.fetch(
+                    """
+                    WITH inserted_booking AS (
+                        INSERT INTO booking (
+                            id, buyer_id, event_id, section, subsection, quantity,
+                            total_price, seat_selection_mode, seat_positions, status,
+                            created_at, updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        RETURNING id, buyer_id, event_id, section, subsection, quantity,
+                                  total_price, seat_selection_mode, seat_positions, status,
+                                  created_at, updated_at, paid_at
+                    ),
+                    updated_tickets AS (
+                        UPDATE ticket
+                        SET status = 'reserved',
+                            buyer_id = $2,
+                            updated_at = $11,
+                            reserved_at = $11
+                        WHERE event_id = $3
+                          AND section = $4
+                          AND subsection = $5
+                          AND (row_number || '-' || seat_number) = ANY($9::text[])
+                          AND status = 'available'
+                        RETURNING id, event_id, section, subsection, row_number, seat_number,
+                                  price, status, buyer_id, created_at, updated_at, reserved_at
+                    )
+                    SELECT
+                        'booking' as type,
+                        b.id, b.buyer_id, b.event_id, b.section, b.subsection, b.quantity,
+                        b.total_price, b.seat_selection_mode, b.seat_positions, b.status,
+                        b.created_at, b.updated_at, b.paid_at,
+                        NULL::int as ticket_id, NULL::int as row_number, NULL::int as seat_number,
+                        NULL::int as price, NULL::text as ticket_status, NULL::int as ticket_buyer_id,
+                        NULL::timestamp as ticket_created_at, NULL::timestamp as ticket_updated_at, NULL::timestamp as reserved_at
+                    FROM inserted_booking b
+                    UNION ALL
+                    SELECT
+                        'ticket' as type,
+                        NULL, NULL, t.event_id, t.section, t.subsection, NULL,
+                        NULL, NULL, NULL, NULL,
+                        NULL, NULL, NULL,
+                        t.id, t.row_number, t.seat_number,
+                        t.price, t.status, t.buyer_id,
+                        t.created_at, t.updated_at, t.reserved_at
+                    FROM updated_tickets t
+                    """,
+                    booking_uuid,  # $1
+                    buyer_id,  # $2
+                    event_id,  # $3
+                    section,  # $4
+                    subsection,  # $5
+                    len(reserved_seats),  # $6 - quantity
+                    total_price,  # $7
+                    seat_selection_mode,  # $8
+                    reserved_seats,  # $9 - seat_positions
+                    BookingStatus.PENDING_PAYMENT.value,  # $10
+                    now,  # $11 - created_at
+                    now,  # $12 - updated_at
                 )
-                SELECT
-                    'booking' as type,
-                    b.id, b.buyer_id, b.event_id, b.section, b.subsection, b.quantity,
-                    b.total_price, b.seat_selection_mode, b.seat_positions, b.status,
-                    b.created_at, b.updated_at, b.paid_at,
-                    NULL::int as ticket_id, NULL::int as row_number, NULL::int as seat_number,
-                    NULL::int as price, NULL::text as ticket_status, NULL::int as ticket_buyer_id,
-                    NULL::timestamp as ticket_created_at, NULL::timestamp as ticket_updated_at, NULL::timestamp as reserved_at
-                FROM inserted_booking b
-                UNION ALL
-                SELECT
-                    'ticket' as type,
-                    NULL, NULL, t.event_id, t.section, t.subsection, NULL,
-                    NULL, NULL, NULL, NULL,
-                    NULL, NULL, NULL,
-                    t.id, t.row_number, t.seat_number,
-                    t.price, t.status, t.buyer_id,
-                    t.created_at, t.updated_at, t.reserved_at
-                FROM updated_tickets t
-                """,
-                booking_id,  # $1
-                buyer_id,  # $2
-                event_id,  # $3
-                section,  # $4
-                subsection,  # $5
-                len(reserved_seats),  # $6 - quantity
-                total_price,  # $7
-                seat_selection_mode,  # $8
-                reserved_seats,  # $9 - seat_positions
-                BookingStatus.PENDING_PAYMENT.value,  # $10
-                now,  # $11 - created_at
-                now,  # $12 - updated_at
-            )
 
-            if not result:
-                raise ValueError(f'Failed to create booking {booking_id}')
+                if not result:
+                    raise ValueError(f'Failed to create booking {booking_id}')
 
-            # Separate booking and ticket rows
-            booking_row = None
-            ticket_rows = []
+                # Separate booking and ticket rows
+                booking_row = None
+                ticket_rows = []
 
-            for row in result:
-                if row['type'] == 'booking':
-                    booking_row = row
-                else:
-                    ticket_rows.append(row)
+                for row in result:
+                    if row['type'] == 'booking':
+                        booking_row = row
+                    else:
+                        ticket_rows.append(row)
 
-            if not booking_row:
-                raise ValueError(f'Failed to create booking {booking_id}')
+                if not booking_row:
+                    raise ValueError(f'Failed to create booking {booking_id}')
 
-            created_booking = self._row_to_entity(booking_row)
+                created_booking = self._row_to_entity(booking_row)
 
-            # Convert ticket rows to TicketRef entities
-            tickets = []
-            for row in ticket_rows:
-                ticket = TicketRef(
-                    event_id=row['event_id'],
-                    section=row['section'],
-                    subsection=row['subsection'],
-                    row=row['row_number'],
-                    seat=row['seat_number'],
-                    price=row['price'],
-                    status=TicketStatus(row['ticket_status']),
-                    buyer_id=row['ticket_buyer_id'],
-                    id=row['ticket_id'],
-                    created_at=row['ticket_created_at'],
-                    updated_at=row['ticket_updated_at'],
-                    reserved_at=row['reserved_at'],
+                # Convert ticket rows to TicketRef entities
+                tickets = []
+                for row in ticket_rows:
+                    ticket = TicketRef(
+                        event_id=row['event_id'],
+                        section=row['section'],
+                        subsection=row['subsection'],
+                        row=row['row_number'],
+                        seat=row['seat_number'],
+                        price=row['price'],
+                        status=TicketStatus(row['ticket_status']),
+                        buyer_id=row['ticket_buyer_id'],
+                        id=row['ticket_id'],
+                        created_at=row['ticket_created_at'],
+                        updated_at=row['ticket_updated_at'],
+                        reserved_at=row['reserved_at'],
+                    )
+                    tickets.append(ticket)
+
+                # Record span event: all tickets are now reserved in PostgreSQL
+                span = trace.get_current_span()
+                span.add_event(
+                    'tickets.all_reserved',
+                    attributes={
+                        'tickets.reserved_count': len(tickets),
+                        'tickets.total_price': total_price,
+                    },
                 )
-                tickets.append(ticket)
+                span.set_attribute('tickets.reserved_count', len(tickets))
 
-            Logger.base.info(
-                f'✅ [DIRECT-CREATE] Created booking {booking_id} in PENDING_PAYMENT with {len(tickets)} RESERVED tickets '
-                f'(total: {total_price}) - called by Seat Reservation Service'
-            )
+                Logger.base.info(
+                    f'✅ [DIRECT-CREATE] Created booking {booking_id} in PENDING_PAYMENT with {len(tickets)} RESERVED tickets '
+                    f'(total: {total_price}) - called by Seat Reservation Service'
+                )
 
-            return {
-                'booking': created_booking,
-                'tickets': tickets,
-            }
+                return {
+                    'booking': created_booking,
+                    'tickets': tickets,
+                }

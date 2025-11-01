@@ -162,55 +162,6 @@ async def stream_booking_status(
     2. Initial status sent from PostgreSQL query
     3. Subsequent updates pushed from Kafka consumer via broadcaster (<100ms latency)
     4. Auto-close when booking reaches final state (completed/failed/cancelled)
-
-    Usage:
-    ```javascript
-    const eventSource = new EventSource(`/api/booking/${bookingId}/sse`);
-    eventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('Booking status:', data.status);
-        console.log('Tickets:', data.tickets);
-    };
-    ```
-
-    Event types:
-    - initial_status: First event after connection (from PostgreSQL)
-    - status_update: Real-time updates (from Kafka → Broadcaster)
-
-    Status flow:
-    1. pending_reservation → Waiting for seat reservation
-    2. pending_payment → Seats reserved, awaiting payment (real-time)
-    3. completed → Payment successful
-    4. failed → Reservation failed (real-time)
-    5. cancelled → Booking cancelled
-
-    Returned data format (JSON):
-    {
-        "event_type": "initial_status" | "status_update",
-        "booking_id": "uuid7",
-        "buyer_id": 123,
-        "event_id": 1,
-        "status": "pending_payment",
-        "total_price": 500,
-        "created_at": "2025-01-01T00:00:00",
-        "tickets": [
-            {
-                "id": 1,
-                "section": "A",
-                "subsection": 1,
-                "row": 1,
-                "seat_num": 3,
-                "price": 250,
-                "status": "reserved",
-                "seat_identifier": "A-1-1-3"
-            }
-        ]
-    }
-
-    Performance:
-    - Real-time updates: <100ms latency (event-driven)
-    - Heartbeat timeout: 30 seconds
-    - Auto-close when booking reaches final state
     """
     # Convert Pydantic UUID to uuid_utils.UUID for use case
     booking_id_uuid = uuid_utils.UUID(str(booking_id))
@@ -318,7 +269,6 @@ async def stream_booking_status(
                             {'timestamp': datetime.now(timezone.utc).isoformat()}
                         ).decode(),
                     }
-                    Logger.base.debug(f'💓 [SSE] Heartbeat sent to booking {booking_id}')
 
                 except Exception as e:
                     Logger.base.error(f'❌ [SSE] Error streaming booking {booking_id}: {e}')

@@ -168,6 +168,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                 pipe.hset(meta_key, str(seat['seat_num']), str(seat['price']))
 
             # Create section indexes and statistics
+            event_total_seats = 0  # Track total seats across all subsections
             for section_id, total_seats in section_stats.items():
                 # Add section to event's section index
                 pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
@@ -197,6 +198,27 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                         'seats_per_row': str(config['seats_per_row']),
                     },
                 )
+
+                # Aggregate for event-level stats
+                event_total_seats += total_seats
+
+            # Initialize event-level statistics (aggregate across all subsections)
+            event_stats_key = _make_key(f'event_stats:{event_id}')
+            pipe.hset(
+                event_stats_key,
+                mapping={
+                    'event_id': str(event_id),
+                    'available': str(event_total_seats),
+                    'reserved': '0',
+                    'sold': '0',
+                    'total': str(event_total_seats),
+                    'updated_at': timestamp,
+                },
+            )
+
+            Logger.base.info(
+                f'📊 [INIT-HANDLER] Event-level stats: total={event_total_seats} seats across {len(section_stats)} subsections'
+            )
 
             # Execute all operations in pipeline
             await pipe.execute()

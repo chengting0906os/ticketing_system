@@ -77,7 +77,7 @@ class TestCreateBookingWithTicketsDirectly:
         first_booking = first_result['booking']
         first_tickets = first_result['tickets']
 
-        assert first_booking.id == booking_id
+        assert first_booking.id == str(booking_id)
         assert first_booking.status == BookingStatus.PENDING_PAYMENT
         assert len(first_tickets) == 2
 
@@ -128,7 +128,7 @@ class TestCreateBookingWithTicketsDirectly:
         tickets = result['tickets']
 
         # Then: Booking created correctly
-        assert booking.id == booking_id
+        assert booking.id == str(booking_id)
         assert booking.buyer_id == 2
         assert booking.event_id == test_event_with_tickets['event_id']
         assert booking.section == 'A'

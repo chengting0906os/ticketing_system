@@ -1,9 +1,3 @@
-"""
-Test helpers for unit tests
-
-Provides reusable test doubles (stubs, mocks, fakes) for common dependencies
-"""
-
 from typing import List
 from unittest.mock import AsyncMock
 
@@ -12,27 +6,6 @@ from src.service.ticketing.domain.entity.booking_entity import Booking
 
 
 class RepositoryMocks:
-    """
-    Mock repositories container for testing use cases
-
-    Organizes related mock repositories in one place for easier test setup.
-    This is NOT a UoW - just a container for organizing mocks.
-
-    Example:
-        ```python
-        mocks = RepositoryMocks(
-            booking=some_booking,
-            tickets=[ticket1, ticket2],
-            ticket_ids=[1, 2],
-        )
-        use_case = SomeUseCase(
-            booking_command_repo=mocks.booking_command_repo,
-            event_ticketing_command_repo=mocks.event_ticketing_command_repo,
-        )
-        result = await use_case.execute(...)
-        ```
-    """
-
     def __init__(
         self,
         *,
