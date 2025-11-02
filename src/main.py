@@ -79,14 +79,6 @@ def as_middleware(middleware_class: type[T]) -> type[T]:
     return middleware_class
 
 
-# NOTE: Consumers are now started independently as standalone processes
-# See:
-# - src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py
-# - src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
-#
-# To start 4 ticketing + 4 seat reservation consumers: make start-consumers
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage unified application lifespan: startup and shutdown"""
@@ -137,7 +129,7 @@ async def lifespan(app: FastAPI):
 
     # Warmup pool to eliminate "connect" spans during request handling
     await warmup_asyncpg_pool()
-    Logger.base.info('🔥 [Unified Service] Asyncpg pool warmed up to MAX_SIZE')
+    Logger.base.info('🔥 [Unified Service] Asyncpg pool warmed up to MIN_SIZE')
 
     Logger.base.info('✅ [Unified Service] All services initialized')
 

@@ -6,12 +6,11 @@
 # automatically injected by CDK - you don't need to fill them manually.
 # =============================================================================
 
-# Production Environment (10,000 TPS target, $300/month budget)
+# Production Environment (10,000 TPS target)
 production:
   # AWS Configuration
   # Region: us-west-2 (Oregon)
   #   - 4 Availability Zones: us-west-2a, us-west-2b, us-west-2c, us-west-2d
-  #   - More stable than us-west-2 (Virginia)
   #   - Used AZs: us-west-2a (Primary), us-west-2b (Secondary for HA)
   region: us-west-2
 
@@ -27,27 +26,50 @@ production:
   # ECS Auto-scaling (defaults for all services)
   ecs:
     min_tasks: 1
-    max_tasks: 2
+    max_tasks: 4
     cpu_threshold: 70
     memory_threshold: 80
 
-    # Ticketing Service (debugging config - minimal resources)
-    ticketing:
-      task_cpu: 1024      # 1 vCPU
-      task_memory: 2048   # 2 GB RAM
-      workers: 1
+    # API Service (Unified ticketing + seat-reservation endpoints)
+    api:
+      task_cpu: 1024       # 1 vCPU (minimal for Fargate)
+      task_memory: 2048    # 2 GB RAM (Fargate minimum for 1 vCPU)
+      workers: 1           # 1 worker (minimal)
 
-    # Reservation Service (working config - more resources)
+  # Consumers Auto-scaling (Background Kafka workers)
+  consumers:
+    # Ticketing Consumer (processes booking events)
+    ticketing:
+      min_tasks: 1         # Minimum 1 consumer (testing)
+      max_tasks: 200       # Maximum 200 consumers (100 vCPU)
+      task_cpu: 512        # 0.5 vCPU per consumer
+      task_memory: 1024    # 1 GB RAM per consumer
+
+    # Seat Reservation Consumer (processes seat reservations + Kvrocks polling)
     reservation:
-      task_cpu: 2048      # 2 vCPU
-      task_memory: 4096   # 4 GB RAM
-      workers: 1
+      min_tasks: 1         # Minimum 1 consumer (testing)
+      max_tasks: 200       # Maximum 200 consumers (100 vCPU)
+      task_cpu: 512        # 0.5 vCPU per consumer
+      task_memory: 1024    # 1 GB RAM per consumer
 
   # Aurora Serverless v2 Auto-scaling
   aurora:
-    min_acu: 0.5        # Minimum Aurora Capacity Units (cost optimization)
-    max_acu: 64         # Maximum Aurora Capacity Units (peak load)
+    min_acu: 0.5         # Minimum Aurora Capacity Units (cost optimization)
+    max_acu: 64          # Maximum Aurora Capacity Units (peak load)
     # Single master configuration for cost savings
+
+  # EC2 Kafka Configuration (self-hosted, 3 brokers on single instance)
+  kafka:
+    instance_type: t4g.medium    # EC2 instance type (2 vCPU, 4 GB RAM)
+    storage_gb: 50               # EBS storage size in GB
+    # 3 Kafka brokers run in Docker containers on this single instance
+
+  # EC2 Kvrocks Configuration (self-hosted Redis alternative)
+  kvrocks:
+    instance_type: t4g.small     # EC2 instance type (2 vCPU, 2 GB RAM)
+    storage_gb: 30               # EBS storage size in GB
+    port: 6666                   # Kvrocks port
+    max_clients: 10000           # Maximum concurrent connections
 
   # Database Connection Pool (single master - no read replicas)
   database:
@@ -57,12 +79,20 @@ production:
     pool_recycle: 3600      # Recycle connections every hour
     pool_pre_ping: true     # Verify connections before use
 
-  # Kvrocks Connection Pool
+  # Kvrocks ECS Task Configuration
   kvrocks:
+    task_cpu: 1024       # 1 vCPU (t4g.small equivalent)
+    task_memory: 2048    # 2 GB RAM
+    # Connection Pool (application-level)
     pool_max_connections: 10000
     pool_socket_timeout: 5
     pool_socket_connect_timeout: 5
     pool_health_check_interval: 30
+
+  # Load Test Task Configuration
+  loadtest:
+    task_cpu: 2048       # 2 vCPU (higher load capacity)
+    task_memory: 4096    # 4 GB RAM (for high-concurrency testing)
 
   # Security
   jwt:
@@ -89,64 +119,6 @@ production:
     request_timeout: 30
     max_request_size_mb: 10
 
-# Staging Environment (lower capacity for cost savings)
-staging:
-  # AWS Configuration
-  # Same region and AZs as production for consistency
-  region: us-west-2
-  account_id: null  # Auto-detected
-
-  environment: staging
-  debug: false
-  log_level: INFO
-
-  ecs:
-    min_tasks: 2
-    max_tasks: 8
-    cpu_threshold: 70
-    memory_threshold: 80
-    task_cpu: 1024      # 1 vCPU (smaller than prod)
-    task_memory: 2048   # 2 GB RAM
-    workers: 2          # Workers per task
-
-  aurora:
-    min_acu: 0.5        # Lower minimum for cost savings
-    max_acu: 16
-
-  database:
-    pool_size: 5000         # Total connection pool size per task
-    pool_max_overflow: 500  # Max overflow connections
-    pool_timeout: 30        # Connection timeout (seconds)
-    pool_recycle: 3600      # Recycle connections every hour
-    pool_pre_ping: true     # Verify connections before use
-
-  kvrocks:
-    pool_max_connections: 10000
-    pool_socket_timeout: 5
-    pool_socket_connect_timeout: 5
-    pool_health_check_interval: 30
-
-  jwt:
-    access_token_expire_minutes: 120  # 2 hours (more relaxed)
-    refresh_token_expire_days: 14
-    algorithm: HS256
-
-  features:
-    dynamic_pricing: true   # Test new features in staging
-    seat_recommendation: true
-    payment_gateway: false  # Use mock payment in staging
-    email_notifications: false
-
-  monitoring:
-    cloudwatch_logs_retention_days: 3
-    container_insights_enabled: true
-    xray_tracing_enabled: false
-
-  performance:
-    rate_limit_per_minute: 500
-    request_timeout: 30
-    max_request_size_mb: 10
-
 # Development Environment (minimal resources for testing)
 development:
   # AWS Configuration
@@ -158,48 +130,96 @@ development:
   debug: true
   log_level: DEBUG
 
+  # ECS Auto-scaling (minimal for dev)
   ecs:
     min_tasks: 1
-    max_tasks: 4
+    max_tasks: 2
     cpu_threshold: 80
     memory_threshold: 85
-    task_cpu: 1024      # 1 vCPU (same as production for consistency)
-    task_memory: 2048   # 2 GB RAM (same as production for consistency)
-    workers: 1          # Workers per task
 
+    # API Service (smaller than production)
+    api:
+      task_cpu: 2048       # 2 vCPU (reduced for dev)
+      task_memory: 4096    # 4 GB RAM
+      workers: 4           # 4 workers
+
+  # Consumers Auto-scaling (minimal for dev)
+  consumers:
+    # Ticketing Consumer (minimal for testing)
+    ticketing:
+      min_tasks: 1         # Only 1 consumer for dev
+      max_tasks: 4         # Max 4 consumers
+      task_cpu: 1024       # 1 vCPU per consumer
+      task_memory: 2048    # 2 GB RAM per consumer
+
+    # Seat Reservation Consumer (minimal for testing)
+    reservation:
+      min_tasks: 1         # Only 1 consumer for dev
+      max_tasks: 4         # Max 4 consumers
+      task_cpu: 1024       # 1 vCPU per consumer
+      task_memory: 2048    # 2 GB RAM per consumer
+
+  # Aurora Serverless v2 (minimal)
   aurora:
     min_acu: 0.5
     max_acu: 8
 
-  database:
-    pool_size: 20           # Total connection pool size
-    pool_max_overflow: 100   # Max overflow connections
-    pool_timeout: 30        # Connection timeout (seconds)
-    pool_recycle: 3600      # Recycle connections every hour
-    pool_pre_ping: true     # Verify connections before use
+  # EC2 Kafka Configuration (same as production)
+  kafka:
+    instance_type: t4g.medium    # EC2 instance type (2 vCPU, 4 GB RAM)
+    storage_gb: 50               # EBS storage size in GB
+    # 3 Kafka brokers run in Docker containers on this single instance
 
+  # EC2 Kvrocks Configuration (same as production)
   kvrocks:
-    pool_max_connections: 10000
+    instance_type: t4g.small     # EC2 instance type (2 vCPU, 2 GB RAM)
+    storage_gb: 30               # EBS storage size in GB
+    port: 6666                   # Kvrocks port
+    max_clients: 10000           # Maximum concurrent connections
+
+  # Database Connection Pool (smaller)
+  database:
+    pool_size: 20           # Smaller pool for dev
+    pool_max_overflow: 10   # Less overflow
+    pool_timeout: 30
+    pool_recycle: 3600
+    pool_pre_ping: true
+
+  # Kvrocks ECS Task Configuration (larger for dev/testing)
+  kvrocks:
+    task_cpu: 2048       # 2 vCPU (t4g.medium equivalent)
+    task_memory: 4096    # 4 GB RAM
+    # Connection Pool (application-level)
+    pool_max_connections: 1000   # Smaller for dev
     pool_socket_timeout: 5
     pool_socket_connect_timeout: 5
     pool_health_check_interval: 30
 
+  # Load Test Task Configuration
+  loadtest:
+    task_cpu: 1024       # 1 vCPU (cost-optimized for dev)
+    task_memory: 2048    # 2 GB RAM (sufficient for moderate load)
+
+  # Security (relaxed for dev)
   jwt:
     access_token_expire_minutes: 1440  # 24 hours (for easier testing)
     refresh_token_expire_days: 30
     algorithm: HS256
 
+  # Feature Flags (all enabled for testing)
   features:
-    dynamic_pricing: true   # Enable all features for testing
+    dynamic_pricing: true
     seat_recommendation: true
     payment_gateway: false  # Always use mock in dev
     email_notifications: false
 
+  # Monitoring (minimal to save cost)
   monitoring:
     cloudwatch_logs_retention_days: 1
     container_insights_enabled: false  # Save cost in dev
     xray_tracing_enabled: false
 
+  # Performance (relaxed for dev)
   performance:
     rate_limit_per_minute: 100
     request_timeout: 60   # Longer timeout for debugging
@@ -208,6 +228,23 @@ development:
 # =============================================================================
 # NOTES
 # =============================================================================
+#
+# Architecture Summary (3 ECS Services):
+# 1. api-service (unified ticketing + seat-reservation endpoints)
+#    - Production: 1-4 tasks × 1 vCPU = 1-4 vCPU
+#    - Development: 1-2 tasks × 2 vCPU = 2-4 vCPU
+#
+# 2. ticketing-consumer (background Kafka worker)
+#    - Production: 1-200 tasks × 0.5 vCPU = 0.5-100 vCPU
+#    - Development: 1-4 tasks × 1 vCPU = 1-4 vCPU
+#
+# 3. seat-reservation-consumer (background Kafka worker + Kvrocks polling)
+#    - Production: 1-200 tasks × 0.5 vCPU = 0.5-100 vCPU
+#    - Development: 1-4 tasks × 1 vCPU = 1-4 vCPU
+#
+# Total vCPU at max scale:
+# - Production: 4 + 100 + 100 = 204 vCPU (~$300/month for ECS only)
+# - Development: 4 + 4 + 4 = 12 vCPU (~$20/month for ECS only)
 #
 # What you DON'T need to configure (auto-injected by CDK):
 # - Database endpoints (Aurora writer/reader)
@@ -218,15 +255,25 @@ development:
 # - VPC and security group IDs
 #
 # How to use:
-# 1. Choose environment: production | staging | development
-# 2. Run: make cdk-deploy-dev (or staging/prod)
+# 1. Choose environment: production | development
+# 2. Run: DEPLOY_ENV=production make cdk-deploy (or development)
 # 3. CDK will read this file and apply the configuration
 #
-# Cost estimate (production config):
+# Cost estimate (production config at max scale):
 # - Aurora: ~$70/month (avg 8 ACU)
-# - MSK: ~$150/month (3 × kafka.m5.large)
-# - ECS: ~$60/month (8 tasks × 2 vCPU, 4GB)
-# - Kvrocks: ~$25/month (6 tasks × 1 vCPU, 2GB)
-# - Other: ~$33/month (ALB, CloudWatch, etc.)
-# Total: ~$338/month
+# - Kafka EC2: ~$36/month (3 × t4g.small)
+# - ECS API: ~$12/month (4 tasks × 1 vCPU × 2GB)
+# - ECS Consumers: ~$250/month (400 tasks × 0.5 vCPU × 1GB = 200 vCPU)
+# - Kvrocks: ~$15/month (3 tasks × 1 vCPU, 2GB)
+# - Other: ~$30/month (ALB, CloudWatch, etc.)
+# Total: ~$413/month (vs ~$628 before = 34% savings!)
+#
+# Cost breakdown at minimal scale (min_tasks):
+# - Aurora: ~$25/month (0.5 ACU)
+# - Kafka EC2: ~$36/month (3 × t4g.small)
+# - ECS API: ~$3/month (1 task × 1 vCPU × 2GB)
+# - ECS Consumers: ~$2/month (2 tasks × 0.5 vCPU × 1GB = 1 vCPU)
+# - Kvrocks: ~$5/month (1 task × 1 vCPU, 2GB)
+# - Other: ~$30/month (ALB, CloudWatch, etc.)
+# Total at min scale: ~$101/month
 #

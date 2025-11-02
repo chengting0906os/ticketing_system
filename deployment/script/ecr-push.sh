@@ -6,13 +6,14 @@
 #   ./ecr-push.sh <environment> [service]
 #
 # Arguments:
-#   environment: production | staging | development
-#   service: ticketing | seat-reservation | all (default: all)
+#   environment: production | development
+#   service: api | ticketing-consumer | reservation-consumer | all (default: all)
 #
 # Examples:
-#   ./ecr-push.sh production all              # Push both services to production
-#   ./ecr-push.sh staging ticketing           # Push only ticketing service to staging
-#   ./ecr-push.sh development seat-reservation # Push only seat-reservation to dev
+#   ./ecr-push.sh production all                     # Push all services
+#   ./ecr-push.sh development api                    # Push only API service
+#   ./ecr-push.sh production ticketing-consumer      # Push only ticketing consumer
+#   ./ecr-push.sh production reservation-consumer    # Push only reservation consumer
 #
 # Prerequisites:
 #   - AWS CLI configured (aws configure)
@@ -42,7 +43,8 @@ AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
 
 # ECR Repository names (must match CDK stack names)
 TICKETING_REPO="ticketing-service"
-SEAT_RESERVATION_REPO="seat-reservation-service"
+TICKETING_CONSUMER_REPO="ticketing-consumer"
+RESERVATION_CONSUMER_REPO="seat-reservation-consumer"
 
 # Docker build configuration
 DOCKERFILE="Dockerfile"
@@ -72,13 +74,13 @@ print_usage() {
     echo "Usage: $0 <environment> [service]"
     echo ""
     echo "Arguments:"
-    echo "  environment: production | staging | development"
-    echo "  service: ticketing | seat-reservation | all (default: all)"
+    echo "  environment: production | development"
+    echo "  service: api | ticketing-consumer | reservation-consumer | all (default: all)"
     echo ""
     echo "Examples:"
     echo "  $0 production all"
-    echo "  $0 staging ticketing"
-    echo "  $0 development seat-reservation"
+    echo "  $0 development api"
+    echo "  $0 production ticketing-consumer"
     exit 1
 }
 
@@ -93,13 +95,13 @@ if [ -z "$ENVIRONMENT" ]; then
 fi
 
 # Validate environment
-if [[ ! "$ENVIRONMENT" =~ ^(production|staging|development)$ ]]; then
+if [[ ! "$ENVIRONMENT" =~ ^(production|development)$ ]]; then
     log_error "Invalid environment: $ENVIRONMENT"
     print_usage
 fi
 
 # Validate service
-if [[ ! "$SERVICE" =~ ^(ticketing|seat-reservation|all)$ ]]; then
+if [[ ! "$SERVICE" =~ ^(api|ticketing-consumer|reservation-consumer|all)$ ]]; then
     log_error "Invalid service: $SERVICE"
     print_usage
 fi
@@ -256,12 +258,16 @@ echo ""
 cd "$(dirname "$0")/../.."
 
 # Build and push based on service selection
-if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "ticketing" ]; then
+if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "api" ]; then
     build_and_push "ticketing-service" "$TICKETING_REPO"
 fi
 
-if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "seat-reservation" ]; then
-    build_and_push "seat-reservation-service" "$SEAT_RESERVATION_REPO"
+if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "ticketing-consumer" ]; then
+    build_and_push "ticketing-consumer" "$TICKETING_CONSUMER_REPO"
+fi
+
+if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "reservation-consumer" ]; then
+    build_and_push "seat-reservation-consumer" "$RESERVATION_CONSUMER_REPO"
 fi
 
 # =============================================================================
@@ -278,4 +284,5 @@ log_info "  3. Check ALB target health in AWS Console"
 echo ""
 log_info "View images in ECR:"
 log_info "  aws ecr list-images --repository-name $TICKETING_REPO --region $AWS_REGION"
-log_info "  aws ecr list-images --repository-name $SEAT_RESERVATION_REPO --region $AWS_REGION"
+log_info "  aws ecr list-images --repository-name $TICKETING_CONSUMER_REPO --region $AWS_REGION"
+log_info "  aws ecr list-images --repository-name $RESERVATION_CONSUMER_REPO --region $AWS_REGION"

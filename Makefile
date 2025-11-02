@@ -276,7 +276,7 @@ k6-stress:  ## 💪 k6 stress test
 # 🌩️ AWS CDK DEPLOYMENT
 # ==============================================================================
 
-.PHONY: cdk-synth cdk-diff deploy destroy cdk-deploy-dev cdk-deploy-loadtest cdk-destroy cdk-ls
+.PHONY: cdk-synth cdk-diff deploy destroy dev-deploy-all prod-deploy-all cdk-deploy-loadtest cdk-destroy cdk-ls cdk-check-env
 cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
 	@echo "🔍 Synthesizing CDK stack..."
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
@@ -298,11 +298,41 @@ destroy:  ## 💣 One-click shutdown (delete all AWS resources to stop billing)
 	@echo "💣 Starting one-click shutdown..."
 	@./deployment/destroy-all.sh
 
-cdk-deploy-dev:  ## 🏗️ Deploy CDK infrastructure only (no Docker images)
-	@echo "🚀 Deploying to AWS development environment..."
+cdk-check-env:  ## 🔍 Check current Aurora configuration and environment
+	@echo "🔍 Checking Aurora configuration..."
+	@echo "Current Aurora MaxCapacity: $$(aws rds describe-db-clusters --db-cluster-identifier ticketing-aurora-cluster --query 'DBClusters[0].ServerlessV2ScalingConfiguration.MaxCapacity' --output text 2>/dev/null || echo 'Not deployed yet')"
+	@echo "Config environments:"
+	@echo "  - development: max_acu = 8"
+	@echo "  - production:  max_acu = 64"
+	@echo ""
+	@echo "💡 Use 'make dev-deploy-all' or 'make prod-deploy-all' to deploy"
+
+dev-deploy-all:  ## 🔧 Deploy all stacks (DEVELOPMENT environment: Aurora 0.5-8 ACU)
+	@echo "🔧 Deploying to AWS development environment..."
+	@echo "📋 Configuration:"
+	@echo "   - Aurora ACU: 0.5-8 (minimal for testing)"
+	@echo "   - ECS Tasks: 1-2 per service"
+	@echo "   - Consumers: 1-4 tasks max"
+	@echo ""
 	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
-	@uv run cdk deploy --all --require-approval never
-	@echo "✅ Deployment completed!"
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@DEPLOY_ENV=development uv run cdk deploy --all --require-approval never
+	@echo "✅ Development deployment completed!"
+
+prod-deploy-all:  ## 🚀 Deploy all stacks (PRODUCTION environment: Aurora 0.5-64 ACU)
+	@echo "🚀 Deploying to AWS production environment..."
+	@echo "📋 Configuration:"
+	@echo "   - Aurora ACU: 0.5-64 (auto-scaling for 10K TPS)"
+	@echo "   - ECS Tasks: 1-4 per service"
+	@echo "   - Consumers: 1-200 tasks max (100 vCPU capacity)"
+	@echo ""
+	@echo "⚠️  WARNING: Production configuration uses higher resources!"
+	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@DEPLOY_ENV=production uv run cdk deploy --all --require-approval never
+	@echo "✅ Production deployment completed!"
 
 cdk-deploy-loadtest:  ## 🧪 Deploy loadtest stack only (Fargate Spot 32GB)
 	@echo "🧪 Deploying loadtest infrastructure..."
@@ -376,6 +406,387 @@ ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
 	@echo "✅ Cleanup completed"
 
 # ==============================================================================
+# ☁️ AWS ECS SERVICE MANAGEMENT
+# ==============================================================================
+
+# Default values
+ENV ?= dev
+SERVICE ?= api
+
+.PHONY: aws-reset aws-migrate aws-reset-kafka aws-seed aws-stop aws-start aws-status aws-logs aws-logs-ticketing aws-logs-reservation aws-setup-secrets aws-db-list aws-db-schema aws-db-migrations aws-db-query aws-help
+
+aws-reset:  ## 🚀 Complete AWS reset (restart services → migrate → reset-kafka → seed) - Cloud version of 'make dra'
+	@echo "🚀 ==================== AWS COMPLETE RESET ===================="
+	@echo "⚠️  This will:"
+	@echo "   1. Restart all ECS services (API + Consumers)"
+	@echo "   2. Run database migrations"
+	@echo "   3. Reset Kafka topics"
+	@echo "   4. Seed initial data"
+	@echo ""
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@echo ""
+	@echo "🔄 Step 1/4: Restarting ECS services..."
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-api-service --force-new-deployment \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-ticketing-consumer-service --force-new-deployment \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-reservation-consumer-service --force-new-deployment \
+		--query 'service.serviceName' --output text
+	@echo "✅ All services restarted"
+	@echo ""
+	@echo "⏳ Step 2/4: Waiting for API service to be healthy (30s)..."
+	@sleep 30
+	@echo ""
+	@echo "🗄️  Step 3/4: Running migrations..."
+	@$(MAKE) aws-migrate
+	@echo ""
+	@echo "🌊 Step 4/4: Resetting Kafka topics..."
+	@$(MAKE) aws-reset-kafka
+	@echo ""
+	@echo "🌱 Step 5/5: Seeding data..."
+	@$(MAKE) aws-seed
+	@echo ""
+	@echo "✅ ==================== AWS RESET COMPLETE ===================="
+	@echo "   📊 Check status: make aws-status"
+	@echo "   🔍 View logs:    make aws-logs"
+	@echo ""
+
+aws-migrate:  ## 🗄️ Run migrations on AWS Aurora (via ECS task)
+	@echo "🗄️  Running database migrations..."
+	@TASK_DEF=$$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-api-service --region us-west-2 --query 'services[0].taskDefinition' --output text); \
+	aws ecs run-task \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
+		--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","alembic","upgrade","head"]}]}' \
+		--query 'tasks[0].taskArn' --output text
+	@echo "✅ Migration task started"
+
+aws-reset-kafka:  ## 🌊 Reset Kafka topics on AWS (connect to EC2 and reset)
+	@echo "🌊 Resetting Kafka topics..."
+	@INSTANCE_ID=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
+		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
+	aws ssm send-command \
+		--instance-ids $$INSTANCE_ID \
+		--document-name "AWS-RunShellScript" \
+		--parameters 'commands=["cd /opt/kafka && docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --delete --topic ticketing-events || true","cd /opt/kafka && docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --delete --topic seat-reservation-events || true","cd /opt/kafka && docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --create --topic ticketing-events --partitions 6 --replication-factor 3 || true","cd /opt/kafka && docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --create --topic seat-reservation-events --partitions 6 --replication-factor 3 || true"]' \
+		--query 'Command.CommandId' --output text
+	@echo "✅ Kafka topics reset"
+
+aws-seed:  ## 🌱 Seed data on AWS Aurora (via ECS task)
+	@echo "🌱 Seeding initial data..."
+	@TASK_DEF=$$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-api-service --region us-west-2 --query 'services[0].taskDefinition' --output text); \
+	aws ecs run-task \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
+		--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","python","-m","script.seed_data"]}]}' \
+		--query 'tasks[0].taskArn' --output text
+	@echo "✅ Seed task started"
+
+aws-stop:  ## 🛑 Stop ALL AWS services (ECS + EC2 Kafka, keep Aurora only)
+	@echo "🛑 Stopping ALL AWS services..."
+	@echo "⚠️  This will:"
+	@echo "   - Scale all ECS services to 0"
+	@echo "   - Stop EC2 Kafka instance"
+	@echo "   - Keep Aurora running (minimal cost)"
+	@echo ""
+	@echo "Continue? (y/N)"
+	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@echo ""
+	@echo "📦 Scaling ECS services to 0..."
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-api-service --desired-count 0 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-ticketing-consumer-service --desired-count 0 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-reservation-consumer-service --desired-count 0 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service kvrocks-master --desired-count 0 \
+		--query 'service.serviceName' --output text
+	@echo "✅ All ECS services scaled to 0"
+	@echo ""
+	@echo "🔌 Stopping EC2 Kafka instance..."
+	@INSTANCE_ID=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
+		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
+	if [ "$$INSTANCE_ID" != "None" ] && [ -n "$$INSTANCE_ID" ]; then \
+		aws ec2 stop-instances --instance-ids $$INSTANCE_ID --query 'StoppingInstances[0].InstanceId' --output text; \
+		echo "✅ EC2 Kafka stopped: $$INSTANCE_ID"; \
+	else \
+		echo "⚠️  EC2 Kafka already stopped or not found"; \
+	fi
+	@echo ""
+	@echo "✅ ==================== ALL SERVICES STOPPED ===================="
+	@echo "💰 Cost now: ~$0.01/hour (Aurora Serverless v2 at 0.5 ACU minimum)"
+	@echo "💡 To restart: make aws-start"
+
+aws-start:  ## ▶️  Start ALL AWS services (ECS + EC2 Kafka)
+	@echo "▶️  Starting ALL AWS services..."
+	@echo ""
+	@echo "🔌 Starting EC2 Kafka instance..."
+	@INSTANCE_ID=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=stopped" \
+		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
+	if [ "$$INSTANCE_ID" != "None" ] && [ -n "$$INSTANCE_ID" ]; then \
+		aws ec2 start-instances --instance-ids $$INSTANCE_ID --query 'StartingInstances[0].InstanceId' --output text; \
+		echo "✅ EC2 Kafka starting: $$INSTANCE_ID"; \
+		echo "⏳ Waiting 60s for Kafka to be ready..."; \
+		sleep 60; \
+	else \
+		echo "⚠️  EC2 Kafka already running or not found"; \
+	fi
+	@echo ""
+	@echo "📦 Scaling ECS services back to normal..."
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-api-service --desired-count 1 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-ticketing-consumer-service --desired-count 2 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service ticketing-development-reservation-consumer-service --desired-count 2 \
+		--query 'service.serviceName' --output text
+	@aws ecs update-service --cluster ticketing-cluster \
+		--service kvrocks-master --desired-count 1 \
+		--query 'service.serviceName' --output text
+	@echo ""
+	@echo "✅ ==================== ALL SERVICES STARTED ===================="
+	@echo "💡 Check status: make aws-status"
+
+aws-status:  ## 📊 Check status of all AWS ECS services
+	@echo "📊 ECS Services Status:"
+	@aws ecs describe-services --cluster ticketing-cluster \
+		--services ticketing-development-api-service \
+		         ticketing-development-ticketing-consumer-service \
+		         ticketing-development-reservation-consumer-service \
+		--query 'services[].[serviceName,status,runningCount,desiredCount]' \
+		--output table
+
+aws-logs:  ## 🔍 Tail logs from AWS API service
+	@echo "🔍 Tailing API service logs (Ctrl+C to exit)..."
+	@LOG_GROUP=$$(aws ecs describe-task-definition \
+		--task-definition $$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-api-service --query 'services[0].taskDefinition' --output text | rev | cut -d'/' -f1 | rev) \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	aws logs tail $$LOG_GROUP --follow --format short
+
+aws-logs-ticketing:  ## 🔍 Tail logs from AWS Ticketing Consumer
+	@echo "🔍 Tailing Ticketing Consumer logs (Ctrl+C to exit)..."
+	@LOG_GROUP=$$(aws ecs describe-task-definition \
+		--task-definition $$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-ticketing-consumer-service --query 'services[0].taskDefinition' --output text | rev | cut -d'/' -f1 | rev) \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	aws logs tail $$LOG_GROUP --follow --format short
+
+aws-logs-reservation:  ## 🔍 Tail logs from AWS Reservation Consumer
+	@echo "🔍 Tailing Reservation Consumer logs (Ctrl+C to exit)..."
+	@LOG_GROUP=$$(aws ecs describe-task-definition \
+		--task-definition $$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-reservation-consumer-service --query 'services[0].taskDefinition' --output text | rev | cut -d'/' -f1 | rev) \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	aws logs tail $$LOG_GROUP --follow --format short
+
+aws-db-list:  ## 🗄️ List all Aurora tables with row counts (via ECS task)
+	@echo "🗄️  Listing Aurora tables..."
+	@TASK_DEF=$$(aws ecs describe-services \
+		--cluster ticketing-cluster \
+		--services ticketing-development-api-service \
+		--region $(AWS_REGION) \
+		--query 'services[0].taskDefinition' --output text); \
+	SUBNET=$$(aws ec2 describe-subnets \
+		--region $(AWS_REGION) \
+		--filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" \
+		--query 'Subnets[0].SubnetId' --output text); \
+	SG=$$(aws ec2 describe-security-groups \
+		--region $(AWS_REGION) \
+		--filters "Name=group-name,Values=*AuroraSecurityGroup*" \
+		--query 'SecurityGroups[0].GroupId' --output text); \
+	echo "Using task: $$TASK_DEF, Subnet: $$SUBNET, SG: $$SG"; \
+	TASK_ARN=$$(aws ecs run-task \
+		--region $(AWS_REGION) \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$$SUBNET],securityGroups=[$$SG]}" \
+		--overrides '{"containerOverrides":[{"name":"Container","command":["python","deployment/script/aurora_inspect.py","list"]}]}' \
+		--query 'tasks[0].taskArn' --output text); \
+	echo "Task started: $$TASK_ARN"; \
+	echo "Waiting for task to complete (this may take 1-2 minutes)..."; \
+	aws ecs wait tasks-stopped --cluster ticketing-cluster --region $(AWS_REGION) --tasks $$TASK_ARN; \
+	echo "Fetching logs..."; \
+	LOG_GROUP=$$(aws ecs describe-task-definition \
+		--region $(AWS_REGION) \
+		--task-definition $$TASK_DEF \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	TASK_ID=$$(echo $$TASK_ARN | rev | cut -d'/' -f1 | rev); \
+	aws logs get-log-events \
+		--region $(AWS_REGION) \
+		--log-group-name $$LOG_GROUP \
+		--log-stream-name Container/Container/$$TASK_ID \
+		--query 'events[*].message' --output text
+
+aws-db-schema:  ## 📐 Show Aurora table schema (usage: make aws-db-schema TABLE=events)
+	@if [ -z "$(TABLE)" ]; then \
+		echo "❌ Usage: make aws-db-schema TABLE=<table_name>"; \
+		echo "Example: make aws-db-schema TABLE=events"; \
+		exit 1; \
+	fi
+	@echo "📐 Showing schema for table: $(TABLE)"
+	@TASK_DEF=$$(aws ecs describe-services \
+		--cluster ticketing-cluster \
+		--services ticketing-development-api-service \
+		--region $(AWS_REGION) \
+		--query 'services[0].taskDefinition' --output text); \
+	SUBNET=$$(aws ec2 describe-subnets \
+		--region $(AWS_REGION) \
+		--filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" \
+		--query 'Subnets[0].SubnetId' --output text); \
+	SG=$$(aws ec2 describe-security-groups \
+		--region $(AWS_REGION) \
+		--filters "Name=group-name,Values=*AuroraSecurityGroup*" \
+		--query 'SecurityGroups[0].GroupId' --output text); \
+	TASK_ARN=$$(aws ecs run-task \
+		--region $(AWS_REGION) \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$$SUBNET],securityGroups=[$$SG]}" \
+		--overrides '{"containerOverrides":[{"name":"Container","command":["python","deployment/script/aurora_inspect.py","schema","$(TABLE)"]}]}' \
+		--query 'tasks[0].taskArn' --output text); \
+	echo "Task started: $$TASK_ARN"; \
+	echo "Waiting for task to complete (this may take 1-2 minutes)..."; \
+	aws ecs wait tasks-stopped --cluster ticketing-cluster --region $(AWS_REGION) --tasks $$TASK_ARN; \
+	echo "Fetching logs..."; \
+	LOG_GROUP=$$(aws ecs describe-task-definition \
+		--region $(AWS_REGION) \
+		--task-definition $$TASK_DEF \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	TASK_ID=$$(echo $$TASK_ARN | rev | cut -d'/' -f1 | rev); \
+	aws logs get-log-events \
+		--region $(AWS_REGION) \
+		--log-group-name $$LOG_GROUP \
+		--log-stream-name Container/Container/$$TASK_ID \
+		--query 'events[*].message' --output text
+
+aws-db-migrations:  ## 🔄 Check Aurora migration status (via ECS task)
+	@echo "🔄 Checking migration status..."
+	@TASK_DEF=$$(aws ecs describe-services \
+		--cluster ticketing-cluster \
+		--services ticketing-development-api-service \
+		--region $(AWS_REGION) \
+		--query 'services[0].taskDefinition' --output text); \
+	SUBNET=$$(aws ec2 describe-subnets \
+		--region $(AWS_REGION) \
+		--filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" \
+		--query 'Subnets[0].SubnetId' --output text); \
+	SG=$$(aws ec2 describe-security-groups \
+		--region $(AWS_REGION) \
+		--filters "Name=group-name,Values=*AuroraSecurityGroup*" \
+		--query 'SecurityGroups[0].GroupId' --output text); \
+	echo "Using task: $$TASK_DEF, Subnet: $$SUBNET, SG: $$SG"; \
+	TASK_ARN=$$(aws ecs run-task \
+		--region $(AWS_REGION) \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$$SUBNET],securityGroups=[$$SG]}" \
+		--overrides '{"containerOverrides":[{"name":"Container","command":["python","deployment/script/aurora_inspect.py","migrations"]}]}' \
+		--query 'tasks[0].taskArn' --output text); \
+	echo "Task started: $$TASK_ARN"; \
+	echo "Waiting for task to complete (this may take 1-2 minutes)..."; \
+	aws ecs wait tasks-stopped --cluster ticketing-cluster --region $(AWS_REGION) --tasks $$TASK_ARN; \
+	echo "Fetching logs..."; \
+	LOG_GROUP=$$(aws ecs describe-task-definition \
+		--region $(AWS_REGION) \
+		--task-definition $$TASK_DEF \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	TASK_ID=$$(echo $$TASK_ARN | rev | cut -d'/' -f1 | rev); \
+	aws logs get-log-events \
+		--region $(AWS_REGION) \
+		--log-group-name $$LOG_GROUP \
+		--log-stream-name Container/Container/$$TASK_ID \
+		--query 'events[*].message' --output text
+
+aws-db-query:  ## 🔍 Query Aurora table data (usage: make aws-db-query TABLE=events LIMIT=10)
+	@if [ -z "$(TABLE)" ]; then \
+		echo "❌ Usage: make aws-db-query TABLE=<table_name> [LIMIT=<number>]"; \
+		echo "Example: make aws-db-query TABLE=events LIMIT=10"; \
+		exit 1; \
+	fi
+	@LIMIT=$${LIMIT:-10}; \
+	echo "🔍 Querying table: $(TABLE) (limit: $$LIMIT)"; \
+	TASK_DEF=$$(aws ecs describe-services \
+		--cluster ticketing-cluster \
+		--services ticketing-development-api-service \
+		--region $(AWS_REGION) \
+		--query 'services[0].taskDefinition' --output text); \
+	SUBNET=$$(aws ec2 describe-subnets \
+		--region $(AWS_REGION) \
+		--filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" \
+		--query 'Subnets[0].SubnetId' --output text); \
+	SG=$$(aws ec2 describe-security-groups \
+		--region $(AWS_REGION) \
+		--filters "Name=group-name,Values=*AuroraSecurityGroup*" \
+		--query 'SecurityGroups[0].GroupId' --output text); \
+	TASK_ARN=$$(aws ecs run-task \
+		--region $(AWS_REGION) \
+		--cluster ticketing-cluster \
+		--task-definition $$TASK_DEF \
+		--launch-type FARGATE \
+		--network-configuration "awsvpcConfiguration={subnets=[$$SUBNET],securityGroups=[$$SG]}" \
+		--overrides "{\"containerOverrides\":[{\"name\":\"Container\",\"command\":[\"python\",\"deployment/script/aurora_inspect.py\",\"query\",\"$(TABLE)\",\"--limit\",\"$$LIMIT\"]}]}" \
+		--query 'tasks[0].taskArn' --output text); \
+	echo "Task started: $$TASK_ARN"; \
+	echo "Waiting for task to complete (this may take 1-2 minutes)..."; \
+	aws ecs wait tasks-stopped --cluster ticketing-cluster --region $(AWS_REGION) --tasks $$TASK_ARN; \
+	echo "Fetching logs..."; \
+	LOG_GROUP=$$(aws ecs describe-task-definition \
+		--region $(AWS_REGION) \
+		--task-definition $$TASK_DEF \
+		--query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text); \
+	TASK_ID=$$(echo $$TASK_ARN | rev | cut -d'/' -f1 | rev); \
+	aws logs get-log-events \
+		--region $(AWS_REGION) \
+		--log-group-name $$LOG_GROUP \
+		--log-stream-name Container/Container/$$TASK_ID \
+		--query 'events[*].message' --output text
+
+aws-help:  ## ❓ Show AWS management commands help
+	@echo "☁️  AWS ECS Service Management (Using AWS CLI)"
+	@echo ""
+	@echo "🚀 Quick Reset (like 'make dra' for local):"
+	@echo "  make aws-reset              # Complete reset: restart + migrate + reset-kafka + seed"
+	@echo ""
+	@echo "⚡ Service Control:"
+	@echo "  make aws-stop               # Stop ALL services (ECS + EC2 Kafka, keep Aurora only)"
+	@echo "  make aws-start              # Start ALL services (ECS + EC2 Kafka)"
+	@echo "  make aws-status             # Check all services status"
+	@echo ""
+	@echo "🔍 View Logs:"
+	@echo "  make aws-logs               # Tail API service logs"
+	@echo "  make aws-logs-ticketing     # Tail ticketing consumer logs"
+	@echo "  make aws-logs-reservation   # Tail reservation consumer logs"
+	@echo ""
+	@echo "🗄️  Database Inspection:"
+	@echo "  make aws-db-list            # List all tables with row counts"
+	@echo "  make aws-db-migrations      # Check migration status"
+	@echo "  make aws-db-schema TABLE=events         # Show table schema"
+	@echo "  make aws-db-query TABLE=events LIMIT=10 # Query table data"
+	@echo ""
+	@echo "🔄 Individual Operations:"
+	@echo "  make aws-migrate            # Run database migrations"
+	@echo "  make aws-reset-kafka        # Reset Kafka topics"
+	@echo "  make aws-seed               # Seed initial data"
+
+# ==============================================================================
 # 🌊 KAFKA
 # ==============================================================================
 
@@ -419,6 +830,9 @@ help:
 	@echo ""
 	@echo "🌩️  AWS CDK DEPLOYMENT"
 	@echo "  cdk-synth, cdk-diff, cdk-deploy-dev, cdk-deploy-loadtest, cdk-destroy, cdk-ls"
+	@echo ""
+	@echo "☁️  AWS ECS SERVICE MANAGEMENT"
+	@echo "  aws-restart, aws-status, aws-help"
 	@echo ""
 	@echo "📊 AWS ECS MONITORING"
 	@echo "  monitor-ecs, monitor-all"

@@ -3,7 +3,7 @@ Aurora Serverless v2 Stack for Ticketing System (I/O-Optimized)
 Provides PostgreSQL with single master (1 writer only) for cost optimization
 
 Architecture:
-- Aurora Serverless v2 cluster (auto-scaling 2-64 ACU for 10000 TPS)
+- Aurora Serverless v2 cluster (auto-scaling 0.5-64 ACU for 10000 TPS)
 - I/O-Optimized storage (no per-I/O charges, better cost for high-throughput)
 - 1 Writer instance only (single master configuration)
 - No reader replicas (cost optimization for temporary testing)
@@ -13,37 +13,24 @@ Architecture:
 
 from aws_cdk import (
     CfnOutput,
+    CustomResource,
     Duration,
     RemovalPolicy,
     Stack,
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_elasticloadbalancingv2 as elbv2,
+    aws_lambda as lambda_,
+    aws_logs as logs,
     aws_rds as rds,
+    aws_secretsmanager as secretsmanager,
     aws_servicediscovery as servicediscovery,
+    custom_resources as cr,
 )
 from constructs import Construct
 
 
 class AuroraStack(Stack):
-    """
-    Aurora Serverless v2 PostgreSQL cluster with read-write splitting
-
-    Configuration:
-    - Engine: PostgreSQL 16 (compatible with existing codebase)
-    - Scaling: 2-64 ACU (optimized for 10000 TPS workload)
-    - Instances: 1 writer only (single master configuration)
-    - Backup: 7-day retention with point-in-time recovery
-    - Security: VPC isolated, encrypted at rest and in transit
-
-    Performance (10000 TPS target):
-    - 2 ACU minimum: ~500 TPS (idle state, saves cost)
-    - 64 ACU maximum: ~15000+ TPS (peak capacity)
-    - Auto-scales based on CPU/connections
-
-    See also: DATABASE_SPEC.md for connection pooling and query optimization
-    """
-
     def __init__(
         self,
         scope: Construct,
@@ -61,7 +48,7 @@ class AuroraStack(Stack):
             scope: CDK app scope
             construct_id: Stack identifier
             vpc: Optional VPC to deploy Aurora cluster. If not provided, creates a new VPC.
-            min_capacity: Minimum Aurora Capacity Units (default: 2 ACU)
+            min_capacity: Minimum Aurora Capacity Units (default: 0.5 ACU)
             max_capacity: Maximum Aurora Capacity Units (default: 64 ACU)
             **kwargs: Additional stack properties
         """
@@ -101,6 +88,89 @@ class AuroraStack(Stack):
             secret_name='ticketing/aurora/credentials',
         )
 
+        # Create empty secret first (will be populated by Custom Resource)
+        self.app_secrets = secretsmanager.Secret(
+            self,
+            'AppSecrets',
+            description='JWT secrets for all Ticketing System services (auto-generated once)',
+            secret_name='ticketing/app/secrets',
+        )
+
+        # Lambda function to generate secrets on first deployment only
+        secrets_generator_fn = lambda_.Function(
+            self,
+            'SecretsGenerator',
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            handler='index.handler',
+            code=lambda_.Code.from_inline(
+                """
+import json
+import secrets as py_secrets
+import boto3
+import cfnresponse
+
+secretsmanager = boto3.client('secretsmanager')
+
+def handler(event, context):
+    try:
+        request_type = event['RequestType']
+        secret_arn = event['ResourceProperties']['SecretArn']
+
+        if request_type == 'Create':
+            # Generate secrets only on CREATE
+            secret_data = {
+                'SECRET_KEY': py_secrets.token_urlsafe(32),
+                'RESET_PASSWORD_TOKEN_SECRET': py_secrets.token_urlsafe(32),
+                'VERIFICATION_TOKEN_SECRET': py_secrets.token_urlsafe(32),
+                'ALGORITHM': 'HS256'
+            }
+
+            # Update the secret value
+            secretsmanager.put_secret_value(
+                SecretId=secret_arn,
+                SecretString=json.dumps(secret_data)
+            )
+
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                'Message': 'Secrets generated successfully'
+            })
+
+        elif request_type in ['Update', 'Delete']:
+            # Do NOT change secrets on UPDATE or DELETE
+            # This ensures secrets remain stable across deployments
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                'Message': f'{request_type} - Secrets unchanged'
+            })
+
+    except Exception as e:
+        print(f'Error: {str(e)}')
+        cfnresponse.send(event, context, cfnresponse.FAILED, {
+            'Message': str(e)
+        })
+"""
+            ),
+            timeout=Duration.seconds(30),
+            log_retention=logs.RetentionDays.ONE_WEEK,
+        )
+
+        # Grant Lambda permission to update the secret
+        self.app_secrets.grant_write(secrets_generator_fn)
+
+        # Custom Resource to invoke Lambda on first deployment
+        CustomResource(
+            self,
+            'SecretsGeneratorResource',
+            service_token=cr.Provider(
+                self,
+                'SecretsGeneratorProvider',
+                on_event_handler=secrets_generator_fn,
+                log_retention=logs.RetentionDays.ONE_WEEK,
+            ).service_token,
+            properties={
+                'SecretArn': self.app_secrets.secret_arn,
+            },
+        )
+
         # ============= Aurora Serverless v2 Cluster =============
         # Configured with dynamic scaling from config.yml
         # ACU range from config: {min_capacity}-{max_capacity}
@@ -109,7 +179,7 @@ class AuroraStack(Stack):
             self,
             'AuroraCluster',
             engine=rds.DatabaseClusterEngine.aurora_postgres(
-                version=rds.AuroraPostgresEngineVersion.VER_16_6  # PostgreSQL 16.6
+                version=rds.AuroraPostgresEngineVersion.VER_17_5
             ),
             # Serverless v2 scaling configuration from config.yml
             serverless_v2_min_capacity=min_capacity,
@@ -209,7 +279,7 @@ class AuroraStack(Stack):
             'ECSCluster',
             cluster_name='ticketing-cluster',
             vpc=vpc,
-            container_insights=True,
+            container_insights_v2=ecs.ContainerInsights.ENHANCED,
         )
 
         CfnOutput(

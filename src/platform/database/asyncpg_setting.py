@@ -1,23 +1,7 @@
-"""
-asyncpg connection pool management
-
-This module provides high-performance bulk operations using asyncpg's native
-COPY protocol, which is significantly faster than SQLAlchemy for bulk inserts.
-
-Multi-Event-Loop Support:
-- Maintains separate connection pools per event loop
-- Supports concurrent services (FastAPI + MQ Consumer)
-- Prevents "connection was closed" errors from event loop mismatch
-
-Usage:
-    pool = await get_asyncpg_pool()
-    async with pool.acquire() as conn:
-        await conn.copy_records_to_table('table_name', records=data)
-"""
-
 import asyncio
 
 import asyncpg
+from uuid_utils import UUID
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
@@ -28,23 +12,6 @@ asyncpg_pools: dict[int, asyncpg.Pool] = {}
 
 
 async def get_asyncpg_pool() -> asyncpg.Pool:
-    """
-    Get or create asyncpg connection pool for the current event loop
-
-    Connection lifecycle management:
-    - max_inactive_connection_lifetime: Recycle idle connections after 5 min
-    - max_queries: Recycle connections after 50k queries to prevent memory leaks
-    - timeout: Fail fast if pool is exhausted (10s)
-
-    Each event loop gets its own pool to prevent connection errors when
-    multiple services (FastAPI + MQ Consumer) run concurrently.
-
-    Note: Pool is created eagerly at application startup to avoid race conditions.
-    This function should only be called during startup or if pool already exists.
-
-    Returns:
-        asyncpg.Pool: Connection pool for high-performance operations
-    """
     current_loop = asyncio.get_running_loop()
     loop_id = id(current_loop)
 
@@ -62,13 +29,6 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
     # Slow path: create new pool (should only happen at startup)
     # Convert SQLAlchemy URL to asyncpg format
     dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
-
-    # UUID Codec Configuration:
-    # PostgreSQL stores UUIDs in 16-byte binary format internally.
-    # By default, asyncpg converts PostgreSQL UUIDs to Python's standard uuid.UUID.
-    # We register a custom binary codec to use uuid_utils.UUID throughout our application
-    # for consistency and to leverage its additional features (e.g., v7 support).
-    from uuid_utils import UUID
 
     async def init_connection(conn):
         """Initialize each connection with UUID codec"""
@@ -108,29 +68,22 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
 
 async def warmup_asyncpg_pool() -> int:
     """
-    Warmup asyncpg pool by pre-creating connections up to MAX_SIZE
-
-    This eliminates "connect" spans during request handling by forcing
-    the pool to expand to its full capacity at startup time.
-
     Strategy:
-    1. Acquire all MAX_SIZE connections from pool (blocking)
+    1. Acquire MIN_SIZE connections from pool (blocking)
     2. Release them all back to pool
     3. All connections now in warm pool ready for immediate use
 
-    Returns:
-        Number of connections warmed up
     """
     pool = await get_asyncpg_pool()
     connections = []
 
     try:
         Logger.base.info(
-            f'🔥 [Pool Warmup] Starting warmup (target={settings.ASYNCPG_POOL_MAX_SIZE})...'
+            f'🔥 [Pool Warmup] Starting warmup (target={settings.ASYNCPG_POOL_MIN_SIZE})...'
         )
 
-        # Acquire connections up to MAX_SIZE
-        for i in range(settings.ASYNCPG_POOL_MAX_SIZE):
+        # Acquire connections up to MIN_SIZE only (avoid overwhelming Aurora)
+        for i in range(settings.ASYNCPG_POOL_MIN_SIZE):
             try:
                 conn = await pool.acquire(timeout=5.0)
                 connections.append(conn)

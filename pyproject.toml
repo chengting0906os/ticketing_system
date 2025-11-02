@@ -74,6 +74,7 @@ dev = [
 
     # Additional development tools
     "uvicorn>=0.37.0",
+    "boto3>=1.28.0",
 ]
 
 [tool.ruff]

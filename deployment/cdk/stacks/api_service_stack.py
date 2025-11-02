@@ -1,18 +1,18 @@
 """
-Ticketing Service Stack
-Deploys ticketing-service on ECS Fargate with auto-scaling
+API Service Stack (Unified Ticketing + Seat Reservation)
+Deploys a single API service handling all HTTP endpoints on ECS Fargate
 
 Architecture:
 - ECS Fargate task (8 vCPU + 16GB RAM + 16 workers)
-- Auto-scaling 4-16 tasks based on CPU/memory
-- ALB integration for HTTP traffic
+- Auto-scaling 1-4 tasks based on CPU/memory
+- ALB integration for HTTP traffic (all /api/* routes)
 - Service discovery via AWS Cloud Map
+- Combines ticketing and seat reservation endpoints
 """
 
 from aws_cdk import (
     CfnOutput,
     Duration,
-    SecretValue,
     Stack,
     aws_ec2 as ec2,
     aws_ecr as ecr,
@@ -26,13 +26,14 @@ from aws_cdk import (
 from constructs import Construct
 
 
-class TicketingServiceStack(Stack):
+class APIServiceStack(Stack):
     """
-    Ticketing Service on ECS Fargate
+    Unified API Service on ECS Fargate
 
     Configuration:
-    - 8 vCPU + 16GB RAM per task
-    - 4-16 tasks with auto-scaling
+    - 8 vCPU + 16GB RAM per task (high performance for API serving)
+    - 1-4 tasks with auto-scaling
+    - Handles all API endpoints: /api/user/*, /api/event/*, /api/booking/*, /api/reservation/*
     - Integrated with Aurora, Kvrocks, MSK
     """
 
@@ -46,12 +47,15 @@ class TicketingServiceStack(Stack):
         alb_listener: elbv2.IApplicationListener,
         aurora_cluster_endpoint: str,
         aurora_cluster_secret: secretsmanager.ISecret,
+        app_secrets: secretsmanager.ISecret,
         namespace: servicediscovery.IPrivateDnsNamespace,
+        kafka_bootstrap_servers: str,
+        kvrocks_endpoint: str,
         config: dict,
         **kwargs,
     ) -> None:
         """
-        Initialize Ticketing Service Stack
+        Initialize API Service Stack
 
         Args:
             vpc: VPC for ECS tasks
@@ -59,33 +63,22 @@ class TicketingServiceStack(Stack):
             alb_listener: Shared ALB listener
             aurora_cluster_endpoint: Aurora endpoint
             aurora_cluster_secret: Aurora credentials
+            app_secrets: Shared JWT secrets from Aurora Stack
             namespace: Service Discovery namespace
+            kvrocks_endpoint: Kvrocks endpoint (host:port)
             config: Environment configuration from config.yml
         """
         super().__init__(scope, construct_id, **kwargs)
 
-        # ============= Secrets Manager =============
-        app_secrets = secretsmanager.Secret(
-            self,
-            'AppSecrets',
-            description='JWT secrets for Ticketing Service',
-            secret_object_value={
-                'SECRET_KEY': SecretValue.unsafe_plain_text(
-                    'of8uBXD-S4KJKvu7-C4KVUSxQICl8fg5eMDXVtvBFPw'
-                ),
-                'RESET_PASSWORD_TOKEN_SECRET': SecretValue.unsafe_plain_text(
-                    'FLcN0V9DQazw3YJI0yQOa84AkwPRQQlWt_3xYo0Rvv8'
-                ),
-                'VERIFICATION_TOKEN_SECRET': SecretValue.unsafe_plain_text(
-                    'NowtYFO5QY5w1dYfVl4whZpCXB12MTBaq9L9OHu08XU'
-                ),
-                'ALGORITHM': SecretValue.unsafe_plain_text('HS256'),
-            },
-        )
+        # Note: app_secrets is now passed from Aurora Stack (shared by all services)
+
+        # Parse Kvrocks endpoint (format: "host:port")
+        kvrocks_host, kvrocks_port = kvrocks_endpoint.split(':')
 
         # ============= ECR Repository =============
-        ticketing_repo = ecr.Repository.from_repository_name(
-            self, 'TicketingRepo', repository_name='ticketing-service'
+        # Both services use the same image (they're the same codebase)
+        api_repo = ecr.Repository.from_repository_name(
+            self, 'APIRepo', repository_name='ticketing-service'
         )
 
         # ============= IAM Roles =============
@@ -122,37 +115,37 @@ class TicketingServiceStack(Stack):
         task_def = ecs.FargateTaskDefinition(
             self,
             'TaskDef',
-            memory_limit_mib=config['ecs']['ticketing']['task_memory'],
-            cpu=config['ecs']['ticketing']['task_cpu'],
+            memory_limit_mib=config['ecs']['api']['task_memory'],
+            cpu=config['ecs']['api']['task_cpu'],
             execution_role=execution_role,
             task_role=task_role,
         )
 
-        # Main container
+        # Main API container (serves both ticketing and seat-reservation endpoints)
         container = task_def.add_container(
             'Container',
-            image=ecs.ContainerImage.from_ecr_repository(ticketing_repo, tag='latest'),
+            image=ecs.ContainerImage.from_ecr_repository(api_repo, tag='latest'),
             command=[
                 'sh',
                 '-c',
-                'uv run granian src.service.ticketing.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
+                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
             ],
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='ticketing', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='api-service', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
-                'SERVICE_NAME': 'ticketing-service',
+                'SERVICE_NAME': 'api-service',
                 'LOG_LEVEL': config['log_level'],
-                'WORKERS': str(config['ecs']['ticketing']['workers']),
+                'WORKERS': str(config['ecs']['api']['workers']),
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
                 'POSTGRES_SERVER': aurora_cluster_endpoint,
                 'POSTGRES_DB': 'ticketing_system_db',
                 'POSTGRES_PORT': '5432',
-                'KVROCKS_HOST': 'kvrocks-master.ticketing.local',
-                'KVROCKS_PORT': '6666',
+                'KVROCKS_HOST': kvrocks_host,
+                'KVROCKS_PORT': kvrocks_port,
                 'ENABLE_KAFKA': 'false',
-                'KAFKA_BOOTSTRAP_SERVERS': 'localhost:9092',
+                'KAFKA_BOOTSTRAP_SERVERS': kafka_bootstrap_servers,
                 'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
                 'REFRESH_TOKEN_EXPIRE_DAYS': '7',
             },
@@ -180,7 +173,7 @@ class TicketingServiceStack(Stack):
         )
         container.add_port_mappings(ecs.PortMapping(container_port=8100))
 
-        # ADOT sidecar
+        # ADOT sidecar for OpenTelemetry
         adot = task_def.add_container(
             'ADOT',
             image=ecs.ContainerImage.from_registry(
@@ -217,17 +210,23 @@ service:
         adot.add_port_mappings(ecs.PortMapping(container_port=4317))
 
         # ============= Service =============
+        # Get environment from config (production or development)
+        env_name = config.get('environment', 'production')
+        service_name = f'ticketing-{env_name}-api-service'
+
         service = ecs.FargateService(
             self,
             'Service',
+            service_name=service_name,
             cluster=ecs_cluster,
             task_definition=task_def,
             desired_count=config['ecs']['min_tasks'],
             min_healthy_percent=0 if config['ecs']['min_tasks'] == 1 else 50,
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
+            enable_execute_command=True,  # Enable ECS Exec for debugging
             cloud_map_options=ecs.CloudMapOptions(
-                name='ticketing-service',
+                name='api-service',
                 cloud_map_namespace=namespace,
                 dns_record_type=servicediscovery.DnsRecordType.A,
             ),
@@ -244,9 +243,9 @@ service:
             'MemoryScaling', target_utilization_percent=config['ecs']['memory_threshold']
         )
 
-        # ALB Target Group
+        # ALB Target Group - Handle all /api/* routes
         alb_listener.add_targets(
-            'TicketingTargets',
+            'APITargets',
             port=8100,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[service],
@@ -259,9 +258,7 @@ service:
             deregistration_delay=Duration.seconds(30),
             priority=10,
             conditions=[
-                elbv2.ListenerCondition.path_patterns(
-                    ['/api/user/*', '/api/event/*', '/api/booking/*']
-                )
+                elbv2.ListenerCondition.path_patterns(['/api/*'])  # All API routes
             ],
         )
 
@@ -270,7 +267,7 @@ service:
             self,
             'ServiceName',
             value=service.service_name,
-            description='Ticketing service name',
+            description='API service name',
         )
 
         self.service = service

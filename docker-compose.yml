@@ -283,10 +283,6 @@ services:
         condition: service_started
       kvrocks:
         condition: service_healthy
-      ticketing-consumer:
-        condition: service_started
-      seat-reservation-consumer:
-        condition: service_started
     networks:
       - ticketing-network
     healthcheck:

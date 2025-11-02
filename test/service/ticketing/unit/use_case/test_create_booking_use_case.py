@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from uuid_utils import UUID
 
+from src.platform.config.di import container
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 
@@ -166,8 +167,9 @@ class TestCreateBookingUseCase:
         mock_task_group,
         valid_booking_params,
     ):
-        """Test booking creation publishes event via task group"""
-        # Arrange
+        # Override container's task_group with test's mock to ensure property returns our mock
+        container.task_group.override(mock_task_group)
+
         mock_seat_availability_handler.check_subsection_availability.return_value = True
 
         # Act

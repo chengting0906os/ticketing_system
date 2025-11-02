@@ -29,27 +29,15 @@ from constructs import Construct
 
 
 class LoadTestStack(Stack):
-    """
-    Fargate Spot task for running high-concurrency load tests
-
-    Configuration:
-    - 32GB RAM (required for 50000 concurrent requests)
-    - 16 vCPU (Go runtime needs CPU for goroutines)
-    - Fargate Spot: 70% cheaper than regular Fargate
-    - Results auto-uploaded to S3
-
-    Cost:
-    - ~$0.50 per hour (Spot pricing)
-    - Only pay when running tests
-    """
-
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
         *,
         vpc: ec2.IVpc,
-        alb_dns: str,  # ALB endpoint to test against
+        ecs_cluster: ecs.ICluster,  # Use shared cluster
+        alb_dns: str,  # ALB endpoint to test against (internal DNS)
+        config: dict,  # Configuration from config.yml
         **kwargs,
     ) -> None:
         """
@@ -59,10 +47,17 @@ class LoadTestStack(Stack):
             scope: CDK app scope
             construct_id: Stack identifier
             vpc: VPC (must be same as ECS services for internal testing)
-            alb_dns: ALB DNS name to send requests to
+            ecs_cluster: Shared ECS cluster from Aurora Stack
+            alb_dns: ALB internal DNS name (saves data transfer cost)
+            config: Configuration dict from config.yml
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        # Extract loadtest configuration
+        loadtest_config = config.get('loadtest', {})
+        task_cpu = loadtest_config.get('task_cpu', 2048)  # Default: 2 vCPU
+        task_memory = loadtest_config.get('task_memory', 4096)  # Default: 4GB
 
         # ============= S3 Bucket for Test Results =============
         results_bucket = s3.Bucket(
@@ -74,14 +69,8 @@ class LoadTestStack(Stack):
             versioned=True,  # Keep history of test runs
         )
 
-        # ============= ECS Cluster =============
-        cluster = ecs.Cluster(
-            self,
-            'LoadTestCluster',
-            cluster_name='loadtest-cluster',
-            vpc=vpc,
-            container_insights=False,  # Save cost, not needed for temporary tasks
-        )
+        # Use shared cluster (no need to create new one)
+        cluster = ecs_cluster
 
         # ============= ECR Repository =============
         loadtest_repo = ecr.Repository(
@@ -114,13 +103,13 @@ class LoadTestStack(Stack):
             ],
         )
 
-        # ============= Task Definition (32GB RAM, 16 vCPU) =============
+        # ============= Task Definition (from config.yml) =============
         task_definition = ecs.FargateTaskDefinition(
             self,
             'LoadTestTask',
             family='loadtest-runner',
-            cpu=16384,  # 16 vCPU (max for Fargate)
-            memory_limit_mib=32768,  # 32GB RAM (required for 50k concurrent requests)
+            cpu=task_cpu,  # From config.yml (dev: 1 vCPU, prod: 2 vCPU)
+            memory_limit_mib=task_memory,  # From config.yml (dev: 2GB, prod: 4GB)
             task_role=task_role,
             execution_role=execution_role,
         )

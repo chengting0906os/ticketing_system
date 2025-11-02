@@ -59,6 +59,7 @@ class KvrocksStack(Stack):
         vpc: ec2.IVpc,
         cluster: ecs.ICluster,
         namespace: servicediscovery.IPrivateDnsNamespace,
+        config: dict,
         **kwargs,
     ) -> None:
         """
@@ -70,9 +71,14 @@ class KvrocksStack(Stack):
             vpc: VPC for Kvrocks deployment
             cluster: ECS cluster to deploy Kvrocks tasks
             namespace: Service Discovery namespace for DNS registration
+            config: Environment configuration from config.yml
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        # Extract Kvrocks configuration (with defaults for backward compatibility)
+        kvrocks_cpu = config.get('kvrocks', {}).get('task_cpu', 1024)
+        kvrocks_memory = config.get('kvrocks', {}).get('task_memory', 2048)
 
         # ============= Security Group =============
         self.kvrocks_security_group = ec2.SecurityGroup(
@@ -89,9 +95,6 @@ class KvrocksStack(Stack):
             connection=ec2.Port.tcp(6666),
             description='Kvrocks Redis protocol port',
         )
-
-        # Note: Sentinel port (26666) removed - single master configuration
-        # No inter-instance communication needed
 
         # ============= EFS Security Group =============
         # Security group for EFS mount targets
@@ -191,8 +194,8 @@ class KvrocksStack(Stack):
         kvrocks_master_task = ecs.FargateTaskDefinition(
             self,
             'KvrocksMasterTask',
-            memory_limit_mib=8192,  # 8GB RAM (sufficient for high-throughput caching)
-            cpu=4096,  # 4 vCPU (handles 10000+ TPS easily)
+            memory_limit_mib=kvrocks_memory,  # From config.yml
+            cpu=kvrocks_cpu,  # From config.yml
             task_role=task_role,
             execution_role=execution_role,
             volumes=[
