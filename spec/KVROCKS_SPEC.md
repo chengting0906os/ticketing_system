@@ -1,262 +1,141 @@
 # Kvrocks Data Storage Specification
 
-> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py) | [docker-compose.yml](../docker-compose.yml)
+> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [atomic_reservation_executor.py](../src/service/seat_reservation/driven_adapter/seat_reservation_helper/atomic_reservation_executor.py) | [docker-compose.yml](../docker-compose.yml)
 
-## Infrastructure Setup
+## Quick Reference
 
-See [docker-compose.yml](../docker-compose.yml) for deployment config
-
-**Connection Settings**: See [kvrocks_client.py](../src/platform/state/kvrocks_client.py)
-
-- **Async Client**: `KvrocksClient` - For HTTP controllers (explicit `ConnectionPool`)
-- **Sync Client**: `KvrocksClientSync` - For Kafka consumers (internal `ConnectionPool`)
-
-**Connection Pool Configuration**: See [.env.example](../.env.example) and [core_setting.py](../src/platform/config/core_setting.py)
-
-- `KVROCKS_POOL_MAX_CONNECTIONS=50` - Maximum connections in pool
-- `KVROCKS_POOL_SOCKET_TIMEOUT=5` - Socket read/write timeout (seconds)
-- `KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT=5` - Connection timeout (seconds)
-- `KVROCKS_POOL_SOCKET_KEEPALIVE=true` - Enable TCP keepalive
-- `KVROCKS_POOL_HEALTH_CHECK_INTERVAL=30` - Health check interval (seconds)
+**Clients**: `kvrocks_client` (async), `kvrocks_client_sync` (sync)
+**Config**: [.env.example](../.env.example), [core_setting.py](../src/platform/config/core_setting.py)
+**Test Isolation**: Use `KVROCKS_KEY_PREFIX` env var
 
 ## Data Structures
 
-### 1. Bitfield - Seat Status
+| Key Pattern | Type | Purpose | Fields/Encoding |
+|------------|------|---------|-----------------|
+| `seats_bf:{event_id}:{section}-{subsection}` | Bitfield | Seat status (2 bits/seat) | `00`=AVAILABLE, `01`=RESERVED, `10`=SOLD |
+| `section_config:{event_id}:{section}-{subsection}` | Hash | Section layout | `rows`, `seats_per_row` |
+| `section_stats:{event_id}:{section}-{subsection}` | Hash | Section statistics | `available`, `reserved`, `sold`, `total` |
+| `seat_meta:{event_id}:{section}-{subsection}:{row}` | Hash | Seat metadata (per row) | `{seat_num}` → JSON with `price`, `booking_id` |
+| `event_sections:{event_id}` | Sorted Set | Section index | Section IDs (score=0) |
+| `booking:{booking_id}` | Hash | Booking metadata (TTL=1h) | `status`, `reserved_seats`, `total_price` |
+| `event_stats:{event_id}` | Hash | Event-level statistics | `available`, `reserved`, `sold`, `total` |
 
-See [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py):
+## Redis Commands Reference
 
-**Key Pattern**: `seats_bf:{event_id}:{section}-{subsection}`
+<https://kvrocks.apache.org/docs/supported-commands>
 
-**Encoding** (2 bits per seat):
+| Command | Category | Purpose | Example |
+|---------|----------|---------|---------|
+| `SETBIT key offset value` | Bitfield | Set single bit | `await client.setbit(bf_key, offset, 1)` |
+| `GETBIT key offset` | Bitfield | Read single bit | `bit = await client.getbit(bf_key, offset)` |
+| `GETRANGE key start end` | Bitfield | Batch read bitfield | `bytes = await client.getrange(bf_key, 0, 999)` |
+| `HSET key field value` | Hash | Set single field | `client.hset(key, 'price', '1000')` |
+| `HSET key mapping={...}` | Hash | Set multiple fields | `await client.hset(key, mapping={'a': '1'})` |
+| `HGET key field` | Hash | Get single field | `price = await client.hget(meta_key, '1')` |
+| `HGETALL key` | Hash | Get all fields | `config = await client.hgetall(config_key)` |
+| `HINCRBY key field increment` | Hash | Atomic counter | `pipe.hincrby(stats_key, 'available', -1)` |
+| `ZADD key score member` | Sorted Set | Add to index | `await client.zadd(index_key, {id: 0})` |
+| `ZRANGE key start stop` | Sorted Set | Get all members | `ids = await client.zrange(key, 0, -1)` |
+| `DELETE key` | Key Mgmt | Delete key | `await client.delete(booking_key)` |
+| `EXPIRE key seconds` | Key Mgmt | Set TTL | `pipe.expire(booking_key, 3600)` |
+| `KEYS pattern` | Key Mgmt | Find keys | `keys = await client.keys('event_sections:*')` |
+| `pipeline()` | Transaction | Batch commands | `pipe = client.pipeline()` |
+| `pipeline(transaction=True)` | Transaction | MULTI/EXEC | `pipe = client.pipeline(transaction=True)` |
+| `execute()` | Transaction | Execute pipeline | `results = await pipe.execute()` |
 
-- `0b00` (0) = `SEAT_STATUS_AVAILABLE`
-- `0b01` (1) = `SEAT_STATUS_RESERVED`
-- `0b10` (2) = `SEAT_STATUS_SOLD`
+## Transaction & Isolation
 
-**Storage Efficiency**:
+### MULTI/EXEC Guarantees
 
-- 100 seats = 25 bytes
-- 500 seats = 125 bytes
-- 10,000 seats = 2.5 KB
+| Feature | MULTI/EXEC | MULTI/EXEC + Kvrocks WAL |
+|---------|------------|--------------------------|
+| **Isolation** | ✅ Commands don't interleave | ✅ Same |
+| **Rollback** | ❌ No automatic rollback | ❌ No automatic rollback |
+| **Durability** | ❌ Depends on persistence | ✅ WAL ensures crash recovery |
 
-**Seat Index Calculation**: See [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py) `_calculate_seat_index()`
+### Why This Works
 
-**Read Operations**: See [kvrocks_client.py](../src/platform/state/kvrocks_client.py)
+**Three-Layer Guarantee**:
 
-- Single seat: `BITFIELD GET u2 #{offset}`
-- Batch read: `GETRANGE` - Reads raw bytes, decode to 2-bit values
+1. **Application**: Kafka partitioning → same `booking_id` → same partition → no concurrent updates
+2. **Redis**: MULTI/EXEC → isolated execution without interleaving
+3. **Storage**: RocksDB WAL → crash recovery and durability
 
-### 2. Section Configuration
+**Result**: No need for WATCH/retry loops. Kafka consumer retries on crash.
 
-See [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py):
-
-**Key Pattern**: `section_config:{event_id}:{section}-{subsection}`
-
-**Type**: Hash
-
-**Fields**: `rows`, `seats_per_row`
-
-**Operations**:
-
-- Get: `_get_section_config()` - With LRU cache
-- Save: `_save_section_config()` - `HSET`
-
-### 3. Section Statistics
-
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py):
-
-**Key Pattern**: `section_stats:{event_id}:{section}-{subsection}`
-
-**Type**: Hash
-
-**Fields**: `section_id`, `event_id`, `available`, `reserved`, `sold`, `total`, `updated_at`
-
-**Query**: `list_all_subsection_status()` - Uses pipeline for batch reads
-
-### 4. Seat Metadata
-
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py):
-
-**Key Pattern**: `seat_meta:{event_id}:{section}-{subsection}:{row}`
-
-**Type**: Hash (one hash per row)
-
-**Fields**: `{seat_num}` → JSON with `buyer_id`, `booking_id`, `price`, `reserved_at`
-
-**Design**: Row-based grouping (1 key per row, not per seat or per section)
-
-### 5. Event Section Index
-
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py):
-
-**Key Pattern**: `event_sections:{event_id}`
-
-**Type**: Sorted Set (score=0, used as set)
-
-**Purpose**: Fast lookup of all sections in an event
-
-**Usage**: Batch query all section stats for event listing UI
-
-## Atomic Operations
-
-All operations use Redis Pipeline for atomicity.
-
-### Reserve Seats (0b00 → 0b01)
-
-Example implementation pattern:
+### Atomic Reservation Pattern
 
 ```python
-pipe = client.pipeline()
-# 1. Update bitfield
-pipe.bitfield(key).set('u2', offset, SEAT_STATUS_RESERVED)
-# 2. Update stats
+pipe = client.pipeline(transaction=True)  # Enable MULTI/EXEC
+# Update bitfield
+pipe.setbit(bf_key, offset, 0)
+pipe.setbit(bf_key, offset + 1, 1)
+# Update stats
 pipe.hincrby(stats_key, 'available', -1)
 pipe.hincrby(stats_key, 'reserved', 1)
-# 3. Save metadata
-pipe.hset(meta_key, seat_num, json.dumps({...}))
-await pipe.execute()  # All or nothing
+# Fetch stats
+pipe.hgetall(stats_key)
+# Save metadata
+pipe.hset(booking_key, mapping={...})
+await pipe.execute()  # All commands commit atomically
 ```
 
-### Finalize to Sold (0b01 → 0b10)
+## Client Usage
 
-Similar pattern with `SEAT_STATUS_SOLD`
-
-### Release Seats (0b01 → 0b00)
-
-Similar pattern + `HDEL` metadata
-
-## Test Isolation Strategy
-
-See [seat_state_handler_impl.py](../src/service/seat_reservation/driven_adapter/seat_state_handler_impl.py):
-
-**Environment Variable**: `KVROCKS_KEY_PREFIX`
-
-```python
-_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
-
-def _make_key(key: str) -> str:
-    return f'{_KEY_PREFIX}{key}'
-```
-
-**Usage**:
-
-- Production: `seats_bf:1:A-1`
-- Test: `test_gw0_seats_bf:1:A-1`
-
-**Critical**: All Kvrocks operations must use `_make_key()` wrapper
-
-## Performance Characteristics
-
-| Operation | Latency | Method |
-|-----------|---------|--------|
-| Single seat read | < 0.1ms | `BITFIELD GET` |
-| 100 seats read | < 1ms | `GETRANGE` (25 bytes) |
-| 500 seats read | < 2ms | `GETRANGE` (125 bytes) |
-| Section stats | < 0.5ms | `HGETALL` |
-| Reserve 1 seat | < 2ms | Pipeline (3 commands) |
-| Reserve 4 seats | < 3ms | Pipeline (6 commands) |
-
-**Storage vs SQL**: 400x reduction (100 seats: 25 bytes vs ~10 KB)
-
-## Client Implementation
-
-### Async Client
-
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py) `KvrocksClient`:
+### Async (HTTP Controllers)
 
 ```python
 from src.platform.state.kvrocks_client import kvrocks_client
 
-client = await kvrocks_client.connect()  # Creates ConnectionPool on first call
-await client.bitfield(...).execute()
-await kvrocks_client.disconnect()  # Closes client and pool
+# In startup
+await kvrocks_client.initialize()
+
+# In handlers
+client = kvrocks_client.get_client()
+await client.setbit(...)
 ```
 
-**Connection Pool Details**:
-
-- Uses explicit `redis.asyncio.ConnectionPool` with configurable `max_connections`
-- Pool is created once and reused for all operations
-- Supports automatic health checks via `health_check_interval`
-- Handles event loop changes gracefully (important for testing)
-
-### Sync Client
-
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py) `KvrocksClientSync`:
+### Sync (Kafka Consumers)
 
 ```python
 from src.platform.state.kvrocks_client import kvrocks_client_sync
 
-client = kvrocks_client_sync.connect()  # Internal ConnectionPool created by redis.from_url
-client.bitfield(...).execute()
-kvrocks_client_sync.disconnect()  # Closes client
+# In startup
+client = kvrocks_client_sync.connect()
+
+# In consumer
+client.setbit(...)
 ```
 
-**Connection Pool Details**:
+## Performance Optimizations
 
-- `redis.from_url()` automatically creates internal `ConnectionPool`
-- Pool settings (max_connections, timeouts) passed directly to `from_url()`
-- Simpler than explicit pool management (YAGNI principle)
-- Ideal for Kafka consumers - no need for BlockingConnectionPool complexity
+1. **GETRANGE vs GETBIT**: 1 command instead of N (20×50 section: 2000 → 1 call)
+2. **HINCRBY**: Atomic counters without read-modify-write
+3. **Pipeline**: Batch commands to reduce network round-trips
+4. **Connection Pool**: 10-100x lower latency (reuse connections)
+5. **2-bit encoding**: 400x storage reduction vs individual keys
 
-### Stats Client (Legacy)
+## Test Isolation
 
-See [kvrocks_client.py](../src/platform/state/kvrocks_client.py):
+```python
+# Use environment variable for test isolation
+_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
 
-- `list_all_subsection_status()`
-- `list_subsection_seats_detail()`
+def _make_key(key: str) -> str:
+    return f'{_KEY_PREFIX}{key}'
 
-## Connection Pooling Benefits
+# Production: seats_bf:1:A-1
+# Test:       test_gw0_seats_bf:1:A-1
+```
 
-### Why Connection Pooling Matters
-
-**Without pooling**: Each operation creates a new TCP connection, causing:
-
-- High latency (TCP handshake: ~1-3ms per connection)
-- Resource exhaustion (file descriptors, memory)
-- Poor performance under load
-
-**With pooling**: Connections are reused, providing:
-
-- **10-100x lower latency**: No handshake overhead
-- **Better resource control**: Bounded connection count
-- **Automatic health checks**: Stale connections auto-recycled
-- **Simpler code**: Internal pools managed automatically by redis-py
-
-### Pool Configuration Guidelines
-
-| Scenario | max_connections | Rationale |
-|----------|----------------|-----------|
-| Single service | 10-20 | Sufficient for typical workloads |
-| High concurrency | 50-100 | Handle traffic spikes |
-| Kafka consumers | 20-50 | Balance throughput vs resources |
-
-**Health Check Interval**:
-
-- Default: 30 seconds
-- High traffic: 10-15 seconds (catch issues faster)
-- Low traffic: 60 seconds (reduce overhead)
-
-**Socket Timeouts**:
-
-- `socket_connect_timeout`: 5s (fail fast on network issues)
-- `socket_timeout`: 5s (detect hung connections)
-
-### Best Practices
-
-1. **Always use singleton clients**: `kvrocks_client` and `kvrocks_client_sync` are global singletons
-2. **Call `connect()` at startup**: Warm up the pool before handling requests
-3. **Call `disconnect()` at shutdown**: Clean up resources gracefully
-4. **Monitor pool exhaustion**: Watch for `ConnectionError` in logs
-5. **Tune max_connections**: Based on load testing and resource monitoring
+**Critical**: All Kvrocks operations must use `_make_key()` wrapper
 
 ## Key Design Decisions
 
-1. **Bitfield over individual keys**: 400x storage reduction, sub-millisecond reads
+1. **Bitfield over individual keys**: 400x storage reduction
 2. **2-bit encoding**: Supports 4 states with minimal space
-3. **Row-based metadata**: 1 key per row (not per seat, not per section)
+3. **Row-based metadata**: 1 key per row (balance between granularity and key count)
 4. **Sorted set for index**: Fast O(log N) section lookup
-5. **Pipeline for atomicity**: Multiple operations in single transaction
-6. **Test isolation via prefix**: Parallel test execution without conflicts
-7. **Kvrocks over Redis**: Persistent storage with zero data loss (RocksDB backend)
-8. **Sync + Async clients**: Supports both HTTP (async) and Kafka (sync) contexts
-9. **Connection pooling**: Explicit pool configuration for performance and resource control
+5. **MULTI/EXEC for writes**: Isolation without WATCH complexity
+6. **Kvrocks over Redis**: RocksDB WAL for zero data loss
+7. **Connection pooling**: Performance and resource control
