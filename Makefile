@@ -104,10 +104,10 @@ clean:  ## 🧹 Remove cache files
 .PHONY: d-s-rs s-d-build
 
 d-s-rs:  ## 🔄 Restart services
-	@docker-compose restart ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml restart ticketing-service
 
 s-d-build:  ## 🔨 Rebuild services
-	@docker-compose build ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml build ticketing-service
 
 # ==============================================================================
 # 📈 SERVICE SCALING (Nginx Load Balancer)
@@ -121,13 +121,13 @@ scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
 		exit 1; \
 	fi
 	@echo "📈 Scaling services: ticketing=$(T), reservation=$(R)"
-	@docker-compose up -d --scale ticketing-service=$(T) --scale seat-reservation-service=$(R) --no-recreate
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(T) --no-recreate
 	@echo "✅ Scaled successfully!"
-	@docker-compose ps ticketing-service seat-reservation-service
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps ticketing-service
 
 scale-down:  ## 📉 Scale down to 1 instance each
 	@echo "📉 Scaling down to 1 instance each..."
-	@docker-compose up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=1 --no-recreate
 	@echo "✅ Scaled down successfully!"
 
 scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
@@ -137,9 +137,9 @@ scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticket
 		exit 1; \
 	fi
 	@echo "📈 Scaling ticketing-service to $(N) instances..."
-	@docker-compose up -d --scale ticketing-service=$(N) --no-recreate
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(N) --no-recreate
 	@echo "✅ Done!"
-	@docker-compose ps ticketing-service
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps ticketing-service
 
 scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
 	@if [ -z "$(N)" ]; then \
@@ -148,13 +148,13 @@ scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-re
 		exit 1; \
 	fi
 	@echo "📈 Scaling seat-reservation-service to $(N) instances..."
-	@docker-compose up -d --scale seat-reservation-service=$(N) --no-recreate
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale seat-reservation-service=$(N) --no-recreate
 	@echo "✅ Done!"
-	@docker-compose ps seat-reservation-service
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps seat-reservation-service
 
 scale-status:  ## 📊 Show current scaling status
 	@echo "📊 Current service instances:"
-	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
 
 dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed → start-consumers)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
@@ -163,8 +163,10 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
-	@echo "🚀 Starting base services..."
-	@docker-compose up -d
+	@echo "🚀 Starting all services (consumers first, then API)..."
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d \
+		--scale ticketing-consumer=4 \
+		--scale seat-reservation-consumer=4
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -182,9 +184,6 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@$(MAKE) drk
 	@$(MAKE) ds
 	@echo ""
-	@echo "🚀 Starting Kafka consumer containers..."
-	@$(MAKE) c-start
-	@echo ""
 	@echo "✅ ==================== SETUP COMPLETE ===================="
 	@echo "   🌐 API:          http://localhost:8100/docs"
 	@echo "   📊 Kafka UI:     http://localhost:8080"
@@ -194,22 +193,22 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo ""
 	@echo "💡 monitor: make c-status | make c-tail"
 
-.PHONY: dm ds drk tdt tdinfra tdci 
+.PHONY: dm ds drk tdt tdinfra tdci
 dm:  ## 🗄️ Run migrations in Docker
 	@echo "🗄️  Running database migrations..."
-	@docker-compose exec ticketing-service uv run alembic upgrade head
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service uv run alembic upgrade head
 	@echo "✅ Migrations completed"
 
 ds:  ## 🌱 Seed data in Docker
-	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
 drk:  ## 🌊 Reset Kafka in Docker
 	@echo "🌊 Resetting Kafka..."
-	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
 
 tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
-	@docker-compose exec ticketing-service uv run pytest test/ \
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
@@ -218,11 +217,11 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 
 tdinfra:  ## 🏗️ Run infrastructure tests in Docker
 	@echo "🏗️  Testing infrastructure components in Docker..."
-	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
 	@echo "✅ Infrastructure tests complete!"
 
 tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
-	@docker-compose exec ticketing-service uv run pytest test/ \
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
 		--ignore=test/infrastructure \
 		--ignore=test/deployment \
@@ -385,7 +384,7 @@ ka:  ## 🧹 Clean Kafka + Kvrocks + RocksDB
 	@PYTHONPATH=. uv run python script/clean_all.py
 
 ks:  ## 📊 Kafka status
-	@docker-compose ps kafka1 kafka2 kafka3
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps kafka1 kafka2 kafka3
 	@echo "🌐 Kafka UI: http://localhost:8080"
 
 # ==============================================================================
