@@ -1,24 +1,28 @@
 # =============================================================================
 # Multi-stage Dockerfile for Ticketing System
+# Supports: API servers (Granian) and Kafka consumers
 # Optimized for development (hot-reload) and production (multi-worker)
 # =============================================================================
 
+FROM ghcr.io/astral-sh/uv:0.5.15 AS uv
+
 FROM python:3.13-slim AS base
 
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y \
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (pinned version for reproducibility)
-# Version: 0.5.15 (supports --all-groups for dependency groups)
-COPY --from=ghcr.io/astral-sh/uv:0.5.15 /uv /uvx /bin/
+# Copy uv binary
+COPY --from=uv /uv /uvx /bin/
 
 WORKDIR /app
 
 # Copy dependency manifests (leverage Docker cache)
 COPY pyproject.toml ./
+COPY uv.lock* ./
 COPY .python-version* ./
 
 # =============================================================================
@@ -59,16 +63,10 @@ CMD ["uv", "run", "granian", "src.main:app", \
 FROM base AS production
 
 # Install only production dependencies (no dev tools!)
-RUN uv sync --no-dev
+RUN uv sync --no-dev && rm -rf ~/.cache/uv
 
-# Copy only application code (exclude tests, logs, etc.)
-# Use .dockerignore to exclude unnecessary files
+# Copy application code (required for all services)
 COPY src/ ./src/
-COPY static/ ./static/
-COPY deployment/config.yml ./deployment/config.yml
-COPY alembic.ini ./
-COPY pyproject.toml ./
-# .env.example not needed - using AWS Secrets Manager for all configs
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
@@ -76,13 +74,31 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
+# Common environment for all production services
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+
 EXPOSE 8000
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Service type: api (default) or consumer
+ARG SERVICE_TYPE=api
+ENV SERVICE_TYPE=${SERVICE_TYPE}
 
-# Production server with configurable workers
-# Override with: docker run -e WORKERS=8 ...
+# Health check - conditional based on service type
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD if [ "$SERVICE_TYPE" = "consumer" ]; then \
+            pgrep -f "python.*consumer.py" > /dev/null || exit 1; \
+        else \
+            curl -f http://localhost:8000/health || exit 1; \
+        fi
+
+# Production server with configurable workers (API) or consumer script
 ENV WORKERS=4
-CMD ["sh", "-c", "uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8000 --workers ${WORKERS}"]
+ENV CONSUMER_SCRIPT=""
+
+CMD if [ "$SERVICE_TYPE" = "consumer" ] && [ -n "$CONSUMER_SCRIPT" ]; then \
+        /app/.venv/bin/python "$CONSUMER_SCRIPT"; \
+    else \
+        sh -c "uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8000 --workers ${WORKERS}"; \
+    fi

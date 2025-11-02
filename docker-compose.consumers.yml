@@ -1,0 +1,171 @@
+# =============================================================================
+# Kafka Consumers - Standalone Service
+# =============================================================================
+# This file defines independent Kafka consumer services.
+#
+# Usage:
+#   Start with single instance:
+#     docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
+#
+#   Scale to multiple instances:
+#     docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d \
+#       --scale ticketing-consumer=4 \
+#       --scale seat-reservation-consumer=4
+#
+# Benefits:
+# - Integrated observability (Prometheus, Grafana, Jaeger)
+# - Independent scaling (scale consumers without affecting API)
+# - Clean separation of concerns
+# - Unified logging and monitoring
+# =============================================================================
+
+services:
+  # =========================================================================
+  # Ticketing Consumer
+  # =========================================================================
+  ticketing-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        SERVICE_TYPE: consumer
+    image: ticketing-consumer:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export KAFKA_CONSUMER_INSTANCE_ID="ticketing-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="ticketing-producer-$$(hostname)"
+        /app/.venv/bin/python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py
+    environment:
+      # Application
+      EVENT_ID: "1"
+      DEBUG: "False"
+      LOG_LEVEL: "INFO"
+      TZ: "Asia/Taipei"
+
+      # Authentication (required by Settings model, but not used by consumers)
+      SECRET_KEY: ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      ALGORITHM: ${ALGORITHM}
+      RESET_PASSWORD_TOKEN_SECRET: ${RESET_PASSWORD_TOKEN_SECRET}
+      VERIFICATION_TOKEN_SECRET: ${VERIFICATION_TOKEN_SECRET}
+
+      # Database (Primary - Write)
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: py_arch_lab
+      POSTGRES_PASSWORD: py_arch_lab
+      POSTGRES_DB: ticketing_system_db
+      POSTGRES_PORT: "5432"
+
+      # Kvrocks
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: "6666"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      # Note: KAFKA_*_INSTANCE_ID is set dynamically in the command using $(hostname)
+
+      # OpenTelemetry
+      OTEL_SERVICE_NAME: ticketing-consumer
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_started
+      jaeger:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    mem_limit: 512M
+    restart: unless-stopped
+    labels:
+      - "service.type=consumer"
+      - "service.name=ticketing-consumer"
+
+  # =========================================================================
+  # Seat Reservation Consumer
+  # =========================================================================
+  seat-reservation-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        SERVICE_TYPE: consumer
+    image: seat-reservation-consumer:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export KAFKA_CONSUMER_INSTANCE_ID="seat-reservation-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="seat-reservation-producer-$$(hostname)"
+        /app/.venv/bin/python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
+    environment:
+      # Application
+      EVENT_ID: "1"
+      DEBUG: "False"
+      LOG_LEVEL: "INFO"
+      TZ: "Asia/Taipei"
+
+      # Authentication (required by Settings model, but not used by consumers)
+      SECRET_KEY: ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
+      ALGORITHM: ${ALGORITHM}
+      RESET_PASSWORD_TOKEN_SECRET: ${RESET_PASSWORD_TOKEN_SECRET}
+      VERIFICATION_TOKEN_SECRET: ${VERIFICATION_TOKEN_SECRET}
+
+      # Kvrocks
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: "6666"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      # Note: KAFKA_*_INSTANCE_ID is set dynamically in the command using $(hostname)
+
+      # OpenTelemetry
+      OTEL_SERVICE_NAME: seat-reservation-consumer
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+
+    depends_on:
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_started
+      jaeger:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    mem_limit: 512M
+    restart: unless-stopped
+    labels:
+      - "service.type=consumer"
+      - "service.name=seat-reservation-consumer"
+
+networks:
+  ticketing-network:
+    name: ticketing_system_ticketing-network
+    external: true

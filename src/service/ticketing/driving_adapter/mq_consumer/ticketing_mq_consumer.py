@@ -23,7 +23,7 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import orjson
-from anyio.from_thread import BlockingPortal, start_blocking_portal
+from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
 from uuid_utils import UUID
 from quixstreams import Application
@@ -32,7 +32,7 @@ from quixstreams import Application
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
-from src.platform.config.core_setting import settings
+from src.platform.config.core_setting import KafkaConfig, settings
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -54,60 +54,6 @@ from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 
 
-class KafkaConfig:
-    """Kafka configuration - Supports Exactly-Once semantics"""
-
-    def __init__(self, *, event_id: int, instance_id: str, retries: int = 3):
-        """
-        Args:
-            event_id: Event ID
-            instance_id: Consumer instance ID (used to generate unique transactional.id)
-            retries: Producer retry count
-        """
-        from src.platform.message_queue.kafka_constant_builder import (
-            KafkaProducerTransactionalIdBuilder,
-        )
-
-        self.event_id = event_id
-        self.instance_id = instance_id
-        self.retries = retries
-        self.transactional_id = KafkaProducerTransactionalIdBuilder.ticketing_service(
-            event_id=event_id, instance_id=instance_id
-        )
-
-    @property
-    def producer_config(self) -> Dict:
-        """
-        Producer configuration - Enable transaction support
-
-        Note: Quix Streams with processing_guarantee='exactly-once' requires:
-        - transactional.id: Uniquely identifies this producer, enabling exactly-once
-        - enable.idempotence = True (set automatically)
-        - acks = 'all' (set automatically)
-        """
-        return {
-            'transactional.id': self.transactional_id,  # 🔑 Key for Exactly-Once
-            'retries': self.retries,
-        }
-
-    @property
-    def consumer_config(self) -> Dict:
-        """
-        Consumer configuration
-
-        Note: Quix Streams with processing_guarantee='exactly-once' already sets:
-        - enable.auto.commit = False (manual commit via transactions)
-        - isolation.level = 'read_committed' (only read committed messages)
-
-        We only set auto.offset.reset for first-time startup behavior:
-        - 'latest': Skip old messages, start from newest (recommended for production)
-        - 'earliest': Process all messages from beginning (use for testing/recovery)
-        """
-        return {
-            'auto.offset.reset': 'latest',
-        }
-
-
 class TicketingMqConsumer:
     """
     Integrated Ticketing MQ Consumer (PostgreSQL State Management)
@@ -126,15 +72,20 @@ class TicketingMqConsumer:
         seat_availability_cache: Any = None,
     ):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
-        base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
-        self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'
+        # Use producer instance_id from settings for transactional.id (exactly-once semantics)
+        self.producer_instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
+        # Use consumer instance_id for consumer group identification
+        self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        # Alias for backward compatibility
+        self.instance_id = self.consumer_instance_id
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID',
             KafkaConsumerGroupBuilder.ticketing_service(event_id=self.event_id),
         )
 
-        self.kafka_config = KafkaConfig(event_id=self.event_id, instance_id=self.instance_id)
+        self.kafka_config = KafkaConfig(
+            event_id=self.event_id, instance_id=self.producer_instance_id, service='ticketing'
+        )
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
@@ -157,28 +108,21 @@ class TicketingMqConsumer:
         """
         Quix Streams error handling callback
 
-        This callback is called when message processing fails.
-        Error messages are sent directly to DLQ, no retry at this layer.
-
         Returns:
-            True: Ignore error and commit offset (message sent to DLQ)
-            False: Propagate error and don't commit offset (stop consumer)
+            True: Send to DLQ and commit offset
         """
-        error_msg = str(exc)
+        Logger.base.error(f'❌ [CONSUMER-ERROR] Processing failed, sending to DLQ: {exc}')
 
-        Logger.base.error(f'❌ [TICKETING-ERROR-CALLBACK] Processing error, sending to DLQ: {exc}')
-
-        # Send to DLQ
+        # Send to DLQ to preserve failed messages
         if row and hasattr(row, 'value'):
-            message = row.value
             self._send_to_dlq(
-                message=message,
-                original_topic='unknown',  # Quix doesn't provide topic in callback
-                error=error_msg,
+                message=row.value,
+                original_topic='unknown',
+                error=str(exc),
                 retry_count=0,
             )
 
-        # Return True: Commit offset, message sent to DLQ
+        # Commit offset - message saved in DLQ
         return True
 
     @Logger.io
@@ -522,43 +466,5 @@ class TicketingMqConsumer:
 # ============================================================
 # Main Entry Point
 # ============================================================
-
-
-def main():
-    """Main program entry point"""
-    # Initialize broadcaster (shared instance for SSE)
-    from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
-    from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_impl import (
-        SeatAvailabilityQueryHandlerImpl,
-    )
-
-    broadcaster = InMemoryEventBroadcasterImpl()
-    seat_cache = SeatAvailabilityQueryHandlerImpl()
-    consumer = TicketingMqConsumer(
-        event_broadcaster=broadcaster, seat_availability_cache=seat_cache
-    )
-
-    try:
-        # Start BlockingPortal and create shared event loop
-        with start_blocking_portal() as portal:
-            consumer.set_portal(portal)
-            consumer.start()
-
-    except KeyboardInterrupt:
-        Logger.base.info('⚠️ [TICKETING] Received interrupt signal')
-        try:
-            consumer.stop()
-        except Exception:
-            pass
-    except Exception as e:
-        Logger.base.error(f'💥 [TICKETING] Consumer error: {e}')
-        try:
-            consumer.stop()
-        except:
-            pass
-    finally:
-        Logger.base.info('🧹 Cleaning up resources...')
-
-
-if __name__ == '__main__':
-    main()
+# Note: Main entry point moved to start_ticketing_consumer.py
+# ============================================================

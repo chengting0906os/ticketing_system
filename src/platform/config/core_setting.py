@@ -22,12 +22,12 @@ class Settings(BaseSettings):
     VERSION: str = '0.1.0'
     DEBUG: bool = True  # Set to False in evention
 
-    # Database
-    POSTGRES_SERVER: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: SecretStr
-    POSTGRES_DB: str
-    POSTGRES_PORT: int
+    # Database (Optional - only required for services that use PostgreSQL)
+    POSTGRES_SERVER: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: SecretStr | None = None
+    POSTGRES_DB: str | None = None
+    POSTGRES_PORT: int | None = None
 
     # Read Replica (Optional - for read-write separation)
     POSTGRES_REPLICA_SERVER: str | None = None
@@ -55,23 +55,51 @@ class Settings(BaseSettings):
     ASYNCPG_POOL_MAX_QUERIES: int = 50000  # Max queries per connection
 
     @property
-    def DATABASE_URL_ASYNC(self) -> str:
-        """Primary database URL for write operations"""
-        password = self.POSTGRES_PASSWORD.get_secret_value()
+    def DATABASE_URL_ASYNC(self) -> str | None:
+        if not all(
+            [
+                self.POSTGRES_SERVER,
+                self.POSTGRES_USER,
+                self.POSTGRES_PASSWORD,
+                self.POSTGRES_DB,
+                self.POSTGRES_PORT,
+            ]
+        ):
+            return None
+        password = self.POSTGRES_PASSWORD.get_secret_value()  # type: ignore
         return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
 
     @property
-    def DATABASE_READ_URL_ASYNC(self) -> str:
-        """Read replica database URL for read operations (falls back to primary if not configured)"""
-        password = self.POSTGRES_PASSWORD.get_secret_value()
+    def DATABASE_READ_URL_ASYNC(self) -> str | None:
+        if not all(
+            [
+                self.POSTGRES_SERVER,
+                self.POSTGRES_USER,
+                self.POSTGRES_PASSWORD,
+                self.POSTGRES_DB,
+                self.POSTGRES_PORT,
+            ]
+        ):
+            return None
+        password = self.POSTGRES_PASSWORD.get_secret_value()  # type: ignore
         if self.POSTGRES_REPLICA_SERVER and self.POSTGRES_REPLICA_PORT:
             return f'postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_REPLICA_SERVER}:{self.POSTGRES_REPLICA_PORT}/{self.POSTGRES_DB}'
         # Fall back to primary if replica not configured
         return self.DATABASE_URL_ASYNC
 
     @property
-    def DATABASE_URL_SYNC(self) -> str:
-        password = self.POSTGRES_PASSWORD.get_secret_value()
+    def DATABASE_URL_SYNC(self) -> str | None:
+        if not all(
+            [
+                self.POSTGRES_SERVER,
+                self.POSTGRES_USER,
+                self.POSTGRES_PASSWORD,
+                self.POSTGRES_DB,
+                self.POSTGRES_PORT,
+            ]
+        ):
+            return None
+        password = self.POSTGRES_PASSWORD.get_secret_value()  # type: ignore
         return f'postgresql://{self.POSTGRES_USER}:{password}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}'
 
     # Security
@@ -110,58 +138,64 @@ class Settings(BaseSettings):
     KVROCKS_POOL_SOCKET_KEEPALIVE: bool = True  # Enable TCP keepalive
     KVROCKS_POOL_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval (seconds)
 
-    # Kafka Instance Configuration (for Exactly-Once Processing)
+    # Kafka Configuration
+    KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
     KAFKA_PRODUCER_INSTANCE_ID: str = os.getenv(
         'KAFKA_PRODUCER_INSTANCE_ID', f'producer-{os.getpid()}'
     )
     KAFKA_CONSUMER_INSTANCE_ID: str = os.getenv(
-        'KAFKA_CONSUMER_INSTANCE_ID', f'consumer-{os.getpid()}'
+        'KAFKA_CONSUMER_INSTANCE_ID',
+        f'consumer-{os.uname().nodename}-{os.getpid()}',
     )
-
-    # Kafka Configuration
-    KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
-    KAFKA_SECURITY_PROTOCOL: str = 'PLAINTEXT'
-    KAFKA_GROUP_ID: str = 'ticketing-system'
-    KAFKA_AUTO_OFFSET_RESET: str = 'earliest'
-    KAFKA_ENABLE_IDEMPOTENCE: bool = True
-    KAFKA_ACKS: str = 'all'
-    KAFKA_RETRIES: int = 3
-    KAFKA_MAX_IN_FLIGHT_REQUESTS: int = 1
-    KAFKA_COMPRESSION_TYPE: str = 'gzip'
-    KAFKA_BATCH_SIZE: int = 16384
-    KAFKA_LINGER_MS: int = 10
-
-    # Kafka Consumer Modules
-    TICKETING_CONSUMER_MODULE: str = (
-        'src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer'
-    )
-    SEAT_RESERVATION_CONSUMER_MODULE: str = (
-        'src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer'
-    )
-
-    @property
-    def KAFKA_PRODUCER_CONFIG(self) -> dict:
-        return {
-            'bootstrap_servers': self.KAFKA_BOOTSTRAP_SERVERS.split(','),
-            'security_protocol': self.KAFKA_SECURITY_PROTOCOL,
-            'enable_idempotence': self.KAFKA_ENABLE_IDEMPOTENCE,
-            'acks': self.KAFKA_ACKS,
-            'retries': self.KAFKA_RETRIES,
-            'max_in_flight_requests_per_connection': self.KAFKA_MAX_IN_FLIGHT_REQUESTS,
-            'compression_type': self.KAFKA_COMPRESSION_TYPE,
-            'batch_size': self.KAFKA_BATCH_SIZE,
-            'linger_ms': self.KAFKA_LINGER_MS,
-        }
-
-    @property
-    def KAFKA_CONSUMER_CONFIG(self) -> dict:
-        return {
-            'bootstrap_servers': self.KAFKA_BOOTSTRAP_SERVERS.split(','),
-            'security_protocol': self.KAFKA_SECURITY_PROTOCOL,
-            'group_id': self.KAFKA_GROUP_ID,
-            'auto_offset_reset': self.KAFKA_AUTO_OFFSET_RESET,
-            'enable_auto_commit': False,
-        }
+    KAFKA_PRODUCER_RETRIES: int = 3
+    KAFKA_CONSUMER_AUTO_OFFSET_RESET: str = 'latest'
 
 
 settings = Settings()  # type: ignore
+
+
+# Kafka Config Helper
+class KafkaConfig:
+    """Kafka configuration for Exactly-Once processing"""
+
+    def __init__(self, *, event_id: int, instance_id: str, service: str):
+        """
+        Args:
+            event_id: Event ID
+            instance_id: Producer instance ID (for transactional.id)
+            service: Service name ('ticketing' or 'seat_reservation')
+        """
+        from src.platform.message_queue.kafka_constant_builder import (
+            KafkaProducerTransactionalIdBuilder,
+        )
+
+        self.event_id = event_id
+        self.instance_id = instance_id
+        self.service = service
+
+        # Generate transactional ID based on service
+        if service == 'ticketing':
+            self.transactional_id = KafkaProducerTransactionalIdBuilder.ticketing_service(
+                event_id=event_id, instance_id=instance_id
+            )
+        elif service == 'seat_reservation':
+            self.transactional_id = KafkaProducerTransactionalIdBuilder.seat_reservation_service(
+                event_id=event_id, instance_id=instance_id
+            )
+        else:
+            raise ValueError(f'Unknown service: {service}')
+
+    @property
+    def producer_config(self) -> dict:
+        """Producer config for Quix Streams exactly-once processing"""
+        return {
+            'transactional.id': self.transactional_id,
+            'retries': settings.KAFKA_PRODUCER_RETRIES,
+        }
+
+    @property
+    def consumer_config(self) -> dict:
+        """Consumer config for Quix Streams exactly-once processing"""
+        return {
+            'auto.offset.reset': settings.KAFKA_CONSUMER_AUTO_OFFSET_RESET,
+        }

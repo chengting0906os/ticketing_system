@@ -11,16 +11,16 @@ import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-import orjson
-from anyio.from_thread import BlockingPortal, start_blocking_portal
+from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
+import orjson
 from quixstreams import Application
 
 
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
-from src.platform.config.core_setting import settings
+from src.platform.config.core_setting import KafkaConfig, settings
 from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
@@ -32,65 +32,8 @@ from src.platform.observability.tracing import extract_trace_context
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
 )
-from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
-
-
-# Remove RetryConfig - Use Quix Streams on_processing_error callback for error handling
-
-
-class KafkaConfig:
-    """Kafka configuration - Supports Exactly-Once semantics"""
-
-    def __init__(self, *, event_id: int, instance_id: str, retries: int = 3):
-        """
-        Args:
-            event_id: Event ID
-            instance_id: Consumer instance ID (used to generate unique transactional.id)
-            retries: Producer retry count
-        """
-        from src.platform.message_queue.kafka_constant_builder import (
-            KafkaProducerTransactionalIdBuilder,
-        )
-
-        self.event_id = event_id
-        self.instance_id = instance_id
-        self.retries = retries
-        self.transactional_id = KafkaProducerTransactionalIdBuilder.seat_reservation_service(
-            event_id=event_id, instance_id=instance_id
-        )
-
-    @property
-    def producer_config(self) -> Dict:
-        """
-        Producer configuration - Enable transaction support
-
-        Note: Quix Streams with processing_guarantee='exactly-once' requires:
-        - transactional.id: Uniquely identifies this producer, enabling exactly-once
-        - enable.idempotence = True (set automatically)
-        - acks = 'all' (set automatically)
-        """
-        return {
-            'transactional.id': self.transactional_id,  # 🔑 Key for Exactly-Once
-            'retries': self.retries,
-        }
-
-    @property
-    def consumer_config(self) -> Dict:
-        """
-        Consumer configuration
-
-        Note: Quix Streams with processing_guarantee='exactly-once' already sets:
-        - enable.auto.commit = False (manual commit via transactions)
-        - isolation.level = 'read_committed' (only read committed messages)
-
-        We only set auto.offset.reset for first-time startup behavior:
-        - 'latest': Skip old messages, start from newest (recommended for production)
-        - 'earliest': Process all messages from beginning (use for testing/recovery)
-        """
-        return {
-            'auto.offset.reset': 'latest',  # Changed from 'earliest' to prevent reprocessing
-        }
+from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
 
 
 class SeatReservationConsumer:
@@ -105,15 +48,20 @@ class SeatReservationConsumer:
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        # Generate unique instance_id per worker process using PID to avoid transactional.id conflicts
-        base_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
-        self.instance_id = f'{base_instance_id}-pid-{os.getpid()}'
+        self.producer_instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
+        self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
+        # Alias for backward compatibility
+        self.instance_id = self.consumer_instance_id
         self.consumer_group_id = os.getenv(
             'CONSUMER_GROUP_ID',
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=self.event_id),
         )
 
-        self.kafka_config = KafkaConfig(event_id=self.event_id, instance_id=self.instance_id)
+        self.kafka_config = KafkaConfig(
+            event_id=self.event_id,
+            instance_id=self.producer_instance_id,
+            service='seat_reservation',
+        )
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
@@ -135,60 +83,25 @@ class SeatReservationConsumer:
         """
         Quix Streams error handling callback
 
-        This callback is called when message processing fails.
-
         Returns:
-            True: Ignore error and commit offset (message is discarded)
-            False: Propagate error and don't commit offset (stop consumer, retry after restart)
-
-        Note: Quix Streams callback cannot "skip this message without committing offset"
-        Therefore retryable errors will stop the consumer, requiring external monitoring to restart
+            True: Send to DLQ and commit offset
         """
-        error_msg = str(exc)
+        Logger.base.error(f'❌ [CONSUMER-ERROR] Processing failed, sending to DLQ: {exc}')
 
-        # Determine if error is non-retryable
-        non_retryable_keywords = ['validation', 'invalid', 'not found', 'missing required']
-        is_non_retryable = any(kw in error_msg.lower() for kw in non_retryable_keywords)
-
-        if is_non_retryable:
-            Logger.base.warning(f'⚠️ [ERROR-CALLBACK] Non-retryable error, sending to DLQ: {exc}')
-            # Send to DLQ
-            if row and hasattr(row, 'value'):
-                message = row.value
-                self._send_to_dlq(
-                    message=message,
-                    original_topic='unknown',  # Quix doesn't provide topic in callback
-                    error=error_msg,
-                    retry_count=0,
-                )
-            # Return True: Commit offset and skip this message
-            return True
-        else:
-            # Retryable error: Don't commit offset, stop consumer
-            # External monitoring (like Kubernetes) will restart consumer to reprocess this message
-            resource_exhaustion_keywords = [
-                'too many clients',
-                'connection pool',
-                'max connections',
-            ]
-            is_resource_exhaustion = any(
-                kw in error_msg.lower() for kw in resource_exhaustion_keywords
+        # Send to DLQ to preserve failed messages
+        if row and hasattr(row, 'value'):
+            self._send_to_dlq(
+                message=row.value,
+                original_topic='unknown',
+                error=str(exc),
+                retry_count=0,
             )
 
-            if is_resource_exhaustion:
-                Logger.base.error(
-                    f'❌ [ERROR-CALLBACK] Resource exhaustion, stopping consumer for restart: {exc}'
-                )
-            else:
-                Logger.base.error(f'❌ [ERROR-CALLBACK] Retryable error, stopping consumer: {exc}')
-
-            # Return False: Don't commit offset, stop consumer
-            # Will reprocess this message after restart
-            return False
+        # Commit offset - message saved in DLQ
+        return True
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
-        """Create Kafka application with Exactly-Once support and error handling configuration"""
         app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
             consumer_group=self.consumer_group_id,
@@ -211,7 +124,6 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _setup_topics(self):
-        """Setup processing logic for 3 topics - Use Kafka transactions for Exactly Once"""
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
@@ -253,7 +165,6 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _send_to_dlq(self, *, message: Dict, original_topic: str, error: str, retry_count: int):
-        """Send failed message to DLQ"""
         if not self.kafka_app:
             Logger.base.error('❌ [DLQ] Kafka app not initialized')
             return
@@ -637,29 +548,6 @@ class SeatReservationConsumer:
         Logger.base.info('🛑 Consumer stopped')
 
 
-def main():
-    consumer = SeatReservationConsumer()
-    try:
-        # Start BlockingPortal and create shared event loop
-        with start_blocking_portal() as portal:
-            consumer.set_portal(portal)
-            consumer.start()
-
-    except KeyboardInterrupt:
-        Logger.base.info('⚠️ Received interrupt signal')
-        try:
-            consumer.stop()
-        except Exception:
-            pass
-    except Exception as e:
-        Logger.base.error(f'💥 Consumer error: {e}')
-        try:
-            consumer.stop()
-        except:
-            pass
-    finally:
-        Logger.base.info('🧹 Cleaning up resources...')
-
-
-if __name__ == '__main__':
-    main()
+# ============================================================
+# Note: Main entry point moved to start_seat_reservation_consumer.py
+# ============================================================

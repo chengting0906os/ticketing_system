@@ -73,8 +73,17 @@ class ReserveSeatsUseCase:
     ):
         self.seat_state_handler = seat_state_handler
         self.mq_publisher = mq_publisher
-        self.task_group = task_group
+        self._task_group = task_group  # Store initial value
         self.tracer = trace.get_tracer(__name__)
+
+    @property
+    def task_group(self) -> anyio.abc.TaskGroup:
+        """Dynamically get task_group from DI container to handle runtime override"""
+        from src.platform.config.di import container
+
+        # Return container's task_group if available, otherwise fallback to initial value
+        tg = container.task_group()
+        return tg if tg is not None else self._task_group
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:

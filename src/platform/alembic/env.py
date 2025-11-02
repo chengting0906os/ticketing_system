@@ -23,7 +23,10 @@ from src.service.ticketing.driven_adapter.model.user_model import UserModel  # n
 config = context.config
 
 # Set database URL from settings
-config.set_main_option('sqlalchemy.url', settings.DATABASE_URL_SYNC)
+database_url = settings.DATABASE_URL_SYNC
+if database_url is None:
+    raise RuntimeError('DATABASE_URL_SYNC is not configured. Please set required environment variables.')
+config.set_main_option('sqlalchemy.url', database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

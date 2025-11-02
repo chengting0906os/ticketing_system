@@ -56,19 +56,15 @@ class SystemCleaner:
         Logger.base.info('🔍 Stopping all *mq_consumer processes...')
         self.run_command(['pkill', '-f', 'mq_consumer'], 'Stopping all mq_consumer processes')
 
-        # 方法 2: 停止 launch_all_consumers 腳本
-        Logger.base.info('🔍 Stopping launch_all_consumers script...')
+        # 方法 2: 停止所有 start_*_consumer 腳本
+        Logger.base.info('🔍 Stopping start_*_consumer scripts...')
         self.run_command(
-            ['pkill', '-f', 'launch_all_consumers'], 'Stopping launch_all_consumers script'
+            ['pkill', '-f', 'start_.*_consumer'], 'Stopping start_*_consumer scripts'
         )
 
         # 方法 3: 停止 topic_monitor 腳本（重要！會重新創建 consumer groups）
         Logger.base.info('🔍 Stopping topic_monitor script...')
         self.run_command(['pkill', '-f', 'topic_monitor'], 'Stopping topic_monitor script')
-
-        # 方法 4: 額外保險 - 停止任何包含 infra/*consumer 的進程
-        Logger.base.info('🔍 Stopping any infra consumer processes...')
-        self.run_command(['pkill', '-f', 'infra.*consumer'], 'Stopping infra consumer processes')
 
         Logger.base.info('🛑 All consumer and monitor processes stopped (broad match)')
 

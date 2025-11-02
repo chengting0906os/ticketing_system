@@ -8,9 +8,6 @@ from dependency_injector import containers, providers
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
-from src.platform.message_queue.section_based_partition_strategy import (
-    SectionBasedPartitionStrategy,
-)
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentUseCase,
 )
@@ -66,7 +63,6 @@ class Container(containers.DeclarativeContainer):
 
     # Infrastructure services
     kafka_service = providers.Singleton(KafkaConfigService)
-    partition_strategy = providers.Singleton(SectionBasedPartitionStrategy)
 
     # Background task group (set by main.py lifespan)
     # Used for fire-and-forget tasks like event publishing
@@ -151,7 +147,6 @@ container = Container()
 def setup():
     container.kafka_service()
     container.config_service()
-    container.partition_strategy()
 
 
 def cleanup():

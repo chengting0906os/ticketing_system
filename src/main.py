@@ -11,12 +11,9 @@ This unified architecture provides:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-import signal
 from typing import TypeVar
 
 import anyio
-from anyio.from_thread import start_blocking_portal
-import anyio.to_thread
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -41,9 +38,6 @@ from src.platform.state.kvrocks_client import kvrocks_client
 # Seat Reservation Service imports
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
     router as seat_reservation_router,
-)
-from src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer import (
-    SeatReservationConsumer,
 )
 
 # Ticketing Service imports
@@ -71,9 +65,6 @@ from src.service.ticketing.driving_adapter.http_controller.event_ticketing_contr
 from src.service.ticketing.driving_adapter.http_controller.user_controller import (
     router as auth_router,
 )
-from src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer import (
-    TicketingMqConsumer,
-)
 
 
 # Generic middleware wrapper to satisfy type checker
@@ -88,124 +79,12 @@ def as_middleware(middleware_class: type[T]) -> type[T]:
     return middleware_class
 
 
-async def start_ticketing_consumer() -> None:
-    """
-    Start Ticketing MQ consumer with BlockingPortal.
-    Bridges async FastAPI app with sync Kafka consumer using anyio's BlockingPortal.
-    """
-    import os
-
-    from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
-
-    event_id = int(os.getenv('EVENT_ID', '1'))
-
-    # Auto-create topics before consumer starts
-    topic_initializer = KafkaTopicInitializer()
-    topic_initializer.ensure_topics_exist(event_id=event_id)
-
-    # Get event broadcaster from DI container
-    event_broadcaster = container.booking_event_broadcaster()
-    consumer = TicketingMqConsumer(event_broadcaster=event_broadcaster)
-
-    async def run_consumer_with_portal() -> None:
-        """Run consumer in thread with BlockingPortal for async-to-sync calls"""
-
-        def run_with_portal() -> None:
-            with start_blocking_portal() as portal:
-                consumer.set_portal(portal)
-
-                # Initialize Kvrocks for consumer event loop
-                try:
-                    portal.call(kvrocks_client.initialize)  # type: ignore
-                    Logger.base.info('📡 [Ticketing Consumer] Kvrocks initialized')
-                except Exception as e:
-                    Logger.base.error(f'❌ [Ticketing Consumer] Failed to initialize Kvrocks: {e}')
-                    raise
-
-                # Initialize asyncpg pool for consumer event loop
-                try:
-                    portal.call(get_asyncpg_pool)  # type: ignore[arg-type]
-                    Logger.base.info('🏊 [Ticketing Consumer] Asyncpg pool initialized')
-                    portal.call(warmup_asyncpg_pool)  # type: ignore[arg-type]
-                    Logger.base.info('🔥 [Ticketing Consumer] Asyncpg pool warmed up')
-                except Exception as e:
-                    Logger.base.error(f'❌ [Ticketing Consumer] Failed to initialize asyncpg: {e}')
-                    raise
-
-                # Mock signal handlers (consumer runs in thread, not main thread)
-                original_signal = signal.signal
-
-                def mock_signal(*args: object, **kwargs: object) -> object:
-                    return None
-
-                signal.signal = mock_signal  # type: ignore[bad-assignment]
-                try:
-                    consumer.start()
-                finally:
-                    signal.signal = original_signal
-                    try:
-                        portal.call(kvrocks_client.disconnect)  # type: ignore
-                    except Exception:
-                        pass
-
-        await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
-
-    await run_consumer_with_portal()
-
-
-async def start_seat_reservation_consumer() -> None:
-    """
-    Start Seat Reservation MQ consumer with BlockingPortal.
-    Bridges async FastAPI app with sync Kafka consumer using anyio's BlockingPortal.
-    """
-    import os
-
-    from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
-
-    event_id = int(os.getenv('EVENT_ID', '1'))
-
-    # Auto-create topics before consumer starts
-    topic_initializer = KafkaTopicInitializer()
-    topic_initializer.ensure_topics_exist(event_id=event_id)
-
-    consumer = SeatReservationConsumer()
-
-    async def run_consumer_with_portal() -> None:
-        """Run consumer in thread with BlockingPortal for async-to-sync calls"""
-
-        def run_with_portal() -> None:
-            with start_blocking_portal() as portal:
-                consumer.set_portal(portal)
-
-                # Initialize Kvrocks for consumer event loop
-                try:
-                    portal.call(kvrocks_client.initialize)  # type: ignore
-                    Logger.base.info('📡 [Seat Reservation Consumer] Kvrocks initialized')
-                except Exception as e:
-                    Logger.base.error(
-                        f'❌ [Seat Reservation Consumer] Failed to initialize Kvrocks: {e}'
-                    )
-                    raise
-
-                # Mock signal handlers (consumer runs in thread, not main thread)
-                original_signal = signal.signal
-
-                def mock_signal(*args: object, **kwargs: object) -> object:
-                    return None
-
-                signal.signal = mock_signal  # type: ignore[bad-assignment]
-                try:
-                    consumer.start()
-                finally:
-                    signal.signal = original_signal
-                    try:
-                        portal.call(kvrocks_client.disconnect)  # type: ignore
-                    except Exception:
-                        pass
-
-        await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[bad-argument-type]
-
-    await run_consumer_with_portal()
+# NOTE: Consumers are now started independently as standalone processes
+# See:
+# - src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py
+# - src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
+#
+# To start 4 ticketing + 4 seat reservation consumers: make start-consumers
 
 
 @asynccontextmanager
@@ -268,19 +147,12 @@ async def lifespan(app: FastAPI):
         container.task_group.override(background_task_group)
         Logger.base.info('🔄 [Unified Service] Task group injected into DI container')
 
-        # Start Kafka consumers (graceful failure if Kafka unavailable)
-        try:
-            # Start both consumers in the unified task group
-            background_task_group.start_soon(start_ticketing_consumer)  # type: ignore[arg-type]
-            background_task_group.start_soon(start_seat_reservation_consumer)  # type: ignore[arg-type]
-            Logger.base.info(
-                '📨 [Unified Service] Kafka consumers started (ticketing + seat reservation)'
-            )
-        except Exception as e:
-            Logger.base.warning(
-                f'⚠️  [Unified Service] Kafka unavailable at startup: {e}'
-                '\n   Continuing without Kafka - messaging features disabled'
-            )
+        Logger.base.info(
+            '💡 [Unified Service] Kafka consumers should be started independently:\n'
+            '   - Ticketing: uv run python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py\n'
+            '   - Seat Reservation: uv run python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py\n'
+            '   - Or use: make c-start'
+        )
 
         Logger.base.info('✅ [Unified Service] All background tasks started')
 

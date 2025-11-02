@@ -53,8 +53,17 @@ class CreateBookingUseCase:
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
-        self.task_group = task_group
+        self._task_group = task_group  # Store initial value
         self.tracer = trace.get_tracer(__name__)
+
+    @property
+    def task_group(self) -> anyio.abc.TaskGroup:
+        """Dynamically get task_group from DI container to handle runtime override"""
+        from src.platform.config.di import container
+
+        # Return container's task_group if available, otherwise fallback to initial value
+        tg = container.task_group()
+        return tg if tg is not None else self._task_group
 
     @classmethod
     @inject

@@ -131,8 +131,13 @@ class AsyncEngineManager:
         Uses smaller pool size since writes are less frequent than reads.
         Pool configuration is centralized in settings for easy tuning.
         """
+        database_url = settings.DATABASE_URL_ASYNC
+        if database_url is None:
+            raise RuntimeError(
+                'DATABASE_URL_ASYNC is not configured. Please set required environment variables.'
+            )
         return create_async_engine(
-            settings.DATABASE_URL_ASYNC,
+            database_url,
             echo=False,
             future=True,
             pool_size=settings.DB_POOL_SIZE_WRITE,
@@ -150,8 +155,13 @@ class AsyncEngineManager:
         Falls back to primary if replica not configured.
         Pool configuration is centralized in settings for easy tuning.
         """
+        database_url = settings.DATABASE_READ_URL_ASYNC
+        if database_url is None:
+            raise RuntimeError(
+                'DATABASE_READ_URL_ASYNC is not configured. Please set required environment variables.'
+            )
         return create_async_engine(
-            settings.DATABASE_READ_URL_ASYNC,
+            database_url,
             echo=False,
             future=True,
             pool_size=settings.DB_POOL_SIZE_READ,
