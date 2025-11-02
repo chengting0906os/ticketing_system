@@ -5,34 +5,39 @@ ALEMBIC_CONFIG = alembic.ini
 AWS_REGION ?= us-west-2
 AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "unknown")
 
+
 # ==============================================================================
-# 🚀 QUICK START
+# 📨 KAFKA CONSUMERS
 # ==============================================================================
 
-.PHONY: reset reset-all
-reset:  ## 🔄 Reset Kafka + Database + Seed data
-	@echo "🚀 Complete system reset..."
-	@PYTHONPATH=. uv run python script/reset_kafka.py
-	@PYTHONPATH=. uv run python script/reset_database.py
-	@PYTHONPATH=. uv run python script/seed_data.py
-	@echo "✅ Reset complete!"
+.PHONY: c-d-build c-start c-stop c-tail c-status
+c-d-build:  ## 🔨 Build consumer images
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml build
 
-reset-all: reset  ## 🔄 Reset + start services (DEPRECATED: use Docker)
-	@echo "⚠️  Local services deprecated. Use 'make dra' for Docker"
+c-start:  ## 🚀 Start consumer containers (4+4)
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-consumer=4 --scale seat-reservation-consumer=4
+
+c-stop:  ## 🛑 Stop consumer containers
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml stop ticketing-consumer seat-reservation-consumer
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml rm -f ticketing-consumer seat-reservation-consumer
+
+c-tail:  ## 📝 Tail consumer logs
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml logs -f ticketing-consumer seat-reservation-consumer
+
+c-status:  ## 📊 Consumer status
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml ps ticketing-consumer seat-reservation-consumer
 
 # ==============================================================================
 # 🗄️ DATABASE
 # ==============================================================================
 
-.PHONY: migrate-up
+.PHONY: migrate-up migrate-down migrate-new migrate-history psql
 migrate-up:  ## ⬆️ Run database migrations
 	@uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
 
-.PHONY: migrate-down
 migrate-down:  ## ⬇️ Rollback one migration
 	@uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
 
-.PHONY: migrate-new
 migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message')
 	@if [ -z "$(MSG)" ]; then \
 		echo "Error: MSG required. Usage: make migrate-new MSG='your message'"; \
@@ -40,11 +45,9 @@ migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message'
 	fi
 	@uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
 
-.PHONY: migrate-history
 migrate-history:  ## 📜 Show migration history
 	@uv run alembic -c $(ALEMBIC_CONFIG) history
 
-.PHONY: psql
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
 
@@ -52,35 +55,22 @@ psql:  ## 🐘 Connect to PostgreSQL
 # 🧪 TESTING
 # ==============================================================================
 
-.PHONY: test
+.PHONY: test t-smoke t-quick t-unit t-e2e t-bdd test-cdk
 test:  ## 🧪 Run unit tests (excludes CDK and E2E)
 	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: t-smoke
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
 	@uv run pytest  -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: t-quick
 t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
 	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: t-unit
 t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
 	@uv run pytest -m unit -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-verbose
-test-verbose:  ## 🧪 Run tests with output (-vs, excludes CDK and E2E)
-	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -vs $(filter-out $@,$(MAKECMDGOALS))
-
-.PHONY: test-e2e
-test-e2e:  ## 🧪 Run E2E tests
+t-e2e:  ## 🧪 Run E2E tests
 	@uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: test-bdd
-test-bdd:  ## 🧪 Run BDD tests (Gherkin)
-	@uv run pytest test/features/ -v $(filter-out $@,$(MAKECMDGOALS))
-
-.PHONY: test-cdk
 test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
 	@echo "⚠️  Warning: CDK tests are CPU intensive and may take 1-2 minutes"
 	@uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
@@ -92,19 +82,16 @@ test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
 # 🔧 CODE QUALITY
 # ==============================================================================
 
-.PHONY: lint
+.PHONY: lint format pyre clean
 lint:  ## 🔍 Check code style
 	@uv run ruff check .
 
-.PHONY: format
 format:  ## ✨ Format code
 	@uv run ruff format .
 
-.PHONY: pyre
 pyre:  ## 🔬 Type checking
 	@uv run pyrefly check
 
-.PHONY: clean
 clean:  ## 🧹 Remove cache files
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete
@@ -114,35 +101,19 @@ clean:  ## 🧹 Remove cache files
 # 🐳 DOCKER - PRIMARY WORKFLOW
 # ==============================================================================
 
-.PHONY: dsu
-dsu:  ## 🚀 Start Docker stack
-	@docker-compose build
-	@docker-compose up -d
-	@echo "✅ Stack started!"
-	@echo "   🔀 Load Balancer: http://localhost (nginx)"
-	@echo "   🌐 API Gateway:   http://localhost:8000"
-	@echo "   📚 Ticketing:     http://localhost:8100/docs"
-	@echo "   🪑 Seat Res:      http://localhost:8200/docs"
-	@echo "   📊 Kafka UI:      http://localhost:8080"
-	@echo "   📈 Grafana:       http://localhost:3000"
+.PHONY: d-s-rs s-d-build
 
-.PHONY: dsd
-dsd:  ## 🛑 Stop Docker stack
-	@docker-compose down
-
-.PHONY: d-srs
-d-srs:  ## 🔄 Restart services
+d-s-rs:  ## 🔄 Restart services
 	@docker-compose restart ticketing-service seat-reservation-service
 
-.PHONY: d-build
-d-build:  ## 🔨 Rebuild services
+s-d-build:  ## 🔨 Rebuild services
 	@docker-compose build ticketing-service seat-reservation-service
 
 # ==============================================================================
 # 📈 SERVICE SCALING (Nginx Load Balancer)
 # ==============================================================================
 
-.PHONY: scale-up
+.PHONY: scale-up scale-down scale-ticketing scale-reservation scale-status dra
 scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
 	@if [ -z "$(T)" ] || [ -z "$(R)" ]; then \
 		echo "Usage: make scale-up T=<ticketing_count> R=<reservation_count>"; \
@@ -154,13 +125,11 @@ scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
 	@echo "✅ Scaled successfully!"
 	@docker-compose ps ticketing-service seat-reservation-service
 
-.PHONY: scale-down
 scale-down:  ## 📉 Scale down to 1 instance each
 	@echo "📉 Scaling down to 1 instance each..."
 	@docker-compose up -d --scale ticketing-service=1 --scale seat-reservation-service=1 --no-recreate
 	@echo "✅ Scaled down successfully!"
 
-.PHONY: scale-ticketing
 scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
 	@if [ -z "$(N)" ]; then \
 		echo "Usage: make scale-ticketing N=<count>"; \
@@ -172,7 +141,6 @@ scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticket
 	@echo "✅ Done!"
 	@docker-compose ps ticketing-service
 
-.PHONY: scale-reservation
 scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
 	@if [ -z "$(N)" ]; then \
 		echo "Usage: make scale-reservation N=<count>"; \
@@ -184,18 +152,18 @@ scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-re
 	@echo "✅ Done!"
 	@docker-compose ps seat-reservation-service
 
-.PHONY: scale-status
 scale-status:  ## 📊 Show current scaling status
 	@echo "📊 Current service instances:"
 	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|seat-reservation-service|nginx)"
 
-.PHONY: dra
-dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
+dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed → start-consumers)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
-	@echo "⚠️  This will stop containers and remove volumes"
+	@echo "⚠️  This will stop all containers and remove volumes"
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
-	@docker-compose down -v
+	@echo "🛑 Stopping everything..."
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
+	@echo "🚀 Starting base services..."
 	@docker-compose up -d
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
@@ -213,25 +181,33 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@$(MAKE) dm
 	@$(MAKE) drk
 	@$(MAKE) ds
-	@echo "✅ ==================== RESET COMPLETED ===================="
+	@echo ""
+	@echo "🚀 Starting Kafka consumer containers..."
+	@$(MAKE) c-start
+	@echo ""
+	@echo "✅ ==================== SETUP COMPLETE ===================="
+	@echo "   🌐 API:          http://localhost:8100/docs"
+	@echo "   📊 Kafka UI:     http://localhost:8080"
+	@echo "   📈 Grafana:      http://localhost:3000"
+	@echo "   🔍 Jaeger:       http://localhost:16686"
+	@echo "   📨 Consumers:    8 containers (4 ticketing + 4 seat reservation)"
+	@echo ""
+	@echo "💡 monitor: make c-status | make c-tail"
 
-.PHONY: dm
+.PHONY: dm ds drk tdt tdinfra tdci 
 dm:  ## 🗄️ Run migrations in Docker
 	@echo "🗄️  Running database migrations..."
 	@docker-compose exec ticketing-service uv run alembic upgrade head
 	@echo "✅ Migrations completed"
 
-.PHONY: ds
 ds:  ## 🌱 Seed data in Docker
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
-.PHONY: drk
 drk:  ## 🌊 Reset Kafka in Docker
 	@echo "🌊 Resetting Kafka..."
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
 
-.PHONY: tdt
 tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
 	@docker-compose exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
@@ -240,17 +216,11 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
 		-v
 
-.PHONY: tde2e
-tde2e:  ## 🧪 Run E2E tests in Docker
-	@docker-compose exec ticketing-service uv run pytest test/service/e2e -v
-
-.PHONY: tdinfra
 tdinfra:  ## 🏗️ Run infrastructure tests in Docker
 	@echo "🏗️  Testing infrastructure components in Docker..."
 	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
 	@echo "✅ Infrastructure tests complete!"
 
-.PHONY: tdci
 tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 	@docker-compose exec ticketing-service uv run pytest test/ \
 		--ignore=test/service/e2e \
@@ -259,45 +229,31 @@ tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 		-m "not api and not infra and not e2e" \
 		-v
 
-.PHONY: dsh
-dsh:  ## 🐚 Shell into Ticketing Service
-	@docker-compose exec ticketing-service bash
-
-.PHONY: dal
-dal:  ## 📋 View application logs
-	@docker-compose logs -f ticketing-service seat-reservation-service
-
 # ==============================================================================
 # ⚡ LOAD TESTING
 # ==============================================================================
 
-.PHONY: go-build
+.PHONY: go-build ltt lts ltm ltl ltf ltp k6-smoke k6-load k6-stress
 go-build:  ## 🔨 Build Go load test binary
 	@cd script/go_client && go build -o loadtest main.go
 
-.PHONY: ltt
 ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
 	@cd script/go_client && ./loadtest -requests 10 -concurrency 5 -clients 5
 
-.PHONY: lts
 lts:  ## 🧪 Small load test (10 requests, 10 workers, 10 clients)
 	@cd script/go_client && ./loadtest -requests 100 -concurrency 10 -clients 10
 
-.PHONY: ltm
 ltm:  ## ⚡ Medium load test (2 processes × 250 requests, 25 workers each)
 	@cd script/go_client && \
 		./loadtest -requests 500 -concurrency 25 -clients 25 & \
 
-.PHONY: ltl
 ltl:  ## ⚡ Large load test (2 processes × 250 requests, 25 workers each)
 	@cd script/go_client && \
 		./loadtest -requests 10000 -concurrency 50 -clients 50 & \
 
-.PHONY: ltf
 ltf:  ## 💪 Full load test (50K requests, 100 workers, 100 clients)
 	@cd script/go_client && ./loadtest -requests 50000 -concurrency 100 -clients 100
 
-.PHONY: ltp
 ltp:  ## 🚀 Parallel load test (4 processes × 25 requests × 10 workers = 100 total concurrent)
 	@echo "🚀 Starting 4 parallel load test processes..."
 	@cd script/go_client && \
@@ -308,15 +264,12 @@ ltp:  ## 🚀 Parallel load test (4 processes × 25 requests × 10 workers = 100
 		wait
 	@echo "✅ All parallel load tests completed"
 
-.PHONY: k6-smoke
 k6-smoke:  ## 🔍 k6 smoke test
 	@k6 run script/k6/smoke-test.js
 
-.PHONY: k6-load
 k6-load:  ## 📊 k6 load test
 	@k6 run script/k6/load-test.js
 
-.PHONY: k6-stress
 k6-stress:  ## 💪 k6 stress test
 	@k6 run script/k6/stress-test.js
 
@@ -324,7 +277,7 @@ k6-stress:  ## 💪 k6 stress test
 # 🌩️ AWS CDK DEPLOYMENT
 # ==============================================================================
 
-.PHONY: cdk-synth
+.PHONY: cdk-synth cdk-diff deploy destroy cdk-deploy-dev cdk-deploy-loadtest cdk-destroy cdk-ls
 cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
 	@echo "🔍 Synthesizing CDK stack..."
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
@@ -332,31 +285,26 @@ cdk-synth:  ## 🔍 Synthesize CDK stack (validate infrastructure code)
 		uv run cdk synth --no-lookups
 	@echo "✅ CDK synthesis completed!"
 
-.PHONY: cdk-diff
 cdk-diff:  ## 📊 Show differences between deployed and local stack
 	@echo "📊 Comparing stack differences..."
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
 		CDK_DEFAULT_REGION=us-west-2 \
 		uv run cdk diff
 
-.PHONY: deploy
 deploy:  ## 🚀 One-click deployment (infrastructure + Docker images + health check)
 	@echo "🚀 Starting one-click deployment..."
 	@./deployment/deploy-all.sh
 
-.PHONY: destroy
 destroy:  ## 💣 One-click shutdown (delete all AWS resources to stop billing)
 	@echo "💣 Starting one-click shutdown..."
 	@./deployment/destroy-all.sh
 
-.PHONY: cdk-deploy-dev
 cdk-deploy-dev:  ## 🏗️ Deploy CDK infrastructure only (no Docker images)
 	@echo "🚀 Deploying to AWS development environment..."
 	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
 	@uv run cdk deploy --all --require-approval never
 	@echo "✅ Deployment completed!"
 
-.PHONY: cdk-deploy-loadtest
 cdk-deploy-loadtest:  ## 🧪 Deploy loadtest stack only (Fargate Spot 32GB)
 	@echo "🧪 Deploying loadtest infrastructure..."
 	@echo "⚠️  Make sure AWS credentials are configured (aws configure)"
@@ -364,7 +312,6 @@ cdk-deploy-loadtest:  ## 🧪 Deploy loadtest stack only (Fargate Spot 32GB)
 	@echo "✅ Loadtest stack deployed!"
 	@echo "📋 Next: Use ECS Console or AWS CLI to run tasks"
 
-.PHONY: cdk-destroy
 cdk-destroy:  ## 🗑️ Destroy CDK stacks only (use 'make destroy' for complete cleanup)
 	@echo "⚠️  WARNING: This will destroy all AWS resources!"
 	@echo "Continue? (y/N)"
@@ -372,64 +319,42 @@ cdk-destroy:  ## 🗑️ Destroy CDK stacks only (use 'make destroy' for complet
 	@uv run cdk destroy --all
 	@echo "✅ All stacks destroyed"
 
-.PHONY: cdk-ls
 cdk-ls:  ## 📋 List all CDK stacks
 	@CDK_DEFAULT_ACCOUNT=123456789012 \
 		CDK_DEFAULT_REGION=us-west-2 \
 		uv run cdk list
-
-# ==============================================================================
-# 📊 MONITORING
-# ==============================================================================
-
-.PHONY: monitor mon
-monitor mon:  ## 📊 Monitor all ECS services (ticketing, seat-reservation, kvrocks)
-	@echo "📊 Monitoring all ECS services..."
-	@./script/monitor/all_services.sh
-
-.PHONY: monitor-service mons
-monitor-service mons:  ## 📊 Monitor single ECS service (usage: make monitor-service SERVICE=ticketing-service)
-	@SERVICE=${SERVICE:-ticketing-service}; \
-	echo "📊 Monitoring ECS service: $$SERVICE"; \
-	./script/monitor/ecs_realtime.sh ticketing-cluster $$SERVICE
 
 
 # ==============================================================================
 # 🐳 AWS ECR (Elastic Container Registry)
 # ==============================================================================
 
-.PHONY: ecr-push-all
+.PHONY: ecr-push-all ecr-push-ticketing ecr-push-reservation ecr-push-staging ecr-push-dev ecr-login ecr-list ecr-cleanup
 ecr-push-all:  ## 🚀 Build and push all services to ECR (production)
 	@echo "🚀 Building and pushing all services to ECR (production)..."
 	@./deployment/script/ecr-push.sh production all
 
-.PHONY: ecr-push-ticketing
 ecr-push-ticketing:  ## 🎫 Build and push ticketing service to ECR (production)
 	@echo "🎫 Building and pushing ticketing-service to ECR (production)..."
 	@./deployment/script/ecr-push.sh production ticketing
 
-.PHONY: ecr-push-reservation
 ecr-push-reservation:  ## 🪑 Build and push seat-reservation service to ECR (production)
 	@echo "🪑 Building and pushing seat-reservation-service to ECR (production)..."
 	@./deployment/script/ecr-push.sh production seat-reservation
 
-.PHONY: ecr-push-staging
 ecr-push-staging:  ## 🧪 Build and push all services to ECR (staging)
 	@echo "🧪 Building and pushing all services to ECR (staging)..."
 	@./deployment/script/ecr-push.sh staging all
 
-.PHONY: ecr-push-dev
 ecr-push-dev:  ## 🔧 Build and push all services to ECR (development)
 	@echo "🔧 Building and pushing all services to ECR (development)..."
 	@./deployment/script/ecr-push.sh development all
 
-.PHONY: ecr-login
 ecr-login:  ## 🔐 Login to AWS ECR
 	@echo "🔐 Logging in to AWS ECR..."
 	@aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 	@echo "✅ ECR login successful"
 
-.PHONY: ecr-list
 ecr-list:  ## 📋 List Docker images in ECR repositories
 	@echo "📋 Images in ticketing-service repository:"
 	@aws ecr list-images --repository-name ticketing-service --region $(AWS_REGION) --output table || echo "Repository not found"
@@ -437,7 +362,6 @@ ecr-list:  ## 📋 List Docker images in ECR repositories
 	@echo "📋 Images in seat-reservation-service repository:"
 	@aws ecr list-images --repository-name seat-reservation-service --region $(AWS_REGION) --output table || echo "Repository not found"
 
-.PHONY: ecr-cleanup
 ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
 	@echo "🧹 Cleaning up old ECR images..."
 	@echo "⚠️  This will keep only the last 10 images per environment tag"
@@ -456,11 +380,10 @@ ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
 # 🌊 KAFKA
 # ==============================================================================
 
-.PHONY: ka
+.PHONY: ka ks
 ka:  ## 🧹 Clean Kafka + Kvrocks + RocksDB
 	@PYTHONPATH=. uv run python script/clean_all.py
 
-.PHONY: ks
 ks:  ## 📊 Kafka status
 	@docker-compose ps kafka1 kafka2 kafka3
 	@echo "🌐 Kafka UI: http://localhost:8080"

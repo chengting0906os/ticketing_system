@@ -146,9 +146,11 @@ filterwarnings = [
     "ignore::DeprecationWarning:pydantic._internal._config",
     "ignore::pytest.PytestReturnNotNoneWarning",
     "ignore::DeprecationWarning:gherkin.gherkin_line",
+    "ignore::pluggy.PluggyTeardownRaisedWarning",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 6"
+addopts = "-v --tb=short --strict-markers -n 6 --ignore=test/deployment --import-mode=importlib"
+norecursedirs = [".git", ".tox", "dist", "build", "*.egg", "__pycache__"]
 
 [tool.pyright]
 
