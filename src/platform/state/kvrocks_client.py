@@ -1,20 +1,8 @@
-"""
-Kvrocks Client - Pure Redis Protocol Client with Connection Pooling
-純粹的 Redis 客戶端，不包含業務邏輯
-Kvrocks = Redis 協議 + Kvrocks 存儲引擎（持久化、零丟失）
-
-Connection Pooling:
-- Async client uses explicit ConnectionPool with configurable max_connections
-- Sync client uses internal ConnectionPool (created automatically by redis.from_url)
-- Health checks and timeouts configured via settings
-"""
-
 import asyncio
 from typing import Optional
 
 from redis import Redis as SyncRedis
-from redis.asyncio import ConnectionPool as AsyncConnectionPool
-from redis.asyncio import Redis
+from redis.asyncio import ConnectionPool as AsyncConnectionPool, Redis as AsyncRedis
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
@@ -41,11 +29,11 @@ class KvrocksClient:
         await client.get("key")
     """
 
-    def __init__(self):
-        self._clients: dict[int, Redis] = {}
+    def __init__(self) -> None:
+        self._clients: dict[int, AsyncRedis] = {}
         self._lock = asyncio.Lock()
 
-    async def initialize(self) -> Redis:
+    async def initialize(self) -> AsyncRedis:
         """
         Initialize connection pool for current event loop (call during startup).
 
@@ -72,7 +60,7 @@ class KvrocksClient:
                 socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
                 health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
             )
-            self._clients[loop_id] = Redis.from_pool(pool)
+            self._clients[loop_id] = AsyncRedis.from_pool(pool)
             Logger.base.info(f'📡 [KVROCKS] Connection pool created for loop {loop_id}')
 
             # Verify connection with a ping (fail-fast)
@@ -88,7 +76,7 @@ class KvrocksClient:
 
         return self._clients[loop_id]
 
-    def get_client(self) -> Redis:
+    def get_client(self) -> AsyncRedis:
         """
         Get Redis client from pool (non-async, fast).
 
@@ -105,7 +93,7 @@ class KvrocksClient:
 
         return self._clients[loop_id]
 
-    async def connect(self) -> Redis:
+    async def connect(self) -> AsyncRedis:
         """
         Legacy method for backward compatibility.
         Prefer initialize() in startup and get_client() in handlers.
@@ -138,8 +126,8 @@ kvrocks_client = KvrocksClient()
 
 class KvrocksClientSync:
     """
-    同步版本的 Kvrocks 客戶端
-    用於 Kafka Consumer 等同步環境
+    Synchronous version of Kvrocks Client
+    Used for Kafka Consumer and other synchronous environments
 
     Note: redis.from_url() automatically creates an internal ConnectionPool,
     so explicit pool management is not needed for the sync client.
@@ -149,7 +137,7 @@ class KvrocksClientSync:
         self._client: Optional[SyncRedis] = None
 
     def connect(self) -> SyncRedis:
-        """建立 Kvrocks 連線（同步）"""
+        """Establish Kvrocks connection (sync version)"""
         if self._client is None:
             # from_url() creates internal ConnectionPool automatically with pool settings
             self._client = SyncRedis.from_url(
@@ -168,7 +156,7 @@ class KvrocksClientSync:
         return self._client
 
     def disconnect(self):
-        """關閉 Kvrocks 連線"""
+        """Close Kvrocks connection"""
         if self._client:
             self._client.close()
             self._client = None
@@ -176,11 +164,11 @@ class KvrocksClientSync:
 
     @property
     def client(self) -> SyncRedis:
-        """取得 Redis 客戶端（同步方式）"""
+        """Get Redis client (sync version)"""
         if self._client is None:
             raise RuntimeError('Kvrocks client not connected. Call connect() first.')
         return self._client
 
 
-# 全域單例 - 同步版本
+# Global singleton - sync version
 kvrocks_client_sync = KvrocksClientSync()

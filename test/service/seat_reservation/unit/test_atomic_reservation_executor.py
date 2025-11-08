@@ -12,9 +12,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import orjson
 import pytest
 
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper import (
+    atomic_reservation_executor,
+)
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
 )
+
+
+# Test constants - attribute name for patching
+KVROCKS_CLIENT_ATTR = 'kvrocks_client'
 
 
 # ============================================================================
@@ -168,9 +175,7 @@ class TestFetchSeatPrices:
     @pytest.mark.asyncio
     async def test_fetch_seat_prices_success(self, executor, sample_seats):
         # Given: Mock Kvrocks client
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
@@ -211,9 +216,7 @@ class TestFetchSeatPrices:
             (1, 3, 2, 'A-1-1-3'),
         ]
 
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
@@ -246,9 +249,7 @@ class TestFetchSeatPrices:
             (2, 1, 2, 'A-1-2-1'),  # Different row
         ]
 
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
@@ -285,13 +286,14 @@ class TestExecuteAtomicReservation:
         self, executor, sample_seats, sample_seat_prices
     ):
         # Given: Mock Kvrocks client and pipeline
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
+
+            # Mock current event stats (for time tracking)
+            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
 
             # Mock pipeline execution results
             # For 2 seats: 4 setbit + 4 hincrby + 2 hgetall + 1 hset = 11 results
@@ -368,13 +370,14 @@ class TestExecuteAtomicReservation:
         seats = [(1, 1, 0, 'A-1-1-1')]
         seat_prices = {'A-1-1-1': 1000}
 
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
+
+            # Mock current event stats (for time tracking)
+            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
 
             # Mock pipeline results for 1 seat
             # 2 setbit + 4 hincrby + 2 hgetall + 1 hset = 9 results
@@ -429,13 +432,14 @@ class TestExecuteAtomicReservation:
         ]
         seat_prices = {seat_id: 1000 for _, _, _, seat_id in seats}
 
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
+
+            # Mock current event stats (for time tracking)
+            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
 
             # Mock pipeline results for 5 seats
             # 10 setbit + 4 hincrby + 2 hgetall + 1 hset = 17 results
@@ -477,13 +481,14 @@ class TestExecuteAtomicReservation:
         self, executor, sample_seats, sample_seat_prices
     ):
         # Given: Mock Kvrocks client
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
+
+            # Mock current event stats (for time tracking)
+            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
 
             # Standard mock results
             mock_pipeline.execute = AsyncMock(
@@ -535,13 +540,14 @@ class TestExecuteAtomicReservation:
     @pytest.mark.asyncio
     async def test_execute_atomic_reservation_setbit_offsets(self, executor, sample_seats):
         # Given: Mock Kvrocks client
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor.kvrocks_client'
-        ) as mock_kvrocks:
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
             mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
+
+            # Mock current event stats (for time tracking)
+            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
 
             mock_pipeline.execute = AsyncMock(
                 return_value=[
@@ -583,3 +589,107 @@ class TestExecuteAtomicReservation:
             # Seat 2
             assert setbit_calls[2][0] == ('seats_bf:123:A-1', 2, 0)  # bit0
             assert setbit_calls[3][0] == ('seats_bf:123:A-1', 3, 1)  # bit1
+
+
+# ============================================================================
+# Time Tracking Tests
+# ============================================================================
+
+
+class TestTimeTracking:
+    @pytest.mark.asyncio
+    async def test_track_sold_out(self, executor):
+        # Given: A mock Redis client with first_ticket_sold_at timestamp
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
+            mock_client = MagicMock()
+            mock_kvrocks.get_client.return_value = mock_client
+
+            # Mock first_ticket_sold_at timestamp
+            first_timestamp = '2025-11-04T10:30:00.000000+00:00'
+            mock_client.hget = AsyncMock(return_value=first_timestamp.encode())
+            mock_client.hset = AsyncMock()
+
+            # When: Track sold out (new_available_count = 0)
+            await executor._track_sold_out(
+                client=mock_client,
+                event_id=123,
+                new_available_count=0,  # Sold out!
+                total_seats=100,
+            )
+
+            # Then: hget should be called to get first_ticket_sold_at
+            key_prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
+            expected_timer_key = f'{key_prefix}event_sellout_timer:123'
+            mock_client.hget.assert_called_once_with(expected_timer_key, 'first_ticket_sold_at')
+
+            # And: hset should be called to save sold_out info
+            mock_client.hset.assert_called_once()
+            call_kwargs = mock_client.hset.call_args[1]
+            assert 'mapping' in call_kwargs
+            mapping = call_kwargs['mapping']
+            assert 'sold_out_at' in mapping
+            assert 'duration_seconds' in mapping
+            assert mapping['total_seats'] == '100'
+            assert mapping['status'] == 'SOLD_OUT'
+
+    @pytest.mark.asyncio
+    async def test_track_sold_out_not_sold_out(self, executor):
+        # Given: A mock Redis client
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
+            mock_client = MagicMock()
+            mock_kvrocks.get_client.return_value = mock_client
+            mock_client.hget = AsyncMock()
+
+            # When: Track with new_available_count > 0 (not sold out)
+            await executor._track_sold_out(
+                client=mock_client,
+                event_id=123,
+                new_available_count=10,  # Still available
+                total_seats=100,
+            )
+
+            # Then: hget should NOT be called
+            mock_client.hget.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_sellout_stats(self, executor):
+        # Given: A mock Redis client with sellout stats
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
+            mock_client = MagicMock()
+            mock_kvrocks.get_client.return_value = mock_client
+
+            # Mock sellout stats
+            mock_stats = {
+                b'first_ticket_sold_at': b'2025-11-04T10:30:00.000000+00:00',
+                b'sold_out_at': b'2025-11-04T10:35:42.665556+00:00',
+                b'duration_seconds': b'342.665556',
+                b'total_seats': b'50000',
+                b'status': b'SOLD_OUT',
+            }
+            mock_client.hgetall = AsyncMock(return_value=mock_stats)
+
+            # When: Get sellout stats
+            stats = await executor.get_sellout_stats(event_id=123)
+
+            # Then: Stats should be decoded properly
+            assert stats == {
+                'first_ticket_sold_at': '2025-11-04T10:30:00.000000+00:00',
+                'sold_out_at': '2025-11-04T10:35:42.665556+00:00',
+                'duration_seconds': '342.665556',
+                'total_seats': '50000',
+                'status': 'SOLD_OUT',
+            }
+
+    @pytest.mark.asyncio
+    async def test_get_sellout_stats_no_stats(self, executor):
+        # Given: A mock Redis client with no stats
+        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
+            mock_client = MagicMock()
+            mock_kvrocks.get_client.return_value = mock_client
+            mock_client.hgetall = AsyncMock(return_value={})
+
+            # When: Get sellout stats
+            stats = await executor.get_sellout_stats(event_id=123)
+
+            # Then: Should return empty dict
+            assert stats == {}
