@@ -26,6 +26,8 @@ from src.platform.database.orm_db_setting import create_db_and_tables, get_engin
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.platform.observability.tracing import TracingConfig
+
+# Use monkey-patched test client from conftest.py
 from src.platform.state.kvrocks_client import kvrocks_client
 
 # Ticketing Service imports

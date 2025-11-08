@@ -61,11 +61,11 @@ def mock_kafka_infrastructure(request):
         Test implementation: Direct Kvrocks writes via Pipeline.
         Bypasses async Kafka processing for faster, deterministic tests.
         """
-        import os
         from collections import defaultdict
         from datetime import datetime, timezone
+        import os
 
-        from src.platform.state.kvrocks_client import kvrocks_client_sync
+        from test.kvrocks_test_client import kvrocks_test_client
 
         # Get key prefix
         _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
@@ -114,7 +114,7 @@ def mock_kafka_infrastructure(request):
                 }
 
         # Use Pipeline to batch write all operations (sync version)
-        client = kvrocks_client_sync.connect()
+        client = kvrocks_test_client.connect()
         pipe = client.pipeline()
         timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 

@@ -38,7 +38,8 @@ class TestCheckSubsectionAvailabilityIntegration:
     """測試 check_subsection_availability() 與真實 Kvrocks 的整合"""
 
     @pytest.fixture
-    def handler(self):
+    async def handler(self):
+        await kvrocks_client.initialize()
         return SeatAvailabilityQueryHandlerImpl()
 
     @pytest.mark.asyncio

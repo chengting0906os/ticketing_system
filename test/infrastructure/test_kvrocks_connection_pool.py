@@ -24,12 +24,9 @@ class TestKvrocksClientAsyncPooling:
         try:
             redis_client = await client.connect()
 
-            # Verify client is stored in the clients dict (per event loop)
-            import asyncio
-
-            loop_id = id(asyncio.get_running_loop())
-            assert loop_id in client._clients
-            assert client._clients[loop_id] == redis_client
+            # Verify client is stored (production client uses single _client)
+            assert client._client is not None
+            assert client._client == redis_client
 
             # Verify pool exists and is correct type
             pool = redis_client.connection_pool

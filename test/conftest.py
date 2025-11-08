@@ -44,6 +44,16 @@ test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 # =============================================================================
+# Monkey-patch production kvrocks_client with test version
+# =============================================================================
+# Replace production client with test client that supports per-event-loop connections
+# This must happen BEFORE any imports that use kvrocks_client
+import src.platform.state.kvrocks_client  # noqa: E402
+from test.kvrocks_test_client import kvrocks_test_client_async  # noqa: E402
+
+src.platform.state.kvrocks_client.kvrocks_client = kvrocks_test_client_async
+
+# =============================================================================
 # Database Connection Pool Configuration for Tests
 # =============================================================================
 # Override pool settings to prevent connection exhaustion during parallel testing
@@ -60,14 +70,13 @@ os.environ['ASYNCPG_POOL_MAX_SIZE'] = '10'
 # Import Application and Test Components
 # =============================================================================
 # Import test-specific app (no Kafka consumers, no polling tasks)
-from test.test_main import app  # noqa: E402
-
 # Import all BDD steps and service fixtures through consolidated modules
 from test.bdd_steps_loader import *  # noqa: E402, F403
 from test.fixture_loader import *  # noqa: E402, F403
 
 # Explicit imports for commonly used test utilities
 from test.shared.utils import create_user  # noqa: E402
+from test.test_main import app  # noqa: E402
 from test.util_constant import (  # noqa: E402
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
@@ -228,46 +237,25 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True, scope='function')
 async def clean_kvrocks():
     """
-    Clean Kvrocks and reset async client before each test
+    Clean Kvrocks before and after each test
 
-    CRITICAL: Reset async kvrocks_client to prevent event loop contamination.
-    The global singleton holds a reference to the first event loop, causing
-    "Event loop is closed" errors in subsequent tests if not reset.
+    Uses test-only client to avoid coupling with production implementation.
     """
-    from src.platform.state.kvrocks_client import kvrocks_client, kvrocks_client_sync
+    from test.kvrocks_test_client import kvrocks_test_client
 
-    # 1. Disconnect and reset async client (prevents event loop contamination)
-    # Note: KvrocksClient now uses per-event-loop clients (_clients dict)
-    try:
-        await kvrocks_client.disconnect()
-    except Exception:
-        pass  # Ignore if no client exists for current loop
-
-    # 2. Initialize async client for current event loop
-    try:
-        await kvrocks_client.initialize()
-    except Exception:
-        pass  # Ignore if already initialized
-
-    # 3. Clean Kvrocks data using sync client
+    # Clean Kvrocks data before test
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
-    sync_client = kvrocks_client_sync.connect()
-    keys: list[str] = sync_client.keys(f'{key_prefix}*')  # type: ignore
+    client = kvrocks_test_client.connect()
+    keys: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
     if keys:
-        sync_client.delete(*keys)
+        client.delete(*keys)
 
     yield
 
-    # 4. Cleanup after test
-    keys_after: list[str] = sync_client.keys(f'{key_prefix}*')  # type: ignore
+    # Cleanup after test
+    keys_after: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
     if keys_after:
-        sync_client.delete(*keys_after)
-
-    # 5. Reset async client again (per-event-loop cleanup)
-    try:
-        await kvrocks_client.disconnect()
-    except Exception:
-        pass  # Ignore if no client exists for current loop
+        client.delete(*keys_after)
 
 
 @pytest.fixture(autouse=True, scope='function')
@@ -286,9 +274,10 @@ async def clean_database():
     # Cleanup: Dispose engines to release all DB connections
     # Important: Each pytest-xdist worker has its own process, so this cleanup
     # only affects the current worker's engines, not other workers
-    from src.platform.database.orm_db_setting import _engine_manager
-    from src.platform.database.asyncpg_setting import close_asyncpg_pool
     import asyncio
+
+    from src.platform.database.asyncpg_setting import close_asyncpg_pool
+    from src.platform.database.orm_db_setting import _engine_manager
 
     # Get current event loop ID to ensure we only clean up this loop's resources
     try:
@@ -448,12 +437,12 @@ def kvrocks_client_sync_for_test():
     Uses sync client in async test context to ensure test verification logic
     is independent from the async operations being tested.
     """
-    from src.platform.state.kvrocks_client import kvrocks_client_sync
+    from test.kvrocks_test_client import kvrocks_test_client
 
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
 
     # Cleanup before test
-    client = kvrocks_client_sync.connect()
+    client = kvrocks_test_client.connect()
     keys_before: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
     if keys_before:
         client.delete(*keys_before)

@@ -26,6 +26,11 @@ def _make_key(key: str) -> str:
 class TestSeatFinder:
     """Unit tests for SeatFinder consecutive seat search"""
 
+    @pytest.fixture(autouse=True)
+    async def setup_kvrocks(self):
+        """Initialize kvrocks client for all tests in this class"""
+        await kvrocks_client.initialize()
+
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_calculate_seat_index(self):

@@ -264,8 +264,8 @@ async def main():
     finally:
         # Cleanup Kvrocks connection
         try:
-            await kvrocks_client.disconnect_all()
-            print('📡 Kvrocks connections closed')
+            await kvrocks_client.disconnect()
+            print('📡 Kvrocks connection closed')
         except Exception:
             pass
 

@@ -29,14 +29,21 @@ def _make_key(key: str) -> str:
 
 
 @pytest.fixture
-def seat_handler():
+async def seat_handler():
     """Create seat state command handler"""
+    # Initialize kvrocks client for current event loop
+    from src.platform.state.kvrocks_client import kvrocks_client
+
+    await kvrocks_client.initialize()
     return SeatStateCommandHandlerImpl()
 
 
 @pytest.fixture
-def init_handler():
+async def init_handler():
     """Create seat initialization handler"""
+    from src.platform.state.kvrocks_client import kvrocks_client
+
+    await kvrocks_client.initialize()
     return InitEventAndTicketsStateHandlerImpl()
 
 

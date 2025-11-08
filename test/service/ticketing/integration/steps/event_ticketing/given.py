@@ -1,15 +1,15 @@
 import os
 from unittest.mock import patch
 
-import orjson
 from fastapi.testclient import TestClient
+import orjson
 from pytest_bdd import given
 
 from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
-from src.platform.state.kvrocks_client import kvrocks_client_sync
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
+from test.kvrocks_test_client import kvrocks_test_client
 from test.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from test.util_constant import (
     DEFAULT_PASSWORD,
@@ -260,7 +260,7 @@ def event_exists(step, execute_sql_statement):
                     )
 
     # Initialize Redis configuration for each subsection (critical for SSE test)
-    client = kvrocks_client_sync.connect()
+    client = kvrocks_test_client.connect()
 
     # Get key prefix for test isolation (same as SeatStateHandlerImpl)
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
