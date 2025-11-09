@@ -19,7 +19,7 @@
 | `event_sections:{event_id}` | Sorted Set | Section index | Section IDs (score=0) |
 | `booking:{booking_id}` | Hash | Booking metadata (TTL=1h) | `status`, `reserved_seats`, `total_price` |
 | `event_stats:{event_id}` | Hash | Event-level statistics | `available`, `reserved`, `sold`, `total` |
-| `event_sellout_timer:{event_id}` | Hash | Sellout time tracking | `first_ticket_sold_at`, `sold_out_at`, `duration_seconds`, `total_seats`, `status` |
+| `event_sellout_timer:{event_id}` | Hash | Sellout time tracking | `first_ticket_reserved_at`, `fully_reserved_at`, `duration_seconds` |
 
 ## Redis Commands Reference
 
@@ -32,7 +32,7 @@
 | `GETRANGE key start end` | Bitfield | Batch read bitfield | `bytes = await client.getrange(bf_key, 0, 999)` |
 | `HSET key field value` | Hash | Set single field | `client.hset(key, 'price', '1000')` |
 | `HSET key mapping={...}` | Hash | Set multiple fields | `await client.hset(key, mapping={'a': '1'})` |
-| `HSETNX key field value` | Hash | Set if field not exists | `pipe.hsetnx(timer_key, 'first_ticket_sold_at', now)` |
+| `HSETNX key field value` | Hash | Set if field not exists | `pipe.hsetnx(timer_key, 'first_ticket_reserved_at', now)` |
 | `HGET key field` | Hash | Get single field | `price = await client.hget(meta_key, '1')` |
 | `HGETALL key` | Hash | Get all fields | `config = await client.hgetall(config_key)` |
 | `HINCRBY key field increment` | Hash | Atomic counter | `pipe.hincrby(stats_key, 'available', -1)` |
@@ -155,16 +155,12 @@ Tracks the time from first ticket sold to complete sellout for performance analy
 
 ```redis
 HGETALL event_sellout_timer:123
-1) "first_ticket_sold_at"
+1) "first_ticket_reserved_at"
 2) "2025-11-05T10:30:15.123456+00:00"    # ISO 8601 timestamp
-3) "sold_out_at"
+3) "fully_reserved_at"
 4) "2025-11-05T10:35:42.789012+00:00"    # When available reached 0
 5) "duration_seconds"
-6) "327.665556"                           # Calculated duration
-7) "total_seats"
-8) "50000"                                # Total seats in event
-9) "status"
-10) "SOLD_OUT"
+6) "327.665556"                           # Calculated duration (seconds)
 ```
 
 ### Why HSETNX Instead of HSET?
@@ -174,7 +170,7 @@ HGETALL event_sellout_timer:123
 #### ✅ Correct: HSETNX
 
 ```python
-pipe.hsetnx(timer_key, 'first_ticket_sold_at', now)
+pipe.hsetnx(timer_key, 'first_ticket_reserved_at', now)
 ```
 
 **Guarantees**:
@@ -188,7 +184,7 @@ pipe.hsetnx(timer_key, 'first_ticket_sold_at', now)
 #### ❌ Wrong: HSET
 
 ```python
-pipe.hset(timer_key, 'first_ticket_sold_at', now)  # DON'T DO THIS
+pipe.hset(timer_key, 'first_ticket_reserved_at', now)  # DON'T DO THIS
 ```
 
 **Problems**:
@@ -216,11 +212,11 @@ current_reserved_count = int(current_stats.get(b'reserved', b'0'))
 #### 2. Track First Ticket (In Pipeline)
 
 ```python
-async def _track_first_ticket_sold(*, current_reserved_count, ...):
+async def _track_first_ticket(*, current_reserved_count, ...):
     if current_reserved_count == 0:  # Only first ticket
         timer_key = f'event_sellout_timer:{event_id}'
         now = datetime.now(timezone.utc).isoformat()
-        pipe.hsetnx(timer_key, 'first_ticket_sold_at', now)
+        pipe.hsetnx(timer_key, 'first_ticket_reserved_at', now)
 ```
 
 **Key points**:
@@ -233,17 +229,15 @@ async def _track_first_ticket_sold(*, current_reserved_count, ...):
 #### 3. Track Sold Out (After Pipeline)
 
 ```python
-async def _track_sold_out(*, new_available_count, ...):
+async def _track_sellout_complete(*, new_available_count, ...):
     if new_available_count == 0:  # Just sold out
-        first_time = await client.hget(timer_key, 'first_ticket_sold_at')
-        sold_out_at = datetime.now(timezone.utc)
-        duration = (sold_out_at - parse(first_time)).total_seconds()
+        first_time = await client.hget(timer_key, 'first_ticket_reserved_at')
+        fully_reserved_at = datetime.now(timezone.utc)
+        duration = (fully_reserved_at - parse(first_time)).total_seconds()
 
         await client.hset(timer_key, mapping={
-            'sold_out_at': sold_out_at.isoformat(),
+            'fully_reserved_at': fully_reserved_at.isoformat(),
             'duration_seconds': str(duration),
-            'total_seats': str(total_seats),
-            'status': 'SOLD_OUT'
         })
 ```
 
@@ -251,23 +245,23 @@ async def _track_sold_out(*, new_available_count, ...):
 
 #### Scenario: Two Requests Arrive Simultaneously
 
-```
+```plain
 Timeline:
 ──────────────────────────────────────────────────────────
 
 Request A (10:30:15.100):
   ├─ Read: current_reserved_count = 0  ✅
   ├─ Check: 0 == 0  ✅ Is first ticket
-  ├─ HSETNX first_ticket_sold_at = '10:30:15.100'
+  ├─ HSETNX first_ticket_reserved_at = '10:30:15.100'
   └─ EXEC → SUCCESS (field created)  ✅
 
 Request B (10:30:15.120, almost same time):
   ├─ Read: current_reserved_count = 0  ✅ (A not committed yet)
   ├─ Check: 0 == 0  ✅ Thinks it's first ticket
-  ├─ HSETNX first_ticket_sold_at = '10:30:15.120'
+  ├─ HSETNX first_ticket_reserved_at = '10:30:15.120'
   └─ EXEC → IGNORED (field exists)  ✅
 
-Result: first_ticket_sold_at = '10:30:15.100' (Request A) ✅
+Result: first_ticket_reserved_at = '10:30:15.100' (Request A) ✅
 ```
 
 **Protection layers**:
@@ -275,23 +269,6 @@ Result: first_ticket_sold_at = '10:30:15.100' (Request A) ✅
 1. **HSETNX**: Atomic first-write-wins
 2. **Kafka partitioning**: Same event → same partition → sequential
 3. **MULTI/EXEC**: Transaction isolation
-
-### Query API
-
-```python
-from atomic_reservation_executor import AtomicReservationExecutor
-
-executor = AtomicReservationExecutor()
-stats = await executor.get_sellout_stats(event_id=123)
-
-if stats:
-    print(f"First ticket: {stats['first_ticket_sold_at']}")
-    print(f"Sold out: {stats['sold_out_at']}")
-    print(f"Duration: {stats['duration_seconds']}s")
-    print(f"Total seats: {stats['total_seats']}")
-else:
-    print("Event not sold out yet")
-```
 
 ### Performance Impact
 

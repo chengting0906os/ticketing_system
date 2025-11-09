@@ -5,6 +5,7 @@ from typing import Awaitable, Dict, List, cast
 import orjson
 from redis.asyncio import Redis
 
+from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 
 
@@ -45,57 +46,13 @@ class AtomicReservationExecutor:
             if isinstance(value, bytes):
                 value: str = value.decode()
 
-            # Convert to int (e.g., '100' → 100)
+            # Convert to int (default to 0 if conversion fails)
             try:
                 decoded[key] = int(value)
             except (ValueError, TypeError):
                 decoded[key] = 0
 
         return decoded
-
-    @staticmethod
-    async def _track_sold_out(
-        *,
-        client,
-        event_id: int,
-        new_available_count: int,
-        total_seats: int,
-    ) -> None:
-        # Only track if event just sold out
-        if new_available_count != 0:
-            return
-
-        timer_key: str = _make_key(f'event_sellout_timer:{event_id}')
-
-        # Get first ticket timestamp
-        first_ticket_sold_at_bytes = await client.hget(timer_key, 'first_ticket_sold_at')
-        first_ticket_sold_at: datetime = datetime.fromisoformat(first_ticket_sold_at_bytes.decode())
-        sold_out_at: datetime = datetime.now(timezone.utc)
-        duration_seconds: float = (sold_out_at - first_ticket_sold_at).total_seconds()
-
-        # Save sold out info
-        await client.hset(
-            timer_key,
-            mapping={
-                'sold_out_at': sold_out_at.isoformat(),
-                'duration_seconds': str(duration_seconds),
-                'total_seats': str(total_seats),
-                'status': 'SOLD_OUT',
-            },
-        )
-
-    @staticmethod
-    async def get_sellout_stats(*, event_id: int) -> Dict:
-        client: Redis = kvrocks_client.get_client()
-        timer_key = _make_key(f'event_sellout_timer:{event_id}')
-
-        stats_raw = await cast(Awaitable[dict], client.hgetall(timer_key))
-
-        if not stats_raw:
-            return {}
-
-        # Decode bytes to strings
-        return {key.decode(): value.decode() for key, value in stats_raw.items()}
 
     async def fetch_seat_prices(
         self,
@@ -258,7 +215,7 @@ class AtomicReservationExecutor:
         # Get Redis client (lightweight dict lookup)
         client = kvrocks_client.get_client()
 
-        # ========== STEP 0: Get current stats for time tracking ==========
+        # ========== STEP 0: Read current stats BEFORE pipeline (for sellout tracking) ==========
         # We need to know the current reserved count to determine if this is the first ticket
         event_stats_key: str = _make_key(f'event_stats:{event_id}')
         current_stats = await cast(Awaitable[dict], client.hgetall(event_stats_key))
@@ -312,16 +269,7 @@ class AtomicReservationExecutor:
         pipe.hgetall(stats_key)
         pipe.hgetall(event_stats_key)
 
-        # ========== STEP 4: Track first ticket sold timestamp ==========
-        # If this is the first reservation, record the timestamp
-        # NOTE: This must come AFTER hgetall to maintain consistent pipeline result indices
-        if current_reserved_count == 0:
-            timer_key = _make_key(f'event_sellout_timer:{event_id}')
-            now = datetime.now(timezone.utc).isoformat()
-            # HSETNX: Only set if field doesn't exist (atomic, prevents race conditions)
-            pipe.hsetnx(timer_key, 'first_ticket_sold_at', now)
-
-        # ========== STEP 5: Save booking metadata ==========
+        # ========== STEP 4: Save booking metadata ==========
         # Save booking metadata for tracking reservation status
         # Note: We save stats references (keys) here, not the actual stats
         # The actual stats will be decoded from the pipeline results
@@ -352,30 +300,44 @@ class AtomicReservationExecutor:
         # - [num_seats*2 to num_seats*2+3]: hincrby results (4 total)
         # - [num_seats*2+4]: subsection_stats (hgetall)
         # - [num_seats*2+5]: event_stats (hgetall)
-        # - [num_seats*2+6]: hsetnx result (optional, only if first ticket)
-        # - [num_seats*2+6 or 7]: hset result (booking metadata)
+        # - [num_seats*2+6]: hset result (booking metadata)
         #
         # Example with 2 seats:
         # - Results[0-3]: 4 setbit results
         # - Results[4-7]: 4 hincrby results
         # - Results[8]: subsection_stats ← (2*2 + 4)
         # - Results[9]: event_stats ← (2*2 + 5)
-        # - Results[10]: hsetnx (if first ticket) or hset (if not first)
-        # - Results[11]: hset (if first ticket)
+        # - Results[10]: hset result
         subsection_stats_idx = num_seats * 2 + 4
         event_stats_idx = subsection_stats_idx + 1
 
         subsection_stats = self._decode_stats(results[subsection_stats_idx])
         event_stats = self._decode_stats(results[event_stats_idx])
 
-        # ========== STEP 6: Track sold out timestamp ==========
-        # If event just sold out (available == 0), record timestamp and calculate duration
-        await self._track_sold_out(
-            client=client,
-            event_id=event_id,
-            new_available_count=event_stats.get('available', 0),
-            total_seats=current_total_seats,
-        )
+        # ========== STEP 5: Track sellout timing (AFTER pipeline) ==========
+        # Track first ticket sold (if this was the first reservation)
+        # Wrapped in try-except to ensure sellout tracking doesn't break reservation flow
+        try:
+            await self._track_first_ticket(
+                client=client,
+                event_id=event_id,
+                current_reserved_count=current_reserved_count,
+            )
+        except Exception:
+            # Silently fail if sellout tracking fails (non-critical feature)
+            pass
+
+        # Track sold out event (if event just sold out)
+        try:
+            await self._track_sold_out(
+                client=client,
+                event_id=event_id,
+                new_available_count=event_stats.get('available', 0),
+                total_seats=current_total_seats,
+            )
+        except Exception:
+            # Silently fail if sellout tracking fails (non-critical feature)
+            pass
 
         # Return complete reservation result
         return {
@@ -387,3 +349,82 @@ class AtomicReservationExecutor:
             'event_stats': event_stats,
             'error_message': None,
         }
+
+    @staticmethod
+    @Logger.io
+    async def _track_first_ticket(
+        *,
+        client: Redis,
+        event_id: int,
+        current_reserved_count: int,
+    ) -> None:
+        # Only track when this is the first ticket (reserved was 0 before)
+        if current_reserved_count != 0:
+            return
+
+        timer_key = _make_key(f'event_sellout_timer:{event_id}')
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Use HSETNX for atomic first-write-wins
+        was_set = await cast(
+            Awaitable[bool], client.hsetnx(timer_key, 'first_ticket_reserved_at', now)
+        )
+
+        # Only record metrics/spans if we actually set the first ticket
+        if was_set:
+            Logger.base.info(
+                f'📊 [SELLOUT-TRACKING] First ticket reserved for event_id={event_id} at {now}'
+            )
+
+    @staticmethod
+    @Logger.io
+    async def _track_sold_out(
+        *,
+        client: Redis,
+        event_id: int,
+        new_available_count: int,
+        total_seats: int,
+    ) -> None:
+        # Only track when just sold out (available became 0)
+        if new_available_count != 0:
+            return
+
+        timer_key = _make_key(f'event_sellout_timer:{event_id}')
+
+        # Fetch first ticket reserved timestamp
+        first_ticket_reserved_at_raw = await cast(
+            Awaitable[bytes | str | None], client.hget(timer_key, 'first_ticket_reserved_at')
+        )
+
+        if not first_ticket_reserved_at_raw:
+            # No first ticket recorded, skip tracking
+            return
+
+        # Decode bytes to string
+        first_ticket_reserved_at_str = (
+            first_ticket_reserved_at_raw.decode()
+            if isinstance(first_ticket_reserved_at_raw, bytes)
+            else first_ticket_reserved_at_raw
+        )
+
+        # Parse timestamps and calculate duration
+        first_ticket_reserved_at = datetime.fromisoformat(first_ticket_reserved_at_str)
+        sold_out_at = datetime.now(timezone.utc)
+        duration = (sold_out_at - first_ticket_reserved_at).total_seconds()
+
+        # Save sellout stats to Kvrocks
+        await cast(
+            Awaitable[int],
+            client.hset(
+                timer_key,
+                mapping={
+                    'fully_reserved_at': sold_out_at.isoformat(),
+                    'duration_seconds': str(duration),
+                },
+            ),
+        )
+
+        Logger.base.info(
+            f'🎉 [SELLOUT-TRACKING] Event {event_id} SOLD OUT! Duration: {duration:.2f}s '
+            f'({duration / 60:.2f} min), Total seats: {total_seats}'
+        )

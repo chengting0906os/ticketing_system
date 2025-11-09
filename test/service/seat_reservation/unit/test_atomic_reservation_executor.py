@@ -157,11 +157,11 @@ class TestDecodeStats:
         # When: Decode stats
         result = executor._decode_stats(stats_raw)
 
-        # Then: Should convert invalid values to 0
+        # Then: Should default to 0 for values that can't be converted to int
         assert result == {
-            'available': 0,
-            'reserved': 0,
-            'sold': 0,
+            'available': 0,  # Convert invalid to 0
+            'reserved': 0,  # Convert empty string to 0
+            'sold': 0,  # Convert None to 0
         }
 
 
@@ -589,107 +589,3 @@ class TestExecuteAtomicReservation:
             # Seat 2
             assert setbit_calls[2][0] == ('seats_bf:123:A-1', 2, 0)  # bit0
             assert setbit_calls[3][0] == ('seats_bf:123:A-1', 3, 1)  # bit1
-
-
-# ============================================================================
-# Time Tracking Tests
-# ============================================================================
-
-
-class TestTimeTracking:
-    @pytest.mark.asyncio
-    async def test_track_sold_out(self, executor):
-        # Given: A mock Redis client with first_ticket_sold_at timestamp
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-
-            # Mock first_ticket_sold_at timestamp
-            first_timestamp = '2025-11-04T10:30:00.000000+00:00'
-            mock_client.hget = AsyncMock(return_value=first_timestamp.encode())
-            mock_client.hset = AsyncMock()
-
-            # When: Track sold out (new_available_count = 0)
-            await executor._track_sold_out(
-                client=mock_client,
-                event_id=123,
-                new_available_count=0,  # Sold out!
-                total_seats=100,
-            )
-
-            # Then: hget should be called to get first_ticket_sold_at
-            key_prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
-            expected_timer_key = f'{key_prefix}event_sellout_timer:123'
-            mock_client.hget.assert_called_once_with(expected_timer_key, 'first_ticket_sold_at')
-
-            # And: hset should be called to save sold_out info
-            mock_client.hset.assert_called_once()
-            call_kwargs = mock_client.hset.call_args[1]
-            assert 'mapping' in call_kwargs
-            mapping = call_kwargs['mapping']
-            assert 'sold_out_at' in mapping
-            assert 'duration_seconds' in mapping
-            assert mapping['total_seats'] == '100'
-            assert mapping['status'] == 'SOLD_OUT'
-
-    @pytest.mark.asyncio
-    async def test_track_sold_out_not_sold_out(self, executor):
-        # Given: A mock Redis client
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-            mock_client.hget = AsyncMock()
-
-            # When: Track with new_available_count > 0 (not sold out)
-            await executor._track_sold_out(
-                client=mock_client,
-                event_id=123,
-                new_available_count=10,  # Still available
-                total_seats=100,
-            )
-
-            # Then: hget should NOT be called
-            mock_client.hget.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_get_sellout_stats(self, executor):
-        # Given: A mock Redis client with sellout stats
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-
-            # Mock sellout stats
-            mock_stats = {
-                b'first_ticket_sold_at': b'2025-11-04T10:30:00.000000+00:00',
-                b'sold_out_at': b'2025-11-04T10:35:42.665556+00:00',
-                b'duration_seconds': b'342.665556',
-                b'total_seats': b'50000',
-                b'status': b'SOLD_OUT',
-            }
-            mock_client.hgetall = AsyncMock(return_value=mock_stats)
-
-            # When: Get sellout stats
-            stats = await executor.get_sellout_stats(event_id=123)
-
-            # Then: Stats should be decoded properly
-            assert stats == {
-                'first_ticket_sold_at': '2025-11-04T10:30:00.000000+00:00',
-                'sold_out_at': '2025-11-04T10:35:42.665556+00:00',
-                'duration_seconds': '342.665556',
-                'total_seats': '50000',
-                'status': 'SOLD_OUT',
-            }
-
-    @pytest.mark.asyncio
-    async def test_get_sellout_stats_no_stats(self, executor):
-        # Given: A mock Redis client with no stats
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-            mock_client.hgetall = AsyncMock(return_value={})
-
-            # When: Get sellout stats
-            stats = await executor.get_sellout_stats(event_id=123)
-
-            # Then: Should return empty dict
-            assert stats == {}
