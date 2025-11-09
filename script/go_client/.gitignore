@@ -1,6 +1,8 @@
 # Binaries
-loadtest
-loadtest.exe
+*loadtest
+*loadtest.exe
+*load_test
+*load_test.exe
 setup_users
 setup_users.exe
 

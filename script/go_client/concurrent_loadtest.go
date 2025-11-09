@@ -1,3 +1,9 @@
+//go:build ignore
+// +build ignore
+
+// This file is intentionally ignored by default to avoid IDE conflicts.
+// Build with: go build concurrent_loadtest.go types.go
+
 package main
 
 import (
@@ -21,33 +27,12 @@ import (
 	"time"
 )
 
-// API Request/Response Types
+// API Request/Response Types (shared types are in types.go)
 type CreateUserRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
 	Role     string `json:"role"`
-}
-
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type BookingCreateRequest struct {
-	EventID           int      `json:"event_id"`
-	Section           string   `json:"section"`
-	Subsection        int      `json:"subsection"`
-	SeatSelectionMode string   `json:"seat_selection_mode"`
-	SeatPositions     []string `json:"seat_positions"`
-	Quantity          int      `json:"quantity"`
-}
-
-type BookingResponse struct {
-	ID      int      `json:"id"`
-	Status  string   `json:"status"`
-	SeatIDs []string `json:"seat_ids,omitempty"`
-	Message string   `json:"message,omitempty"`
 }
 
 // Metrics Collection
@@ -56,6 +41,7 @@ type Metrics struct {
 	successCount     int64
 	failureCount     int64
 	pendingCount     int64
+	bookedSeatsCount int64 // Track total booked seats
 	latencies        []time.Duration
 	latenciesMutex   sync.Mutex
 	bookedSeats      map[string]bool
@@ -74,6 +60,7 @@ type Config struct {
 	Concurrency      int
 	ClientPoolSize   int // Number of HTTP clients in pool
 	EventID          int
+	TotalSeats       int // Total seats available for the event
 	Sections         []string
 	Subsections      []int
 	Mode             string // "best_available" or "mixed"
@@ -97,6 +84,7 @@ func main() {
 	flag.IntVar(&config.Concurrency, "concurrency", 500, "Number of concurrent workers")
 	flag.IntVar(&config.ClientPoolSize, "clients", 10, "Number of HTTP clients in pool")
 	flag.IntVar(&config.EventID, "event", 1, "Event ID to book")
+	flag.IntVar(&config.TotalSeats, "total-seats", 500, "Total seats available (500/5000/50000)")
 	flag.StringVar(&config.Mode, "mode", "best_available", "Booking mode: best_available or mixed")
 	flag.IntVar(&config.BestAvailableQty, "quantity", 2, "Number of seats per booking for best_available mode")
 	flag.BoolVar(&config.Debug, "debug", false, "Enable debug output (verbose logging)")
@@ -157,8 +145,23 @@ func main() {
 	}
 
 	// Default sections and subsections (match actual database seeded data)
-	config.Sections = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} // D
+	config.Sections = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} // 10 sections
 	config.Subsections = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}                    // Each section has 10 subsections
+
+	// Auto-detect total seats from DEPLOY_ENV if not explicitly set
+	if config.TotalSeats == 500 { // Default value, check if user didn't override
+		deployEnv := os.Getenv("DEPLOY_ENV")
+		switch deployEnv {
+		case "local_dev":
+			config.TotalSeats = 500 // 10 sections × 10 subsections × 1 row × 5 seats
+		case "development":
+			config.TotalSeats = 5000 // 10 sections × 10 subsections × 5 rows × 10 seats
+		case "production":
+			config.TotalSeats = 50000 // 10 sections × 10 subsections × 25 rows × 20 seats
+		default:
+			config.TotalSeats = 500 // Default to local_dev
+		}
+	}
 
 	fmt.Println("========================================")
 	fmt.Println("🎫 Ticketing System Load Test")
@@ -167,8 +170,13 @@ func main() {
 	fmt.Printf("Requests:    %d\n", config.TotalRequests)
 	fmt.Printf("Concurrency: %d\n", config.Concurrency)
 	fmt.Printf("Event ID:    %d\n", config.EventID)
+	fmt.Printf("Total Seats: %d (30%% threshold: %d seats)\n", config.TotalSeats, int(float64(config.TotalSeats)*0.3))
 	fmt.Printf("Mode:        %s\n", config.Mode)
-	fmt.Printf("Quantity:    %d seats/booking\n", config.BestAvailableQty)
+	if config.TotalSeats == 500 {
+		fmt.Printf("Quantity:    1-2 seats/booking (switches to 1 after 30%% booked)\n")
+	} else {
+		fmt.Printf("Quantity:    1-4 seats/booking (switches to 1 after 30%% booked)\n")
+	}
 	fmt.Println("========================================")
 
 	// Initialize metrics
@@ -386,7 +394,7 @@ func worker(id int, client *http.Client, requests <-chan int, config *Config, me
 		}
 
 		// Create booking request
-		bookingReq := generateBookingRequest(reqNum, config)
+		bookingReq := generateBookingRequest(reqNum, config, metrics)
 
 		// Launch goroutine to handle request/response asynchronously
 		responseWg.Add(1)
@@ -407,7 +415,7 @@ func worker(id int, client *http.Client, requests <-chan int, config *Config, me
 			if success {
 				atomic.AddInt64(&metrics.successCount, 1)
 
-				// Track booked seats for duplicate detection
+				// Track booked seats for duplicate detection and count
 				if len(seats) > 0 {
 					metrics.bookedSeatsMutex.Lock()
 					for _, seat := range seats {
@@ -417,6 +425,9 @@ func worker(id int, client *http.Client, requests <-chan int, config *Config, me
 						metrics.bookedSeats[seat] = true
 					}
 					metrics.bookedSeatsMutex.Unlock()
+
+					// Update booked seats count
+					atomic.AddInt64(&metrics.bookedSeatsCount, int64(len(seats)))
 				} else {
 					atomic.AddInt64(&metrics.pendingCount, 1)
 				}
@@ -432,13 +443,32 @@ func worker(id int, client *http.Client, requests <-chan int, config *Config, me
 	}
 }
 
-func generateBookingRequest(reqNum int, config *Config) BookingCreateRequest {
+func generateBookingRequest(reqNum int, config *Config, metrics *Metrics) BookingCreateRequest {
 	// Go 1.20+: rand is automatically seeded, no need to call rand.Seed()
 	section := config.Sections[rand.Intn(len(config.Sections))]
 	subsection := config.Subsections[rand.Intn(len(config.Subsections))]
 
-	// Random quantity between 1-4 seats per booking
-	quantity := rand.Intn(4) + 1
+	// Determine quantity based on booked seats percentage and environment
+	// After 30% of seats are booked, switch to conservative mode (buy only 1 ticket)
+	var quantity int
+	bookedSeats := atomic.LoadInt64(&metrics.bookedSeatsCount)
+	threshold := int64(float64(config.TotalSeats) * 0.3)
+
+	if bookedSeats >= threshold {
+		quantity = 1 // Conservative mode: only buy 1 ticket when 30%+ seats booked
+		if config.Debug && bookedSeats == threshold {
+			fmt.Printf("\n⚠️  Entering conservative mode: 30%% seats booked (%d/%d), buying only 1 ticket per request\n", bookedSeats, config.TotalSeats)
+		}
+	} else {
+		// Normal mode: quantity depends on total seats (environment)
+		if config.TotalSeats == 500 {
+			// local_dev: 1-2 seats per booking
+			quantity = rand.Intn(2) + 1
+		} else {
+			// development/production: 1-4 seats per booking
+			quantity = rand.Intn(4) + 1
+		}
+	}
 
 	req := BookingCreateRequest{
 		EventID:           config.EventID,
@@ -462,16 +492,16 @@ func generateBookingRequest(reqNum int, config *Config) BookingCreateRequest {
 }
 
 func sendBookingRequestWithTiming(client *http.Client, host string, req BookingCreateRequest, metrics *Metrics) (bool, []string) {
-	const maxRetries = 5
-	const baseDelay = 100 * time.Millisecond
+	const maxRetries = 20
+	const baseDelay = 100 * time.Millisecond // 0.1 second
 
 	var lastStatusCode int
 	var lastBody []byte
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Exponential backoff: 100ms, 200ms, 400ms
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Linear backoff: 0.1s, 0.2s, 0.3s, 0.4s, 0.5s, etc.
 		if attempt > 0 {
-			backoff := baseDelay * time.Duration(1<<uint(attempt-1))
+			backoff := baseDelay * time.Duration(attempt)
 			time.Sleep(backoff)
 		}
 
@@ -505,11 +535,11 @@ func sendBookingRequestWithTiming(client *http.Client, host string, req BookingC
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			if attempt < maxRetries {
-				fmt.Printf("⚠️  Attempt %d/%d failed with error: %v, retrying...\n", attempt+1, maxRetries+1, err)
+			if attempt < maxRetries-1 {
+				fmt.Printf("⚠️  Attempt %d/%d failed with error: %v, retrying...\n", attempt+1, maxRetries, err)
 				continue
 			}
-			fmt.Printf("❌ Request error after %d attempts: %v\n", maxRetries+1, err)
+			fmt.Printf("❌ Request error after %d attempts: %v\n", maxRetries, err)
 			return false, nil
 		}
 
@@ -523,7 +553,8 @@ func sendBookingRequestWithTiming(client *http.Client, host string, req BookingC
 		if resp.StatusCode == http.StatusCreated {
 			var bookingResp BookingResponse
 			if err := json.Unmarshal(bodyBytes, &bookingResp); err == nil {
-				return true, bookingResp.SeatIDs
+				// API doesn't return seat_ids in creation response
+				return true, nil
 			}
 			return true, nil
 		}
@@ -539,14 +570,14 @@ func sendBookingRequestWithTiming(client *http.Client, host string, req BookingC
 		}
 
 		// Server errors (5xx) or rate limit (429) - retry
-		if attempt < maxRetries {
-			fmt.Printf("⚠️  Attempt %d/%d failed with status %d, retrying...\n", attempt+1, maxRetries+1, resp.StatusCode)
+		if attempt < maxRetries-1 {
+			fmt.Printf("⚠️  Attempt %d/%d failed with status %d, retrying...\n", attempt+1, maxRetries, resp.StatusCode)
 			continue
 		}
 	}
 
 	// All retries exhausted
-	fmt.Printf("❌ Request failed after %d attempts. Last status: %d, body: %s\n", maxRetries+1, lastStatusCode, string(lastBody))
+	fmt.Printf("❌ Request failed after %d attempts. Last status: %d, body: %s\n", maxRetries, lastStatusCode, string(lastBody))
 	return false, nil
 }
 
@@ -673,7 +704,7 @@ func generateMarkdownReport(config Config, duration time.Duration,
 		return
 	}
 	exeDir := filepath.Dir(exePath)
-	reportDir := filepath.Join(exeDir, "report")
+	reportDir := filepath.Join(exeDir, "report", "concurrent")
 
 	if err := os.MkdirAll(reportDir, 0755); err != nil {
 		fmt.Printf("⚠️  Failed to create report directory: %v\n", err)

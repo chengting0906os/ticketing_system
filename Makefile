@@ -10,7 +10,7 @@ AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output t
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
 
-.PHONY: c-d-build c-start c-stop c-tail c-status
+.PHONY: c-d-build c-start c-stop c-restart c-tail c-status
 c-d-build:  ## 🔨 Build consumer images
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml build
 
@@ -20,6 +20,11 @@ c-start:  ## 🚀 Start consumer containers (4+4)
 c-stop:  ## 🛑 Stop consumer containers
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml stop ticketing-consumer seat-reservation-consumer
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml rm -f ticketing-consumer seat-reservation-consumer
+
+c-restart:  ## 🔄 Restart consumer containers (hot reload code changes)
+	@echo "🔄 Restarting consumers to reload code changes..."
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml restart ticketing-consumer seat-reservation-consumer
+	@echo "✅ Consumers restarted"
 
 c-tail:  ## 📝 Tail consumer logs
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml logs -f ticketing-consumer seat-reservation-consumer
@@ -96,6 +101,30 @@ clean:  ## 🧹 Remove cache files
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete
 	@find . -type f -name ".DS_Store" -delete
+
+# ==============================================================================
+# 🔄 QUICK RESET (Local Development)
+# ==============================================================================
+
+.PHONY: reset
+reset:  ## 🔄 Quick reset (clean DB + Kafka + Kvrocks + seed, no container restart)
+	@echo "🔄 ==================== QUICK RESET ===================="
+	@echo "📋 This will:"
+	@echo "   1. Clean Kafka + Kvrocks + RocksDB"
+	@echo "   2. Run database migrations"
+	@echo "   3. Seed initial data"
+	@echo ""
+	@echo "⚠️  Containers will stay running (faster than 'make dra')"
+	@echo ""
+	@$(MAKE) ka
+	@echo ""
+	@$(MAKE) dm
+	@echo ""
+	@$(MAKE) ds
+	@echo ""
+	@echo "✅ ==================== RESET COMPLETE ===================="
+	@echo "💡 Full restart needed? Use 'make dra' instead"
+	@echo ""
 
 # ==============================================================================
 # 🐳 DOCKER - PRIMARY WORKFLOW
@@ -189,9 +218,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "   📊 Kafka UI:     http://localhost:8080"
 	@echo "   📈 Grafana:      http://localhost:3000"
 	@echo "   🔍 Jaeger:       http://localhost:16686"
-	@echo "   📨 Consumers:    8 containers (4 ticketing + 4 seat reservation)"
 	@echo ""
-	@echo "💡 monitor: make c-status | make c-tail"
 
 .PHONY: dm ds drk tdt tdinfra tdci
 dm:  ## 🗄️ Run migrations in Docker
@@ -232,36 +259,78 @@ tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 # ⚡ LOAD TESTING
 # ==============================================================================
 
-.PHONY: go-build ltt lts ltm ltl ltf ltp k6-smoke k6-load k6-stress
-go-build:  ## 🔨 Build Go load test binary
-	@cd script/go_client && go build -o loadtest main.go
+# Build Targets
+.PHONY: go-build-concurrent go-build-reserved g-b-c g-b-r
 
-ltt:  ## 🧪 Tiny load test (10 requests, 10 workers, 10 clients)
-	@cd script/go_client && ./loadtest -requests 10 -concurrency 5 -clients 5
+go-build-concurrent g-b-c:  ## 🔨 Build Go concurrent load test binary
+	@cd script/go_client && go build -o concurrent_loadtest concurrent_loadtest.go types.go
 
-lts:  ## 🧪 Small load test (10 requests, 10 workers, 10 clients)
-	@cd script/go_client && ./loadtest -requests 100 -concurrency 10 -clients 10
+go-build-reserved g-b-r:  ## 🔨 Build Go reserved load test binary
+	@cd script/go_client && go build -o reserved_loadtest reserved_loadtest.go types.go
 
-ltm:  ## ⚡ Medium load test (2 processes × 250 requests, 25 workers each)
-	@cd script/go_client && \
-		./loadtest -requests 500 -concurrency 25 -clients 25 & \
 
-ltl:  ## ⚡ Large load test (2 processes × 250 requests, 25 workers each)
-	@cd script/go_client && \
-		./loadtest -requests 10000 -concurrency 50 -clients 50 & \
 
-ltf:  ## 💪 Full load test (50K requests, 100 workers, 100 clients)
-	@cd script/go_client && ./loadtest -requests 50000 -concurrency 100 -clients 100
+# Concurrent Load Test (Pressure Testing)
+.PHONY: go-clt-t go-clt-s go-clt-m go-clt-l go-clt-f
 
-ltp:  ## 🚀 Parallel load test (4 processes × 25 requests × 10 workers = 100 total concurrent)
+go-clt-t:  ## 🧪 Concurrent Load Test - Tiny (10 requests, 5 concurrency, 5 clients)
+	@cd script/go_client && ./concurrent_loadtest -requests 10 -concurrency 5 -clients 5
+
+go-clt-s:  ## 🧪 Concurrent Load Test - Small (100 requests, 10 concurrency, 10 clients)
+	@cd script/go_client && ./concurrent_loadtest -requests 100 -concurrency 10 -clients 10
+
+go-clt-m:  ## ⚡ Concurrent Load Test - Medium (5000 requests, 50concurrency, 50 clients)
+	@cd script/go_client && ./concurrent_loadtest -requests 5000 -concurrency 25 -clients 25
+
+go-clt-l:  ## ⚡ Concurrent Load Test - Large (10000 requests, 50 concurrency, 50 clients)
+	@cd script/go_client && ./concurrent_loadtest -requests 10000 -concurrency 50 -clients 50
+
+go-clt-f:  ## 💪 Concurrent Load Test - Full (50000 requests, 100 concurrency, 100 clients)
+	@cd script/go_client && ./concurrent_loadtest -requests 50000 -concurrency 100 -clients 100
+
+
+# Reserved Load Test (Sellout Testing)
+.PHONY: go-rlt
+
+go-rlt:  ## 🔥 Reserved Load Test - Buys all seats (random 1-4 tickets, max 5 per subsection)
+	@echo "🔥 Running reserved load test (Go)..."
+	@if [ "$(DEPLOY_ENV)" = "production" ]; then \
+		echo "📊 Production mode: 50,000 seats (100 workers, random 1-4 per booking)"; \
+		cd script/go_client && ./reserved_loadtest -env production -event 1 -workers 100 -host http://localhost:8100; \
+	elif [ "$(DEPLOY_ENV)" = "development" ]; then \
+		echo "📊 Development mode: 5,000 seats (50 workers, random 1-4 per booking)"; \
+		cd script/go_client && ./reserved_loadtest -env development -event 1 -workers 50 -host http://localhost:8100; \
+	else \
+		echo "📊 Local dev mode: 500 seats (20 workers, random 1-4 per booking)"; \
+		cd script/go_client && ./reserved_loadtest -env local_dev -event 1 -workers 20 -host http://localhost:8100; \
+	fi
+
+
+# Legacy Aliases (for backward compatibility)
+.PHONY: ltt lts ltm ltl ltf ltp
+
+ltt: go-clt-t  ## 🧪 [LEGACY] Tiny load test → go-clt-t
+
+lts: go-clt-s  ## 🧪 [LEGACY] Small load test → go-clt-s
+
+ltm: go-clt-m  ## ⚡ [LEGACY] Medium load test → go-clt-m
+
+ltl: go-clt-l  ## ⚡ [LEGACY] Large load test → go-clt-l
+
+ltf: go-clt-f  ## 💪 [LEGACY] Full load test → go-clt-f
+
+ltp:  ## 🚀 [LEGACY] Parallel load test (4 processes × 25 requests)
 	@echo "🚀 Starting 4 parallel load test processes..."
 	@cd script/go_client && \
-		./loadtest -requests 25 -concurrency 10 -clients 10 & \
-		./loadtest -requests 25 -concurrency 10 -clients 10 & \
-		./loadtest -requests 25 -concurrency 10 -clients 10 & \
-		./loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./concurrent_loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./concurrent_loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./concurrent_loadtest -requests 25 -concurrency 10 -clients 10 & \
+		./concurrent_loadtest -requests 25 -concurrency 10 -clients 10 & \
 		wait
 	@echo "✅ All parallel load tests completed"
+
+# k6 Load Tests
+.PHONY: k6-smoke k6-load k6-stress
 
 k6-smoke:  ## 🔍 k6 smoke test
 	@k6 run script/k6/smoke-test.js
@@ -809,9 +878,9 @@ help:
 	@echo "╚═══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "🚀 QUICK START"
-	@echo "  dra         - Complete Docker reset (recommended)"
+	@echo "  reset       - Quick reset (Kafka + Kvrocks + DB + seed, no restart)"
+	@echo "  dra         - Complete Docker reset (down → up → reset, slower)"
 	@echo "  dsu         - Start Docker stack"
-	@echo "  reset       - Local reset (Kafka + DB + seed)"
 	@echo ""
 	@echo "🐳 DOCKER (Recommended)"
 	@echo "  dsu/dsd/dsr/dr/dra/dm/drk/ds/dt/de2e/dsh/dal"
