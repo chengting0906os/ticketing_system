@@ -13,11 +13,13 @@ Database Seed Script
 """
 
 import asyncio
+import json
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from sqlalchemy import text
 
-from script.seating_config import  SEATING_CONFIG_50000
 from src.platform.database.db_setting import async_session_maker
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
@@ -30,6 +32,45 @@ from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import Use
 from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import (
     BcryptPasswordHasher,
 )
+
+
+def get_seating_config() -> dict:
+    """
+    Get seating configuration based on DEPLOY_ENV environment variable.
+
+    Returns:
+        dict: Seating configuration for the current environment
+
+    Environment mapping (all have 10 sections × 10 subsections):
+        - local_dev: 500 seats (1 row × 5 seats per subsection)
+        - development: 5000 seats (5 rows × 10 seats per subsection)
+        - production: 50000 seats (25 rows × 20 seats per subsection)
+        - default: 500 seats (if DEPLOY_ENV not set)
+    """
+    env = os.getenv('DEPLOY_ENV', 'local_dev')
+
+    # Load from JSON file
+    config_file = Path(__file__).parent / 'seating_config.json'
+    with open(config_file, 'r') as f:
+        all_configs = json.load(f)
+
+    # Get config for this environment
+    if env not in all_configs:
+        print(f'⚠️  Environment {env} not found in config, using local_dev')
+        env = 'local_dev'
+
+    config = all_configs[env]
+
+    # Calculate total seats for logging
+    total_seats = sum(
+        subsection['rows'] * subsection['seats_per_row']
+        for section in config['sections']
+        for subsection in section['subsections']
+    )
+
+    print(f'📊 Using seating config for environment: {env} ({total_seats:,} seats)')
+
+    return config
 
 
 async def create_init_users_in_session(session) -> int:
@@ -141,8 +182,8 @@ async def create_init_event_in_session(session, seller_id: int):
             init_state_handler=init_state_handler,
         )
 
-        # 座位配置選擇
-        seating_config =  SEATING_CONFIG_50000  # 開發模式預設使用小規模配置
+        # 座位配置選擇（根據 DEPLOY_ENV 環境變數）
+        seating_config = get_seating_config()
 
         # Calculate total seats
         total_seats = 0
