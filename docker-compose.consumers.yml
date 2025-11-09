@@ -27,7 +27,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+      target: development
       args:
         SERVICE_TYPE: consumer
     image: ticketing-consumer:latest
@@ -39,21 +39,16 @@ services:
         export KAFKA_PRODUCER_INSTANCE_ID="ticketing-producer-$$(hostname)"
         /app/.venv/bin/python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py
     environment:
-      # Application
-      EVENT_ID: "1"
-      DEBUG: "False"
-      LOG_LEVEL: "INFO"
+      # Python
+      PYTHONPATH: /app
+
+      # Application (can override .env values)
+      EVENT_ID: "${EVENT_ID:-1}"
+      DEBUG: "${DEBUG:-False}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TZ: "Asia/Taipei"
 
-      # Authentication (required by Settings model, but not used by consumers)
-      SECRET_KEY: ${SECRET_KEY}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
-      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
-      ALGORITHM: ${ALGORITHM}
-      RESET_PASSWORD_TOKEN_SECRET: ${RESET_PASSWORD_TOKEN_SECRET}
-      VERIFICATION_TOKEN_SECRET: ${VERIFICATION_TOKEN_SECRET}
-
-      # Database (Primary - Write)
+      # Database
       POSTGRES_SERVER: postgres
       POSTGRES_USER: py_arch_lab
       POSTGRES_PASSWORD: py_arch_lab
@@ -70,11 +65,15 @@ services:
 
       # OpenTelemetry
       OTEL_SERVICE_NAME: ticketing-consumer
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: none
       OTEL_LOGS_EXPORTER: none
       OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
 
     depends_on:
       postgres:
@@ -104,7 +103,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+      target: development
       args:
         SERVICE_TYPE: consumer
     image: seat-reservation-consumer:latest
@@ -116,19 +115,14 @@ services:
         export KAFKA_PRODUCER_INSTANCE_ID="seat-reservation-producer-$$(hostname)"
         /app/.venv/bin/python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
     environment:
-      # Application
-      EVENT_ID: "1"
-      DEBUG: "False"
-      LOG_LEVEL: "INFO"
-      TZ: "Asia/Taipei"
+      # Python
+      PYTHONPATH: /app
 
-      # Authentication (required by Settings model, but not used by consumers)
-      SECRET_KEY: ${SECRET_KEY}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
-      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
-      ALGORITHM: ${ALGORITHM}
-      RESET_PASSWORD_TOKEN_SECRET: ${RESET_PASSWORD_TOKEN_SECRET}
-      VERIFICATION_TOKEN_SECRET: ${VERIFICATION_TOKEN_SECRET}
+      # Application (can override .env values)
+      EVENT_ID: "${EVENT_ID:-1}"
+      DEBUG: "${DEBUG:-False}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      TZ: "Asia/Taipei"
 
       # Kvrocks
       KVROCKS_HOST: kvrocks
@@ -140,11 +134,15 @@ services:
 
       # OpenTelemetry
       OTEL_SERVICE_NAME: seat-reservation-consumer
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: none
       OTEL_LOGS_EXPORTER: none
       OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
 
     depends_on:
       kafka1:
