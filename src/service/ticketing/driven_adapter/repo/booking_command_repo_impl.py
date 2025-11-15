@@ -470,3 +470,112 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     'booking': created_booking,
                     'tickets': tickets,
                 }
+
+    @Logger.io
+    async def create_failed_booking_directly(
+        self,
+        *,
+        booking_id: UUID,
+        buyer_id: int,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_selection_mode: str,
+        seat_positions: list[str],
+        quantity: int,
+    ) -> Booking:
+        """
+        Directly create booking in FAILED status (no tickets).
+        Called when seat reservation fails - booking never existed in PostgreSQL.
+
+        Args:
+            booking_id: UUID7 booking ID (from Kafka event)
+            buyer_id: Buyer ID
+            event_id: Event ID
+            section: Section identifier
+            subsection: Subsection number
+            seat_selection_mode: 'manual' or 'best_available'
+            seat_positions: Originally requested seat positions
+            quantity: Originally requested quantity
+
+        Returns:
+            Created booking entity with FAILED status
+
+        Raises:
+            ValueError: If booking already exists
+        """
+        with self.tracer.start_as_current_span(
+            'repo.create_failed_booking',
+            attributes={
+                'booking.id': str(booking_id),
+                'event.id': event_id,
+                'buyer.id': buyer_id,
+                'seat.section': section,
+                'seat.subsection': subsection,
+                'booking.status': 'failed',
+                'db.system': 'postgresql',
+                'db.operation': 'insert',
+            },
+        ):
+            now = datetime.now(timezone.utc)
+
+            async with (await get_asyncpg_pool()).acquire() as conn:
+                # Convert string to UUID if needed (for asyncpg compatibility)
+                booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
+
+                # Check if booking already exists (idempotency)
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id, status FROM booking WHERE id = $1
+                    """,
+                    booking_uuid,
+                )
+
+                if existing:
+                    Logger.base.warning(
+                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} already exists with status {existing["status"]}'
+                    )
+                    # Return existing booking
+                    existing_booking = await self.get_by_id(booking_id=booking_uuid)
+                    if not existing_booking:
+                        raise ValueError(f'Booking {booking_id} exists but could not be retrieved')
+                    return existing_booking
+
+                # Insert FAILED booking (no tickets, total_price=0)
+                booking_row = await conn.fetchrow(
+                    """
+                    INSERT INTO booking (
+                        id, buyer_id, event_id, section, subsection, quantity,
+                        total_price, seat_selection_mode, seat_positions, status,
+                        created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    RETURNING id, buyer_id, event_id, section, subsection, quantity,
+                              total_price, seat_selection_mode, seat_positions, status,
+                              created_at, updated_at, paid_at
+                    """,
+                    booking_uuid,  # $1
+                    buyer_id,  # $2
+                    event_id,  # $3
+                    section,  # $4
+                    subsection,  # $5
+                    quantity,  # $6
+                    0,  # $7 - total_price = 0 for failed bookings
+                    seat_selection_mode,  # $8
+                    seat_positions,  # $9
+                    BookingStatus.FAILED.value,  # $10
+                    now,  # $11 - created_at
+                    now,  # $12 - updated_at
+                )
+
+                if not booking_row:
+                    raise ValueError(f'Failed to create FAILED booking {booking_id}')
+
+                created_booking = self._row_to_entity(booking_row)
+
+                Logger.base.info(
+                    f'✅ [DIRECT-CREATE-FAILED] Created booking {booking_id} in FAILED status '
+                    f'(requested {quantity} seats in {section}-{subsection})'
+                )
+
+                return created_booking

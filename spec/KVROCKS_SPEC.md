@@ -7,19 +7,65 @@
 **Clients**: `kvrocks_client` (async), `kvrocks_client_sync` (sync)
 **Config**: [.env.example](../.env.example), [core_setting.py](../src/platform/config/core_setting.py)
 **Test Isolation**: Use `KVROCKS_KEY_PREFIX` env var
+**Benchmark** <https://github.com/apache/kvrocks/discussions/389>
 
 ## Data Structures
 
 | Key Pattern | Type | Purpose | Fields/Encoding |
 |------------|------|---------|-----------------|
 | `seats_bf:{event_id}:{section}-{subsection}` | Bitfield | Seat status (2 bits/seat) | `00`=AVAILABLE, `01`=RESERVED, `10`=SOLD |
-| `section_config:{event_id}:{section}-{subsection}` | Hash | Section layout | `rows`, `seats_per_row` |
-| `section_stats:{event_id}:{section}-{subsection}` | Hash | Section statistics | `available`, `reserved`, `sold`, `total` |
-| `seat_meta:{event_id}:{section}-{subsection}:{row}` | Hash | Seat metadata (per row) | `{seat_num}` → JSON with `price`, `booking_id` |
-| `event_sections:{event_id}` | Sorted Set | Section index | Section IDs (score=0) |
+| `event_state:{event_id}` | **JSON** | **Unified event config + stats (sections + event-level)** | See structure below |
 | `booking:{booking_id}` | Hash | Booking metadata (TTL=1h) | `status`, `reserved_seats`, `total_price` |
-| `event_stats:{event_id}` | Hash | Event-level statistics | `available`, `reserved`, `sold`, `total` |
 | `event_sellout_timer:{event_id}` | Hash | Sellout time tracking | `first_ticket_reserved_at`, `fully_reserved_at`, `duration_seconds` |
+
+### event_state JSON Structure
+
+**✨ Unified JSON with sections + event-level stats (replaces `section_config`, `section_stats`, `event_stats` Hashes and `event_sections` index)**
+
+```json
+{
+  "event_stats": {
+    "available": 800,
+    "reserved": 0,
+    "sold": 0,
+    "total": 800,
+    "updated_at": 1234567890
+  },
+  "sections": {
+    "A-1": {
+      "rows": 25,
+      "seats_per_row": 20,
+      "price": 1000,
+      "stats": {
+        "available": 500,
+        "reserved": 0,
+        "sold": 0,
+        "total": 500,
+        "updated_at": 1234567890
+      }
+    },
+    "B-1": {
+      "rows": 20,
+      "seats_per_row": 15,
+      "price": 2000,
+      "stats": {
+        "available": 300,
+        "reserved": 0,
+        "sold": 0,
+        "total": 300,
+        "updated_at": 1234567890
+      }
+    }
+  }
+}
+```
+
+**Benefits**:
+
+- 🚀 **Faster Reads**: Single `JSON.GET` fetches all sections + event stats (vs N+1 `HGETALL` calls)
+- ⚛️ **Atomic Updates**: `JSON.NUMINCRBY` for both section and event stats (vs `HINCRBY`)
+- 🗂️ **Unified Data**: Config + Section Stats + Event Stats in one place
+- 📉 **Fewer Keys**: 1 JSON key vs 2N+2 Hash keys (section_config + section_stats + event_stats + event_sections)
 
 ## Redis Commands Reference
 
@@ -30,6 +76,9 @@
 | `SETBIT key offset value` | Bitfield | Set single bit | `await client.setbit(bf_key, offset, 1)` |
 | `GETBIT key offset` | Bitfield | Read single bit | `bit = await client.getbit(bf_key, offset)` |
 | `GETRANGE key start end` | Bitfield | Batch read bitfield | `bytes = await client.getrange(bf_key, 0, 999)` |
+| **`JSON.GET key path`** | **JSON** | **Get JSON document** | `await client.execute_command('JSON.GET', key, '$')` |
+| **`JSON.SET key path value`** | **JSON** | **Set JSON document** | `await client.execute_command('JSON.SET', key, '$', json_str)` |
+| **`JSON.NUMINCRBY key path value`** | **JSON** | **Atomic number increment** | `pipe.execute_command('JSON.NUMINCRBY', key, "$.sections['A-1'].stats.available", -1)` |
 | `HSET key field value` | Hash | Set single field | `client.hset(key, 'price', '1000')` |
 | `HSET key mapping={...}` | Hash | Set multiple fields | `await client.hset(key, mapping={'a': '1'})` |
 | `HSETNX key field value` | Hash | Set if field not exists | `pipe.hsetnx(timer_key, 'first_ticket_reserved_at', now)` |
@@ -40,7 +89,7 @@
 | `ZRANGE key start stop` | Sorted Set | Get all members | `ids = await client.zrange(key, 0, -1)` |
 | `DELETE key` | Key Mgmt | Delete key | `await client.delete(booking_key)` |
 | `EXPIRE key seconds` | Key Mgmt | Set TTL | `pipe.expire(booking_key, 3600)` |
-| `KEYS pattern` | Key Mgmt | Find keys | `keys = await client.keys('event_sections:*')` |
+| `KEYS pattern` | Key Mgmt | Find keys | `keys = await client.keys('event_state:*')` |
 | `pipeline()` | Transaction | Batch commands | `pipe = client.pipeline()` |
 | `pipeline(transaction=True)` | Transaction | MULTI/EXEC | `pipe = client.pipeline(transaction=True)` |
 | `execute()` | Transaction | Execute pipeline | `results = await pipe.execute()` |
@@ -198,9 +247,11 @@ pipe.hset(timer_key, 'first_ticket_reserved_at', now)  # DON'T DO THIS
 #### 1. Read Current State (Before Pipeline)
 
 ```python
-# STEP 0: Check if this is the first ticket
-current_stats = await client.hgetall(f'event_stats:{event_id}')
-current_reserved_count = int(current_stats.get(b'reserved', b'0'))
+# STEP 0: Check if this is the first ticket (read from unified JSON)
+config_key = _make_key(f'event_state:{event_id}')
+result = await client.execute_command('JSON.GET', config_key, '$.event_stats')
+current_stats = orjson.loads(result[0] if isinstance(result, list) else result)
+current_reserved_count = int(current_stats.get('reserved', 0))
 ```
 
 **Why read before pipeline?**
@@ -263,29 +314,3 @@ Request B (10:30:15.120, almost same time):
 
 Result: first_ticket_reserved_at = '10:30:15.100' (Request A) ✅
 ```
-
-**Protection layers**:
-
-1. **HSETNX**: Atomic first-write-wins
-2. **Kafka partitioning**: Same event → same partition → sequential
-3. **MULTI/EXEC**: Transaction isolation
-
-### Performance Impact
-
-- **Additional overhead**: < 1%
-  - 1x HGETALL before pipeline (only to check reserved count)
-  - 1x HSETNX in pipeline (only when reserved == 0)
-  - 1x HGET + 1x HSET after pipeline (only when available == 0)
-- **Storage**: ~200 bytes per event
-- **No blocking**: All operations non-blocking async
-
-### Testing
-
-See [test_atomic_reservation_executor.py:589-755](../test/service/seat_reservation/unit/test_atomic_reservation_executor.py#L589-L755) for comprehensive test coverage:
-
-- ✅ Track first ticket when reserved == 0
-- ✅ Skip tracking when reserved > 0
-- ✅ Track sold out and calculate duration
-- ✅ Skip tracking when available > 0
-- ✅ Query sellout stats
-- ✅ Handle missing stats gracefully

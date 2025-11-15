@@ -174,15 +174,21 @@ class TestDecodeStats:
 class TestFetchSeatPrices:
     @pytest.mark.asyncio
     async def test_fetch_seat_prices_success(self, executor, sample_seats):
-        # Given: Mock Kvrocks client
+        # Given: Mock Kvrocks client with event config JSON
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
-            mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
-            mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock pipeline results (prices as bytes)
-            mock_pipeline.execute = AsyncMock(return_value=[b'1000', b'1000'])
+            # Mock event config JSON with hierarchical structure (price at section level)
+            event_state = {
+                'sections': {
+                    'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
+                }
+            }
+            config_json = orjson.dumps(event_state).decode()
+
+            # Mock JSON.GET command (native JSON support)
+            mock_client.execute_command = AsyncMock(return_value=[config_json])
 
             # When: Fetch seat prices
             seat_prices, total_price = await executor.fetch_seat_prices(
@@ -191,25 +197,19 @@ class TestFetchSeatPrices:
                 seats_to_reserve=sample_seats,
             )
 
-            # Then: Should return correct prices
+            # Then: Should return correct prices (same price for all seats)
             assert seat_prices == {
                 'A-1-1-1': 1000,
                 'A-1-1-2': 1000,
             }
             assert total_price == 2000
 
-            # And: Should call hget for each seat
-            assert mock_pipeline.hget.call_count == 2
-            # Verify hget calls with correct keys and fields
-            # Note: We need to account for key prefix from environment
-            key_prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
-            expected_key = f'{key_prefix}seat_meta:123:A-1:1'
-            mock_pipeline.hget.assert_any_call(expected_key, '1')
-            mock_pipeline.hget.assert_any_call(expected_key, '2')
+            # And: Should call JSON.GET once
+            mock_client.execute_command.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_fetch_seat_prices_missing_prices(self, executor):
-        # Given: Seats with missing prices
+        # Given: Seats but section config not found in JSON
         seats = [
             (1, 1, 0, 'A-1-1-1'),
             (1, 2, 1, 'A-1-1-2'),
@@ -218,60 +218,66 @@ class TestFetchSeatPrices:
 
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
-            mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
-            mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock pipeline results (second seat has no price)
-            mock_pipeline.execute = AsyncMock(return_value=[b'1000', None, b'1500'])
+            # Mock event config JSON without the requested section (hierarchical structure)
+            event_state = {
+                'sections': {
+                    'B': {'price': 2000, 'subsections': {'1': {'rows': 20, 'seats_per_row': 15}}}
+                }
+            }
+            config_json = orjson.dumps(event_state).decode()
+            mock_client.execute_command = AsyncMock(return_value=[config_json])
 
-            # When: Fetch seat prices
+            # When: Fetch seat prices for missing section
             seat_prices, total_price = await executor.fetch_seat_prices(
                 event_id=123,
-                section_id='A-1',
+                section_id='A-1',  # Not in config
                 seats_to_reserve=seats,
             )
 
             # Then: Missing prices should default to 0
             assert seat_prices == {
-                'A-1-1-1': 1000,
-                'A-1-1-2': 0,  # No price found
-                'A-1-1-3': 1500,
+                'A-1-1-1': 0,
+                'A-1-1-2': 0,
+                'A-1-1-3': 0,
             }
-            assert total_price == 2500
+            assert total_price == 0
 
     @pytest.mark.asyncio
     async def test_fetch_seat_prices_different_prices(self, executor):
-        # Given: Seats with different prices
-        seats = [
+        # Given: Multiple sections with different prices
+        seats_a1 = [
             (1, 1, 0, 'A-1-1-1'),
             (1, 2, 1, 'A-1-1-2'),
-            (2, 1, 2, 'A-1-2-1'),  # Different row
         ]
 
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
-            mock_pipeline = MagicMock()
             mock_kvrocks.get_client.return_value = mock_client
-            mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock different prices
-            mock_pipeline.execute = AsyncMock(return_value=[b'1000', b'1200', b'1500'])
+            # Mock event config JSON with hierarchical structure (price 1000 at section level)
+            event_state = {
+                'sections': {
+                    'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
+                }
+            }
+            config_json = orjson.dumps(event_state).decode()
+            mock_client.execute_command = AsyncMock(return_value=[config_json])
 
-            # When: Fetch seat prices
+            # When: Fetch seat prices for A-1
             seat_prices, total_price = await executor.fetch_seat_prices(
                 event_id=123,
                 section_id='A-1',
-                seats_to_reserve=seats,
+                seats_to_reserve=seats_a1,
             )
 
-            # Then: Should return correct individual and total prices
+            # Then: All seats in same section have same price
             assert seat_prices == {
                 'A-1-1-1': 1000,
-                'A-1-1-2': 1200,
-                'A-1-2-1': 1500,
+                'A-1-1-2': 1000,
             }
-            assert total_price == 3700
+            assert total_price == 2000
 
 
 # ============================================================================
@@ -292,11 +298,14 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking)
-            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
+            # Mock current event stats (for time tracking via JSON.GET)
+            # execute_command is called for JSON.GET $.event_stats
+            mock_client.execute_command = AsyncMock(
+                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+            )
 
             # Mock pipeline execution results
-            # For 2 seats: 4 setbit + 4 hincrby + 2 hgetall + 1 hset = 11 results
+            # ✨ NEW: 4 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 10 results
             mock_pipeline.execute = AsyncMock(
                 return_value=[
                     # Setbit results (2 seats × 2 bits = 4 results)
@@ -304,20 +313,17 @@ class TestExecuteAtomicReservation:
                     1,  # Seat 1: bit0, bit1
                     1,
                     1,  # Seat 2: bit0, bit1
-                    # Hincrby results (4 results)
-                    98,
-                    2,  # Section: available, reserved
-                    498,
-                    2,  # Event: available, reserved
-                    # Hgetall results (2 results)
-                    {b'available': b'98', b'reserved': b'2', b'sold': b'0', b'total': b'100'},
-                    {
-                        b'available': b'498',
-                        b'reserved': b'2',
-                        b'sold': b'0',
-                        b'total': b'500',
-                    },
-                    # Hset result (1 result)
+                    # JSON.NUMINCRBY section stats (2 results - returns new values)
+                    [98],  # section available (after decrement)
+                    [2],  # section reserved (after increment)
+                    # JSON.NUMINCRBY event stats (2 results - returns new values)
+                    [498],  # event available
+                    [2],  # event reserved
+                    # JSON.GET result (complete event_state with hierarchical structure)
+                    [
+                        '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
+                    ],
+                    # HSET result (1 result)
                     4,  # Number of fields set
                 ]
             )
@@ -355,11 +361,10 @@ class TestExecuteAtomicReservation:
             # And: Should have called setbit for each seat
             assert mock_pipeline.setbit.call_count == 4  # 2 seats × 2 bits
 
-            # And: Should have called hincrby for stats
-            assert mock_pipeline.hincrby.call_count == 4  # section + event × 2 fields
-
-            # And: Should have called hgetall for stats
-            assert mock_pipeline.hgetall.call_count == 2  # section + event
+            # And: ✨ NEW: Should have called execute_command for JSON operations
+            # JSON.NUMINCRBY × 4 (section stats × 2 + event stats × 2)
+            # JSON.GET × 1 (fetch complete event_state)
+            assert mock_pipeline.execute_command.call_count == 5
 
             # And: Should have called hset for booking metadata
             assert mock_pipeline.hset.call_count == 1
@@ -376,25 +381,30 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking)
-            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
+            # Mock current event stats (for time tracking via JSON.GET)
+            # execute_command is called for JSON.GET $.event_stats
+            mock_client.execute_command = AsyncMock(
+                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+            )
 
             # Mock pipeline results for 1 seat
-            # 2 setbit + 4 hincrby + 2 hgetall + 1 hset = 9 results
+            # ✨ NEW: 2 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 8 results
             mock_pipeline.execute = AsyncMock(
                 return_value=[
                     # Setbit results (1 seat × 2 bits = 2 results)
                     1,
                     1,
-                    # Hincrby results (4 results)
-                    99,
-                    1,  # Section
-                    499,
-                    1,  # Event
-                    # Hgetall results (2 results)
-                    {b'available': b'99', b'reserved': b'1'},
-                    {b'available': b'499', b'reserved': b'1'},
-                    # Hset result
+                    # JSON.NUMINCRBY section stats (2 results - returns new values)
+                    [99],  # available (after decrement)
+                    [1],  # reserved (after increment)
+                    # JSON.NUMINCRBY event stats (2 results - returns new values)
+                    [499],  # event available
+                    [1],  # event reserved
+                    # JSON.GET result (complete event_state with hierarchical structure)
+                    [
+                        '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":99,"reserved":1,"sold":0,"total":100}}}}},"event_stats":{"available":499,"reserved":1,"sold":0,"total":500}}'
+                    ],
+                    # HSET result (1 result)
                     4,
                 ]
             )
@@ -415,10 +425,20 @@ class TestExecuteAtomicReservation:
             assert result['reserved_seats'] == ['A-1-1-1']
             assert result['total_price'] == 1000
 
-            # And: Stats indices should be calculated correctly
-            # For 1 seat: stats_idx = 1*2 + 4 = 6
-            assert result['subsection_stats'] == {'available': 99, 'reserved': 1}
-            assert result['event_stats'] == {'available': 499, 'reserved': 1}
+            # And: Stats should be parsed from JSON correctly
+            # For 1 seat: 2 setbit + 4 JSON.NUMINCRBY (section x2 + event x2) + JSON.GET at idx 6
+            assert result['subsection_stats'] == {
+                'available': 99,
+                'reserved': 1,
+                'sold': 0,
+                'total': 100,
+            }
+            assert result['event_stats'] == {
+                'available': 499,
+                'reserved': 1,
+                'sold': 0,
+                'total': 500,
+            }
 
     @pytest.mark.asyncio
     async def test_execute_atomic_reservation_multiple_seats(self, executor):
@@ -438,21 +458,30 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking)
-            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
+            # Mock current event stats (for time tracking via JSON.GET)
+            # execute_command is called for JSON.GET $.event_stats
+            mock_client.execute_command = AsyncMock(
+                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+            )
 
             # Mock pipeline results for 5 seats
-            # 10 setbit + 4 hincrby + 2 hgetall + 1 hset = 17 results
+            # ✨ NEW: 10 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 16 results
             setbit_results = [1] * 10  # 5 seats × 2 bits
-            hincrby_results = [95, 5, 495, 5]  # section + event stats
-            hgetall_results = [
-                {b'available': b'95', b'reserved': b'5'},
-                {b'available': b'495', b'reserved': b'5'},
+            json_numincrby_section_results = [[95], [5]]  # section stats (returns new values)
+            json_numincrby_event_results = [[495], [5]]  # event stats
+            json_get_result = [
+                [
+                    '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":95,"reserved":5,"sold":0,"total":100}}}}},"event_stats":{"available":495,"reserved":5,"sold":0,"total":500}}'
+                ]
             ]
             hset_result = [4]
 
             mock_pipeline.execute = AsyncMock(
-                return_value=setbit_results + hincrby_results + hgetall_results + hset_result
+                return_value=setbit_results
+                + json_numincrby_section_results
+                + json_numincrby_event_results
+                + json_get_result
+                + hset_result
             )
 
             # When: Execute atomic reservation
@@ -471,10 +500,20 @@ class TestExecuteAtomicReservation:
             assert len(result['reserved_seats']) == 5
             assert result['total_price'] == 5000
 
-            # And: Stats indices should be calculated correctly
-            # For 5 seats: stats_idx = 5*2 + 4 = 14
-            assert result['subsection_stats'] == {'available': 95, 'reserved': 5}
-            assert result['event_stats'] == {'available': 495, 'reserved': 5}
+            # And: Stats should be parsed from JSON correctly
+            # For 5 seats: 10 setbit + 4 JSON.NUMINCRBY (section x2 + event x2) + JSON.GET at idx 14
+            assert result['subsection_stats'] == {
+                'available': 95,
+                'reserved': 5,
+                'sold': 0,
+                'total': 100,
+            }
+            assert result['event_stats'] == {
+                'available': 495,
+                'reserved': 5,
+                'sold': 0,
+                'total': 500,
+            }
 
     @pytest.mark.asyncio
     async def test_execute_atomic_reservation_booking_metadata_format(
@@ -487,23 +526,28 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking)
-            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
+            # Mock current event stats (for time tracking via JSON.GET)
+            # execute_command is called for JSON.GET $.event_stats
+            mock_client.execute_command = AsyncMock(
+                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+            )
 
             # Standard mock results
+            # ✨ NEW: 4 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 10 results
             mock_pipeline.execute = AsyncMock(
                 return_value=[
                     1,
                     1,
                     1,
-                    1,  # setbit
-                    98,
-                    2,
-                    498,
-                    2,  # hincrby
-                    {b'available': b'98', b'reserved': b'2'},  # subsection stats
-                    {b'available': b'498', b'reserved': b'2'},  # event stats
-                    4,  # hset
+                    1,  # setbit (2 seats × 2 bits)
+                    [98],
+                    [2],  # JSON.NUMINCRBY (section stats)
+                    [498],
+                    [2],  # JSON.NUMINCRBY (event stats)
+                    [
+                        '{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
+                    ],  # JSON.GET (complete event_state)
+                    4,  # HSET (booking metadata)
                 ]
             )
 
@@ -534,8 +578,9 @@ class TestExecuteAtomicReservation:
                 mapping['seat_prices'] == orjson.dumps({'A-1-1-1': 1000, 'A-1-1-2': 1000}).decode()
             )
             assert mapping['total_price'] == '2000'
-            assert 'stats_key' in mapping
-            assert 'event_stats_key' in mapping
+            # ✨ CHANGED: 'stats_key' → 'config_key' (now using event_state JSON instead of section_stats Hash)
+            assert 'config_key' in mapping
+            # ✨ REMOVED: event_stats_key (stats now in unified event_state JSON)
 
     @pytest.mark.asyncio
     async def test_execute_atomic_reservation_setbit_offsets(self, executor, sample_seats):
@@ -546,22 +591,27 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking)
-            mock_client.hgetall = AsyncMock(return_value={b'reserved': b'0', b'total': b'500'})
+            # Mock current event stats (for time tracking via JSON.GET)
+            # execute_command is called for JSON.GET $.event_stats
+            mock_client.execute_command = AsyncMock(
+                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+            )
 
+            # ✨ NEW: 4 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 10 results
             mock_pipeline.execute = AsyncMock(
                 return_value=[
                     1,
                     1,
                     1,
-                    1,
-                    98,
-                    2,
-                    498,
-                    2,
-                    {b'available': b'98'},
-                    {b'available': b'498'},
-                    4,
+                    1,  # setbit (2 seats × 2 bits)
+                    [98],
+                    [2],  # JSON.NUMINCRBY (section stats)
+                    [498],
+                    [2],  # JSON.NUMINCRBY (event stats)
+                    [
+                        '{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
+                    ],  # JSON.GET (complete event_state)
+                    4,  # HSET (booking metadata)
                 ]
             )
 

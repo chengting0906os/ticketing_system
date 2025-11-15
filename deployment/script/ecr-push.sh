@@ -75,12 +75,13 @@ print_usage() {
     echo ""
     echo "Arguments:"
     echo "  environment: production | development"
-    echo "  service: api | ticketing-consumer | reservation-consumer | all (default: all)"
+    echo "  service: api | ticketing-consumer | reservation-consumer | loadtest | all (default: all)"
     echo ""
     echo "Examples:"
     echo "  $0 production all"
     echo "  $0 development api"
     echo "  $0 production ticketing-consumer"
+    echo "  $0 production loadtest"
     exit 1
 }
 
@@ -101,7 +102,7 @@ if [[ ! "$ENVIRONMENT" =~ ^(production|development)$ ]]; then
 fi
 
 # Validate service
-if [[ ! "$SERVICE" =~ ^(api|ticketing-consumer|reservation-consumer|all)$ ]]; then
+if [[ ! "$SERVICE" =~ ^(api|ticketing-consumer|reservation-consumer|loadtest|all)$ ]]; then
     log_error "Invalid service: $SERVICE"
     print_usage
 fi
@@ -246,6 +247,85 @@ build_and_push() {
 }
 
 # =============================================================================
+# Build and Push LoadTest (Go binary)
+# =============================================================================
+
+build_and_push_loadtest() {
+    log_info "================================================"
+    log_info "Building and pushing: ticketing-loadtest"
+    log_info "================================================"
+
+    local repo_name="ticketing-loadtest"
+    local image_uri="${ECR_REGISTRY}/${repo_name}"
+    local image_tag="${ENVIRONMENT}-$(git rev-parse --short HEAD 2>/dev/null || echo 'latest')"
+    local full_image_uri="${image_uri}:${image_tag}"
+    local env_latest_uri="${image_uri}:${ENVIRONMENT}-latest"
+    local latest_image_uri="${image_uri}:latest"
+
+    log_info "Image URI: $full_image_uri"
+
+    # Create ECR repository if it doesn't exist
+    log_info "Checking if ECR repository exists..."
+    if ! aws ecr describe-repositories --repository-names "$repo_name" --region "$AWS_REGION" &>/dev/null; then
+        log_warning "Repository $repo_name does not exist. Creating..."
+        aws ecr create-repository \
+            --repository-name "$repo_name" \
+            --region "$AWS_REGION" \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256 \
+            >/dev/null
+        log_success "Repository created: $repo_name"
+    else
+        log_success "Repository exists: $repo_name"
+    fi
+
+    # Build Docker image from Go loadtest Dockerfile
+    log_info "Building Go loadtest Docker image..."
+    if docker build \
+        --platform linux/amd64 \
+        --tag "$full_image_uri" \
+        --tag "$env_latest_uri" \
+        --tag "$latest_image_uri" \
+        --file script/go_client/Dockerfile \
+        script ; then
+        log_success "Docker build completed"
+    else
+        log_error "Docker build failed for ticketing-loadtest"
+        return 1
+    fi
+
+    # Push Docker image with commit SHA tag
+    log_info "Pushing image with tag: $image_tag"
+    if docker push "$full_image_uri"; then
+        log_success "Pushed: $full_image_uri"
+    else
+        log_error "Failed to push: $full_image_uri"
+        return 1
+    fi
+
+    # Push Docker image with environment-specific latest tag
+    log_info "Pushing image with tag: ${ENVIRONMENT}-latest"
+    if docker push "$env_latest_uri"; then
+        log_success "Pushed: $env_latest_uri"
+    else
+        log_error "Failed to push: $env_latest_uri"
+        return 1
+    fi
+
+    # Push Docker image with universal latest tag (for ECS)
+    log_info "Pushing image with tag: latest"
+    if docker push "$latest_image_uri"; then
+        log_success "Pushed: $latest_image_uri"
+    else
+        log_error "Failed to push: $latest_image_uri"
+        return 1
+    fi
+
+    log_success "✅ Successfully pushed ticketing-loadtest to ECR"
+    echo ""
+}
+
+# =============================================================================
 # Main Execution
 # =============================================================================
 
@@ -268,6 +348,10 @@ fi
 
 if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "reservation-consumer" ]; then
     build_and_push "seat-reservation-consumer" "$RESERVATION_CONSUMER_REPO"
+fi
+
+if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "loadtest" ]; then
+    build_and_push_loadtest
 fi
 
 # =============================================================================

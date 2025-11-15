@@ -137,6 +137,7 @@ class ReserveSeatsUseCase:
                     total_price = result['total_price']
                     subsection_stats = result.get('subsection_stats', {})
                     event_stats = result.get('event_stats', {})
+                    event_state = result.get('event_state', {})
 
                     Logger.base.info(
                         f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
@@ -147,6 +148,7 @@ class ReserveSeatsUseCase:
 
                     # Step 4: Publish event to Ticketing Service (Kafka producer is buffered)
                     # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
+                    # ✨ NEW: Passing entire event_state for full cache update
                     await self.mq_publisher.publish_seats_reserved(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
@@ -159,6 +161,7 @@ class ReserveSeatsUseCase:
                         total_price=total_price,
                         subsection_stats=subsection_stats,
                         event_stats=event_stats,
+                        event_state=event_state,  # ✨ NEW: Full config
                     )
                     Logger.base.info(
                         f'📤 [RESERVE] Published seats_reserved event for booking {request.booking_id}'
@@ -176,12 +179,17 @@ class ReserveSeatsUseCase:
 
                     Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
 
-                    # Send failure notification
+                    # Send failure notification with full booking info
                     await self.mq_publisher.publish_reservation_failed(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
-                        error_message=error_msg,
                         event_id=request.event_id,
+                        section=request.section_filter or '',
+                        subsection=request.subsection_filter or 0,
+                        quantity=request.quantity or len(request.seat_positions or []),
+                        seat_selection_mode=request.selection_mode,
+                        seat_positions=request.seat_positions or [],
+                        error_message=error_msg,
                     )
 
                     return ReservationResult(
@@ -195,12 +203,17 @@ class ReserveSeatsUseCase:
                 Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
                 error_msg = str(e)
 
-                # Send error notification
+                # Send error notification with full booking info
                 await self.mq_publisher.publish_reservation_failed(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
-                    error_message=error_msg,
                     event_id=request.event_id,
+                    section=request.section_filter or '',
+                    subsection=request.subsection_filter or 0,
+                    quantity=request.quantity or len(request.seat_positions or []),
+                    seat_selection_mode=request.selection_mode,
+                    seat_positions=request.seat_positions or [],
+                    error_message=error_msg,
                 )
 
                 return ReservationResult(
@@ -213,12 +226,17 @@ class ReserveSeatsUseCase:
                 Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
                 error_msg = 'Internal server error'
 
-                # Send error notification
+                # Send error notification with full booking info
                 await self.mq_publisher.publish_reservation_failed(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
-                    error_message=error_msg,
                     event_id=request.event_id,
+                    section=request.section_filter or '',
+                    subsection=request.subsection_filter or 0,
+                    quantity=request.quantity or len(request.seat_positions or []),
+                    seat_selection_mode=request.selection_mode,
+                    seat_positions=request.seat_positions or [],
+                    error_message=error_msg,
                 )
 
                 return ReservationResult(

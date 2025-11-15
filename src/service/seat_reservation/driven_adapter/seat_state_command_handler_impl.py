@@ -7,6 +7,8 @@ CQRS Command Side implementation for seat state management.
 import os
 from typing import Any, Dict, List, Optional
 
+import orjson
+
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor import (
@@ -108,7 +110,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     @Logger.io
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
         """
-        Get section configuration from Kvrocks with instance-level cache
+        Get section configuration from event config JSON with instance-level cache
 
         Section configs rarely change, so we cache them in memory to avoid repeated Kvrocks reads.
         Cache lifetime: Same as handler instance (typically request/consumer lifecycle)
@@ -118,26 +120,107 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             section_id: Section identifier (e.g., 'A-1')
 
         Returns:
-            Dict with 'rows' and 'seats_per_row'
+            Dict with 'rows', 'seats_per_row', and 'price'
 
         Raises:
-            ValueError: If section config not found in Kvrocks
+            ValueError: If section config not found in JSON
         """
         # Check cache first
         cache_key = (event_id, section_id)
         if cache_key in self._config_cache:
             return self._config_cache[cache_key]
 
-        # Cache miss - fetch from Kvrocks
+        # Cache miss - fetch from event config JSON
         try:
             client = kvrocks_client.get_client()
-            config_key = _make_key(f'section_config:{event_id}:{section_id}')
-            config = await client.hgetall(config_key)  # type: ignore
+            config_key = _make_key(f'event_state:{event_id}')
 
-            if not config:
+            # Fetch event config JSON
+            config_json = None
+            Logger.base.info(f'🔍 [CONFIG-READ] Starting to fetch config for key: {config_key}')
+            try:
+                # Try JSON.GET first (Kvrocks native JSON support)
+                # JSON.GET with $ returns a string like '[{"sections":{...}}]'
+                Logger.base.info(f'🔍 [CONFIG-READ] Attempting JSON.GET for {config_key}')
+                result = await client.execute_command('JSON.GET', config_key, '$')
+                Logger.base.info(
+                    f'🔍 [CONFIG-READ] JSON.GET succeeded, result type: {type(result)}'
+                )
+
+                if result:
+                    # JSON.GET with $ returns a list like ['{"sections":{...}}']
+                    # Extract the first element if it's a list
+                    if isinstance(result, list) and result:
+                        config_json = result[0]  # Get JSON string from list
+                    elif isinstance(result, bytes):
+                        config_json = result.decode()
+                    else:
+                        config_json = result
+
+                    # Ensure it's a string
+                    if isinstance(config_json, bytes):
+                        config_json = config_json.decode()
+
+            except Exception as e:
+                Logger.base.debug(f'🔍 [CONFIG-READ] JSON.GET failed: {e}, trying fallback')
+                # Fallback: Regular GET if JSON commands not supported
+                try:
+                    config_json = await client.get(config_key)
+                    if isinstance(config_json, bytes):
+                        config_json = config_json.decode()
+                    Logger.base.debug(f'🔍 [CONFIG-READ] Fallback GET succeeded for {config_key}')
+                except Exception as fallback_error:
+                    Logger.base.error(
+                        f'❌ [CONFIG-READ] Both JSON.GET and GET failed for {config_key}: {fallback_error}'
+                    )
+                    config_json = None
+
+            # Parse JSON
+            if config_json:
+                event_state = orjson.loads(config_json)
+                # If JSON.GET returned an array like [{"sections":{...}}], extract first element
+                if isinstance(event_state, list) and event_state:
+                    event_state = event_state[0]
+            else:
+                event_state = {}
+
+            # Debug: Log what we're reading
+            Logger.base.info(
+                f'🔍 [CONFIG-READ] Raw config_json: {config_json[:200] if config_json else None}'
+            )
+            Logger.base.info(f'🔍 [CONFIG-READ] Parsed event_state: {event_state}')
+            Logger.base.info(
+                f'🔍 [CONFIG-READ] Event {event_id} sections in JSON: {list(event_state.get("sections", {}).keys())}'
+            )
+            Logger.base.info(f'🔍 [CONFIG-READ] Looking for section_id: {section_id}')
+            Logger.base.info(f'🔍 [CONFIG-READ] Config key used: {config_key}')
+
+            # Navigate hierarchical structure to get subsection config and section price
+            # section_id format: "A-1" -> section "A", subsection "1"
+            section_name = section_id.split('-')[0]
+            subsection_num = section_id.split('-')[1]
+
+            section_config = event_state.get('sections', {}).get(section_name, {})
+            if not section_config:
+                Logger.base.error(
+                    f'❌ [CONFIG-READ] Section not found! Available sections: {list(event_state.get("sections", {}).keys())}, '
+                    f'Requested: {section_name} (from {section_id})'
+                )
                 raise ValueError(f'Section config not found: {section_id}')
 
-            result = {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
+            subsection_config = section_config.get('subsections', {}).get(subsection_num, {})
+            if not subsection_config:
+                Logger.base.error(
+                    f'❌ [CONFIG-READ] Subsection not found! Available subsections: {list(section_config.get("subsections", {}).keys())}, '
+                    f'Requested: {subsection_num} (from {section_id})'
+                )
+                raise ValueError(f'Subsection config not found: {section_id}')
+
+            result = {
+                'rows': int(subsection_config['rows']),
+                'seats_per_row': int(subsection_config['seats_per_row']),
+                'price': int(section_config['price']),  # Price from section level
+            }
 
             # Store in cache
             self._config_cache[cache_key] = result
@@ -475,7 +558,12 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     async def initialize_seat(
         self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
     ) -> bool:
-        """Initialize seat (set to AVAILABLE)"""
+        """
+        Initialize seat (set to AVAILABLE)
+
+        Note: Price is ignored - prices are now stored in event_state JSON per section.
+        This method only sets seat status to AVAILABLE in the bitfield.
+        """
         Logger.base.info(f'🆕 [CMD] Initializing seat {seat_id}')
 
         try:
@@ -492,15 +580,13 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
 
             client = kvrocks_client.get_client()
             bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
             offset = seat_index * 2
 
             # Set to AVAILABLE (00)
             await client.setbit(bf_key, offset, 0)
             await client.setbit(bf_key, offset + 1, 0)
 
-            # Set price metadata
-            client.hset(meta_key, str(seat_num), str(price))  # pyright: ignore
+            # ✨ REMOVED: seat_meta Hash write (prices now in event_state JSON)
 
             Logger.base.info(f'✅ [CMD] Initialized seat {seat_id}')
             return True

@@ -11,8 +11,11 @@ FROM python:3.13-slim AS base
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
+    postgresql-client \
+    redis-tools \
     curl \
     procps \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy uv binary
@@ -41,6 +44,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install all dependencies (including dev/test)
+# Increase timeout for large packages like aws-cdk-lib
+ENV UV_HTTP_TIMEOUT=120
 RUN uv sync --all-groups
 
 # Copy application code (will be overridden by volume mount in docker-compose)
@@ -67,6 +72,10 @@ RUN uv sync --no-dev && rm -rf ~/.cache/uv
 
 # Copy application code (required for all services)
 COPY src/ ./src/
+COPY script/ ./script/
+COPY deployment/ ./deployment/
+COPY alembic.ini ./
+COPY Makefile ./
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \

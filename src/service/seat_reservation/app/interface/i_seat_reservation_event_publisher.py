@@ -26,8 +26,9 @@ class ISeatReservationEventPublisher(ABC):
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
+        event_state: dict,  # ✨ NEW: Entire event config for full cache update
     ) -> None:
-        """Publish seat reservation success event"""
+        """Publish seat reservation success event with full event config"""
         pass
 
     @abstractmethod
@@ -36,8 +37,13 @@ class ISeatReservationEventPublisher(ABC):
         *,
         booking_id: str,
         buyer_id: int,
-        error_message: str,
         event_id: int,
+        section: str,
+        subsection: int,
+        quantity: int,
+        seat_selection_mode: str,
+        seat_positions: List[str],
+        error_message: str,
     ) -> None:
-        """Publish seat reservation failure event"""
+        """Publish seat reservation failure event with full booking info"""
         pass

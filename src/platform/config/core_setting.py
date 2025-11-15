@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = 'Ticketing System'
     VERSION: str = '0.1.0'
-    DEBUG: bool = True  # Set to False in evention
+    DEBUG: bool = False  # Set to False in evention
 
     # Database (Optional - only required for services that use PostgreSQL)
     POSTGRES_SERVER: str | None = None
@@ -140,12 +140,14 @@ class Settings(BaseSettings):
 
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
+    # Use hostname + PID to ensure unique transactional.id across instances
+    # This prevents "This instance has been fenced by a newer instance" errors
+    # Format: {hostname}-{pid} ensures uniqueness for both containers and worker processes
     KAFKA_PRODUCER_INSTANCE_ID: str = os.getenv(
-        'KAFKA_PRODUCER_INSTANCE_ID', f'producer-{os.getpid()}'
+        'KAFKA_PRODUCER_INSTANCE_ID', f'{os.uname().nodename}-{os.getpid()}'
     )
     KAFKA_CONSUMER_INSTANCE_ID: str = os.getenv(
-        'KAFKA_CONSUMER_INSTANCE_ID',
-        f'consumer-{os.uname().nodename}-{os.getpid()}',
+        'KAFKA_CONSUMER_INSTANCE_ID', f'{os.uname().nodename}-{os.getpid()}'
     )
     KAFKA_PRODUCER_RETRIES: int = 3
     KAFKA_CONSUMER_AUTO_OFFSET_RESET: str = 'latest'

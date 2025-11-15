@@ -85,14 +85,12 @@ test/
 tests/
 *.feature
 
-# CDK and deployment files
-deployment/
-cdk.out/
-cdk.context.json
-cdk.json
-
-# Scripts (not needed in production runtime)
-script/
+# CDK and deployment files (match anywhere in tree)
+**/cdk.out/
+**/cdk.context.json
+**/cdk.json
+**/cdk-outputs.json
+deployment/cdk/  # Exclude entire CDK directory (only need config.yml)
 
 # Observability configs
 observability/
@@ -111,9 +109,18 @@ spec/
 !.env.example
 
 # Make and shell scripts
-Makefile
+# Makefile  # COMMENTED: LoadTest container needs Makefile
 *.sh
 
 # Cookies and credentials
 cookies.txt
 credentials.json
+
+# Go binaries (will be compiled in container for correct architecture)
+script/go_client/reserved_loadtest
+script/go_client/concurrent_loadtest
+script/go_client/sequential_sellout
+script/go_client/concurrent_sellout
+script/go_client/*.prof
+script/go_client/trace.out
+script/go_client/report/

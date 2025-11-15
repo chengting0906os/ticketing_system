@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import orjson
 import pytest
 
 
@@ -99,18 +100,37 @@ def mock_kafka_infrastructure(request):
                             }
                         )
 
-        # Prepare section statistics and configurations
+        # Prepare section statistics and unified event config (JSON - hierarchical)
         section_stats = defaultdict(int)
-        section_configs = {}
+        event_state = {'sections': {}}  # Unified JSON structure
 
         for seat in all_seats:
             section_id = f'{seat["section"]}-{seat["subsection"]}'
             section_stats[section_id] += 1
 
-            if section_id not in section_configs:
-                section_configs[section_id] = {
+            # Build event_state JSON structure (hierarchical - price at section level)
+            section_name = seat['section']  # e.g., "A"
+            subsection_num = str(seat['subsection'])  # e.g., "1"
+
+            # Create section if not exists (price stored at section level)
+            if section_name not in event_state['sections']:
+                event_state['sections'][section_name] = {
+                    'price': seat['price'],  # ✨ Price at section level (not duplicated)
+                    'subsections': {},
+                }
+
+            # Create subsection if not exists (stats stored at subsection level)
+            if subsection_num not in event_state['sections'][section_name]['subsections']:
+                event_state['sections'][section_name]['subsections'][subsection_num] = {
                     'rows': seat['rows'],
                     'seats_per_row': seat['seats_per_row'],
+                    'stats': {  # ✨ Stats at subsection level
+                        'available': 0,  # Will be set below
+                        'reserved': 0,
+                        'sold': 0,
+                        'total': 0,  # Will be set below
+                        'updated_at': 0,
+                    },
                 }
 
         # Use Pipeline to batch write all operations (sync version)
@@ -118,53 +138,55 @@ def mock_kafka_infrastructure(request):
         pipe = client.pipeline()
         timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 
-        # Write all seat bitfields and metadata
+        # Write seat bitfields (status only - prices moved to JSON)
         for seat in all_seats:
             section_id = f'{seat["section"]}-{seat["subsection"]}'
             bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{seat["row"]}')
             offset = seat['seat_index'] * 2
 
             # Set seat status to AVAILABLE (00)
             pipe.setbit(bf_key, offset, 0)
             pipe.setbit(bf_key, offset + 1, 0)
 
-            # Store seat metadata (price)
-            pipe.hset(meta_key, str(seat['seat_num']), str(seat['price']))
+            # ✨ REMOVED: seat_meta Hash (prices now in JSON)
 
-        # Create section indexes and statistics
+        # Update stats with actual counts (before writing JSON)
         for section_id, total_seats in section_stats.items():
             # Add section to event's section index
             pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
 
-            # Initialize section statistics
-            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-            pipe.hset(
-                stats_key,
-                mapping={
-                    'section_id': section_id,
-                    'event_id': str(event_id),
-                    'available': str(total_seats),
-                    'reserved': '0',
-                    'sold': '0',
-                    'total': str(total_seats),
-                    'updated_at': timestamp,
-                },
-            )
+            # ✨ Update stats in event_state JSON structure (navigate hierarchical structure)
+            # Parse section_id (e.g., "A-1" -> section="A", subsection="1")
+            parts = section_id.split('-')
+            section_name = parts[0]
+            subsection_num = parts[1]
 
-            # Store section configuration
-            config = section_configs[section_id]
-            config_key = _make_key(f'section_config:{event_id}:{section_id}')
-            pipe.hset(
-                config_key,
-                mapping={
-                    'rows': str(config['rows']),
-                    'seats_per_row': str(config['seats_per_row']),
-                },
-            )
+            event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                'available'
+            ] = total_seats
+            event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                'total'
+            ] = total_seats
+            event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                'updated_at'
+            ] = int(timestamp)
+
+            # ✨ REMOVED: section_stats Hash (stats now in event_state JSON)
+            # ✨ REMOVED: section_config Hash (config now in JSON)
 
         # Execute pipeline
         pipe.execute()
+
+        # Write unified event config as JSON (single key per event)
+        config_key = _make_key(f'event_state:{event_id}')
+        event_state_json = orjson.dumps(event_state).decode()
+
+        try:
+            # Try JSON.SET first (Kvrocks native JSON support)
+            client.execute_command('JSON.SET', config_key, '$', event_state_json)
+        except Exception:
+            # Fallback: Store as regular string if JSON commands not supported
+            client.set(config_key, event_state_json)
 
         return {
             'success': True,

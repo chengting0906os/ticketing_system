@@ -177,9 +177,10 @@ services:
     container_name: kvrocks
     ports:
       - "6666:6666"
-    command: [ "--bind", "0.0.0.0" ]
+    command: ["-c", "/etc/kvrocks/kvrocks.conf"]
     volumes:
       - kvrocks_data:/var/lib/kvrocks
+      - ./deployment/kvrocks/kvrocks.conf:/etc/kvrocks/kvrocks.conf:ro
     healthcheck:
       test: [ "CMD", "redis-cli", "-p", "6666", "ping" ]
       interval: 5s
@@ -236,10 +237,10 @@ services:
       context: .
       target: development
     # Note: No container_name to allow scaling with --scale
-    ports:
-      - "8100:8000" # Main port for unified service
+    # No ports mapping - access via nginx load balancer on port 80
     expose:
       - "8000"
+    command: ["uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src"]
     environment:
       # Database
       POSTGRES_SERVER: postgres
@@ -249,7 +250,7 @@ services:
       POSTGRES_PORT: 5432
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
-      KAFKA_CONSUMER_INSTANCE_ID: "consumer-unified-1"
+      # Note: KAFKA_*_INSTANCE_ID uses default value from core_setting.py (hostname-pid)
       # Kvrocks
       KVROCKS_HOST: kvrocks
       KVROCKS_PORT: 6666
@@ -264,7 +265,7 @@ services:
       # Timezone
       TZ: "Asia/Taipei"
     env_file:
-      - .env  # 使用實際的 .env 文件
+      - .env # 使用實際的 .env 文件
     volumes:
       - ./src:/app/src:ro # Hot-reload: mount source code
       - ./script:/app/script:ro # Scripts for seeding and utilities
@@ -272,7 +273,6 @@ services:
       - ./logs:/app/logs # Share logs with promtail
       - ./state:/app/state # Quix Streams state directory
       - ./pyproject.toml:/app/pyproject.toml:ro # Pytest config and dependencies
-    command: [ "uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--reload", "--reload-paths", "src" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -294,6 +294,7 @@ services:
       start_period: 40s
     restart: unless-stopped
     deploy:
+      replicas: 4  # Run 4 ticketing service instances
       resources:
         limits:
           cpus: '2'
@@ -310,7 +311,7 @@ services:
     image: nginx:alpine
     container_name: ticketing-nginx-lb
     ports:
-      - "80:80" # Main entry point - all traffic goes through here
+      - "8100:80" # Main entry point - all traffic goes through here
     volumes:
       - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./logs/nginx:/var/log/nginx # Nginx access/error logs
@@ -346,7 +347,7 @@ services:
       METRICS_BACKEND: "prometheus"
       METRICS_HTTP_ROUTE: "/metrics"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:14269/" ]
       interval: 5s
       timeout: 3s
       retries: 5

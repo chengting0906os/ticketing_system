@@ -8,6 +8,7 @@ Tests the unified seat reservation implementation supporting two modes:
 
 import os
 
+import orjson
 import pytest
 import uuid_utils as uuid
 
@@ -26,6 +27,73 @@ _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
 def _make_key(key: str) -> str:
     """Add prefix to key for test isolation"""
     return f'{_KEY_PREFIX}{key}'
+
+
+def _get_section_stats_from_json(kvrocks_client_sync, event_id: int, section_id: str) -> dict:
+    """
+    Helper function to fetch section stats from event_state JSON
+
+    ✨ NEW: Replaces HGETALL section_stats Hash queries with JSON.GET
+    """
+    config_key = _make_key(f'event_state:{event_id}')
+
+    # Fetch event config JSON
+    config_json = None
+    try:
+        # Try JSON.GET first
+        result = kvrocks_client_sync.execute_command('JSON.GET', config_key, '$')
+        if result:
+            # Handle JSON.GET returning a list
+            if isinstance(result, list) and result:
+                config_json = result[0]
+            elif isinstance(result, bytes):
+                config_json = result.decode()
+            else:
+                config_json = result
+
+            if isinstance(config_json, bytes):
+                config_json = config_json.decode()
+    except Exception:
+        # Fallback: Regular GET
+        config_json = kvrocks_client_sync.get(config_key)
+        if isinstance(config_json, bytes):
+            config_json = config_json.decode()
+
+    # Parse JSON
+    if not config_json:
+        return {
+            'available': '0',
+            'reserved': '0',
+            'sold': '0',
+            'total': '0',
+            'updated_at': '0',
+        }
+
+    event_state = orjson.loads(config_json)
+    # If JSON.GET returned an array, extract first element
+    if isinstance(event_state, list) and event_state:
+        event_state = event_state[0]
+
+    # Extract subsection stats from hierarchical structure
+    # section_id format: "A-1" -> section "A", subsection "1"
+    section_name = section_id.split('-')[0]
+    subsection_num = section_id.split('-')[1]
+    subsection_data = (
+        event_state.get('sections', {})
+        .get(section_name, {})
+        .get('subsections', {})
+        .get(subsection_num, {})
+    )
+    stats = subsection_data.get('stats', {})
+
+    # Return dict with string keys (compatible with test assertions)
+    return {
+        'available': str(stats.get('available', 0)),
+        'reserved': str(stats.get('reserved', 0)),
+        'sold': str(stats.get('sold', 0)),
+        'total': str(stats.get('total', 0)),
+        'updated_at': str(stats.get('updated_at', 0)),
+    }
 
 
 @pytest.fixture
@@ -83,7 +151,11 @@ class TestReserveSeatsAtomicManualMode:
             ]
         }
         event_id = unique_event_id
-        await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
+        print(f'\n🧪 TEST: About to initialize event_id={event_id}')
+        result = await init_handler.initialize_seats_from_config(
+            event_id=event_id, seating_config=config
+        )
+        print(f'🧪 TEST: Init result={result}')
 
         # When: Reserve one seat using manual mode
         booking_id = str(uuid.uuid7())
@@ -111,8 +183,7 @@ class TestReserveSeatsAtomicManualMode:
         assert bit0 * 2 + bit1 == 1  # status value = 1 (RESERVED)
 
         # Verify stats updated
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         assert int(stats['available']) == 2  # 3 - 1
         assert int(stats['reserved']) == 1
 
@@ -155,8 +226,7 @@ class TestReserveSeatsAtomicManualMode:
         assert sorted(result['reserved_seats']) == sorted(expected_seats)
 
         # Verify stats
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         assert int(stats['available']) == 3  # 6 - 3
         assert int(stats['reserved']) == 3
 
@@ -206,8 +276,7 @@ class TestReserveSeatsAtomicManualMode:
         assert result['success'] is False
 
         # Stats should not change
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         assert int(stats['available']) == 1  # Still 1
         assert int(stats['reserved']) == 1  # Still 1
 
@@ -275,8 +344,7 @@ class TestReserveSeatsAtomicManualMode:
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
         # Get initial timestamp
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        initial_stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        initial_stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         initial_timestamp = initial_stats['updated_at']
 
         # When: Reserve a seat
@@ -292,7 +360,7 @@ class TestReserveSeatsAtomicManualMode:
         )
 
         # Then: Timestamp should be updated
-        updated_stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        updated_stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         updated_timestamp = updated_stats['updated_at']
         assert updated_timestamp >= initial_timestamp
 
@@ -354,8 +422,8 @@ class TestReserveSeatsAtomicManualMode:
         assert result['success'] is True
 
         # Verify stats for both sections
-        stats_a = kvrocks_client_sync_for_test.hgetall(_make_key(f'section_stats:{event_id}:A-1'))
-        stats_b = kvrocks_client_sync_for_test.hgetall(_make_key(f'section_stats:{event_id}:B-1'))
+        stats_a = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
+        stats_b = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'B-1')
         assert int(stats_a['reserved']) == 1
         assert int(stats_b['reserved']) == 1
 
@@ -400,8 +468,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
         assert seat_ids == ['A-1-1-1', 'A-1-1-2', 'A-1-1-3']
 
         # Verify stats updated
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         assert int(stats['available']) == 2  # 5 - 3
         assert int(stats['reserved']) == 3
 
@@ -614,8 +681,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
         assert status_s3 == 1, f'Seat in row 2 should have status=1 (RESERVED), got {status_s3}'
 
         # Verify stats show reserved, not sold
-        stats_key = _make_key(f'section_stats:{event_id}:A-1')
-        stats = kvrocks_client_sync_for_test.hgetall(stats_key)
+        stats = _get_section_stats_from_json(kvrocks_client_sync_for_test, event_id, 'A-1')
         assert int(stats['available']) == 7  # 10 - 3
         assert int(stats['reserved']) == 3
-        assert int(stats.get('sold', 0)) == 0  # Should be 0, not 3!
+        assert int(stats.get('sold', '0')) == 0  # Should be 0, not 3!

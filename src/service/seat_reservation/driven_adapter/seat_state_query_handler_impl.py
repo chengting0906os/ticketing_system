@@ -12,8 +12,9 @@ Cache Strategy (Polling-based):
 import os
 from typing import Dict, List, Optional
 
-import anyio
+import orjson
 
+from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
@@ -37,16 +38,6 @@ BITFIELD_TO_STATUS = {
 
 
 class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
-    """
-    座位狀態查詢處理器實作 (CQRS Query)
-
-    職責：只負責讀取操作，不修改狀態
-
-    Cache Strategy:
-    - Singleton with shared in-memory cache
-    - Background polling refreshes all event stats every 0.5s
-    """
-
     def __init__(self):
         self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
@@ -57,18 +48,82 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @Logger.io
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
-        """從 Redis 獲取 section 配置"""
-        from src.platform.exception.exceptions import NotFoundError
+        """從 event config JSON 獲取 section 配置"""
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
-        config_key = _make_key(f'section_config:{event_id}:{section_id}')
-        config = await client.hgetall(config_key)  # type: ignore
+        config_key = _make_key(f'event_state:{event_id}')
 
-        if not config:
+        # Fetch event config JSON
+        config_json = None
+        try:
+            # Try JSON.GET first (Kvrocks native JSON support)
+            # JSON.GET with $ returns a string like '[{"sections":{...}}]'
+            result = await client.execute_command('JSON.GET', config_key, '$')
+            Logger.base.debug(f'🔍 [QUERY-READ] JSON.GET succeeded for {config_key}')
+
+            if result:
+                # Parse the JSON string first
+                if isinstance(result, bytes):
+                    result = result.decode()
+                parsed = orjson.loads(result)  # This gives us a list
+
+                # Extract first element from the array
+                if isinstance(parsed, list) and parsed:
+                    config_json = orjson.dumps(parsed[0]).decode()  # Convert back to JSON string
+                else:
+                    config_json = result
+
+        except Exception as e:
+            Logger.base.debug(f'🔍 [QUERY-READ] JSON.GET failed: {e}, trying fallback')
+            # Fallback: Regular GET if JSON commands not supported
+            try:
+                config_json = await client.get(config_key)
+                if isinstance(config_json, bytes):
+                    config_json = config_json.decode()
+                Logger.base.debug(f'🔍 [QUERY-READ] Fallback GET succeeded for {config_key}')
+            except Exception as fallback_error:
+                Logger.base.error(
+                    f'❌ [QUERY-READ] Both JSON.GET and GET failed for {config_key}: {fallback_error}'
+                )
+                config_json = None
+
+        # Parse JSON (config_json is now a JSON string of the dict, not the array)
+        event_state = orjson.loads(config_json) if config_json else {}
+
+        # Debug: Log what we're reading
+        Logger.base.info(
+            f'🔍 [QUERY-READ] Event {event_id} sections in JSON: {list(event_state.get("sections", {}).keys())}'
+        )
+        Logger.base.info(f'🔍 [QUERY-READ] Looking for section_id: {section_id}')
+        Logger.base.info(f'🔍 [QUERY-READ] Config key used: {config_key}')
+
+        # Navigate hierarchical structure to get subsection config and section price
+        # section_id format: "A-1" -> section "A", subsection "1"
+        section_name = section_id.split('-')[0]
+        subsection_num = section_id.split('-')[1]
+
+        section_config = event_state.get('sections', {}).get(section_name, {})
+        if not section_config:
+            Logger.base.error(
+                f'❌ [QUERY-READ] Section not found! Available sections: {list(event_state.get("sections", {}).keys())}, '
+                f'Requested: {section_name} (from {section_id})'
+            )
             raise NotFoundError('Event not found')
 
-        return {'rows': int(config['rows']), 'seats_per_row': int(config['seats_per_row'])}
+        subsection_config = section_config.get('subsections', {}).get(subsection_num, {})
+        if not subsection_config:
+            Logger.base.error(
+                f'❌ [QUERY-READ] Subsection not found! Available subsections: {list(section_config.get("subsections", {}).keys())}, '
+                f'Requested: {subsection_num} (from {section_id})'
+            )
+            raise NotFoundError('Event not found')
+
+        return {
+            'rows': int(subsection_config['rows']),
+            'seats_per_row': int(subsection_config['seats_per_row']),
+            'price': int(section_config['price']),  # Price from section level
+        }
 
     @Logger.io
     async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
@@ -88,12 +143,13 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
             section_id = f'{section}-{subsection}'
 
             try:
+                # Get section config (includes price)
                 config = await self._get_section_config(event_id, section_id)
                 seats_per_row = config['seats_per_row']
+                section_price = config['price']  # Price from JSON
                 seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
 
                 bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-                meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
                 offset = seat_index * 2
 
                 # Read status from bitfield
@@ -101,15 +157,13 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                 bit1 = await client.getbit(bf_key, offset + 1)
                 status_value = bit0 * 2 + bit1
 
-                # Read price
-                prices = await client.hgetall(meta_key)  # type: ignore
-                price = int(prices.get(seat_num, 0)) if prices else 0
+                # ✨ CHANGED: Price from section config JSON (not seat_meta Hash)
 
                 seat_states[seat_id] = {
                     'seat_id': seat_id,
                     'event_id': event_id,
                     'status': BITFIELD_TO_STATUS.get(status_value, 'available'),
-                    'price': price,
+                    'price': section_price,  # Same price for all seats in section
                 }
 
             except Exception as e:
@@ -128,33 +182,72 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @Logger.io
     async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
-        """獲取活動所有 subsection 的統計資訊"""
+        """
+        獲取活動所有 subsection 的統計資訊
+
+        ✨ NEW: Uses JSON.GET to fetch all section stats in one call
+        (Previously: Pipeline with N HGETALL calls)
+        """
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
 
-        # Get all section IDs from index
-        index_key = _make_key(f'event_sections:{event_id}')
-        section_ids = await client.zrange(index_key, 0, -1)
+        # ✨ Single JSON.GET to fetch all sections with stats
+        config_key = _make_key(f'event_state:{event_id}')
 
-        if not section_ids:
-            return {}
+        try:
+            # Try JSON.GET first (Kvrocks native JSON support)
+            result = await client.execute_command('JSON.GET', config_key, '$')
 
-        # Batch query statistics using pipeline
-        pipe = client.pipeline()
-        for section_id in section_ids:
-            stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-            pipe.hgetall(stats_key)
+            if not result:
+                return {}
 
-        results = await pipe.execute()
+            # Handle result (could be list or string depending on Kvrocks version)
+            if isinstance(result, list) and result:
+                config_json = result[0]
+            elif isinstance(result, bytes):
+                config_json = result.decode()
+            else:
+                config_json = result
 
-        # Parse results
+            # Ensure it's a string
+            if isinstance(config_json, bytes):
+                config_json = config_json.decode()
+
+            # Parse JSON
+            event_state = orjson.loads(config_json)
+            # If JSON.GET returned an array, extract first element
+            if isinstance(event_state, list) and event_state:
+                event_state = event_state[0]
+
+        except Exception as e:
+            Logger.base.debug(f'🔍 [QUERY] JSON.GET failed: {e}, trying fallback')
+            # Fallback: Regular GET if JSON commands not supported
+            try:
+                config_json = await client.get(config_key)
+                if not config_json:
+                    return {}
+                if isinstance(config_json, bytes):
+                    config_json = config_json.decode()
+                event_state = orjson.loads(config_json)
+                if isinstance(event_state, list) and event_state:
+                    event_state = event_state[0]
+            except Exception:
+                return {}
+
+        # Extract stats from hierarchical structure (sections -> subsections -> stats)
         all_stats = {}
-        for section_id, stats in zip(section_ids, results, strict=False):
-            if stats:
+        for section_name, section_config in event_state.get('sections', {}).items():
+            # Navigate to subsections within each section
+            for subsection_num, subsection_data in section_config.get('subsections', {}).items():
+                # Build flat section_id key (e.g., "A-1")
+                section_id = f'{section_name}-{subsection_num}'
+
+                # Extract stats from subsection level
+                stats = subsection_data.get('stats', {})
                 all_stats[section_id] = {
-                    'section_id': stats.get('section_id'),
-                    'event_id': int(stats.get('event_id', 0)),
+                    'section_id': section_id,
+                    'event_id': event_id,
                     'available': int(stats.get('available', 0)),
                     'reserved': int(stats.get('reserved', 0)),
                     'sold': int(stats.get('sold', 0)),
@@ -163,46 +256,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                 }
 
         return all_stats
-
-    async def _get_all_event_ids(self) -> list[int]:
-        """Get all event IDs from Kvrocks"""
-        client = kvrocks_client.get_client()
-        keys = await client.keys(_make_key('event_sections:*'))  # type: ignore
-        event_ids = []
-        for key in keys:
-            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
-            event_id_str = key_str.replace(_KEY_PREFIX, '').replace('event_sections:', '')
-            if event_id_str.isdigit():
-                event_ids.append(int(event_id_str))
-        return event_ids
-
-    async def _refresh_all_caches(self) -> None:
-        """Refresh cache for all events (no lock, eventual consistency)"""
-        try:
-            event_ids = await self._get_all_event_ids()
-
-            for event_id in event_ids:
-                stats = await self.list_all_subsection_status(event_id)
-                self._cache[event_id] = stats
-
-            total_sections = sum(len(sections) for sections in self._cache.values())
-            Logger.base.debug(
-                f'💾 [CACHE] Refreshed {len(event_ids)} events, {total_sections} sections'
-            )
-        except Exception as e:
-            Logger.base.error(f'❌ [CACHE] Refresh failed: {e}')
-
-    async def start_polling(self) -> None:
-        """Start background polling for all events (0.5s interval)"""
-        # Initialize Kvrocks for this event loop (must succeed, otherwise polling is useless)
-        await kvrocks_client.initialize()
-        Logger.base.info('🔄 [POLLING] Starting seat state cache polling (Kvrocks ready)')
-
-        await self._refresh_all_caches()
-
-        while True:
-            await anyio.sleep(0.5)
-            await self._refresh_all_caches()
 
     @Logger.io
     async def list_all_subsection_seats(
@@ -213,8 +266,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         Performance optimization:
         - Uses GETRANGE to fetch entire bitfield in ONE Redis call (instead of 2N getbit calls)
-        - Uses pipeline to batch fetch all row metadata
-        - Reduces Redis calls from 2000+ to just 2-3 for a 20×50 section
+        - Price from section config JSON (single price per section)
+        - Reduces Redis calls to just 2 for a 20×50 section (config + bitfield)
         """
         Logger.base.info(
             f'📊 [QUERY] Listing all seats for event {event_id}, section {section}-{subsection}'
@@ -224,13 +277,14 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         config = await self._get_section_config(event_id, section_id)
         total_rows = config['rows']
         seats_per_row = config['seats_per_row']
+        section_price = config['price']  # Single price for entire section
         total_seats = total_rows * seats_per_row
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
         bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
 
-        # OPTIMIZATION 1: Fetch entire bitfield in ONE call (instead of 2N getbit calls)
+        # OPTIMIZATION: Fetch entire bitfield in ONE call (instead of 2N getbit calls)
         # Each seat uses 2 bits, so we need (total_seats * 2) bits = (total_seats / 4) bytes
         bytes_needed = (total_seats * 2 + 7) // 8  # Round up to nearest byte
         bitfield_bytes = await client.getrange(bf_key, 0, bytes_needed - 1)  # type: ignore
@@ -239,19 +293,11 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         if not bitfield_bytes:
             bitfield_bytes = b''  # Empty bytes, all seats will be 'available'
 
-        # OPTIMIZATION 2: Batch fetch all row metadata with pipeline
-        pipe = client.pipeline()
-        for row in range(1, total_rows + 1):
-            meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{row}')
-            pipe.hgetall(meta_key)
-        all_prices = await pipe.execute()
+        # ✨ REMOVED: Pipeline to batch fetch row metadata (prices now in section config)
 
         # Build seat list from bitfield bytes
         all_seats = []
         for row in range(1, total_rows + 1):
-            # Get price metadata for this row (from batched results)
-            prices = all_prices[row - 1] or {}
-
             for seat_num in range(1, seats_per_row + 1):
                 seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
                 bit_offset = seat_index * 2
@@ -277,7 +323,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                         'subsection': subsection,
                         'row': row,
                         'seat_num': seat_num,
-                        'price': int(prices.get(str(seat_num), 0)) if prices else 0,
+                        'price': section_price,  # Same price for all seats in section
                         'status': BITFIELD_TO_STATUS.get(status_value, 'available'),
                         'seat_identifier': seat_identifier,
                     }
@@ -285,6 +331,6 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         Logger.base.info(
             f'✅ [QUERY] Retrieved {len(all_seats)} seats for section {section_id} '
-            f'(optimized: 2 Redis calls instead of {total_seats * 2})'
+            f'(optimized: 2 Redis calls instead of {total_seats * 2 + total_rows})'
         )
         return all_seats

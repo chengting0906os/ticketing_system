@@ -1,43 +1,40 @@
 # =============================================================================
-# Kafka Consumers - Standalone Service
+# Standalone Consumers Configuration
 # =============================================================================
-# This file defines independent Kafka consumer services.
+# This file defines standalone Kafka consumers that run independently from the API service
 #
 # Usage:
-#   Start with single instance:
-#     docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
-#
-#   Scale to multiple instances:
-#     docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d \
-#       --scale ticketing-consumer=4 \
-#       --scale seat-reservation-consumer=4
+#   docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
 #
 # Benefits:
-# - Integrated observability (Prometheus, Grafana, Jaeger)
 # - Independent scaling (scale consumers without affecting API)
 # - Clean separation of concerns
-# - Unified logging and monitoring
+# - No transactional ID conflicts across worker processes
+# - Easier to debug and monitor
 # =============================================================================
 
 services:
-  # =========================================================================
-  # Ticketing Consumer
-  # =========================================================================
-  ticketing-consumer:
+  # =============================================================================
+  # Booking Service (Standalone Consumer)
+  # =============================================================================
+  # Processes booking events from Kafka (booking-confirmed, booking-failed, etc.)
+  # Updates Kvrocks state and publishes downstream events
+  # =============================================================================
+  booking-service:
     build:
       context: .
       dockerfile: Dockerfile
       target: development
       args:
         SERVICE_TYPE: consumer
-    image: ticketing-consumer:latest
+    image: booking-service:latest
     command:
       - /bin/sh
       - -c
       - |
-        export KAFKA_CONSUMER_INSTANCE_ID="ticketing-consumer-$$(hostname)"
-        export KAFKA_PRODUCER_INSTANCE_ID="ticketing-producer-$$(hostname)"
-        /app/.venv/bin/python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py
+        export KAFKA_CONSUMER_INSTANCE_ID="booking-service-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="booking-service-producer-$$(hostname)"
+        /app/.venv/bin/python src/service/ticketing/driving_adapter/mq_consumer/start_booking_consumer.py
     environment:
       # Python
       PYTHONPATH: /app
@@ -48,7 +45,7 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TZ: "Asia/Taipei"
 
-      # Database
+      # Database (required by Settings model)
       POSTGRES_SERVER: postgres
       POSTGRES_USER: py_arch_lab
       POSTGRES_PASSWORD: py_arch_lab
@@ -64,7 +61,7 @@ services:
       # Note: KAFKA_*_INSTANCE_ID is set dynamically in the command using $(hostname)
 
       # OpenTelemetry
-      OTEL_SERVICE_NAME: ticketing-consumer
+      OTEL_SERVICE_NAME: booking-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: none
@@ -90,29 +87,42 @@ services:
         condition: service_healthy
     networks:
       - ticketing-network
-    mem_limit: 512M
     restart: unless-stopped
+    deploy:
+      replicas: 4  # Run 4 booking service instances
+      resources:
+        limits:
+          cpus: '0.5'  # 0.5 core per instance (2 cores total for 4 instances)
+          memory: 1024M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
     labels:
       - "service.type=consumer"
-      - "service.name=ticketing-consumer"
+      - "service.name=booking-service"
 
-  # =========================================================================
-  # Seat Reservation Consumer
-  # =========================================================================
-  seat-reservation-consumer:
+  # =============================================================================
+  # Seat Reservation Service (Standalone Consumer)
+  # =============================================================================
+  # This service runs independently as it:
+  # - Doesn't share state with API service
+  # - Only interacts with Kvrocks for reservation state
+  # - Processes reservation confirmations and expirations
+  # =============================================================================
+  reservation-service:
     build:
       context: .
       dockerfile: Dockerfile
       target: development
       args:
         SERVICE_TYPE: consumer
-    image: seat-reservation-consumer:latest
+    image: reservation-service:latest
     command:
       - /bin/sh
       - -c
       - |
-        export KAFKA_CONSUMER_INSTANCE_ID="seat-reservation-consumer-$$(hostname)"
-        export KAFKA_PRODUCER_INSTANCE_ID="seat-reservation-producer-$$(hostname)"
+        export KAFKA_CONSUMER_INSTANCE_ID="reservation-service-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="reservation-service-producer-$$(hostname)"
         /app/.venv/bin/python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
     environment:
       # Python
@@ -133,7 +143,7 @@ services:
       # Note: KAFKA_*_INSTANCE_ID is set dynamically in the command using $(hostname)
 
       # OpenTelemetry
-      OTEL_SERVICE_NAME: seat-reservation-consumer
+      OTEL_SERVICE_NAME: reservation-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: none
@@ -157,13 +167,16 @@ services:
         condition: service_healthy
     networks:
       - ticketing-network
-    mem_limit: 512M
     restart: unless-stopped
+    deploy:
+      replicas: 4  # Run 4 reservation service instances
+      resources:
+        limits:
+          cpus: '0.5'  # 0.5 core per instance (2 cores total for 4 instances)
+          memory: 1024M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
     labels:
       - "service.type=consumer"
-      - "service.name=seat-reservation-consumer"
-
-networks:
-  ticketing-network:
-    name: ticketing_system_ticketing-network
-    external: true
+      - "service.name=reservation-service"

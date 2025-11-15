@@ -64,8 +64,12 @@ def section_stats_include(step, context):
     assert section_id in sections, f'Section {section_id} not found in response'
 
     section = sections[section_id]
-    assert section['total'] == int(data['total']), f'Total mismatch for {section_id}'
-    assert section['available'] == int(data['available']), f'Available mismatch for {section_id}'
+    assert section['total'] == int(data['total']), (
+        f'Total mismatch for {section_id}: got {section["total"]}, expected {data["total"]}'
+    )
+    assert section['available'] == int(data['available']), (
+        f'Available mismatch for {section_id}: got {section["available"]}, expected {data["available"]}'
+    )
 
 
 @then('status update event should be received with:')

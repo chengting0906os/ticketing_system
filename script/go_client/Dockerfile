@@ -26,9 +26,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ============= Runtime Stage =============
 FROM alpine:3.19
 
-# Install ca-certificates for HTTPS
+# Install ca-certificates for HTTPS and make
 RUN apk add --no-cache \
     ca-certificates \
+    make \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app

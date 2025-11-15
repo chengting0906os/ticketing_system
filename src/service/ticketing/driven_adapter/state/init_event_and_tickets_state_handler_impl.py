@@ -2,18 +2,63 @@
 Init Event And Tickets State Handler Implementation
 
 Seat initialization state handler implementation - Using Pipeline for batch initialization
+JSON-optimized: Config data stored as single JSON per event
 """
 
-import os
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict
+import os
+from typing import Dict, TypedDict
+
+import orjson
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
     IInitEventAndTicketsStateHandler,
 )
+
+
+class SectionStats(TypedDict):
+    """Section statistics structure"""
+
+    available: int
+    reserved: int
+    sold: int
+    total: int
+    updated_at: int
+
+
+class SubsectionConfig(TypedDict):
+    """Subsection configuration structure (nested under section)"""
+
+    rows: int
+    seats_per_row: int
+    stats: SectionStats
+
+
+class SectionConfig(TypedDict):
+    """Section configuration structure (hierarchical - contains subsections)"""
+
+    price: int  # Price at section level (not duplicated)
+    subsections: Dict[str, SubsectionConfig]  # Keyed by subsection number
+
+
+class EventStats(TypedDict):
+    """Event-level statistics structure"""
+
+    available: int
+    reserved: int
+    sold: int
+    total: int
+    updated_at: int
+
+
+class EventConfig(TypedDict):
+    """Unified event configuration structure"""
+
+    event_stats: EventStats
+    sections: Dict[str, SectionConfig]  # Keyed by section name (A, B, C, ...)
 
 
 # Get key prefix from environment for test isolation
@@ -32,7 +77,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     Responsibilities:
     - Generate all seat data from seating_config
     - Batch write to Kvrocks using Pipeline
-    - Create event_sections index and section_stats statistics
+    - Create unified event_state JSON with sections and event_stats
     """
 
     @Logger.io
@@ -99,9 +144,23 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
 
         Steps:
         1. Generate all seat data from seating_config
-        2. Use Pipeline to batch write all seat bitfields and metadata
-        3. Create event_sections index
-        4. Create section_stats statistics
+        2. Build unified event_state JSON (rows, seats_per_row, price, stats per section + event_stats)
+        3. Use Pipeline to batch write seat bitfields (status only)
+        4. Write event_state as JSON (single key per event)
+
+        Data Structure Changes:
+        - ✅ Kept: seats_bf (bitfield for status)
+        - ✅ NEW: event_state:{event_id} (JSON - unified config + section stats + event stats)
+        - ❌ Removed: seat_meta (prices now per section, not per seat)
+        - ❌ Removed: section_config (merged into JSON)
+        - ❌ Removed: section_stats Hash (stats now in JSON)
+        - ❌ Removed: event_stats Hash (stats now in JSON)
+        - ❌ Removed: event_sections index (can query from JSON)
+
+        Simplification:
+        - Each section has ONE price (not per seat)
+        - Reduces JSON size significantly
+        - Simpler to query and maintain
 
         Args:
             event_id: Event ID
@@ -130,91 +189,98 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             # Step 2: Get Kvrocks client
             client = kvrocks_client.get_client()
 
-            # Step 3: Prepare section statistics and configurations
+            # Step 3: Prepare section statistics and unified event config (JSON)
             section_stats: Dict[str, int] = defaultdict(int)
-            section_configs: Dict[str, Dict] = {}
+            event_state: EventConfig = {
+                'event_stats': {  # ✨ NEW: Event-level stats in JSON (no separate Hash)
+                    'available': 0,
+                    'reserved': 0,
+                    'sold': 0,
+                    'total': 0,
+                    'updated_at': 0,
+                },
+                'sections': {},
+            }
 
-            # Build stats and configs from seat data
+            # Build stats and config from seat data (hierarchical structure)
             for seat in all_seats:
                 section_id = f'{seat["section"]}-{seat["subsection"]}'
-                section_stats[section_id] += 1
+                section_stats[section_id] += 1  # Track per subsection for counting
 
-                if section_id not in section_configs:
-                    section_configs[section_id] = {
-                        'rows': seat['rows'],
-                        'seats_per_row': seat['seats_per_row'],
+                # Extract section and subsection for hierarchical structure
+                section_name = seat['section']  # e.g., "A"
+                subsection_num = str(seat['subsection'])  # e.g., "1"
+
+                # Create section if not exists (price stored at section level)
+                if section_name not in event_state['sections']:
+                    event_state['sections'][section_name] = {
+                        'price': seat['price'],  # ✨ Price at section level (not duplicated)
+                        'subsections': {},
                     }
 
+                # Create subsection if not exists (stats stored at subsection level)
+                if subsection_num not in event_state['sections'][section_name]['subsections']:
+                    event_state['sections'][section_name]['subsections'][subsection_num] = {
+                        'rows': seat['rows'],
+                        'seats_per_row': seat['seats_per_row'],
+                        'stats': {  # ✨ Stats at subsection level (replaces section_stats Hash)
+                            'available': 0,  # Will be set below
+                            'reserved': 0,
+                            'sold': 0,
+                            'total': 0,  # Will be set below
+                            'updated_at': 0,  # Will be set below
+                        },
+                    }
+
+            # Update stats with actual counts (navigate hierarchical structure)
+            timestamp = int(datetime.now(timezone.utc).timestamp())
+            for section_id, total_seats in section_stats.items():
+                # Parse section_id (e.g., "A-1" -> section="A", subsection="1")
+                parts = section_id.split('-')
+                section_name = parts[0]
+                subsection_num = parts[1]
+
+                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                    'available'
+                ] = total_seats
+                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                    'total'
+                ] = total_seats
+                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
+                    'updated_at'
+                ] = timestamp
+
+            # Debug: Log event_state being built
             Logger.base.info(
-                f'⚙️  [INIT-HANDLER] Initializing {len(all_seats)} seats using Pipeline'
+                f'🏗️  [INIT-HANDLER] Built event_state with sections: {list(event_state["sections"].keys())}'
+            )
+            Logger.base.info(f'🏗️  [INIT-HANDLER] Event config detail: {event_state}')
+
+            Logger.base.info(
+                f'⚙️  [INIT-HANDLER] Initializing {len(all_seats)} seats using Pipeline + JSON config'
             )
 
             # Step 4: Use Pipeline to batch write all operations
             pipe = client.pipeline()
-            timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 
-            # Write all seat bitfields and metadata
+            # Write seat bitfields (status only - prices moved to JSON)
             for seat in all_seats:
                 section_id = f'{seat["section"]}-{seat["subsection"]}'
                 bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-                meta_key = _make_key(f'seat_meta:{event_id}:{section_id}:{seat["row"]}')
                 offset = seat['seat_index'] * 2
 
                 # Set seat status to AVAILABLE (00)
                 pipe.setbit(bf_key, offset, 0)
                 pipe.setbit(bf_key, offset + 1, 0)
 
-                # Store seat metadata (price)
-                pipe.hset(meta_key, str(seat['seat_num']), str(seat['price']))
+            event_total_seats = sum(section_stats.values())
+            event_state['event_stats']['available'] = event_total_seats
+            event_state['event_stats']['reserved'] = 0
+            event_state['event_stats']['sold'] = 0
+            event_state['event_stats']['total'] = event_total_seats
+            event_state['event_stats']['updated_at'] = timestamp
 
-            # Create section indexes and statistics
-            event_total_seats = 0  # Track total seats across all subsections
-            for section_id, total_seats in section_stats.items():
-                # Add section to event's section index
-                pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
-
-                # Initialize section statistics
-                stats_key = _make_key(f'section_stats:{event_id}:{section_id}')
-                pipe.hset(
-                    stats_key,
-                    mapping={
-                        'section_id': section_id,
-                        'event_id': str(event_id),
-                        'available': str(total_seats),
-                        'reserved': '0',
-                        'sold': '0',
-                        'total': str(total_seats),
-                        'updated_at': timestamp,
-                    },
-                )
-
-                # Store section configuration
-                config = section_configs[section_id]
-                config_key = _make_key(f'section_config:{event_id}:{section_id}')
-                pipe.hset(
-                    config_key,
-                    mapping={
-                        'rows': str(config['rows']),
-                        'seats_per_row': str(config['seats_per_row']),
-                    },
-                )
-
-                # Aggregate for event-level stats
-                event_total_seats += total_seats
-
-            # Initialize event-level statistics (aggregate across all subsections)
-            event_stats_key = _make_key(f'event_stats:{event_id}')
-            pipe.hset(
-                event_stats_key,
-                mapping={
-                    'event_id': str(event_id),
-                    'available': str(event_total_seats),
-                    'reserved': '0',
-                    'sold': '0',
-                    'total': str(event_total_seats),
-                    'updated_at': timestamp,
-                },
-            )
+            # ✨ REMOVED: event_stats Hash (stats now in event_state JSON)
 
             Logger.base.info(
                 f'📊 [INIT-HANDLER] Event-level stats: total={event_total_seats} seats across {len(section_stats)} subsections'
@@ -225,14 +291,32 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
 
             Logger.base.info(f'✅ [INIT-HANDLER] Initialized {len(all_seats)} seats')
 
-            # Step 5: Verify results
-            sections_count = await client.zcard(_make_key(f'event_sections:{event_id}'))
-            Logger.base.info(f'📋 [INIT-HANDLER] Created {sections_count} sections in index')
+            # Step 5: Write unified event config as JSON (single key per event)
+            config_key = _make_key(f'event_state:{event_id}')
+            event_state_json = orjson.dumps(event_state).decode()
+
+            try:
+                # Try JSON.SET first (Kvrocks native JSON support)
+                await client.execute_command('JSON.SET', config_key, '$', event_state_json)
+                Logger.base.info(
+                    f'✅ [INIT-HANDLER] Saved event config as JSON (native): {config_key}'
+                )
+            except Exception as e:
+                # Fallback: Store as regular string if JSON commands not supported
+                Logger.base.warning(
+                    f'⚠️  [INIT-HANDLER] JSON.SET not supported, using fallback: {e}'
+                )
+                await client.set(config_key, event_state_json)
+                Logger.base.info(f'✅ [INIT-HANDLER] Saved event config as string: {config_key}')
+
+            # Step 6: Verify results
+            sections_count = len(event_state['sections'])
+            Logger.base.info(f'📋 [INIT-HANDLER] Created {sections_count} sections in event_state')
 
             return {
                 'success': True,
                 'total_seats': len(all_seats),
-                'sections_count': int(sections_count),
+                'sections_count': sections_count,
                 'error': None,
             }
 

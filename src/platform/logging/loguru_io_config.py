@@ -10,6 +10,7 @@ from loguru import logger as loguru_logger
 
 from src.platform.constant.path import LOG_DIR
 from src.platform.config.core_setting import settings
+from src.platform.logging.service_context import get_service_context
 
 # Use test log directory if in test environment
 LOG_DIR = os.environ.get('TEST_LOG_DIR', LOG_DIR)
@@ -44,35 +45,44 @@ class GeneratorMethod(StrEnum):
     THROW = 'throw'
 
 
-def get_service_context() -> str:
+def _parse_http_status_level(message: str) -> str | None:
     """
-    Extract service context for logging: service_name@env:task_id
+    Parse HTTP status code from granian access logs and return appropriate log level.
 
-    Examples:
-        - Cloud: 'api-service@production:f630d9ab'
-        - Local: 'unknown@local_dev:12345'
+    Format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" - 200 - 8ms'
 
     Returns:
-        Formatted service context string
+        Log level string if HTTP status found, None otherwise
     """
-    service_name = os.getenv('SERVICE_NAME', 'unknown')
-    deploy_env = os.getenv('DEPLOY_ENV', 'local_dev')
+    if ' - "' not in message or ' HTTP/' not in message:
+        return None
 
-    # Extract ECS Task ID from metadata URI
-    task_id = 'local'
-    metadata_uri = os.getenv('ECS_CONTAINER_METADATA_URI_V4', '')
-    if metadata_uri:
-        # Extract task ID from URI like: http://169.254.170.2/v4/{task_id}-{timestamp}
-        try:
-            task_id_with_ts = metadata_uri.split('/')[-1]
-            task_id = task_id_with_ts.split('-')[0][:8]  # First 8 chars for brevity
-        except (IndexError, ValueError):
-            task_id = 'ecs'
-    else:
-        # Use PID for local development
-        task_id = str(os.getpid())
+    try:
+        # Split by quotes to get status code section
+        parts = message.split('"')
+        if len(parts) < 3:
+            return None
 
-    return f'{service_name}@{deploy_env}:{task_id}'
+        # Parse status code from ' - 200 - 8ms'
+        status_parts = parts[2].strip().split()
+        if len(status_parts) < 2 or status_parts[0] != '-':
+            return None
+
+        status_code = int(status_parts[1])
+
+        # Map status code to log level
+        if status_code >= 500:
+            return 'CRITICAL'
+        if status_code >= 400:
+            return 'ERROR'
+        if status_code >= 300:
+            return 'WARNING'
+        if status_code >= 200:
+            return 'SUCCESS'
+        return 'INFO'
+
+    except (ValueError, IndexError):
+        return None
 
 
 class InterceptHandler(logging.Handler):
@@ -94,38 +104,8 @@ class InterceptHandler(logging.Handler):
                 return
 
         # Parse HTTP status code from granian access logs
-        # Format: '127.0.0.1 - "GET /api/user/me HTTP/1.1" - 200 - 8ms'
-        # Also supports HTTP/2.0, HTTP/3.0, etc.
-        if (
-            ' - "' in message and ' HTTP/' in message
-        ):  # Format: '127.0.0.1 - "GET /api/user/me HTTP/2.0" - 200 - 8ms'
-            # Extract status code from the format
-            try:
-                parts = message.split('"')
-                if len(parts) >= 3:
-                    # parts[2] should be like ' - 200 - 8ms'
-                    status_parts = parts[2].strip().split()
-                    if len(status_parts) >= 2 and status_parts[0] == '-':
-                        status_code = int(status_parts[1])
-
-                        # Adjust log level based on status code
-                        if status_code >= 500:
-                            level = 'CRITICAL'
-                        elif status_code >= 400:
-                            level = 'ERROR'
-                        elif status_code >= 300:
-                            level = 'WARNING'
-                        elif status_code >= 200:
-                            level = 'SUCCESS'
-                        else:
-                            level = 'INFO'
-                    else:
-                        level = 'INFO'
-                else:
-                    level = 'INFO'
-            except (ValueError, IndexError):
-                level = 'INFO'
-        else:
+        level = _parse_http_status_level(message)
+        if level is None:
             # Get corresponding Loguru level if it exists
             try:
                 level = loguru_logger.level(record.levelname).name

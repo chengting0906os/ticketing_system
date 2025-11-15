@@ -1,13 +1,13 @@
 """
-API Service Stack (Unified Ticketing + Seat Reservation)
-Deploys a single API service handling all HTTP endpoints on ECS Fargate
+Ticketing Service Stack (API Only)
+Deploys ticketing API service on ECS Fargate
 
 Architecture:
-- ECS Fargate task (8 vCPU + 16GB RAM + 16 workers)
-- Auto-scaling 1-4 tasks based on CPU/memory
+- ECS Fargate task (configurable vCPU + RAM + workers)
+- Auto-scaling based on CPU/memory
 - ALB integration for HTTP traffic (all /api/* routes)
 - Service discovery via AWS Cloud Map
-- Combines ticketing and seat reservation endpoints
+- Standalone architecture: Consumers run as separate ECS services
 """
 
 from aws_cdk import (
@@ -26,15 +26,16 @@ from aws_cdk import (
 from constructs import Construct
 
 
-class APIServiceStack(Stack):
+class TicketingServiceStack(Stack):
     """
-    Unified API Service on ECS Fargate
+    Ticketing API Service on ECS Fargate (API Only)
 
     Configuration:
-    - 8 vCPU + 16GB RAM per task (high performance for API serving)
-    - 1-4 tasks with auto-scaling
+    - Configurable vCPU + RAM per task (from config.yml)
+    - Auto-scaling based on CPU/memory thresholds
     - Handles all API endpoints: /api/user/*, /api/event/*, /api/booking/*, /api/reservation/*
-    - Integrated with Aurora, Kvrocks, MSK
+    - Standalone architecture: Kafka consumers run as separate ECS services
+    - Integrated with Aurora, Kvrocks (Kafka disabled for API service)
     """
 
     def __init__(
@@ -55,7 +56,7 @@ class APIServiceStack(Stack):
         **kwargs,
     ) -> None:
         """
-        Initialize API Service Stack
+        Initialize Ticketing Service Stack
 
         Args:
             vpc: VPC for ECS tasks
@@ -65,6 +66,7 @@ class APIServiceStack(Stack):
             aurora_cluster_secret: Aurora credentials
             app_secrets: Shared JWT secrets from Aurora Stack
             namespace: Service Discovery namespace
+            kafka_bootstrap_servers: Kafka endpoints
             kvrocks_endpoint: Kvrocks endpoint (host:port)
             config: Environment configuration from config.yml
         """
@@ -135,6 +137,7 @@ class APIServiceStack(Stack):
             ),
             environment={
                 'SERVICE_NAME': 'api-service',
+                'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
                 'WORKERS': str(config['ecs']['api']['workers']),
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
@@ -146,6 +149,7 @@ class APIServiceStack(Stack):
                 'KVROCKS_PORT': kvrocks_port,
                 'ENABLE_KAFKA': 'false',
                 'KAFKA_BOOTSTRAP_SERVERS': kafka_bootstrap_servers,
+                'DEPLOY_ENV': config.get('environment', 'development'),
                 'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
                 'REFRESH_TOKEN_EXPIRE_DAYS': '7',
             },
@@ -211,8 +215,8 @@ service:
 
         # ============= Service =============
         # Get environment from config (production or development)
-        env_name = config.get('environment', 'production')
-        service_name = f'ticketing-{env_name}-api-service'
+        env_name = config.get('environment', 'development')
+        service_name = f'ticketing-{env_name}-ticketing-service'
 
         service = ecs.FargateService(
             self,
@@ -226,7 +230,7 @@ service:
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             enable_execute_command=True,  # Enable ECS Exec for debugging
             cloud_map_options=ecs.CloudMapOptions(
-                name='api-service',
+                name='ticketing-service',
                 cloud_map_namespace=namespace,
                 dns_record_type=servicediscovery.DnsRecordType.A,
             ),
