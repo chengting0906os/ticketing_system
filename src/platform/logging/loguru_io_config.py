@@ -30,6 +30,7 @@ call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 
 
 class ExtraField(StrEnum):
+    SERVICE_CONTEXT = 'service_context'
     CHAIN_START_TIME = 'chain_start_time'
     LAYER_MARKER = 'layer_marker'
     ENTRY_MARKER = 'entry_marker'
@@ -41,6 +42,37 @@ class GeneratorMethod(StrEnum):
     NEXT = 'next'
     SEND = 'send'
     THROW = 'throw'
+
+
+def get_service_context() -> str:
+    """
+    Extract service context for logging: service_name@env:task_id
+
+    Examples:
+        - Cloud: 'api-service@production:f630d9ab'
+        - Local: 'unknown@local_dev:12345'
+
+    Returns:
+        Formatted service context string
+    """
+    service_name = os.getenv('SERVICE_NAME', 'unknown')
+    deploy_env = os.getenv('DEPLOY_ENV', 'local_dev')
+
+    # Extract ECS Task ID from metadata URI
+    task_id = 'local'
+    metadata_uri = os.getenv('ECS_CONTAINER_METADATA_URI_V4', '')
+    if metadata_uri:
+        # Extract task ID from URI like: http://169.254.170.2/v4/{task_id}-{timestamp}
+        try:
+            task_id_with_ts = metadata_uri.split('/')[-1]
+            task_id = task_id_with_ts.split('-')[0][:8]  # First 8 chars for brevity
+        except (IndexError, ValueError):
+            task_id = 'ecs'
+    else:
+        # Use PID for local development
+        task_id = str(os.getpid())
+
+    return f'{service_name}@{deploy_env}:{task_id}'
 
 
 class InterceptHandler(logging.Handler):
@@ -109,6 +141,7 @@ class InterceptHandler(logging.Handler):
         # Bind empty extra fields to avoid KeyError
         logger_with_extra = loguru_logger.bind(
             **{
+                ExtraField.SERVICE_CONTEXT: get_service_context(),
                 ExtraField.CHAIN_START_TIME: '',
                 ExtraField.LAYER_MARKER: '',
                 ExtraField.ENTRY_MARKER: '',
@@ -123,7 +156,7 @@ class InterceptHandler(logging.Handler):
 # Log format for LoguruIO decorated functions
 io_log_format = ' | '.join(
     (
-        '<lk>{time:YYYY-MM-DD HH:mm:ss.SSS}</>',
+        f'<c>{{extra[{ExtraField.SERVICE_CONTEXT}]}}</>',
         '<lvl>{level:<8}</>',
         f'<lg>{{extra[{ExtraField.LAYER_MARKER}]}}{{extra[{ExtraField.ENTRY_MARKER}]}}{{extra[{ExtraField.EXIT_MARKER}]}}</> '
         f'<c>{{file}}::{{function}}:{{line}}</>=><y>{{extra[{ExtraField.CALL_TARGET}]}}</>',
@@ -138,6 +171,7 @@ io_log_format = ' | '.join(
 loguru_logger.remove()  # Remove default handler to avoid duplicate output and use custom format
 custom_logger = loguru_logger.bind(
     **{
+        ExtraField.SERVICE_CONTEXT: get_service_context(),
         ExtraField.CHAIN_START_TIME: '',
         ExtraField.LAYER_MARKER: '',
         ExtraField.ENTRY_MARKER: '',
