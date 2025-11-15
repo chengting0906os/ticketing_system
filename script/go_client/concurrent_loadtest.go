@@ -1,8 +1,9 @@
-//go:build ignore
-// +build ignore
+//go:build concurrent || standalone
+// +build concurrent standalone
 
-// This file is intentionally ignored by default to avoid IDE conflicts.
-// Build with: go build concurrent_loadtest.go types.go
+// Concurrent Load Test for Ticketing System
+// Build with: go build -tags concurrent
+// Or: go build concurrent_loadtest.go types.go
 
 package main
 
@@ -79,7 +80,7 @@ func mustParseURL(urlStr string) *url.URL {
 func main() {
 	// Parse command line flags
 	config := Config{}
-	flag.StringVar(&config.Host, "host", "http://localhost", "API host")
+	flag.StringVar(&config.Host, "host", "", "API host (overrides API_HOST env var)")
 	flag.IntVar(&config.TotalRequests, "requests", 50000, "Total number of requests")
 	flag.IntVar(&config.Concurrency, "concurrency", 500, "Number of concurrent workers")
 	flag.IntVar(&config.ClientPoolSize, "clients", 10, "Number of HTTP clients in pool")
@@ -103,6 +104,14 @@ func main() {
 	flag.StringVar(&traceProfile, "trace", "", "Write execution trace to file")
 
 	flag.Parse()
+
+	// Use API_HOST env var if -host flag not provided
+	if config.Host == "" {
+		config.Host = os.Getenv("API_HOST")
+		if config.Host == "" {
+			config.Host = "http://localhost" // fallback default
+		}
+	}
 
 	// Enable profiling if requested
 	if blockProfile != "" {
@@ -155,7 +164,9 @@ func main() {
 		case "local_dev":
 			config.TotalSeats = 500 // 10 sections × 10 subsections × 1 row × 5 seats
 		case "development":
-			config.TotalSeats = 5000 // 10 sections × 10 subsections × 5 rows × 10 seats
+			config.TotalSeats = 500 // 10 sections × 10 subsections × 1 row × 5 seats (same as local_dev)
+		case "staging":
+			config.TotalSeats = 5000 // 10 sections × 10 subsections × 12 rows × 21 seats (approx)
 		case "production":
 			config.TotalSeats = 50000 // 10 sections × 10 subsections × 25 rows × 20 seats
 		default:
@@ -170,13 +181,9 @@ func main() {
 	fmt.Printf("Requests:    %d\n", config.TotalRequests)
 	fmt.Printf("Concurrency: %d\n", config.Concurrency)
 	fmt.Printf("Event ID:    %d\n", config.EventID)
-	fmt.Printf("Total Seats: %d (30%% threshold: %d seats)\n", config.TotalSeats, int(float64(config.TotalSeats)*0.3))
+	fmt.Printf("Total Seats: %d\n", config.TotalSeats)
 	fmt.Printf("Mode:        %s\n", config.Mode)
-	if config.TotalSeats == 500 {
-		fmt.Printf("Quantity:    1-2 seats/booking (switches to 1 after 30%% booked)\n")
-	} else {
-		fmt.Printf("Quantity:    1-4 seats/booking (switches to 1 after 30%% booked)\n")
-	}
+	fmt.Printf("Quantity:    1 seat/booking (fixed)\n")
 	fmt.Println("========================================")
 
 	// Initialize metrics
@@ -448,27 +455,8 @@ func generateBookingRequest(reqNum int, config *Config, metrics *Metrics) Bookin
 	section := config.Sections[rand.Intn(len(config.Sections))]
 	subsection := config.Subsections[rand.Intn(len(config.Subsections))]
 
-	// Determine quantity based on booked seats percentage and environment
-	// After 30% of seats are booked, switch to conservative mode (buy only 1 ticket)
-	var quantity int
-	bookedSeats := atomic.LoadInt64(&metrics.bookedSeatsCount)
-	threshold := int64(float64(config.TotalSeats) * 0.3)
-
-	if bookedSeats >= threshold {
-		quantity = 1 // Conservative mode: only buy 1 ticket when 30%+ seats booked
-		if config.Debug && bookedSeats == threshold {
-			fmt.Printf("\n⚠️  Entering conservative mode: 30%% seats booked (%d/%d), buying only 1 ticket per request\n", bookedSeats, config.TotalSeats)
-		}
-	} else {
-		// Normal mode: quantity depends on total seats (environment)
-		if config.TotalSeats == 500 {
-			// local_dev: 1-2 seats per booking
-			quantity = rand.Intn(2) + 1
-		} else {
-			// development/production: 1-4 seats per booking
-			quantity = rand.Intn(4) + 1
-		}
-	}
+	// Fixed quantity: always buy 1 ticket per request
+	quantity := 1
 
 	req := BookingCreateRequest{
 		EventID:           config.EventID,

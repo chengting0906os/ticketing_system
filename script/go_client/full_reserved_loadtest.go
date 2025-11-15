@@ -1,8 +1,11 @@
-//go:build reserved
-// +build reserved
+//go:build full_reserved
+// +build full_reserved
 
-// Reserved Load Test for Ticketing System
-// Build with: go build -tags reserved
+// Full Reserved Load Test for Ticketing System - Maximum Throughput Mode
+// - Always buys 1 ticket per request (no random quantity)
+// - Supports up to 500 concurrent workers
+// - Optimized for fastest send rate
+// Build with: go build -tags full_reserved
 
 package main
 
@@ -12,7 +15,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -241,7 +243,7 @@ func buyTicketsAsync(client *http.Client, host string, eventID int, section stri
 // Concurrency Mechanism:
 // - Multiple workers run in parallel (controlled by numWorkers parameter)
 // - Each worker independently processes subsection tasks from a shared channel
-// - Workers buy tickets with random quantities (1-4) until subsection is full
+// - Workers buy tickets with FIXED quantity of 1 (optimized for max throughput)
 // - All workers share the same HTTP client with cookie jar for session reuse
 // - Results are collected via a separate results channel
 // - WaitGroup ensures all workers complete before final statistics
@@ -254,7 +256,9 @@ func worker(
 	wg *sync.WaitGroup,
 	firstRequestTime *atomic.Value,
 	lastRequestTime *atomic.Value,
+	lastResponseTime *atomic.Value,
 	requestCount *atomic.Int64,
+	batchSize int,
 ) {
 	defer wg.Done()
 
@@ -270,65 +274,74 @@ func worker(
 		// - production: 25 × 20 = 500 tickets
 		maxTicketsPerSubsection := task.Subsection.Rows * task.Subsection.SeatsPerRow
 
-		// Purchase Loop: Keep buying until subsection is exhausted
-		for subsectionTickets < maxTicketsPerSubsection {
-			// Calculate remaining seats and cap quantity at 4
-			remaining := maxTicketsPerSubsection - subsectionTickets
-			upperBound := remaining
-			if upperBound > 4 {
-				upperBound = 4
+		// BATCH SEND: Configurable batch size for subsection requests
+		// Fixed quantity: always buy 1 ticket per request
+		quantity := 1
+
+		// Determine effective batch size (0 means send all at once)
+		effectiveBatchSize := batchSize
+		if effectiveBatchSize == 0 || effectiveBatchSize > maxTicketsPerSubsection {
+			effectiveBatchSize = maxTicketsPerSubsection
+		}
+
+		// ═══════════════════════════════════════════════════════════════
+		// PHASE 1: Send ALL requests (fire-and-forget, no waiting)
+		// ═══════════════════════════════════════════════════════════════
+		var allResultChans []<-chan BookingResult
+
+		for sent := 0; sent < maxTicketsPerSubsection; sent += effectiveBatchSize {
+			// Calculate how many to send in this batch
+			remaining := maxTicketsPerSubsection - sent
+			currentBatchSize := effectiveBatchSize
+			if currentBatchSize > remaining {
+				currentBatchSize = remaining
 			}
 
-			// Random quantity from 1 to upperBound (inclusive)
-			quantity := 1 + rand.Intn(upperBound)
+			// Send batch of requests (non-blocking)
+			for i := 0; i < currentBatchSize; i++ {
+				// Track first request time
+				if firstRequestTime.Load() == nil {
+					firstRequestTime.CompareAndSwap(nil, time.Now())
+				}
+				requestCount.Add(1)
 
-			// Track request timing BEFORE sending (this is the send time)
-			requestStartTime := time.Now()
-
-			// Record first request time (atomic check-and-set)
-			if firstRequestTime.Load() == nil {
-				firstRequestTime.CompareAndSwap(nil, requestStartTime)
+				// Fire async request (doesn't block)
+				resultChan := buyTicketsAsync(
+					client,
+					host,
+					eventID,
+					task.Section.Name,
+					task.Subsection.Number,
+					quantity,
+				)
+				allResultChans = append(allResultChans, resultChan)
 			}
+		}
 
-			// Always update last request time
-			lastRequestTime.Store(requestStartTime)
-			requestCount.Add(1)
+		// ALL requests sent - record timing (accurate send time)
+		lastRequestTime.Store(time.Now())
 
-			// Send async request (non-blocking) and wait for response
-			resultChan := buyTicketsAsync(
-				client,
-				host,
-				eventID,
-				task.Section.Name,
-				task.Subsection.Number,
-				quantity,
-			)
-
-			// Wait for async response (blocks here but request was already sent)
+		// ═══════════════════════════════════════════════════════════════
+		// PHASE 2: Collect ALL responses (wait for everything)
+		// ═══════════════════════════════════════════════════════════════
+		for _, resultChan := range allResultChans {
 			result := <-resultChan
 
+			// Track when last response was received
+			lastResponseTime.Store(time.Now())
+
 			if result.Err != nil {
-				fmt.Printf("❌ Error buying %d tickets in %s-%d: %v\n",
-					quantity, task.Section.Name, task.Subsection.Number, result.Err)
 				subsectionErrors++
-				break // Stop trying this subsection on error
+				// Don't print individual errors to avoid spam
+				continue
 			}
 
-			// Record latency from async result
+			// Record latency
 			latencies = append(latencies, result.Latency)
 
 			if result.TicketsPurchased > 0 {
 				subsectionTickets += result.TicketsPurchased
 				subsectionBookings++
-
-				// If we got fewer tickets than requested, the subsection is nearly exhausted
-				// Stop trying to avoid errors on the last few seats
-				if result.TicketsPurchased < quantity {
-					break
-				}
-			} else {
-				// No tickets purchased (sold out)
-				break
 			}
 		}
 
@@ -349,16 +362,18 @@ func main() {
 
 	// Parse command line flags
 	var (
-		host       string
-		eventID    int
-		env        string
-		numWorkers int
+		host          string
+		eventID       int
+		env           string
+		numWorkers    int
+		batchSize     int
 	)
 
 	flag.StringVar(&host, "host", "", "API host (overrides API_HOST env var)")
 	flag.IntVar(&eventID, "event", 1, "Event ID")
 	flag.StringVar(&env, "env", "local_dev", "Environment (local_dev, development, staging, production)")
-	flag.IntVar(&numWorkers, "workers", 10, "Number of concurrent workers")
+	flag.IntVar(&numWorkers, "workers", 500, "Number of concurrent workers (default: 500 for max throughput)")
+	flag.IntVar(&batchSize, "batch", 0, "Batch size for subsection requests (0 = send all at once, default)")
 	flag.Parse()
 
 	// Use API_HOST env var if -host flag not provided
@@ -387,13 +402,14 @@ func main() {
 	subsectionCapacity := config.Sections[0].Subsections[0].Rows * config.Sections[0].Subsections[0].SeatsPerRow
 
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║      Reserved Load Test - Sequential Exhaustion             ║")
+	fmt.Println("║   Full Reserved Load Test - Maximum Throughput Mode         ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Printf("\n🌍 Environment: %s\n", env)
 	fmt.Printf("📊 Total seats: %d\n", totalSeats)
 	fmt.Printf("🎯 Event ID: %d\n", eventID)
 	fmt.Printf("🌐 Host: %s\n", host)
-	fmt.Printf("🎫 Quantity per booking: 1-4 tickets (subsection capacity: %d seats)\n", subsectionCapacity)
+	fmt.Printf("🎫 Quantity per booking: 1 ticket (FIXED - optimized for max throughput)\n")
+	fmt.Printf("📦 Subsection capacity: %d seats\n", subsectionCapacity)
 	fmt.Printf("👷 Concurrent workers: %d\n", numWorkers)
 	fmt.Println("═══════════════════════════════════════════════════════════════")
 
@@ -460,7 +476,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(client, host, eventID, tasks, results, &wg, &firstRequestTime, &lastRequestTime, &requestCount)
+		go worker(client, host, eventID, tasks, results, &wg, &firstRequestTime, &lastRequestTime, &lastResponseTime, &requestCount, batchSize)
 	}
 	fmt.Printf("   ✅ All workers ready\n\n")
 
@@ -569,24 +585,38 @@ func main() {
 	fmt.Printf("Average per booking:     %.2f tickets\n", avgPerBooking)
 	fmt.Printf("Errors:                  %d\n", errors)
 
-	// Calculate and display request sending time
+	// Calculate and display timing metrics
+	totalRequests := requestCount.Load()
 	var requestSendDuration time.Duration
+	var responseCompleteDuration time.Duration
+
 	if firstRequestTime.Load() != nil && lastRequestTime.Load() != nil {
 		first := firstRequestTime.Load().(time.Time)
-		last := lastRequestTime.Load().(time.Time)
-		requestSendDuration = last.Sub(first)
-		totalRequests := requestCount.Load()
-		fmt.Printf("\n📤 Request Sending Stats:\n")
-		fmt.Printf("  Total requests sent:    %d\n", totalRequests)
-		fmt.Printf("  Time to send all:       %.3fs\n", requestSendDuration.Seconds())
+		lastSent := lastRequestTime.Load().(time.Time)
+		requestSendDuration = lastSent.Sub(first)
+
+		fmt.Printf("\n📤 Request Sending Phase:\n")
+		fmt.Printf("  Total requests sent:       %d\n", totalRequests)
+		fmt.Printf("  Time to send all:          %.3fs\n", requestSendDuration.Seconds())
 		if requestSendDuration.Seconds() > 0 {
-			fmt.Printf("  Send rate:              %.2f requests/sec\n", float64(totalRequests)/requestSendDuration.Seconds())
+			fmt.Printf("  Send rate:                 %.2f requests/sec\n", float64(totalRequests)/requestSendDuration.Seconds())
 		}
 	}
 
-	fmt.Printf("\nDuration:                %.2fs (%.2f min)\n", duration.Seconds(), duration.Minutes())
-	fmt.Printf("Throughput:              %.2f tickets/sec\n", float64(tickets)/duration.Seconds())
-	fmt.Printf("Booking rate:            %.2f bookings/sec\n", float64(bookings)/duration.Seconds())
+	if firstRequestTime.Load() != nil && lastResponseTime.Load() != nil {
+		first := firstRequestTime.Load().(time.Time)
+		lastReceived := lastResponseTime.Load().(time.Time)
+		responseCompleteDuration = lastReceived.Sub(first)
+
+		fmt.Printf("\n📥 Response Completion Phase:\n")
+		fmt.Printf("  Time to receive all:       %.3fs\n", responseCompleteDuration.Seconds())
+		if responseCompleteDuration.Seconds() > 0 {
+			fmt.Printf("  Actual throughput:         %.2f tickets/sec\n", float64(tickets)/responseCompleteDuration.Seconds())
+			fmt.Printf("  Actual booking rate:       %.2f bookings/sec\n", float64(bookings)/responseCompleteDuration.Seconds())
+		}
+	}
+
+	fmt.Printf("\n⏱️  Total Duration:           %.2fs (%.2f min)\n", duration.Seconds(), duration.Minutes())
 
 	if len(allLatencies) > 0 {
 		fmt.Println("\n⏱️  Latency Distribution:")
@@ -620,7 +650,7 @@ func main() {
 	generateMarkdownReport(
 		env, host, eventID, numWorkers, subsectionCapacity,
 		totalSeats, tickets, bookings, errors, avgPerBooking,
-		duration, startTime,
+		duration, requestSendDuration, responseCompleteDuration, totalRequests, startTime,
 		min, max, avg, p50, p75, p90, p95, p99,
 		numCPU, numGoroutines, &memStats,
 	)
@@ -630,18 +660,19 @@ func main() {
 func generateMarkdownReport(
 	env, host string, eventID, numWorkers, subsectionCapacity, totalSeats int,
 	tickets, bookings, errors int64, avgPerBooking float64,
-	duration time.Duration, startTime time.Time,
+	duration, requestSendDuration, responseCompleteDuration time.Duration,
+	totalRequests int64, startTime time.Time,
 	min, max, avg, p50, p75, p90, p95, p99 time.Duration,
 	numCPU, numGoroutines int, memStats *runtime.MemStats,
 ) {
 	// Create report directory
-	reportDir := filepath.Join(".", "report", "reserved")
+	reportDir := filepath.Join(".", "report", "full_reserved")
 	if err := os.MkdirAll(reportDir, 0755); err != nil {
 		fmt.Printf("⚠️  Failed to create report directory: %v\n", err)
 		return
 	}
 
-	filename := filepath.Join(reportDir, fmt.Sprintf("reserved-loadtest-report-%s.md", time.Now().Format("20060102-150405")))
+	filename := filepath.Join(reportDir, fmt.Sprintf("full-reserved-loadtest-report-%s.md", time.Now().Format("20060102-150405")))
 	file, err := os.Create(filename)
 	if err != nil {
 		fmt.Printf("⚠️  Failed to create markdown report: %v\n", err)
@@ -654,13 +685,13 @@ func generateMarkdownReport(
 		successRate = float64(tickets) / float64(totalSeats) * 100
 	}
 
-	report := fmt.Sprintf(`# Reserved Seat Load Test Report
+	report := fmt.Sprintf(`# Full Reserved Seat Load Test Report (Maximum Throughput Mode)
 
 **Run at:** %s
 **Environment:** %s
 **Test Duration:** %.2fs (%.2f min)
 
-*Configuration: Workers=%d, Event ID=%d, Subsection Capacity=%d seats*
+*Configuration: Workers=%d, Event ID=%d, Fixed Quantity=1 ticket/booking, Subsection Capacity=%d seats*
 
 ---
 
@@ -678,11 +709,24 @@ func generateMarkdownReport(
 
 ## ⚡ Performance Metrics
 
+### 📤 Request Sending Phase
 | Metric | Value |
 |--------|-------|
-| Throughput | %.2f tickets/sec |
-| Booking Rate | %.2f bookings/sec |
-| Duration | %.2fs |
+| Total Requests Sent | %d |
+| Time to Send All | %.3fs |
+| Send Rate | %.2f requests/sec |
+
+### 📥 Response Completion Phase
+| Metric | Value |
+|--------|-------|
+| Time to Receive All | %.3fs |
+| Actual Throughput | %.2f tickets/sec |
+| Actual Booking Rate | %.2f bookings/sec |
+
+### ⏱️ Total Duration
+| Metric | Value |
+|--------|-------|
+| Total Test Duration | %.2fs (%.2f min) |
 
 ---
 
@@ -722,10 +766,11 @@ func generateMarkdownReport(
 - **Synchronization**: WaitGroup for graceful shutdown
 
 ### Purchase Strategy
-- **Random Quantity**: 1-4 tickets per booking
+- **Fixed Quantity**: 1 ticket per booking (optimized for max throughput)
 - **Max per Subsection**: %d tickets (rows × seats_per_row)
-- **Retry Logic**: 20 attempts with 20ms linear backoff
+- **Retry Logic**: 20 attempts with 50ms linear backoff
 - **Environment-Adaptive**: Capacity scales with environment
+- **Async Requests**: Non-blocking request sending with response tracking
 
 ---
 
@@ -759,9 +804,33 @@ func generateMarkdownReport(
 		bookings,
 		avgPerBooking,
 		errors,
-		float64(tickets)/duration.Seconds(),
-		float64(bookings)/duration.Seconds(),
+		// Request Sending Phase metrics
+		totalRequests,
+		requestSendDuration.Seconds(),
+		func() float64 {
+			if requestSendDuration.Seconds() > 0 {
+				return float64(totalRequests) / requestSendDuration.Seconds()
+			}
+			return 0
+		}(),
+		// Response Completion Phase metrics
+		responseCompleteDuration.Seconds(),
+		func() float64 {
+			if responseCompleteDuration.Seconds() > 0 {
+				return float64(tickets) / responseCompleteDuration.Seconds()
+			}
+			return 0
+		}(),
+		func() float64 {
+			if responseCompleteDuration.Seconds() > 0 {
+				return float64(bookings) / responseCompleteDuration.Seconds()
+			}
+			return 0
+		}(),
+		// Total Duration
 		duration.Seconds(),
+		duration.Minutes(),
+		// Latency Distribution
 		min, p50, p75, p90, p95, p99, max, avg,
 		numCPU,
 		numGoroutines,
@@ -787,7 +856,7 @@ func generateMarkdownReport(
 		report += fmt.Sprintf("⚠️  **Status:** Partial completion (%.1f%% purchased).\n", successRate)
 	}
 
-	report += "\n---\n\n*Report generated by Go Reserved Load Test Tool*\n"
+	report += "\n---\n\n*Report generated by Go Full Reserved Load Test Tool (Maximum Throughput Mode)*\n"
 
 	if _, err := file.WriteString(report); err != nil {
 		fmt.Printf("⚠️  Failed to write report: %v\n", err)
