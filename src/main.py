@@ -10,10 +10,14 @@ This unified architecture provides:
 """
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
+import signal
 from typing import TypeVar
 
 import anyio
+from anyio.from_thread import start_blocking_portal
+import anyio.to_thread
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -32,6 +36,7 @@ from src.platform.database.orm_db_setting import get_engine
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import flush_all_messages
+from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 
@@ -66,6 +71,11 @@ from src.service.ticketing.driving_adapter.http_controller.user_controller impor
     router as auth_router,
 )
 
+# Ticketing MQ Consumer imports (for background task)
+from src.service.ticketing.driving_adapter.mq_consumer.ticketing_mq_consumer import (
+    TicketingMqConsumer,
+)
+
 
 # Generic middleware wrapper to satisfy type checker
 T = TypeVar('T', bound=BaseHTTPMiddleware)
@@ -87,7 +97,7 @@ async def lifespan(app: FastAPI):
     # ============================================================================
     Logger.base.info('🚀 [Unified Service] Starting up...')
 
-    # Setup OpenTelemetry tracing
+    # Setup OpenTelemetry tracing (environment-aware: Jaeger local, X-Ray AWS)
     tracing = TracingConfig(service_name='unified-ticketing-service')
     tracing.setup()
     Logger.base.info('📊 [Unified Service] OpenTelemetry tracing configured')
@@ -112,12 +122,14 @@ async def lifespan(app: FastAPI):
     # Initialize database
     engine = get_engine()
     if engine:
-        tracing.instrument_sqlalchemy(engine=engine)
+        if tracing:
+            tracing.instrument_sqlalchemy(engine=engine)
         Logger.base.info('🗄️  [Unified Service] Database engine ready + instrumented')
 
     # Auto-instrument Redis/Kvrocks
-    tracing.instrument_redis()
-    Logger.base.info('📊 [Unified Service] Redis instrumentation configured')
+    if tracing:
+        tracing.instrument_redis()
+        Logger.base.info('📊 [Unified Service] Redis instrumentation configured')
 
     # Initialize Kvrocks connection pool (fail-fast)
     await kvrocks_client.initialize()
@@ -131,19 +143,89 @@ async def lifespan(app: FastAPI):
     await warmup_asyncpg_pool()
     Logger.base.info('🔥 [Unified Service] Asyncpg pool warmed up to MIN_SIZE')
 
+    # Get event ID from environment for consumer topic initialization
+    event_id = int(os.getenv('EVENT_ID', '1'))
+
+    # Auto-create Kafka topics before consumers start
+    topic_initializer = KafkaTopicInitializer()
+    topic_initializer.ensure_topics_exist(event_id=event_id)
+    Logger.base.info(f'📝 [Unified Service] Kafka topics ensured for EVENT_ID={event_id}')
+
     Logger.base.info('✅ [Unified Service] All services initialized')
 
-    # Use async with to manage task group lifecycle
+    # ========== Start Ticketing Consumer in Background (Shared Process) ==========
+    # IMPORTANT: Running in same process ensures Singleton cache is shared!
+    # When consumer receives Kafka events and calls update_cache(), it updates
+    # the same cache instance that API service uses for availability checks
+
+    # Get shared seat_availability_cache from DI container (Singleton)
+    seat_availability_cache = container.seat_availability_query_handler()
+
+    # Get event broadcaster for consumer
+    event_broadcaster = container.booking_event_broadcaster()
+
+    # Create ticketing consumer with shared cache
+    ticketing_consumer = TicketingMqConsumer(
+        event_broadcaster=event_broadcaster,
+        seat_availability_cache=seat_availability_cache,
+    )
+
+    Logger.base.info('🎫 [Unified Service] Starting Ticketing Consumer in background...')
+
+    # Define consumer runner with BlockingPortal (required for async callbacks)
+    def run_with_portal(*args: object, **kwargs: object) -> None:
+        """Run ticketing consumer with BlockingPortal for async-to-sync calls"""
+
+        with start_blocking_portal() as portal:
+            ticketing_consumer.set_portal(portal)
+
+            # Create and inject task group for fire-and-forget event publishing
+            # We need to keep the task group alive during consumer execution
+            async def run_with_task_group() -> None:
+                async with anyio.create_task_group() as tg:
+                    # Inject task group into DI container
+                    container.task_group.override(tg)
+                    Logger.base.info('🔄 [Unified Service] Task group injected into DI container')
+
+                    # Keep task group alive - consumer.start() will block
+                    # Consumer runs in the blocking portal's thread, task group stays in async context
+                    try:
+                        # This will keep the task group alive forever (or until cancelled)
+                        await anyio.sleep_forever()
+                    except anyio.get_cancelled_exc_class():
+                        Logger.base.info('✅ [Unified Service] Task group shutting down')
+
+            # Start task group in background
+            portal.start_task_soon(run_with_task_group)  # type: ignore
+            Logger.base.info('🔄 [Unified Service] Background task group started')
+
+            # Setup signal handlers
+            def shutdown_handler(signum: int, frame: object) -> None:
+                Logger.base.info(f'🛑 [Unified Service] Received signal {signum}')
+                ticketing_consumer.running = False
+
+            signal.signal(signal.SIGINT, shutdown_handler)
+            signal.signal(signal.SIGTERM, shutdown_handler)
+
+            try:
+                Logger.base.info('✅ [Unified Service] Starting consumer...')
+                ticketing_consumer.start()
+            finally:
+                Logger.base.info('🛑 [Unified Service] Consumer stopped')
+
+    # Use async with to manage background task lifecycle
     async with anyio.create_task_group() as background_task_group:
-        # Inject task group into DI container for fire-and-forget event publishing
-        container.task_group.override(background_task_group)
-        Logger.base.info('🔄 [Unified Service] Task group injected into DI container')
+        # Start consumer in background thread (consumer.start() is blocking)
+        # Use to_thread.run_sync to run blocking code without blocking the event loop
+        async def start_consumer(*args: object, **kwargs: object) -> None:
+            await anyio.to_thread.run_sync(run_with_portal)  # type: ignore[arg-type]
+
+        background_task_group.start_soon(start_consumer)  # type: ignore[arg-type]
 
         Logger.base.info(
-            '💡 [Unified Service] Kafka consumers should be started independently:\n'
-            '   - Ticketing: uv run python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py\n'
-            '   - Seat Reservation: uv run python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py\n'
-            '   - Or use: make c-start'
+            '✅ [Unified Service] Ticketing Consumer started (integrated with API service)\n'
+            '   💡 Seat Reservation Consumer should still run independently:\n'
+            '      - uv run python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py'
         )
 
         Logger.base.info('✅ [Unified Service] All background tasks started')
@@ -179,8 +261,9 @@ async def lifespan(app: FastAPI):
     Logger.base.info('📡 [Unified Service] Kvrocks disconnected')
 
     # Shutdown tracing (flush remaining spans)
-    tracing.shutdown()
-    Logger.base.info('📊 [Unified Service] Tracing shutdown complete')
+    if tracing:
+        tracing.shutdown()
+        Logger.base.info('📊 [Unified Service] Tracing shutdown complete')
 
     # Unwire DI
     container.unwire()
@@ -197,8 +280,10 @@ app = FastAPI(
 )
 
 # Auto-instrument FastAPI (must be done before mounting routes)
+# Note: This creates auto-spans for all HTTP requests (path, method, status, duration)
 tracing_config = TracingConfig(service_name='unified-ticketing-service')
 tracing_config.instrument_fastapi(app=app)
+Logger.base.info('📊 [Unified Service] FastAPI auto-instrumentation enabled')
 
 # Add CORS middleware
 app.add_middleware(

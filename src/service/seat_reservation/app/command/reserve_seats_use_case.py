@@ -5,7 +5,6 @@ Reserve Seats Use Case - Atomic operations based on Lua scripts
 from dataclasses import dataclass
 from typing import List, Optional
 
-import anyio.abc
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
@@ -44,63 +43,53 @@ class ReservationResult:
 
 class ReserveSeatsUseCase:
     """
-    Reserve Seats Use Case - Event-Driven Non-Blocking Flow
+    Reserve Seats Use Case - Event-Driven Flow
 
     Responsibility: Seat Reservation Service (Kvrocks only)
 
     Flow:
     1. Reserve seats in Kvrocks (atomic operation, returns prices)
-    2. Fire-and-forget: Publish event to Ticketing Service
+    2. Publish event to Ticketing Service (Kafka producer is buffered)
        → Ticketing Service handles PostgreSQL persistence
-    3. Return immediately (non-blocking)
+    3. Return result
 
     Design Principles:
     - Single Responsibility: Only manages Kvrocks state
     - Separation of Concerns: Each service manages its own storage
-    - Non-blocking: No database I/O in critical path
+    - Minimal latency: Kafka producer is buffered/batched
     - Event-driven: Communication via Kafka events
 
     Dependencies:
     - seat_state_handler: For Kvrocks seat reservation
-    - mq_publisher: For event publishing (fire-and-forget)
+    - mq_publisher: For event publishing
     """
 
     def __init__(
         self,
         seat_state_handler: ISeatStateCommandHandler,
         mq_publisher: ISeatReservationEventPublisher,
-        task_group: anyio.abc.TaskGroup,
     ):
         self.seat_state_handler = seat_state_handler
         self.mq_publisher = mq_publisher
-        self._task_group = task_group  # Store initial value
         self.tracer = trace.get_tracer(__name__)
-
-    @property
-    def task_group(self) -> anyio.abc.TaskGroup:
-        """Dynamically get task_group from DI container to handle runtime override"""
-        from src.platform.config.di import container
-
-        # Return container's task_group if available, otherwise fallback to initial value
-        tg = container.task_group()
-        return tg if tg is not None else self._task_group
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
         """
-        Execute seat reservation - Non-blocking Event-Driven Flow
+        Execute seat reservation - Event-Driven Flow
 
         Flow:
         1. Validate request
         2. Reserve seats in Kvrocks (atomic operation, returns prices)
-        3. Fire-and-forget: Publish event to Ticketing Service
+        3. Publish event to Ticketing Service (Kafka producer is buffered)
            → Ticketing Service handles PostgreSQL write (Booking + Tickets)
-        4. Return immediately (non-blocking)
+        4. Return result
 
         Design Rationale:
-        - Seat Reservation Service: Only manages Kvrocks state (fast, non-blocking)
+        - Seat Reservation Service: Only manages Kvrocks state (fast)
         - Ticketing Service: Handles PostgreSQL persistence (via event)
         - Separation of concerns: Each service manages its own storage
+        - Minimal latency: Kafka producer batches messages
 
         Args:
             request: Reservation request
@@ -156,26 +145,23 @@ class ReserveSeatsUseCase:
                         f'{" 🎊 EVENT SOLD OUT!" if event_stats.get("available", 1) == 0 else ""}'
                     )
 
-                    # Step 4: Fire-and-forget event to Ticketing Service
+                    # Step 4: Publish event to Ticketing Service (Kafka producer is buffered)
                     # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
-                    async def _publish_success() -> None:
-                        await self.mq_publisher.publish_seats_reserved(
-                            booking_id=request.booking_id,
-                            buyer_id=request.buyer_id,
-                            event_id=request.event_id,
-                            section=request.section_filter or '',
-                            subsection=request.subsection_filter or 0,
-                            seat_selection_mode=request.selection_mode,
-                            reserved_seats=reserved_seats,
-                            seat_prices=seat_prices,
-                            total_price=total_price,
-                            subsection_stats=subsection_stats,
-                            event_stats=event_stats,
-                        )
-
-                    self.task_group.start_soon(_publish_success)  # type: ignore[arg-type]
+                    await self.mq_publisher.publish_seats_reserved(
+                        booking_id=request.booking_id,
+                        buyer_id=request.buyer_id,
+                        event_id=request.event_id,
+                        section=request.section_filter or '',
+                        subsection=request.subsection_filter or 0,
+                        seat_selection_mode=request.selection_mode,
+                        reserved_seats=reserved_seats,
+                        seat_prices=seat_prices,
+                        total_price=total_price,
+                        subsection_stats=subsection_stats,
+                        event_stats=event_stats,
+                    )
                     Logger.base.info(
-                        f'📤 [RESERVE] Scheduled seats_reserved event for booking {request.booking_id}'
+                        f'📤 [RESERVE] Published seats_reserved event for booking {request.booking_id}'
                     )
 
                     return ReservationResult(
@@ -190,16 +176,13 @@ class ReserveSeatsUseCase:
 
                     Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
 
-                    # Send failure notification (fire-and-forget)
-                    async def _publish_failed() -> None:
-                        await self.mq_publisher.publish_reservation_failed(
-                            booking_id=request.booking_id,
-                            buyer_id=request.buyer_id,
-                            error_message=error_msg,
-                            event_id=request.event_id,
-                        )
-
-                    self.task_group.start_soon(_publish_failed)  # type: ignore[arg-type]
+                    # Send failure notification
+                    await self.mq_publisher.publish_reservation_failed(
+                        booking_id=request.booking_id,
+                        buyer_id=request.buyer_id,
+                        error_message=error_msg,
+                        event_id=request.event_id,
+                    )
 
                     return ReservationResult(
                         success=False,
@@ -212,16 +195,13 @@ class ReserveSeatsUseCase:
                 Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
                 error_msg = str(e)
 
-                # Fire-and-forget error notification
-                async def _publish_domain_error() -> None:
-                    await self.mq_publisher.publish_reservation_failed(
-                        booking_id=request.booking_id,
-                        buyer_id=request.buyer_id,
-                        error_message=error_msg,
-                        event_id=request.event_id,
-                    )
-
-                self.task_group.start_soon(_publish_domain_error)  # type: ignore[arg-type]
+                # Send error notification
+                await self.mq_publisher.publish_reservation_failed(
+                    booking_id=request.booking_id,
+                    buyer_id=request.buyer_id,
+                    error_message=error_msg,
+                    event_id=request.event_id,
+                )
 
                 return ReservationResult(
                     success=False,
@@ -233,16 +213,13 @@ class ReserveSeatsUseCase:
                 Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
                 error_msg = 'Internal server error'
 
-                # Fire-and-forget error notification
-                async def _publish_unexpected_error() -> None:
-                    await self.mq_publisher.publish_reservation_failed(
-                        booking_id=request.booking_id,
-                        buyer_id=request.buyer_id,
-                        error_message=error_msg,
-                        event_id=request.event_id,
-                    )
-
-                self.task_group.start_soon(_publish_unexpected_error)  # type: ignore[arg-type]
+                # Send error notification
+                await self.mq_publisher.publish_reservation_failed(
+                    booking_id=request.booking_id,
+                    buyer_id=request.buyer_id,
+                    error_message=error_msg,
+                    event_id=request.event_id,
+                )
 
                 return ReservationResult(
                     success=False,

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import KafkaConfig, settings
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -45,13 +46,15 @@ from src.service.ticketing.app.command.update_booking_status_to_failed_use_case 
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
 )
+from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
+    ISeatAvailabilityQueryHandler,
+)
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )
 from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
     BookingQueryRepoImpl,
 )
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 
 
 class TicketingMqConsumer:
@@ -69,7 +72,7 @@ class TicketingMqConsumer:
         self,
         *,
         event_broadcaster: IInMemoryEventBroadcaster,
-        seat_availability_cache: Any = None,
+        seat_availability_cache: ISeatAvailabilityQueryHandler,
     ):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Use producer instance_id from settings for transactional.id (exactly-once semantics)
@@ -89,8 +92,8 @@ class TicketingMqConsumer:
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
-        self.event_broadcaster = event_broadcaster
-        self.seat_availability_cache = seat_availability_cache
+        self.event_broadcaster: IInMemoryEventBroadcaster = event_broadcaster
+        self.seat_availability_cache: ISeatAvailabilityQueryHandler = seat_availability_cache
         self.tracer = trace.get_tracer(__name__)
 
         # DLQ configuration
