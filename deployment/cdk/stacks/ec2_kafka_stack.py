@@ -6,15 +6,16 @@ Architecture:
 - 1 × EC2 instance (instance type from config.yml)
 - 3 × Kafka brokers in Docker containers (KRaft mode)
 - KRaft mode (no ZooKeeper needed)
-- EBS gp3 storage (size from config.yml)
-- Cost: ~$24/month (vs MSK $466/month)
+- Storage: NVMe instance store (m6id) or EBS (configurable)
+- Cost: ~$82/month with m6id.large (vs MSK $466/month)
 
-Savings: $442/month (95% reduction)
-Benefits: Simple deployment, reliable single-host configuration, sufficient resources for 3 brokers
+Savings: $384/month (82% reduction)
+Benefits: High I/O performance with NVMe, simple deployment, reliable single-host configuration
 
 Configuration values come from deployment/config.yml:
-- config['kafka']['instance_type'] (e.g., t4g.medium)
-- config['kafka']['storage_gb'] (e.g., 50)
+- config['kafka']['instance_type'] (e.g., m6id.large)
+- config['kafka']['storage_type'] ('nvme' or 'ebs')
+- config['kafka']['storage_gb'] (only for EBS)
 """
 
 from aws_cdk import CfnOutput, Stack, aws_ec2 as ec2
@@ -26,11 +27,20 @@ class EC2KafkaStack(Stack):
     Self-hosted Kafka cluster on single EC2 instance
 
     Configuration from config.yml:
-    - Instance: config['kafka']['instance_type'] (e.g., t4g.medium)
-    - Storage: config['kafka']['storage_gb'] (e.g., 50 GB)
+    - Instance: config['kafka']['instance_type'] (e.g., m6id.large)
+    - Storage Type: config['kafka']['storage_type'] ('nvme' or 'ebs')
     - Brokers: 3 brokers in Docker containers
     - Network: Private subnet
-    - Cost: ~$24/month
+    - Cost: ~$82/month (m6id.large with NVMe)
+
+    NVMe Configuration (storage_type='nvme'):
+    - Uses instance store (m6id.large: 118 GB)
+    - High IOPS (~40K)
+    - Data lost on stop/start (reboot preserves data)
+
+    EBS Configuration (storage_type='ebs'):
+    - Storage: config['kafka']['storage_gb'] (e.g., 50 GB)
+    - Data persists across stop/start
 
     Single instance runs 3 Kafka brokers in Docker,
     providing cost-effective and reliable messaging.
@@ -56,6 +66,17 @@ class EC2KafkaStack(Stack):
             **kwargs: Additional stack properties
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        # Extract Kafka configuration
+        kafka_config = config.get('kafka', {})
+        instance_type_str = kafka_config.get('instance_type', 't4g.medium')
+        storage_type = kafka_config.get('storage_type', 'ebs')  # 'ebs' or 'nvme'
+        storage_gb = kafka_config.get('storage_gb', 50)  # Only used for EBS
+
+        # Determine CPU architecture based on instance type
+        # m6id is Intel (x86_64), t4g is ARM
+        is_arm = instance_type_str.startswith('t4g') or instance_type_str.startswith('m6g')
+        cpu_type = ec2.AmazonLinuxCpuType.ARM_64 if is_arm else ec2.AmazonLinuxCpuType.X86_64
 
         # ============= Security Group =============
         self.kafka_sg = ec2.SecurityGroup(
@@ -91,6 +112,37 @@ class EC2KafkaStack(Stack):
 
         # ============= User Data Script =============
         user_data = ec2.UserData.for_linux()
+
+        # Generate mount commands based on storage type
+        if storage_type == 'nvme':
+            # NVMe instance store - mount before creating Kafka directories
+            mount_commands = [
+                '# Mount NVMe instance store for Kafka data',
+                'DATA_DEVICE="/dev/nvme1n1"',
+                '',
+                'if [ ! -b "$DATA_DEVICE" ]; then',
+                '  echo "ERROR: NVMe instance store $DATA_DEVICE not found"',
+                '  exit 1',
+                'fi',
+                '',
+                'echo "Using NVMe instance store: $DATA_DEVICE"',
+                '',
+                '# Format NVMe (instance store is always empty on first boot)',
+                'mkfs.xfs -f "$DATA_DEVICE"',
+                '',
+                '# Create mount point and mount',
+                'mkdir -p /opt/kafka',
+                'mount "$DATA_DEVICE" /opt/kafka',
+                '',
+                '# Note: Do NOT add to fstab - instance store may not exist after stop/start',
+            ]
+        else:
+            # EBS - /opt/kafka will be on root volume
+            mount_commands = [
+                '# Using EBS root volume for Kafka data',
+                'mkdir -p /opt/kafka',
+            ]
+
         user_data.add_commands(
             '#!/bin/bash',
             'set -e',
@@ -110,7 +162,9 @@ class EC2KafkaStack(Stack):
             '# Get own IP address',
             "OWN_IP=$(hostname -I | awk '{print $1}')",
             '',
-            '# Create Kafka directories with correct permissions',
+            *mount_commands,
+            '',
+            '# Create Kafka broker directories with correct permissions',
             'mkdir -p /opt/kafka/{broker1,broker2,broker3}/data',
             'chown -R 1000:1000 /opt/kafka/broker1/data /opt/kafka/broker2/data /opt/kafka/broker3/data',
             '',
@@ -208,28 +262,44 @@ class EC2KafkaStack(Stack):
         # ============= Create Kafka Instance =============
         private_subnets = vpc.select_subnets(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS).subnets
 
-        self.instance = ec2.Instance(
-            self,
-            'KafkaInstance',
-            instance_type=ec2.InstanceType(config['kafka']['instance_type']),
-            machine_image=ec2.MachineImage.latest_amazon_linux2(
-                cpu_type=ec2.AmazonLinuxCpuType.ARM_64
-            ),
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnets=[private_subnets[0]]),
-            security_group=self.kafka_sg,
-            user_data=user_data,
-            block_devices=[
+        # Build block devices list based on storage type
+        if storage_type == 'nvme':
+            # NVMe instance store - only root volume, smaller size
+            block_devices = [
                 ec2.BlockDevice(
                     device_name='/dev/xvda',
                     volume=ec2.BlockDeviceVolume.ebs(
-                        volume_size=config['kafka']['storage_gb'],
+                        volume_size=20,  # Small root volume (OS + Docker only)
                         volume_type=ec2.EbsDeviceVolumeType.GP3,
                         delete_on_termination=True,
                         encrypted=True,
                     ),
                 ),
-            ],
+            ]
+        else:
+            # EBS - larger root volume for Kafka data
+            block_devices = [
+                ec2.BlockDevice(
+                    device_name='/dev/xvda',
+                    volume=ec2.BlockDeviceVolume.ebs(
+                        volume_size=storage_gb,
+                        volume_type=ec2.EbsDeviceVolumeType.GP3,
+                        delete_on_termination=True,
+                        encrypted=True,
+                    ),
+                ),
+            ]
+
+        self.instance = ec2.Instance(
+            self,
+            'KafkaInstance',
+            instance_type=ec2.InstanceType(instance_type_str),
+            machine_image=ec2.MachineImage.latest_amazon_linux2(cpu_type=cpu_type),
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(subnets=[private_subnets[0]]),
+            security_group=self.kafka_sg,
+            user_data=user_data,
+            block_devices=block_devices,
         )
 
         # ============= Outputs =============

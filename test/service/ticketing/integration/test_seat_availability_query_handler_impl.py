@@ -1,11 +1,12 @@
 """
 Integration tests for SeatAvailabilityQueryHandlerImpl
 
-測試 ticketing service 與 Kvrocks 的整合行為
+Test integration behavior between ticketing service and Kvrocks
 """
 
 import os
 
+import orjson
 import pytest
 
 from src.platform.exception.exceptions import NotFoundError
@@ -16,26 +17,70 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
 )
 
 
+async def _setup_event_state_json(client, event_id: int, section_id: str, stats: dict) -> None:
+    """
+    Helper to set up event_state JSON with section stats
+
+    ✨ NEW: Replaces HSET section_stats with JSON.SET event_state
+    """
+    config_key = _make_key(f'event_state:{event_id}')
+
+    # Build event config JSON structure (hierarchical)
+    # section_id format: "A-1" -> section "A", subsection "1"
+    section_name = section_id.split('-')[0]
+    subsection_num = section_id.split('-')[1]
+
+    event_state = {
+        'sections': {
+            section_name: {
+                'price': 1000,
+                'subsections': {
+                    subsection_num: {
+                        'rows': 10,
+                        'seats_per_row': 10,
+                        'stats': {
+                            'available': stats.get('available', 0),
+                            'reserved': stats.get('reserved', 0),
+                            'sold': stats.get('sold', 0),
+                            'total': stats.get('total', 100),
+                            'updated_at': stats.get('updated_at', 0),
+                        },
+                    }
+                },
+            }
+        }
+    }
+
+    event_state_json = orjson.dumps(event_state).decode()
+
+    try:
+        # Try JSON.SET first
+        await client.execute_command('JSON.SET', config_key, '$', event_state_json)
+    except Exception:
+        # Fallback: Regular SET
+        await client.set(config_key, event_state_json)
+
+
 class TestMakeKeyIntegration:
-    """測試 _make_key() 在實際環境中的行為"""
+    """Test _make_key() behavior in actual environment"""
 
     def test_make_key_uses_environment_prefix(self):
-        """測試：應該使用環境變數中的 prefix"""
-        # Given: conftest.py 會設定 KVROCKS_KEY_PREFIX
+        """Test: should use prefix from environment variable"""
+        # Given: conftest.py will set KVROCKS_KEY_PREFIX
         prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
 
         # When
-        result = _make_key('section_stats:1:A-1')
+        result = _make_key('event_state:1')
 
         # Then
         if prefix:
-            assert result == f'{prefix}section_stats:1:A-1'
+            assert result == f'{prefix}event_state:1'
         else:
-            assert result == 'section_stats:1:A-1'
+            assert result == 'event_state:1'
 
 
 class TestCheckSubsectionAvailabilityIntegration:
-    """測試 check_subsection_availability() 與真實 Kvrocks 的整合"""
+    """Test check_subsection_availability() integration with real Kvrocks"""
 
     @pytest.fixture
     async def handler(self):
@@ -44,20 +89,14 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_returns_true_when_sufficient_seats_available(self, handler):
-        """測試：當可用座位充足時，應該返回 True"""
-        # Given: 在 Kvrocks 中設定座位統計
+        """Test: should return True when sufficient seats available"""
+        # Given: Set seat statistics in Kvrocks (using event_state JSON)
         client = kvrocks_client.get_client()
-        key = _make_key('section_stats:1:A-1')
-        await client.hset(  # type: ignore
-            key,
-            mapping={
-                'section_id': 'A-1',
-                'event_id': '1',
-                'available': '50',
-                'reserved': '30',
-                'sold': '20',
-                'total': '100',
-            },
+        await _setup_event_state_json(
+            client,
+            event_id=1,
+            section_id='A-1',
+            stats={'available': 50, 'reserved': 30, 'sold': 20, 'total': 100},
         )
 
         # When
@@ -70,18 +109,14 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_insufficient_seats(self, handler):
-        """測試：當可用座位不足時，應該返回 False"""
-        # Given: 只有 5 個可用座位
+        """Test: should return False when insufficient seats"""
+        # Given: only 5 seats available
         client = kvrocks_client.get_client()
-        key = _make_key('section_stats:1:B-2')
-        await client.hset(  # type: ignore
-            key,
-            mapping={
-                'available': '5',
-                'reserved': '50',
-                'sold': '45',
-                'total': '100',
-            },
+        await _setup_event_state_json(
+            client,
+            event_id=1,
+            section_id='B-2',
+            stats={'available': 5, 'reserved': 50, 'sold': 45, 'total': 100},
         )
 
         # When
@@ -94,28 +129,47 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_queries_correct_kvrocks_key(self, handler):
-        """測試：應該使用正確的 Kvrocks key 格式查詢"""
+        """Test: should query using correct Kvrocks key format"""
         # Given
         client = kvrocks_client.get_client()
-        key = _make_key('section_stats:100:C-3')
-        await client.hset(key, mapping={'available': '10'})  # type: ignore
+        await _setup_event_state_json(
+            client, event_id=100, section_id='C-3', stats={'available': 10}
+        )
 
         # When
         result = await handler.check_subsection_availability(
             event_id=100, section='C', subsection=3, required_quantity=5
         )
 
-        # Then: 應該能夠讀取到資料並返回正確結果
+        # Then: should be able to read data and return correct result
         assert result is True
 
-        # Verify the key was actually used
-        stored_data = await client.hgetall(key)  # type: ignore
-        assert stored_data['available'] == '10'  # type: ignore
+        # Verify the event_state JSON was created
+        config_key = _make_key('event_state:100')
+        # ✨ Use JSON.GET to read JSON data (not regular GET)
+        try:
+            result = await client.execute_command('JSON.GET', config_key, '$')
+            if isinstance(result, list) and result:
+                config_json = result[0]
+            else:
+                config_json = result
+        except Exception:
+            # Fallback to regular GET if JSON commands not supported
+            config_json = await client.get(config_key)
+
+        if isinstance(config_json, bytes):
+            config_json = config_json.decode()
+
+        assert config_json is not None
+        event_state = orjson.loads(config_json)
+        if isinstance(event_state, list):
+            event_state = event_state[0]
+        assert event_state['sections']['C']['subsections']['3']['stats']['available'] == 10
 
     @pytest.mark.asyncio
     async def test_raises_not_found_error_when_section_not_exists(self, handler):
-        """測試：當 section 不存在時，應該拋出 NotFoundError"""
-        # Given: Kvrocks 中沒有這個 section 的資料（conftest 會清理）
+        """Test: should raise NotFoundError when section does not exist"""
+        # Given: no data for this section in Kvrocks (conftest clears it)
 
         # When/Then
         with pytest.raises(NotFoundError, match='Section Z-99 not found'):
@@ -125,11 +179,12 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_handles_edge_case_exact_quantity_match(self, handler):
-        """測試：當可用座位數量剛好等於需求時，應該返回 True"""
-        # Given: 剛好 10 個座位
+        """Test: should return True when available seat count exactly matches requirement"""
+        # Given: exactly 10 seats
         client = kvrocks_client.get_client()
-        key = _make_key('section_stats:1:A-1')
-        await client.hset(key, mapping={'available': '10', 'total': '100'})  # type: ignore
+        await _setup_event_state_json(
+            client, event_id=1, section_id='A-1', stats={'available': 10, 'total': 100}
+        )
 
         # When
         result = await handler.check_subsection_availability(
@@ -141,16 +196,17 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_handles_available_count_as_string(self, handler):
-        """測試：應該正確處理 Kvrocks 返回的字符串類型數字"""
-        # Given: Kvrocks 總是返回字串
+        """Test: should correctly handle numeric types in JSON"""
+        # Given: numbers in JSON
         client = kvrocks_client.get_client()
-        key = _make_key('section_stats:1:A-1')
-        await client.hset(key, mapping={'available': '100'})  # type: ignore
+        await _setup_event_state_json(
+            client, event_id=1, section_id='A-1', stats={'available': 100}
+        )
 
         # When
         result = await handler.check_subsection_availability(
             event_id=1, section='A', subsection=1, required_quantity=50
         )
 
-        # Then: 應該正確轉換字串為整數並比較
+        # Then: should correctly handle and compare numbers
         assert result is True

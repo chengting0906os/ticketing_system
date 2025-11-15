@@ -1,6 +1,5 @@
 from typing import List
 
-import anyio.abc
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from opentelemetry import trace
@@ -47,23 +46,12 @@ class CreateBookingUseCase:
         booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
-        task_group: anyio.abc.TaskGroup,
     ):
         self.booking_metadata_handler = booking_metadata_handler
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
-        self._task_group = task_group  # Store initial value
         self.tracer = trace.get_tracer(__name__)
-
-    @property
-    def task_group(self) -> anyio.abc.TaskGroup:
-        """Dynamically get task_group from DI container to handle runtime override"""
-        from src.platform.config.di import container
-
-        # Return container's task_group if available, otherwise fallback to initial value
-        tg = container.task_group()
-        return tg if tg is not None else self._task_group
 
     @classmethod
     @inject
@@ -81,14 +69,12 @@ class CreateBookingUseCase:
         seat_availability_handler: ISeatAvailabilityQueryHandler = Depends(
             Provide[Container.seat_availability_query_handler]
         ),
-        task_group: anyio.abc.TaskGroup = Depends(Provide[Container.task_group]),
     ):
         return cls(
             booking_metadata_handler=booking_metadata_handler,
             booking_command_repo=booking_command_repo,
             event_publisher=event_publisher,
             seat_availability_handler=seat_availability_handler,
-            task_group=task_group,
         )
 
     @Logger.io
@@ -181,18 +167,14 @@ class CreateBookingUseCase:
                 quantity=quantity,
             )
 
-            # Step 5: Publish domain event to Kafka (fire-and-forget)
-            # Use task_group for non-blocking event publishing
+            # Step 5: Publish domain event to Kafka
             # The event will use section-subsection as partition key for ordering
             booking_created_event = BookingCreatedDomainEvent.from_booking(booking)
 
-            # Wrapper function for fire-and-forget event publishing
-            async def _publish_event() -> None:
-                await self.event_publisher.publish_booking_created(event=booking_created_event)
-
-            self.task_group.start_soon(_publish_event)  # type: ignore[arg-type]
+            # Publish event (with minimal latency - Kafka producer is buffered)
+            await self.event_publisher.publish_booking_created(event=booking_created_event)
             Logger.base.info(
-                f'🚀 [CREATE-BOOKING] Scheduled BookingCreated event for {booking_id_str}'
+                f'🚀 [CREATE-BOOKING] Published BookingCreated event for {booking_id_str}'
             )
 
             return booking

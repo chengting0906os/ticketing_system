@@ -1,23 +1,9 @@
-"""
-API Service Stack (Unified Ticketing + Seat Reservation)
-Deploys a single API service handling all HTTP endpoints on ECS Fargate
-
-Architecture:
-- ECS Fargate task (8 vCPU + 16GB RAM + 16 workers)
-- Auto-scaling 1-4 tasks based on CPU/memory
-- ALB integration for HTTP traffic (all /api/* routes)
-- Service discovery via AWS Cloud Map
-- Combines ticketing and seat reservation endpoints
-"""
-
 from aws_cdk import (
     CfnOutput,
-    Duration,
     Stack,
     aws_ec2 as ec2,
     aws_ecr as ecr,
     aws_ecs as ecs,
-    aws_elasticloadbalancingv2 as elbv2,
     aws_iam as iam,
     aws_logs as logs,
     aws_secretsmanager as secretsmanager,
@@ -26,17 +12,7 @@ from aws_cdk import (
 from constructs import Construct
 
 
-class APIServiceStack(Stack):
-    """
-    Unified API Service on ECS Fargate
-
-    Configuration:
-    - 8 vCPU + 16GB RAM per task (high performance for API serving)
-    - 1-4 tasks with auto-scaling
-    - Handles all API endpoints: /api/user/*, /api/event/*, /api/booking/*, /api/reservation/*
-    - Integrated with Aurora, Kvrocks, MSK
-    """
-
+class ReservationServiceStack(Stack):
     def __init__(
         self,
         scope: Construct,
@@ -44,28 +20,27 @@ class APIServiceStack(Stack):
         *,
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
-        alb_listener: elbv2.IApplicationListener,
-        aurora_cluster_endpoint: str,
         aurora_cluster_secret: secretsmanager.ISecret,
         app_secrets: secretsmanager.ISecret,
         namespace: servicediscovery.IPrivateDnsNamespace,
         kafka_bootstrap_servers: str,
         kvrocks_endpoint: str,
+        kvrocks_security_group: ec2.ISecurityGroup,
         config: dict,
         **kwargs,
     ) -> None:
         """
-        Initialize API Service Stack
+        Initialize Seat Reservation Service Stack
 
         Args:
             vpc: VPC for ECS tasks
             ecs_cluster: Shared ECS cluster
-            alb_listener: Shared ALB listener
-            aurora_cluster_endpoint: Aurora endpoint
-            aurora_cluster_secret: Aurora credentials
+            aurora_cluster_secret: Aurora credentials (for Settings model requirement)
             app_secrets: Shared JWT secrets from Aurora Stack
             namespace: Service Discovery namespace
+            kafka_bootstrap_servers: Kafka endpoints
             kvrocks_endpoint: Kvrocks endpoint (host:port)
+            kvrocks_security_group: Kvrocks EC2 security group
             config: Environment configuration from config.yml
         """
         super().__init__(scope, construct_id, **kwargs)
@@ -75,10 +50,25 @@ class APIServiceStack(Stack):
         # Parse Kvrocks endpoint (format: "host:port")
         kvrocks_host, kvrocks_port = kvrocks_endpoint.split(':')
 
+        # ============= Security Group for ECS Service =============
+        service_sg = ec2.SecurityGroup(
+            self,
+            'ServiceSecurityGroup',
+            vpc=vpc,
+            description='Security group for Reservation Consumer ECS service',
+            allow_all_outbound=True,
+        )
+
+        # Allow ECS service to connect to Kvrocks
+        service_sg.connections.allow_to(
+            kvrocks_security_group,
+            ec2.Port.tcp(int(kvrocks_port)),
+            description='Allow connection to Kvrocks',
+        )
+
         # ============= ECR Repository =============
-        # Both services use the same image (they're the same codebase)
-        api_repo = ecr.Repository.from_repository_name(
-            self, 'APIRepo', repository_name='ticketing-service'
+        consumer_repo = ecr.Repository.from_repository_name(
+            self, 'ReservationServiceRepo', repository_name='reservation-service'
         )
 
         # ============= IAM Roles =============
@@ -104,6 +94,7 @@ class APIServiceStack(Stack):
                 resources=['arn:aws:secretsmanager:*:*:secret:ticketing/*'],
             )
         )
+        # Add X-Ray permissions for distributed tracing
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=['xray:PutTraceSegments', 'xray:PutTelemetryRecords'],
@@ -115,40 +106,52 @@ class APIServiceStack(Stack):
         task_def = ecs.FargateTaskDefinition(
             self,
             'TaskDef',
-            memory_limit_mib=config['ecs']['api']['task_memory'],
-            cpu=config['ecs']['api']['task_cpu'],
+            memory_limit_mib=2048,  # 2GB RAM for consumer
+            cpu=1024,  # 1 vCPU for consumer
             execution_role=execution_role,
             task_role=task_role,
         )
 
-        # Main API container (serves both ticketing and seat-reservation endpoints)
-        container = task_def.add_container(
+        # Main consumer container
+        task_def.add_container(
             'Container',
-            image=ecs.ContainerImage.from_ecr_repository(api_repo, tag='latest'),
+            image=ecs.ContainerImage.from_ecr_repository(consumer_repo, tag='latest'),
             command=[
                 'sh',
                 '-c',
-                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
+                'uv run python -m src.service.seat_reservation.driving_adapter.start_seat_reservation_consumer',
             ],
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='api-service', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='reservation-consumer', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
-                'SERVICE_NAME': 'api-service',
+                'SERVICE_TYPE': 'consumer',
+                'SERVICE_NAME': 'seat-reservation-consumer',
+                'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
-                'WORKERS': str(config['ecs']['api']['workers']),
-                'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
-                'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
-                'POSTGRES_SERVER': aurora_cluster_endpoint,
-                'POSTGRES_DB': 'ticketing_system_db',
+                # No database needed for seat-reservation-consumer (stateless, uses Kvrocks only)
+                # But Settings model requires POSTGRES_* env vars to be set
+                'POSTGRES_SERVER': 'dummy',  # Not used, but required by Settings
+                'POSTGRES_DB': 'ticketing_system_db',  # Not used, but must match actual DB name
                 'POSTGRES_PORT': '5432',
+                # Kvrocks (EC2 instance) - Primary data store
                 'KVROCKS_HOST': kvrocks_host,
                 'KVROCKS_PORT': kvrocks_port,
-                'ENABLE_KAFKA': 'false',
+                # Kafka (EC2-hosted cluster)
+                'ENABLE_KAFKA': 'true',
                 'KAFKA_BOOTSTRAP_SERVERS': kafka_bootstrap_servers,
+                # JWT Authentication (required by Settings model, but not actually used)
                 'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
                 'REFRESH_TOKEN_EXPIRE_DAYS': '7',
+                # Event ID (for testing/development)
+                'EVENT_ID': '1',
+                # OpenTelemetry tracing (ADOT sidecar → X-Ray)
+                'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
+                'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
+                'OTEL_SERVICE_NAME': 'seat-reservation-consumer',
+                'OTEL_TRACES_EXPORTER': 'otlp',
             },
+            # Sensitive secrets injected from AWS Secrets Manager at runtime
             secrets={
                 'SECRET_KEY': ecs.Secret.from_secrets_manager(app_secrets, 'SECRET_KEY'),
                 'RESET_PASSWORD_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
@@ -163,27 +166,19 @@ class APIServiceStack(Stack):
                     aurora_cluster_secret, 'password'
                 ),
             },
-            health_check=ecs.HealthCheck(
-                command=['CMD-SHELL', 'curl -f http://localhost:8100/health || exit 1'],
-                interval=Duration.seconds(30),
-                timeout=Duration.seconds(5),
-                retries=3,
-                start_period=Duration.seconds(60),
-            ),
         )
-        container.add_port_mappings(ecs.PortMapping(container_port=8100))
 
-        # ADOT sidecar for OpenTelemetry
+        # ADOT sidecar for OpenTelemetry → X-Ray tracing
         adot = task_def.add_container(
             'ADOT',
             image=ecs.ContainerImage.from_registry(
                 'public.ecr.aws/aws-observability/aws-otel-collector:latest'
             ),
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='adot', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='adot-reservation-consumer', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
-                'AWS_REGION': 'us-west-2',
+                'AWS_REGION': config['region'],
                 'AOT_CONFIG_CONTENT': """
 receivers:
   otlp:
@@ -192,11 +187,13 @@ receivers:
         endpoint: 0.0.0.0:4317
 processors:
   batch:
-    timeout: 1s
-    send_batch_size: 50
+    timeout: 5s
+    send_batch_size: 100
 exporters:
   awsxray:
-    region: us-west-2
+    region: """
+                + config['region']
+                + """
 service:
   pipelines:
     traces:
@@ -205,14 +202,14 @@ service:
       exporters: [awsxray]
 """,
             },
-            memory_reservation_mib=256,
+            memory_reservation_mib=128,
         )
         adot.add_port_mappings(ecs.PortMapping(container_port=4317))
 
-        # ============= Service =============
+        # ============= Service (No ALB for background worker) =============
         # Get environment from config (production or development)
-        env_name = config.get('environment', 'production')
-        service_name = f'ticketing-{env_name}-api-service'
+        env_name = config.get('environment', 'development')
+        service_name = f'ticketing-{env_name}-reservation-service'
 
         service = ecs.FargateService(
             self,
@@ -220,54 +217,34 @@ service:
             service_name=service_name,
             cluster=ecs_cluster,
             task_definition=task_def,
-            desired_count=config['ecs']['min_tasks'],
-            min_healthy_percent=0 if config['ecs']['min_tasks'] == 1 else 50,
+            desired_count=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 50),
+            min_healthy_percent=50,  # Keep 50% running during deployment
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             enable_execute_command=True,  # Enable ECS Exec for debugging
+            security_groups=[service_sg],  # Explicit security group for network access
             cloud_map_options=ecs.CloudMapOptions(
-                name='api-service',
+                name='reservation-service',
                 cloud_map_namespace=namespace,
                 dns_record_type=servicediscovery.DnsRecordType.A,
             ),
         )
 
-        # Auto-scaling
+        # Auto-scaling: 50-100 tasks (50 vCPU - 100 vCPU)
+        # Total resource usage at max: 100 vCPU + 200GB RAM
         scaling = service.auto_scale_task_count(
-            min_capacity=config['ecs']['min_tasks'], max_capacity=config['ecs']['max_tasks']
+            min_capacity=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 50),
+            max_capacity=config.get('consumers', {}).get('reservation', {}).get('max_tasks', 100),
         )
-        scaling.scale_on_cpu_utilization(
-            'CPUScaling', target_utilization_percent=config['ecs']['cpu_threshold']
-        )
-        scaling.scale_on_memory_utilization(
-            'MemoryScaling', target_utilization_percent=config['ecs']['memory_threshold']
-        )
-
-        # ALB Target Group - Handle all /api/* routes
-        alb_listener.add_targets(
-            'APITargets',
-            port=8100,
-            protocol=elbv2.ApplicationProtocol.HTTP,
-            targets=[service],
-            health_check=elbv2.HealthCheck(
-                path='/health',
-                interval=Duration.seconds(30),
-                healthy_threshold_count=2,
-                unhealthy_threshold_count=3,
-            ),
-            deregistration_delay=Duration.seconds(30),
-            priority=10,
-            conditions=[
-                elbv2.ListenerCondition.path_patterns(['/api/*'])  # All API routes
-            ],
-        )
+        scaling.scale_on_cpu_utilization('CPUScaling', target_utilization_percent=70)
+        scaling.scale_on_memory_utilization('MemoryScaling', target_utilization_percent=80)
 
         # ============= Outputs =============
         CfnOutput(
             self,
             'ServiceName',
             value=service.service_name,
-            description='API service name',
+            description='Seat reservation consumer service name',
         )
 
         self.service = service

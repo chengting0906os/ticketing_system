@@ -267,73 +267,107 @@ def event_exists(step, execute_sql_statement):
 
     # Clean up any existing Kvrocks data for this event to ensure test isolation
     # This prevents data pollution from previous test that used the same event_id
-    index_key = f'{key_prefix}event_sections:{event_id}'
-    existing_sections: list = list(client.zrange(index_key, 0, -1))  # type: ignore
-    for section_id in existing_sections:
-        # Delete config, stats, bitfield, and metadata for each existing section
-        config_key = f'{key_prefix}section_config:{event_id}:{section_id}'
-        stats_key = f'{key_prefix}section_stats:{event_id}:{section_id}'
-        bf_key = f'{key_prefix}seats_bf:{event_id}:{section_id}'
-        client.delete(config_key, stats_key, bf_key)
-        # Also delete all seat metadata keys for this section
-        meta_pattern = f'{key_prefix}seat_meta:{event_id}:{section_id}:*'
-        meta_keys: list = list(client.keys(meta_pattern))  # type: ignore
-        if meta_keys:
-            client.delete(*meta_keys)  # type: ignore
-    # Delete the index itself
-    client.delete(index_key)
+    # ✨ REMOVED: event_sections index (can query from event_state JSON)
+    event_state_key = f'{key_prefix}event_state:{event_id}'
+
+    # Try to read existing sections from event_state for cleanup
+    try:
+        config_json_raw = client.get(event_state_key)
+        if config_json_raw:
+            config_json_str = (
+                config_json_raw.decode()
+                if isinstance(config_json_raw, bytes)
+                else str(config_json_raw)
+            )
+            existing_config = orjson.loads(config_json_str)
+            for section_id in existing_config.get('sections', {}).keys():
+                bf_key = f'{key_prefix}seats_bf:{event_id}:{section_id}'
+                client.delete(bf_key)
+    except Exception:
+        pass  # Ignore errors during cleanup
+
+    # Delete event-level keys
+    client.delete(event_state_key)
+
+    # Build unified event_state JSON with event_stats at top level
+    event_state: dict = {
+        'event_stats': {  # ✨ NEW: Event-level stats in JSON (no separate Hash)
+            'available': 0,
+            'reserved': 0,
+            'sold': 0,
+            'total': 0,
+            'updated_at': int(1759562700),
+        },
+        'sections': {},
+    }
+
+    # Track total seats across all sections
+    event_total_seats = 0
 
     sections_list2: list[dict] = seating_config['sections']  # type: ignore
     for section in sections_list2:
         section_name: str = section['name']
         section_price: int = section['price']
+
+        # Create section if not exists (price stored at section level)
+        if section_name not in event_state['sections']:
+            event_state['sections'][section_name] = {
+                'price': section_price,  # ✨ Price at section level (not duplicated)
+                'subsections': {},
+            }
+
         subsections_list: list[dict] = section['subsections']  # type: ignore
         for subsection in subsections_list:
             subsection_number: int = subsection['number']
             rows: int = subsection['rows']
             seats_per_row: int = subsection['seats_per_row']
-            section_id = f'{section_name}-{subsection_number}'
+            subsection_num_str = str(subsection_number)
 
-            # Add to section index (sorted set)
-            client.zadd(index_key, {section_id: 0})
+            # ✨ REMOVED: event_sections index (can query from event_state JSON)
 
-            # Save configuration to Redis
-            config_key = f'{key_prefix}section_config:{event_id}:{section_id}'
-            client.hset(
-                config_key, mapping={'rows': str(rows), 'seats_per_row': str(seats_per_row)}
-            )
-
-            # Initialize section stats
-            stats_key = f'{key_prefix}section_stats:{event_id}:{section_id}'
+            # Build event_state JSON structure (hierarchical - stats at subsection level)
             total_seats = rows * seats_per_row
-            client.hset(
-                stats_key,
-                mapping={
-                    'section_id': section_id,
-                    'event_id': str(event_id),
-                    'available': str(total_seats),
-                    'reserved': '0',
-                    'sold': '0',
-                    'total': str(total_seats),
-                    'updated_at': str(int(1759562700)),  # Fixed timestamp for test
+            event_state['sections'][section_name]['subsections'][subsection_num_str] = {
+                'rows': rows,
+                'seats_per_row': seats_per_row,
+                'stats': {  # ✨ Stats at subsection level (replaces section_stats Hash)
+                    'available': total_seats,
+                    'reserved': 0,
+                    'sold': 0,
+                    'total': total_seats,
+                    'updated_at': int(1759562700),  # Fixed timestamp for test
                 },
-            )
+            }
 
-    # Verify Kvrocks data is actually written (防止並行測試的競爭條件)
+            # Aggregate for event-level stats
+            event_total_seats += total_seats
+
+            # ✨ REMOVED: section_stats Hash (stats now in event_state JSON)
+
+    # Update event-level stats with aggregated totals
+    event_state['event_stats']['available'] = event_total_seats
+    event_state['event_stats']['total'] = event_total_seats
+
+    # Write unified event config as JSON (single key per event)
+    event_state_key = f'{key_prefix}event_state:{event_id}'
+    event_state_json = orjson.dumps(event_state).decode()
+
+    try:
+        # Try JSON.SET first (Kvrocks native JSON support)
+        client.execute_command('JSON.SET', event_state_key, '$', event_state_json)
+    except Exception:
+        # Fallback: Store as regular string if JSON commands not supported
+        client.set(event_state_key, event_state_json)
+
+    # Verify Kvrocks data is actually written (prevent race conditions in parallel tests)
     import time
 
     max_retries = 10
     for attempt in range(max_retries):
-        # Check both index and first section stats exist
-        if client.exists(index_key):
-            # Also verify at least one section has stats
-            first_section = sections_list2[0] if sections_list2 else None
-            if first_section:
-                first_subsection = first_section['subsections'][0]
-                first_section_id = f'{first_section["name"]}-{first_subsection["number"]}'
-                first_stats_key = f'{key_prefix}section_stats:{event_id}:{first_section_id}'
-                if client.exists(first_stats_key):
-                    break
+        # Check event_state exists
+        # ✨ REMOVED: event_sections index check (can query from event_state JSON)
+        if client.exists(event_state_key):
+            break
         if attempt < max_retries - 1:
             time.sleep(0.15)
     else:

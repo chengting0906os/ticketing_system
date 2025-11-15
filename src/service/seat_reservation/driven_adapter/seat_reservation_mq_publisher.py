@@ -44,6 +44,11 @@ class SeatsReservedEvent:
     event_stats: dict[str, int] = attrs.Factory(
         dict
     )  # {'available': 49950, 'reserved': 50, 'sold': 0, 'total': 50000}
+    # ✨ NEW: Entire event config with ALL sections (eliminates lazy loading)
+    # Ticketing Service will update cache for ALL sections from this single event
+    event_state: dict = attrs.Factory(
+        dict
+    )  # {'sections': {'A-1': {...}, 'A-2': {...}, 'B-1': {...}}}
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
@@ -54,10 +59,16 @@ class SeatsReservedEvent:
 
 @attrs.define
 class SeatReservationFailedEvent:
-    """Seat reservation failure event"""
+    """Seat reservation failure event - includes full booking info for direct FAILED booking creation"""
 
     booking_id: str
     buyer_id: int
+    event_id: int
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: List[str]
     error_message: str
     status: str = 'seat_reservation_failed'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
@@ -84,8 +95,9 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
+        event_state: dict,  # ✨ NEW
     ) -> None:
-        """Publish seat reservation success event"""
+        """Publish seat reservation success event with full event config"""
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
@@ -98,6 +110,7 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             total_price=total_price,
             subsection_stats=subsection_stats,
             event_stats=event_stats,
+            event_state=event_state,  # ✨ NEW
         )
 
         await publish_domain_event(
@@ -117,13 +130,24 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         *,
         booking_id: str,
         buyer_id: int,
-        error_message: str,
         event_id: int,
+        section: str,
+        subsection: int,
+        quantity: int,
+        seat_selection_mode: str,
+        seat_positions: List[str],
+        error_message: str,
     ) -> None:
-        """Publish seat reservation failure event"""
+        """Publish seat reservation failure event with full booking info"""
         event = SeatReservationFailedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+            quantity=quantity,
+            seat_selection_mode=seat_selection_mode,
+            seat_positions=seat_positions,
             error_message=error_message,
         )
 

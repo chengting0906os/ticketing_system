@@ -5,22 +5,37 @@ from typing import List
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.platform.message_queue.kafka_constant_builder import (
+    KafkaProducerTransactionalIdBuilder,
+)
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_ENV_PATH = _PROJECT_ROOT / '.env'
-_ENV_FILE = _ENV_PATH if _ENV_PATH.exists() else (_PROJECT_ROOT / '.env.example')
+
+# In AWS environments (production, development, staging), use environment variables only
+# In local development (local_dev), use .env file if it exists
+_AWS_ENVIRONMENTS = ('production', 'development', 'staging')
+_CURRENT_ENV = os.getenv('ENVIRONMENT', 'local_dev')
+
+if _CURRENT_ENV in _AWS_ENVIRONMENTS:
+    # AWS: Don't load from file, rely on ECS task definition env vars
+    _ENV_FILE = None
+else:
+    # Local: Use .env if exists, otherwise None (pydantic will skip)
+    _ENV_PATH = _PROJECT_ROOT / '.env'
+    _ENV_FILE = str(_ENV_PATH) if _ENV_PATH.exists() else None
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_ENV_FILE),
+        env_file=_ENV_FILE,  # None in AWS, .env path in local
         env_ignore_empty=True,
         extra='ignore',
     )
 
     PROJECT_NAME: str = 'Ticketing System'
     VERSION: str = '0.1.0'
-    DEBUG: bool = True  # Set to False in evention
+    DEBUG: bool = False  # Set to False in evention
 
     # Database (Optional - only required for services that use PostgreSQL)
     POSTGRES_SERVER: str | None = None
@@ -133,61 +148,68 @@ class Settings(BaseSettings):
 
     # Kvrocks Connection Pool Configuration
     KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool
-    KVROCKS_POOL_SOCKET_TIMEOUT: int = 10  # Socket read/write timeout (seconds)
-    KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT: int = 10  # Connection timeout (seconds)
+    KVROCKS_POOL_SOCKET_TIMEOUT: int = (
+        30  # Socket read/write timeout (seconds) - AWS VPC can be slower
+    )
+    KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT: int = (
+        30  # Connection timeout (seconds) - Allow time for DNS
+    )
     KVROCKS_POOL_SOCKET_KEEPALIVE: bool = True  # Enable TCP keepalive
     KVROCKS_POOL_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval (seconds)
 
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
-    KAFKA_PRODUCER_INSTANCE_ID: str = os.getenv(
-        'KAFKA_PRODUCER_INSTANCE_ID', f'producer-{os.getpid()}'
-    )
-    KAFKA_CONSUMER_INSTANCE_ID: str = os.getenv(
-        'KAFKA_CONSUMER_INSTANCE_ID',
-        f'consumer-{os.uname().nodename}-{os.getpid()}',
-    )
     KAFKA_PRODUCER_RETRIES: int = 3
     KAFKA_CONSUMER_AUTO_OFFSET_RESET: str = 'latest'
 
+    @property
+    def KAFKA_PRODUCER_INSTANCE_ID(self) -> str:
+        return f'{os.uname().nodename}-{os.getpid()}'
 
-settings = Settings()  # type: ignore
+    @property
+    def KAFKA_CONSUMER_INSTANCE_ID(self) -> str:
+        return f'{os.uname().nodename}-{os.getpid()}'
+
+
+settings = Settings()
 
 
 # Kafka Config Helper
 class KafkaConfig:
     """Kafka configuration for Exactly-Once processing"""
 
-    def __init__(self, *, event_id: int, instance_id: str, service: str):
+    def __init__(self, *, event_id: int, service: str):
         """
         Args:
             event_id: Event ID
-            instance_id: Producer instance ID (for transactional.id)
             service: Service name ('ticketing' or 'seat_reservation')
+
+        Note: instance_id is obtained from settings at runtime to avoid fork issues
         """
-        from src.platform.message_queue.kafka_constant_builder import (
-            KafkaProducerTransactionalIdBuilder,
-        )
 
         self.event_id = event_id
-        self.instance_id = instance_id
         self.service = service
+        self._transactional_id_builder = KafkaProducerTransactionalIdBuilder
 
-        # Generate transactional ID based on service
-        if service == 'ticketing':
-            self.transactional_id = KafkaProducerTransactionalIdBuilder.ticketing_service(
-                event_id=event_id, instance_id=instance_id
+    @property
+    def instance_id(self) -> str:
+        return settings.KAFKA_PRODUCER_INSTANCE_ID
+
+    @property
+    def transactional_id(self) -> str:
+        if self.service == 'ticketing':
+            return self._transactional_id_builder.ticketing_service(
+                event_id=self.event_id, instance_id=self.instance_id
             )
-        elif service == 'seat_reservation':
-            self.transactional_id = KafkaProducerTransactionalIdBuilder.seat_reservation_service(
-                event_id=event_id, instance_id=instance_id
+        elif self.service == 'seat_reservation':
+            return self._transactional_id_builder.seat_reservation_service(
+                event_id=self.event_id, instance_id=self.instance_id
             )
         else:
-            raise ValueError(f'Unknown service: {service}')
+            raise ValueError(f'Unknown service: {self.service}')
 
     @property
     def producer_config(self) -> dict:
-        """Producer config for Quix Streams exactly-once processing"""
         return {
             'transactional.id': self.transactional_id,
             'retries': settings.KAFKA_PRODUCER_RETRIES,
@@ -195,7 +217,6 @@ class KafkaConfig:
 
     @property
     def consumer_config(self) -> dict:
-        """Consumer config for Quix Streams exactly-once processing"""
         return {
             'auto.offset.reset': settings.KAFKA_CONSUMER_AUTO_OFFSET_RESET,
         }

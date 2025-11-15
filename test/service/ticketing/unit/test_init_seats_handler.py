@@ -13,49 +13,8 @@ from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_han
 
 
 @pytest.mark.asyncio
-async def test_timestamp_format():
-    """Test that timestamp is correctly formatted as Unix timestamp string"""
-    handler = InitEventAndTicketsStateHandlerImpl()
-    config = {
-        'sections': [
-            {
-                'name': 'A',
-                'price': 100,
-                'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 3}],
-            }
-        ]
-    }
-
-    mock_client = MagicMock()
-    mock_pipeline = MagicMock()
-    mock_client.pipeline.return_value = mock_pipeline
-    mock_pipeline.execute = AsyncMock(return_value=[])
-    mock_client.zcard = AsyncMock(return_value=1)
-
-    with patch(
-        'src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl.kvrocks_client'
-    ) as mock_kvrocks:
-        mock_kvrocks.get_client.return_value = mock_client
-
-        await handler.initialize_seats_from_config(event_id=1, seating_config=config)
-
-        hset_calls = [c for c in mock_pipeline.hset.call_args_list if 'section_stats' in str(c)]
-        assert len(hset_calls) > 0
-
-        stats_call = hset_calls[0]
-        mapping = stats_call.kwargs.get(
-            'mapping', stats_call.args[1] if len(stats_call.args) > 1 else {}
-        )
-
-        assert 'updated_at' in mapping
-        timestamp = mapping['updated_at']
-        assert timestamp.isdigit()
-        assert int(timestamp) > 0
-
-
-@pytest.mark.asyncio
 async def test_pipeline_batch_operations():
-    """Test that Pipeline is used for batch operations"""
+    """Test that Pipeline is used for batch operations and JSON config is written"""
     handler = InitEventAndTicketsStateHandlerImpl()
     config = {
         'sections': [
@@ -72,6 +31,8 @@ async def test_pipeline_batch_operations():
     mock_client.pipeline.return_value = mock_pipeline
     mock_pipeline.execute = AsyncMock(return_value=[])
     mock_client.zcard = AsyncMock(return_value=1)
+    mock_client.execute_command = AsyncMock(return_value=True)
+    mock_client.set = AsyncMock(return_value=True)
 
     with patch(
         'src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl.kvrocks_client'
@@ -82,6 +43,7 @@ async def test_pipeline_batch_operations():
 
         mock_client.pipeline.assert_called_once()
         mock_pipeline.execute.assert_called_once()
+        assert mock_client.execute_command.called or mock_client.set.called
         assert result['success'] is True
         assert result['total_seats'] == 6
 

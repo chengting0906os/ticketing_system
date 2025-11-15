@@ -1,14 +1,3 @@
-"""
-Ticketing Consumer Stack
-Deploys ticketing-consumer as an ECS Fargate background worker
-
-Architecture:
-- ECS Fargate task (1 vCPU + 2GB RAM)
-- Auto-scaling 1-4 tasks based on CPU/memory
-- No ALB (background Kafka consumer)
-- Connects to Aurora, Kvrocks, and MSK
-"""
-
 from aws_cdk import (
     CfnOutput,
     Stack,
@@ -23,17 +12,7 @@ from aws_cdk import (
 from constructs import Construct
 
 
-class TicketingConsumerStack(Stack):
-    """
-    Ticketing Consumer on ECS Fargate (Background Worker)
-
-    Configuration:
-    - 1 vCPU + 2GB RAM per task
-    - 1-4 tasks with auto-scaling
-    - Kafka consumer for booking events
-    - Integrated with Aurora, Kvrocks, MSK
-    """
-
+class SeatReservationServiceStack(Stack):
     def __init__(
         self,
         scope: Construct,
@@ -41,7 +20,6 @@ class TicketingConsumerStack(Stack):
         *,
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
-        aurora_cluster_endpoint: str,
         aurora_cluster_secret: secretsmanager.ISecret,
         app_secrets: secretsmanager.ISecret,
         namespace: servicediscovery.IPrivateDnsNamespace,
@@ -51,15 +29,15 @@ class TicketingConsumerStack(Stack):
         **kwargs,
     ) -> None:
         """
-        Initialize Ticketing Consumer Stack
+        Initialize Seat Reservation Service Stack
 
         Args:
             vpc: VPC for ECS tasks
             ecs_cluster: Shared ECS cluster
-            aurora_cluster_endpoint: Aurora endpoint
-            aurora_cluster_secret: Aurora credentials
+            aurora_cluster_secret: Aurora credentials (for Settings model requirement)
             app_secrets: Shared JWT secrets from Aurora Stack
             namespace: Service Discovery namespace
+            kafka_bootstrap_servers: Kafka endpoints
             kvrocks_endpoint: Kvrocks endpoint (host:port)
             config: Environment configuration from config.yml
         """
@@ -72,7 +50,7 @@ class TicketingConsumerStack(Stack):
 
         # ============= ECR Repository =============
         consumer_repo = ecr.Repository.from_repository_name(
-            self, 'TicketingConsumerRepo', repository_name='ticketing-consumer'
+            self, 'ReservationConsumerRepo', repository_name='seat-reservation-consumer'
         )
 
         # ============= IAM Roles =============
@@ -98,6 +76,13 @@ class TicketingConsumerStack(Stack):
                 resources=['arn:aws:secretsmanager:*:*:secret:ticketing/*'],
             )
         )
+        # Add X-Ray permissions for distributed tracing
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=['xray:PutTraceSegments', 'xray:PutTelemetryRecords'],
+                resources=['*'],
+            )
+        )
 
         # ============= Task Definition =============
         task_def = ecs.FargateTaskDefinition(
@@ -116,20 +101,22 @@ class TicketingConsumerStack(Stack):
             command=[
                 'sh',
                 '-c',
-                'uv run python -m src.service.ticketing.driving_adapter.mq_consumer.start_ticketing_consumer',
+                'uv run python -m src.service.seat_reservation.driving_adapter.start_seat_reservation_consumer',
             ],
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='ticketing-consumer', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='reservation-consumer', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
                 'SERVICE_TYPE': 'consumer',
-                'SERVICE_NAME': 'ticketing-consumer',
+                'SERVICE_NAME': 'seat-reservation-consumer',
+                'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
-                # Database (Aurora PostgreSQL) - Consumer needs DB for processing bookings
-                'POSTGRES_SERVER': aurora_cluster_endpoint,
-                'POSTGRES_DB': 'ticketing_system_db',
+                # No database needed for seat-reservation-consumer (stateless, uses Kvrocks only)
+                # But Settings model requires POSTGRES_* env vars to be set
+                'POSTGRES_SERVER': 'dummy',  # Not used, but required by Settings
+                'POSTGRES_DB': 'dummy',
                 'POSTGRES_PORT': '5432',
-                # Kvrocks (EC2 instance)
+                # Kvrocks (EC2 instance) - Primary data store
                 'KVROCKS_HOST': kvrocks_host,
                 'KVROCKS_PORT': kvrocks_port,
                 # Kafka (EC2-hosted cluster)
@@ -140,6 +127,11 @@ class TicketingConsumerStack(Stack):
                 'REFRESH_TOKEN_EXPIRE_DAYS': '7',
                 # Event ID (for testing/development)
                 'EVENT_ID': '1',
+                # OpenTelemetry tracing (ADOT sidecar → X-Ray)
+                'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
+                'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
+                'OTEL_SERVICE_NAME': 'seat-reservation-consumer',
+                'OTEL_TRACES_EXPORTER': 'otlp',
             },
             # Sensitive secrets injected from AWS Secrets Manager at runtime
             secrets={
@@ -158,10 +150,48 @@ class TicketingConsumerStack(Stack):
             },
         )
 
+        # ADOT sidecar for OpenTelemetry → X-Ray tracing
+        adot = task_def.add_container(
+            'ADOT',
+            image=ecs.ContainerImage.from_registry(
+                'public.ecr.aws/aws-observability/aws-otel-collector:latest'
+            ),
+            logging=ecs.LogDriver.aws_logs(
+                stream_prefix='adot-reservation-consumer', log_retention=logs.RetentionDays.ONE_WEEK
+            ),
+            environment={
+                'AWS_REGION': config['region'],
+                'AOT_CONFIG_CONTENT': """
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 100
+exporters:
+  awsxray:
+    region: """
+                + config['region']
+                + """
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awsxray]
+""",
+            },
+            memory_reservation_mib=128,
+        )
+        adot.add_port_mappings(ecs.PortMapping(container_port=4317))
+
         # ============= Service (No ALB for background worker) =============
         # Get environment from config (production or development)
-        env_name = config.get('environment', 'production')
-        service_name = f'ticketing-{env_name}-ticketing-consumer-service'
+        env_name = config.get('environment', 'development')
+        service_name = f'ticketing-{env_name}-reservation-service'
 
         service = ecs.FargateService(
             self,
@@ -169,13 +199,13 @@ class TicketingConsumerStack(Stack):
             service_name=service_name,
             cluster=ecs_cluster,
             task_definition=task_def,
-            desired_count=config.get('consumers', {}).get('ticketing', {}).get('min_tasks', 50),
+            desired_count=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 50),
             min_healthy_percent=50,  # Keep 50% running during deployment
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             enable_execute_command=True,  # Enable ECS Exec for debugging
             cloud_map_options=ecs.CloudMapOptions(
-                name='ticketing-consumer',
+                name='reservation-service',
                 cloud_map_namespace=namespace,
                 dns_record_type=servicediscovery.DnsRecordType.A,
             ),
@@ -184,8 +214,8 @@ class TicketingConsumerStack(Stack):
         # Auto-scaling: 50-100 tasks (50 vCPU - 100 vCPU)
         # Total resource usage at max: 100 vCPU + 200GB RAM
         scaling = service.auto_scale_task_count(
-            min_capacity=config.get('consumers', {}).get('ticketing', {}).get('min_tasks', 50),
-            max_capacity=config.get('consumers', {}).get('ticketing', {}).get('max_tasks', 100),
+            min_capacity=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 50),
+            max_capacity=config.get('consumers', {}).get('reservation', {}).get('max_tasks', 100),
         )
         scaling.scale_on_cpu_utilization('CPUScaling', target_utilization_percent=70)
         scaling.scale_on_memory_utilization('MemoryScaling', target_utilization_percent=80)
@@ -195,7 +225,7 @@ class TicketingConsumerStack(Stack):
             self,
             'ServiceName',
             value=service.service_name,
-            description='Ticketing consumer service name',
+            description='Seat reservation consumer service name',
         )
 
         self.service = service

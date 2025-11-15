@@ -48,7 +48,7 @@ class SeatReservationConsumer:
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        self.producer_instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
+        # Use consumer instance_id for consumer group identification
         self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         # Alias for backward compatibility
         self.instance_id = self.consumer_instance_id
@@ -57,11 +57,8 @@ class SeatReservationConsumer:
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=self.event_id),
         )
 
-        self.kafka_config = KafkaConfig(
-            event_id=self.event_id,
-            instance_id=self.producer_instance_id,
-            service='seat_reservation',
-        )
+        # KafkaConfig now gets producer instance_id from settings directly (lazy evaluation)
+        self.kafka_config = KafkaConfig(event_id=self.event_id, service='seat_reservation')
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None

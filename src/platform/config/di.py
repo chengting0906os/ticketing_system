@@ -129,7 +129,6 @@ class Container(containers.DeclarativeContainer):
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
         mq_publisher=seat_reservation_mq_publisher,
-        task_group=task_group,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

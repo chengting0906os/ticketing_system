@@ -8,22 +8,13 @@ Tests the optimized booking creation flow:
 4. Kafka event publishing
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from uuid_utils import UUID
 
-from src.platform.config.di import container
 from src.platform.exception.exceptions import DomainError
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
-
-
-@pytest.fixture
-def mock_task_group():
-    """Mock anyio task group for testing"""
-    task_group = MagicMock()
-    task_group.start_soon = MagicMock()
-    return task_group
 
 
 @pytest.fixture
@@ -65,7 +56,6 @@ def create_booking_use_case(
     mock_booking_command_repo,
     mock_event_publisher,
     mock_seat_availability_handler,
-    mock_task_group,
 ):
     """Create instance of CreateBookingUseCase with mocked dependencies"""
     return CreateBookingUseCase(
@@ -73,7 +63,6 @@ def create_booking_use_case(
         booking_command_repo=mock_booking_command_repo,
         event_publisher=mock_event_publisher,
         seat_availability_handler=mock_seat_availability_handler,
-        task_group=mock_task_group,
     )
 
 
@@ -164,23 +153,23 @@ class TestCreateBookingUseCase:
         create_booking_use_case,
         mock_seat_availability_handler,
         mock_booking_metadata_handler,
-        mock_task_group,
+        mock_event_publisher,
         valid_booking_params,
     ):
-        # Override container's task_group with test's mock to ensure property returns our mock
-        container.task_group.override(mock_task_group)
-
+        """Test that BookingCreated event is published"""
+        # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = True
 
         # Act
         await create_booking_use_case.create_booking(**valid_booking_params)
 
-        # Assert - Event scheduled via task_group
-        mock_task_group.start_soon.assert_called_once()
+        # Assert - Event published
+        mock_event_publisher.publish_booking_created.assert_awaited_once()
 
-        # Verify the callback function is async
-        scheduled_fn = mock_task_group.start_soon.call_args[0][0]
-        assert callable(scheduled_fn)
+        # Verify the event object passed has correct type
+        call_args = mock_event_publisher.publish_booking_created.call_args
+        assert call_args is not None
+        assert 'event' in call_args.kwargs
 
     @pytest.mark.asyncio
     async def test_create_booking_fail__kvrocks_save_error(

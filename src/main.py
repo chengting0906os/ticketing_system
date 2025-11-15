@@ -10,13 +10,13 @@ This unified architecture provides:
 """
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 from typing import TypeVar
 
-import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -32,6 +32,7 @@ from src.platform.database.orm_db_setting import get_engine
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import flush_all_messages
+from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 
@@ -87,7 +88,7 @@ async def lifespan(app: FastAPI):
     # ============================================================================
     Logger.base.info('🚀 [Unified Service] Starting up...')
 
-    # Setup OpenTelemetry tracing
+    # Setup OpenTelemetry tracing (environment-aware: Jaeger local, X-Ray AWS)
     tracing = TracingConfig(service_name='unified-ticketing-service')
     tracing.setup()
     Logger.base.info('📊 [Unified Service] OpenTelemetry tracing configured')
@@ -112,12 +113,14 @@ async def lifespan(app: FastAPI):
     # Initialize database
     engine = get_engine()
     if engine:
-        tracing.instrument_sqlalchemy(engine=engine)
+        if tracing:
+            tracing.instrument_sqlalchemy(engine=engine)
         Logger.base.info('🗄️  [Unified Service] Database engine ready + instrumented')
 
     # Auto-instrument Redis/Kvrocks
-    tracing.instrument_redis()
-    Logger.base.info('📊 [Unified Service] Redis instrumentation configured')
+    if tracing:
+        tracing.instrument_redis()
+        Logger.base.info('📊 [Unified Service] Redis instrumentation configured')
 
     # Initialize Kvrocks connection pool (fail-fast)
     await kvrocks_client.initialize()
@@ -131,29 +134,37 @@ async def lifespan(app: FastAPI):
     await warmup_asyncpg_pool()
     Logger.base.info('🔥 [Unified Service] Asyncpg pool warmed up to MIN_SIZE')
 
+    # Get event ID from environment for consumer topic initialization
+    event_id = int(os.getenv('EVENT_ID', '1'))
+
+    # Auto-create Kafka topics before consumers start
+    topic_initializer = KafkaTopicInitializer()
+    topic_initializer.ensure_topics_exist(event_id=event_id)
+    Logger.base.info(f'📝 [Unified Service] Kafka topics ensured for EVENT_ID={event_id}')
+
     Logger.base.info('✅ [Unified Service] All services initialized')
 
-    # Use async with to manage task group lifecycle
-    async with anyio.create_task_group() as background_task_group:
-        # Inject task group into DI container for fire-and-forget event publishing
-        container.task_group.override(background_task_group)
-        Logger.base.info('🔄 [Unified Service] Task group injected into DI container')
+    # ========== Standalone Consumer Architecture ==========
+    # Consumers run as separate services via docker-compose.consumers.yml
+    #
+    # Benefits:
+    # - Independent scaling (scale consumers without affecting API)
+    # - Clean separation of concerns
+    # - No transactional ID conflicts
+    # - Easier to debug and monitor
+    #
+    # Usage:
+    #   docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
+    # ======================================================
 
-        Logger.base.info(
-            '💡 [Unified Service] Kafka consumers should be started independently:\n'
-            '   - Ticketing: uv run python src/service/ticketing/driving_adapter/mq_consumer/start_ticketing_consumer.py\n'
-            '   - Seat Reservation: uv run python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py\n'
-            '   - Or use: make c-start'
-        )
+    Logger.base.info(
+        '✅ [API Service] Ready to serve requests\n'
+        '   💡 Run consumers independently:\n'
+        '      docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d'
+    )
 
-        Logger.base.info('✅ [Unified Service] All background tasks started')
-
-        # Yield inside async with - FastAPI will keep running until shutdown
-        # When shutdown is triggered, async with will automatically cancel task group
-        yield
-
-    # Task group automatically cancelled and cleaned up by async with above
-    Logger.base.info('🛑 [Unified Service] All background tasks stopped')
+    # Yield for API service
+    yield
 
     # ============================================================================
     # SHUTDOWN
@@ -179,8 +190,9 @@ async def lifespan(app: FastAPI):
     Logger.base.info('📡 [Unified Service] Kvrocks disconnected')
 
     # Shutdown tracing (flush remaining spans)
-    tracing.shutdown()
-    Logger.base.info('📊 [Unified Service] Tracing shutdown complete')
+    if tracing:
+        tracing.shutdown()
+        Logger.base.info('📊 [Unified Service] Tracing shutdown complete')
 
     # Unwire DI
     container.unwire()
@@ -197,8 +209,10 @@ app = FastAPI(
 )
 
 # Auto-instrument FastAPI (must be done before mounting routes)
+# Note: This creates auto-spans for all HTTP requests (path, method, status, duration)
 tracing_config = TracingConfig(service_name='unified-ticketing-service')
 tracing_config.instrument_fastapi(app=app)
+Logger.base.info('📊 [Unified Service] FastAPI auto-instrumentation enabled')
 
 # Add CORS middleware
 app.add_middleware(
@@ -227,7 +241,15 @@ app.include_router(seat_reservation_router)  # Already has /api/reservation pref
 
 @app.get('/')
 async def root():
-    return RedirectResponse(url='/static/index.html')
+    """Root endpoint with API navigation"""
+    return {
+        'service': 'Unified Ticketing System',
+        'docs': '/docs',
+        'redoc': '/redoc',
+        'health': '/health',
+        'metrics': '/metrics',
+        'static': '/static/index.html',
+    }
 
 
 @app.get('/health')

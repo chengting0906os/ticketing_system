@@ -1,5 +1,5 @@
 """
-Ticketing MQ Consumer - Unified PostgreSQL State Manager
+Booking Service MQ Consumer - Unified PostgreSQL State Manager
 
 Integrated Responsibilities (2 topics):
 1. Booking + Ticket State Sync (Atomic Operation):
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import KafkaConfig, settings
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
@@ -45,16 +46,15 @@ from src.service.ticketing.app.command.update_booking_status_to_failed_use_case 
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
 )
+from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
+    ISeatAvailabilityQueryHandler,
+)
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )
-from src.service.ticketing.driven_adapter.repo.booking_query_repo_impl import (
-    BookingQueryRepoImpl,
-)
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 
 
-class TicketingMqConsumer:
+class BookingMqConsumer:
     """
     Integrated Ticketing MQ Consumer (PostgreSQL State Management)
 
@@ -69,11 +69,9 @@ class TicketingMqConsumer:
         self,
         *,
         event_broadcaster: IInMemoryEventBroadcaster,
-        seat_availability_cache: Any = None,
+        seat_availability_cache: ISeatAvailabilityQueryHandler,
     ):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
-        # Use producer instance_id from settings for transactional.id (exactly-once semantics)
-        self.producer_instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
         # Use consumer instance_id for consumer group identification
         self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         # Alias for backward compatibility
@@ -83,14 +81,13 @@ class TicketingMqConsumer:
             KafkaConsumerGroupBuilder.ticketing_service(event_id=self.event_id),
         )
 
-        self.kafka_config = KafkaConfig(
-            event_id=self.event_id, instance_id=self.producer_instance_id, service='ticketing'
-        )
+        # KafkaConfig now gets producer instance_id from settings directly (lazy evaluation)
+        self.kafka_config = KafkaConfig(event_id=self.event_id, service='ticketing')
         self.kafka_app: Optional[Application] = None
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
-        self.event_broadcaster = event_broadcaster
-        self.seat_availability_cache = seat_availability_cache
+        self.event_broadcaster: IInMemoryEventBroadcaster = event_broadcaster
+        self.seat_availability_cache: ISeatAvailabilityQueryHandler = seat_availability_cache
         self.tracer = trace.get_tracer(__name__)
 
         # DLQ configuration
@@ -286,18 +283,13 @@ class TicketingMqConsumer:
         total_price = message.get('total_price', 0)
         subsection_stats = message.get('subsection_stats', {})
         event_stats = message.get('event_stats', {})
+        event_state = message.get('event_state', {})  # ✨ NEW
 
-        # Update cache with stats from Kvrocks (event-driven cache update)
-        if self.seat_availability_cache and subsection_stats:
-            section_id = f'{section}-{subsection}'
-            self.seat_availability_cache.update_cache(
-                event_id=event_id,
-                section_id=section_id,
-                stats=subsection_stats,
-            )
-            Logger.base.debug(
-                f'📊 [CACHE-UPDATE] Updated cache for {section_id}: '
-                f'available={subsection_stats.get("available")}'
+        # ✨ Bulk update: Update entire event cache from event_state in one call
+        # This eliminates lazy loading - cache is always fully populated
+        if self.seat_availability_cache and event_state:
+            self.seat_availability_cache.update_cache_bulk(
+                event_id=event_id, event_state=event_state
             )
 
         # Log event-level stats for observability
@@ -368,32 +360,58 @@ class TicketingMqConsumer:
         """
         Async handler for failed booking
 
+        Creates FAILED booking directly from Kafka event data (no query, no Kvrocks read).
+        Booking doesn't exist in PostgreSQL yet when reservation fails.
+
         Note: Repositories use asyncpg and manage their own connections.
-        Use case directly depends on repositories, no UoW needed.
         """
+        # Extract all booking info from Kafka event
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
-        reason = message.get('error_message', 'Unknown')
+        event_id = message.get('event_id')
+        section = message.get('section')
+        subsection = message.get('subsection')
+        quantity = message.get('quantity')
+        seat_selection_mode = message.get('seat_selection_mode')
+        seat_positions = message.get('seat_positions', [])
+        error_message = message.get('error_message', 'Unknown reservation error')
 
-        # Create repositories (they manage their own asyncpg connections)
+        # Validate required fields
+        if not all([booking_id, buyer_id, event_id, section is not None, subsection is not None]):
+            raise ValueError(
+                f'Missing required fields in failed event: '
+                f'booking_id={booking_id}, buyer_id={buyer_id}, event_id={event_id}, '
+                f'section={section}, subsection={subsection}'
+            )
+
+        # Type assertions after validation
+        assert booking_id is not None
+        assert buyer_id is not None
+        assert event_id is not None
+        assert section is not None
+        assert subsection is not None
+
+        # Create repository (manages its own asyncpg connections)
         booking_command_repo = BookingCommandRepoImpl()
-        booking_query_repo = BookingQueryRepoImpl()
 
-        # Create and execute use case with direct repository injection + broadcaster
+        # Create and execute use case (no query repo needed - direct creation)
         use_case = UpdateBookingToFailedUseCase(
-            booking_query_repo=booking_query_repo,
             booking_command_repo=booking_command_repo,
             event_broadcaster=self.event_broadcaster,
         )
 
-        # Validate and convert booking_id
-        if not booking_id:
-            raise ValueError('booking_id is required')
-
         await use_case.execute(
             booking_id=UUID(booking_id) if isinstance(booking_id, str) else booking_id,
-            buyer_id=buyer_id or 0,
-            error_message=reason,
+            buyer_id=int(buyer_id),
+            event_id=int(event_id),
+            section=str(section),
+            subsection=int(subsection),
+            quantity=int(quantity) if quantity else 0,
+            seat_selection_mode=str(seat_selection_mode)
+            if seat_selection_mode
+            else 'best_available',
+            seat_positions=seat_positions,
+            error_message=error_message,
         )
 
     # ========== Lifecycle ==========

@@ -23,12 +23,19 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o concurrent_loadtest \
     concurrent_loadtest.go types.go
 
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s" \
+    -tags full_reserved \
+    -o full_reserved_loadtest \
+    full_reserved_loadtest.go types.go
+
 # ============= Runtime Stage =============
 FROM alpine:3.19
 
-# Install ca-certificates for HTTPS
+# Install ca-certificates for HTTPS and make
 RUN apk add --no-cache \
     ca-certificates \
+    make \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app
@@ -36,12 +43,13 @@ WORKDIR /app
 # Copy binaries from builder
 COPY --from=builder /build/reserved_loadtest /app/reserved_loadtest
 COPY --from=builder /build/concurrent_loadtest /app/concurrent_loadtest
+COPY --from=builder /build/full_reserved_loadtest /app/full_reserved_loadtest
 
 # Copy seating config
 COPY seating_config.json /app/seating_config.json
 
 # Make executable
-RUN chmod +x /app/reserved_loadtest /app/concurrent_loadtest
+RUN chmod +x /app/reserved_loadtest /app/concurrent_loadtest /app/full_reserved_loadtest
 
 # Create report directory
 RUN mkdir -p /app/report
