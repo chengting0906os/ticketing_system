@@ -26,10 +26,11 @@ import (
 
 // JSON config structure (matches script/seating_config.json)
 type JSONConfig struct {
-	LocalDev    EnvironmentConfig `json:"local_dev"`
-	Development EnvironmentConfig `json:"development"`
-	Staging     EnvironmentConfig `json:"staging"`
-	Production  EnvironmentConfig `json:"production"`
+	LocalDev     EnvironmentConfig `json:"local_dev"`
+	LocalDev1000 EnvironmentConfig `json:"local_dev_1000"`
+	Development  EnvironmentConfig `json:"development"`
+	Staging      EnvironmentConfig `json:"staging"`
+	Production   EnvironmentConfig `json:"production"`
 }
 
 type EnvironmentConfig struct {
@@ -86,6 +87,8 @@ func loadSeatingConfig(env string) (EnvironmentConfig, error) {
 		config = jsonConfig.Staging
 	case "development":
 		config = jsonConfig.Development
+	case "local_dev_1000":
+		config = jsonConfig.LocalDev1000
 	default: // local_dev
 		config = jsonConfig.LocalDev
 	}
@@ -452,7 +455,6 @@ func main() {
 	// Request timing tracking
 	var firstRequestTime atomic.Value  // When first request was sent
 	var lastRequestTime atomic.Value   // When last request was sent
-	var lastResponseTime atomic.Value  // When last response was received
 	var requestCount atomic.Int64      // Total number of requests sent
 
 	// Start workers (Worker Pool Pattern)

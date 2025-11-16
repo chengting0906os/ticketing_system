@@ -564,6 +564,571 @@
       }
     ]
   },
+  "local_dev_1000": {
+    "total_seats": 1000,
+    "sections": [
+      {
+        "name": "A",
+        "price": 3000,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "B",
+        "price": 2800,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "C",
+        "price": 2500,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "D",
+        "price": 2200,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "E",
+        "price": 2000,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "F",
+        "price": 1800,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "G",
+        "price": 1500,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "H",
+        "price": 1200,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "I",
+        "price": 1000,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      },
+      {
+        "name": "J",
+        "price": 800,
+        "subsections": [
+          {
+            "number": 1,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 2,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 3,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 4,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 5,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 6,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 7,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 8,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 9,
+            "rows": 1,
+            "seats_per_row": 10
+          },
+          {
+            "number": 10,
+            "rows": 1,
+            "seats_per_row": 10
+          }
+        ]
+      }
+    ]
+  },
   "development": {
     "total_seats": 500,
     "sections": [
