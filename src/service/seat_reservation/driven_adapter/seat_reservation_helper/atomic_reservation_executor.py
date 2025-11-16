@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import os
-from typing import Awaitable, Dict, List, cast
+from typing import Any, Awaitable, Dict, List, cast
 
 import orjson
 from redis.asyncio import Redis
@@ -262,40 +262,18 @@ class AtomicReservationExecutor:
 
         # ========== STEP 0: Read current stats BEFORE pipeline (for sellout tracking) ==========
         # We need to know the current reserved count to determine if this is the first ticket
-        # ✨ NEW: Read event_stats from unified event_state JSON (no separate Hash)
-        config_key = _make_key(f'event_state:{event_id}')
-        try:
-            result = await client.execute_command('JSON.GET', config_key, '$.event_stats')
-            if isinstance(result, list) and result:
-                stats_json = result[0]
-            else:
-                stats_json = result
-            if isinstance(stats_json, bytes):
-                stats_json = stats_json.decode()
-            current_stats = orjson.loads(stats_json) if stats_json else None
-            # Handle list wrapping or None/null
-            if isinstance(current_stats, list):
-                current_stats = current_stats[0] if current_stats else None
-            # If null/None, trigger fallback
-            if not current_stats:
-                raise ValueError('event_stats not found in JSON')
-        except Exception:
-            # Fallback: Read entire config using JSON.GET
-            result = await client.execute_command('JSON.GET', config_key, '$')
-            if isinstance(result, list) and result:
-                config_json = result[0]
-            else:
-                config_json = result
-            if isinstance(config_json, bytes):
-                config_json = config_json.decode()
-            event_state = orjson.loads(config_json) if config_json else {}
-            # Handle if event_state is wrapped in a list
-            if isinstance(event_state, list) and event_state:
-                event_state = event_state[0]
-            current_stats = event_state.get('event_stats', {})
-            # Handle if current_stats is wrapped in a list
-            if isinstance(current_stats, list) and current_stats:
-                current_stats = current_stats[0]
+        event_state_key = _make_key(f'event_state:{event_id}')
+
+        # Read entire event_state (simpler and more reliable than JSONPath $.event_stats)
+        # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
+        result = await client.execute_command('JSON.GET', event_state_key, '$')
+        if not result:
+            # If JSON key doesn't exist, initialize with empty stats
+            current_stats = {}
+        else:
+            # Parse bytes to list, then unwrap to get dict
+            event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+            current_stats = event_state_dict.get('event_stats', {})
 
         current_reserved_count = int(current_stats.get('reserved', 0))
         current_total_seats = int(current_stats.get('total', 0))
@@ -324,13 +302,7 @@ class AtomicReservationExecutor:
             reserved_seats.append(seat_id)
 
         # ========== STEP 2: Update statistics ==========
-        # ✨ NEW: Use JSON.NUMINCRBY for unified event_state (atomic JSON updates)
         # Update both subsection and event-level statistics atomically in single JSON
-        #
-        # Example before (hierarchical structure):
-        # - event_state:123.sections.A.subsections.1.stats → {available: 100, reserved: 0}
-        # - event_state:123.event_stats → {available: 500, reserved: 0}
-        #
         # After reserving 2 seats:
         # - event_state:123.sections.A.subsections.1.stats → {available: 98, reserved: 2}
         # - event_state:123.event_stats → {available: 498, reserved: 2}
@@ -386,7 +358,6 @@ class AtomicReservationExecutor:
         results = await pipe.execute()
 
         # ========== Parse statistics from pipeline results ==========
-        # ✨ NEW: Updated result layout with unified JSON structure
         # Calculate indices based on pipeline structure:
         #
         # Results layout:
@@ -405,25 +376,17 @@ class AtomicReservationExecutor:
         # - Results[9]: HSET result
         event_state_idx = num_seats * 2 + 4
 
-        # ✨ Parse JSON.GET result for ENTIRE event_state
+        # Parse JSON.GET result from pipeline (format: bytes from Kvrocks)
+        # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
         json_config_result = results[event_state_idx]
-        if isinstance(json_config_result, list) and json_config_result:
-            config_json = json_config_result[0]
-        else:
-            config_json = json_config_result
-
-        if isinstance(config_json, bytes):
-            config_json = config_json.decode()
-
-        event_state = orjson.loads(config_json)
-        # JSON.GET with JSONPath may still return an array, extract first element
-        if isinstance(event_state, list) and event_state:
-            event_state = event_state[0]
+        event_state: Dict[str, Any] = (
+            orjson.loads(json_config_result)[0] if json_config_result else {}
+        )
 
         # Extract specific subsection stats from hierarchical structure
         section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
         subsection_num = section_id.split('-')[1]  # e.g., "A-1" -> "1"
-        section_stats_data = (
+        section_stats_data: Dict[str, Any] = (
             event_state.get('sections', {})
             .get(section_name, {})
             .get('subsections', {})
@@ -437,8 +400,7 @@ class AtomicReservationExecutor:
             'total': int(section_stats_data.get('total', 0)),
         }
 
-        # ✨ NEW: Extract event_stats from unified JSON (no separate Hash)
-        event_stats_data = event_state.get('event_stats', {})
+        event_stats_data: Dict[str, Any] = event_state.get('event_stats', {})
         event_stats = {
             'available': int(event_stats_data.get('available', 0)),
             'reserved': int(event_stats_data.get('reserved', 0)),
@@ -471,14 +433,14 @@ class AtomicReservationExecutor:
             # Silently fail if sellout tracking fails (non-critical feature)
             pass
 
-        # Return complete reservation result
+        # Return complete reservation result (includes event_state for use case to broadcast)
         return {
             'success': True,
             'reserved_seats': reserved_seats,
             'total_price': total_price,
-            'subsection_stats': subsection_stats,  # Backward compatibility
-            'event_stats': event_stats,
-            'event_state': event_state,  # ✨ NEW: Entire config for Kafka event
+            'subsection_stats': subsection_stats,  # For SSE broadcasting
+            'event_stats': event_stats,  # For SSE broadcasting
+            'event_state': event_state,  # For Redis Pub/Sub broadcasting (use case responsibility)
             'error_message': None,
         }
 

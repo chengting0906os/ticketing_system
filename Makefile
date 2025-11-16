@@ -16,8 +16,8 @@ API_HOST ?= http://localhost:8100
 c-d-build:  ## 🔨 Build consumer images
 	@docker-compose -f docker-compose.consumers.yml build
 
-c-start:  ## 🚀 Start all services (API=1, booking=4, reservation=4)
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=2 --scale booking-service=2 --scale reservation-service=2
+c-start:  ## 🚀 Start all services (API + reservation-service + booking-service)
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=2 --scale reservation-service=4 --scale booking-service=2
 
 c-stop:  ## 🛑 Stop consumer containers
 	@docker-compose -f docker-compose.consumers.yml stop
@@ -57,9 +57,9 @@ migrate-history:  ## 📜 Show migration history
 
 re-seed:  ## 🔄 Reset and re-seed database
 	@echo "🗑️  Resetting database..."
-	@uv run python -m script.reset_database
+	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.reset_database
 	@echo "🌱 Seeding database..."
-	@uv run python -m script.seed_data
+	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
 
 psql:  ## 🐘 Connect to PostgreSQL
@@ -151,21 +151,21 @@ s-d-build:  ## 🔨 Rebuild services
 # 📈 SERVICE SCALING (Nginx Load Balancer)
 # ==============================================================================
 
-.PHONY: scale-up scale-down scale-ticketing scale-reservation scale-status dra
-scale-up:  ## 🚀 Scale services (usage: make scale-up T=3 R=2)
-	@if [ -z "$(T)" ] || [ -z "$(R)" ]; then \
-		echo "Usage: make scale-up T=<ticketing_count> R=<reservation_count>"; \
-		echo "Example: make scale-up T=3 R=2"; \
+.PHONY: scale-up scale-down scale-ticketing scale-reservation scale-booking scale-status dra
+scale-up:  ## 🚀 Scale services (usage: make scale-up A=2 R=4 B=2)
+	@if [ -z "$(A)" ] || [ -z "$(R)" ] || [ -z "$(B)" ]; then \
+		echo "Usage: make scale-up A=<api_count> R=<reservation_count> B=<booking_count>"; \
+		echo "Example: make scale-up A=2 R=4 B=2"; \
 		exit 1; \
 	fi
-	@echo "📈 Scaling services: ticketing=$(T), reservation=$(R)"
-	@docker-compose up -d --scale ticketing-service=$(T) --scale reservation-service=$(R) --no-recreate
+	@echo "📈 Scaling services: API=$(A), reservation=$(R), booking=$(B)"
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(A) --scale reservation-service=$(R) --scale booking-service=$(B) --no-recreate
 	@echo "✅ Scaled successfully!"
-	@docker-compose ps ticketing-service reservation-service
+	@docker-compose ps ticketing-service reservation-service booking-service
 
 scale-down:  ## 📉 Scale down to 1 instance each
 	@echo "📉 Scaling down to 1 instance each..."
-	@docker-compose up -d --scale ticketing-service=1 --scale reservation-service=1 --no-recreate
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=1 --scale reservation-service=1 --scale booking-service=1 --no-recreate
 	@echo "✅ Scaled down successfully!"
 
 scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
@@ -186,13 +186,24 @@ scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-re
 		exit 1; \
 	fi
 	@echo "📈 Scaling reservation-service to $(N) instances..."
-	@docker-compose up -d --scale reservation-service=$(N) --no-recreate
+	@docker-compose -f docker-compose.consumers.yml up -d --scale reservation-service=$(N) --no-recreate
 	@echo "✅ Done!"
 	@docker-compose ps reservation-service
 
+scale-booking:  ## 📝 Scale only booking service (usage: make scale-booking N=2)
+	@if [ -z "$(N)" ]; then \
+		echo "Usage: make scale-booking N=<count>"; \
+		echo "Example: make scale-booking N=2"; \
+		exit 1; \
+	fi
+	@echo "📈 Scaling booking-service to $(N) instances..."
+	@docker-compose -f docker-compose.consumers.yml up -d --scale booking-service=$(N) --no-recreate
+	@echo "✅ Done!"
+	@docker-compose ps booking-service
+
 scale-status:  ## 📊 Show current scaling status
 	@echo "📊 Current service instances:"
-	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|reservation-service|nginx)"
+	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|reservation-service|booking-service|nginx)"
 
 dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
@@ -201,8 +212,8 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
-	@echo "🚀 Starting all services (API=1, booking=4, reservation=4)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=2 --scale booking-service=10 --scale reservation-service=10
+	@echo "🚀 Starting all services (API + reservation + booking)..."
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=3 --scale reservation-service=1 --scale booking-service=10
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -221,7 +232,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@$(MAKE) ds
 	@echo ""
 	@echo "✅ ==================== SETUP COMPLETE ===================="
-	@echo "   🌐 API (Nginx):  $(API_HOST)/docs"
+	@echo "   🌐 API :  http://localhost:8100/docs#
 	@echo "   📊 Kafka UI:     http://localhost:8080"
 	@echo "   📈 Grafana:      http://localhost:3000"
 	@echo "   🔍 Jaeger:       http://localhost:16686"
@@ -340,7 +351,7 @@ help:
 	@echo ""
 	@echo "📨 SERVICES"
 	@echo "  c-d-build   - Build service images"
-	@echo "  c-start     - Start all services (ticketing=2, reservation=4)"
+	@echo "  c-start     - Start all services (API + reservation + booking)"
 	@echo "  c-stop      - Stop consumer containers"
 	@echo "  c-restart   - Restart consumers (hot reload)"
 	@echo "  c-tail      - Tail consumer logs"
@@ -375,11 +386,11 @@ help:
 	@echo "  clean       - Remove cache files"
 	@echo ""
 	@echo "📈 SERVICE SCALING (Nginx Load Balancer)"
-	@echo "  scale-up    - Scale services (usage: make scale-up T=3 R=2)"
+	@echo "  scale-up    - Scale services (usage: make scale-up A=2 R=4 B=2)"
 	@echo "  scale-down  - Scale down to 1 instance each"
-	@echo "  scale-ticketing - Scale ticketing-service (usage: make scale-ticketing N=3)"
+	@echo "  scale-ticketing - Scale API service (usage: make scale-ticketing N=3)"
 	@echo "  scale-reservation - Scale reservation-service (usage: make scale-reservation N=2)"
-	@echo "  scale-booking     - Scale booking-service (usage: make scale-booking N=2)"
+	@echo "  scale-booking - Scale booking-service (usage: make scale-booking N=2)"
 	@echo "  scale-status - Show current scaling status"
 	@echo "  d-s-rs      - Restart ticketing-service"
 	@echo "  s-d-build   - Rebuild ticketing-service"
@@ -411,9 +422,9 @@ help:
 	@echo "  make go-rlt                             # Run sellout load test"
 	@echo ""
 	@echo "📚 ARCHITECTURE NOTES"
-	@echo "  • Consumers run as standalone services (docker-compose.consumers.yml)"
-	@echo "  • booking-service: Processes booking events from Kafka"
-	@echo "  • reservation-service: Processes seat reservation events from Kafka"
+	@echo "  • ticketing-service: API service with Redis Pub/Sub for real-time cache"
+	@echo "  • reservation-service: Standalone consumer for seat reservations"
+	@echo "  • booking-service: Standalone consumer for booking creation"
 	@echo "  • Nginx load balancer simulates AWS ALB locally"
 	@echo ""
 	@echo "📖 DOCS: spec/CONSTITUTION.md | spec/TICKETING_SERVICE_SPEC.md | spec/SEAT_RESERVATION_SPEC.md"

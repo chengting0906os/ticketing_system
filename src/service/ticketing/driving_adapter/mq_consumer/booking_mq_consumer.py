@@ -22,11 +22,11 @@ import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-import orjson
 from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
-from uuid_utils import UUID
+import orjson
 from quixstreams import Application
+from uuid_utils import UUID
 
 
 if TYPE_CHECKING:
@@ -45,9 +45,6 @@ from src.service.ticketing.app.command.update_booking_status_to_failed_use_case 
 )
 from src.service.ticketing.app.command.update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case import (
     UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
-)
-from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
-    ISeatAvailabilityQueryHandler,
 )
 from src.service.ticketing.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
@@ -69,7 +66,6 @@ class BookingMqConsumer:
         self,
         *,
         event_broadcaster: IInMemoryEventBroadcaster,
-        seat_availability_cache: ISeatAvailabilityQueryHandler,
     ):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Use consumer instance_id for consumer group identification
@@ -87,7 +83,6 @@ class BookingMqConsumer:
         self.running = False
         self.portal: Optional['BlockingPortal'] = None
         self.event_broadcaster: IInMemoryEventBroadcaster = event_broadcaster
-        self.seat_availability_cache: ISeatAvailabilityQueryHandler = seat_availability_cache
         self.tracer = trace.get_tracer(__name__)
 
         # DLQ configuration
@@ -282,14 +277,6 @@ class BookingMqConsumer:
         total_price = message.get('total_price', 0)
         subsection_stats = message.get('subsection_stats', {})
         event_stats = message.get('event_stats', {})
-        event_state = message.get('event_state', {})  # ✨ NEW
-
-        # ✨ Bulk update: Update entire event cache from event_state in one call
-        # This eliminates lazy loading - cache is always fully populated
-        if self.seat_availability_cache and event_state:
-            self.seat_availability_cache.update_cache_bulk(
-                event_id=event_id, event_state=event_state
-            )
 
         # Log event-level stats for observability
         if event_stats:
@@ -305,7 +292,7 @@ class BookingMqConsumer:
         # Create repository (asyncpg-based, no session management needed)
         booking_command_repo = BookingCommandRepoImpl()
 
-        # Create and execute use case with direct repository injection + broadcaster
+        # Create and execute use case (NO seat_availability_cache - uses Redis Pub/Sub now)
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
             event_broadcaster=self.event_broadcaster,
@@ -440,6 +427,10 @@ class BookingMqConsumer:
                         f'🎯 [TICKETING-{self.instance_id}] Running app\n'
                         f'   💡 Partition assignments will be logged when messages are processed'
                     )
+
+                    # Run Kafka application
+                    # Note: signal.signal is mocked in main.py to avoid "signal only works in main thread" error
+                    Logger.base.info('🔧 [TICKETING] Starting Kafka application')
                     self.kafka_app.run()
                     break  # Success, exit retry loop
 

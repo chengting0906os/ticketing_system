@@ -14,6 +14,9 @@ from src.service.seat_reservation.app.command.finalize_seat_payment_use_case imp
 from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
 from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
+from src.service.seat_reservation.driven_adapter.event_state_broadcaster_impl import (
+    EventStateBroadcasterImpl,
+)
 from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
 )
@@ -96,6 +99,9 @@ class Container(containers.DeclarativeContainer):
     seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
 
+    # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
+    event_state_broadcaster = providers.Factory(EventStateBroadcasterImpl)
+
     # Seat Reservation Domain and Use Cases (CQRS)
     seat_selection_domain = providers.Factory(SeatSelectionDomain)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
@@ -113,9 +119,10 @@ class Container(containers.DeclarativeContainer):
         InitEventAndTicketsStateHandlerImpl,
     )
 
-    # Ticketing Service - Seat Availability Query Handler (Singleton for shared cache)
+    # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)
     seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
+        ttl_seconds=1.0,
     )
 
     # MQ Infrastructure Orchestrator
@@ -129,6 +136,7 @@ class Container(containers.DeclarativeContainer):
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
         mq_publisher=seat_reservation_mq_publisher,
+        event_state_broadcaster=event_state_broadcaster,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

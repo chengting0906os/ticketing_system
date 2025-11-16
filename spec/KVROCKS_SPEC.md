@@ -94,6 +94,21 @@
 | `pipeline(transaction=True)` | Transaction | MULTI/EXEC | `pipe = client.pipeline(transaction=True)` |
 | `execute()` | Transaction | Execute pipeline | `results = await pipe.execute()` |
 
+When using `JSON.GET key $` (JSONPath query), **Kvrocks returns `str` (JSON string)**:
+
+```python
+# Real Kvrocks Output (tested with Kvrocks 2.x)
+client = kvrocks_client.get_client()
+result = await client.execute_command('JSON.GET', 'event_state:1', '$')  # '$' = JSONPath root selector (get entire JSON)
+
+# result = '[{"event_stats": {...}, "sections": {...}}]'
+# Type: str (JSON array string)
+
+# Parse JSON array and extract first element
+event_state_list = orjson.loads(result)  # Parse JSON string to list
+event_state = event_state_list[0]  # Get first object from array
+```
+
 ## Transaction & Isolation
 
 ### MULTI/EXEC Guarantees
@@ -250,7 +265,10 @@ pipe.hset(timer_key, 'first_ticket_reserved_at', now)  # DON'T DO THIS
 # STEP 0: Check if this is the first ticket (read from unified JSON)
 config_key = _make_key(f'event_state:{event_id}')
 result = await client.execute_command('JSON.GET', config_key, '$.event_stats')
-current_stats = orjson.loads(result[0] if isinstance(result, list) else result)
+
+# result = '[{"available":500,"reserved":0,...}]' (JSON array string)
+event_stats_list = orjson.loads(result)  # Parse JSON string
+current_stats = event_stats_list[0]  # Get first element
 current_reserved_count = int(current_stats.get('reserved', 0))
 ```
 

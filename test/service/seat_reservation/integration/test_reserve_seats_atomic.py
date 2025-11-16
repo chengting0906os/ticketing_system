@@ -7,14 +7,14 @@ Tests the unified seat reservation implementation supporting two modes:
 """
 
 import os
+from typing import cast
 
 import orjson
 import pytest
 import uuid_utils as uuid
 
-from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
+from src.platform.config.di import container
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -32,47 +32,36 @@ def _make_key(key: str) -> str:
 def _get_section_stats_from_json(kvrocks_client_sync, event_id: int, section_id: str) -> dict:
     """
     Helper function to fetch section stats from event_state JSON
-
-    ✨ NEW: Replaces HGETALL section_stats Hash queries with JSON.GET
     """
-    config_key = _make_key(f'event_state:{event_id}')
+    event_state_key = _make_key(f'event_state:{event_id}')
 
     # Fetch event config JSON
     config_json = None
     try:
-        # Try JSON.GET first
-        result = kvrocks_client_sync.execute_command('JSON.GET', config_key, '$')
-        if result:
-            # Handle JSON.GET returning a list
-            if isinstance(result, list) and result:
-                config_json = result[0]
-            elif isinstance(result, bytes):
-                config_json = result.decode()
-            else:
-                config_json = result
-
-            if isinstance(config_json, bytes):
-                config_json = config_json.decode()
+        # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
+        result = kvrocks_client_sync.execute_command('JSON.GET', event_state_key, '$')
+        if not result:
+            return {
+                'available': '0',
+                'reserved': '0',
+                'sold': '0',
+                'total': '0',
+                'updated_at': '0',
+            }
+        # Parse bytes to list, then unwrap to get dict
+        event_state = orjson.loads(cast(bytes, result))[0]
     except Exception:
         # Fallback: Regular GET
-        config_json = kvrocks_client_sync.get(config_key)
-        if isinstance(config_json, bytes):
-            config_json = config_json.decode()
-
-    # Parse JSON
-    if not config_json:
-        return {
-            'available': '0',
-            'reserved': '0',
-            'sold': '0',
-            'total': '0',
-            'updated_at': '0',
-        }
-
-    event_state = orjson.loads(config_json)
-    # If JSON.GET returned an array, extract first element
-    if isinstance(event_state, list) and event_state:
-        event_state = event_state[0]
+        config_json = kvrocks_client_sync.get(event_state_key)
+        if not config_json:
+            return {
+                'available': '0',
+                'reserved': '0',
+                'sold': '0',
+                'total': '0',
+                'updated_at': '0',
+            }
+        event_state = orjson.loads(cast(bytes, config_json))
 
     # Extract subsection stats from hierarchical structure
     # section_id format: "A-1" -> section "A", subsection "1"
@@ -98,12 +87,9 @@ def _get_section_stats_from_json(kvrocks_client_sync, event_id: int, section_id:
 
 @pytest.fixture
 async def seat_handler():
-    """Create seat state command handler"""
-    # Initialize kvrocks client for current event loop
-    from src.platform.state.kvrocks_client import kvrocks_client
-
+    """Create seat state command handler with proper DI"""
     await kvrocks_client.initialize()
-    return SeatStateCommandHandlerImpl()
+    return container.seat_state_command_handler()
 
 
 @pytest.fixture
@@ -166,6 +152,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -215,6 +202,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=3,
             seat_ids=['1-1', '1-2', '2-1'],
         )
 
@@ -257,6 +245,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -269,6 +258,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -307,6 +297,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-2'],
         )
 
@@ -319,6 +310,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=3,
             seat_ids=['1-1', '1-2', '1-3'],
         )
 
@@ -356,6 +348,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -399,6 +392,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -409,6 +403,7 @@ class TestReserveSeatsAtomicManualMode:
             mode='manual',
             section='B',
             subsection=1,
+            quantity=1,
             seat_ids=['1-1'],
         )
 
@@ -500,6 +495,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=2,
             seat_ids=['1-1', '1-2'],
         )
 
@@ -547,6 +543,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=1,
             seat_ids=['1-2'],
         )
 
@@ -593,6 +590,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=2,
             seat_ids=['1-1', '1-2'],  # Row 1: XX--
         )
 
@@ -649,6 +647,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             mode='manual',
             section='A',
             subsection=1,
+            quantity=3,
             seat_ids=['1-1', '1-2', '2-1'],
         )
 

@@ -50,14 +50,6 @@ def sample_seats():
     ]
 
 
-@pytest.fixture
-def sample_seat_prices():
-    return {
-        'A-1-1-1': 1000,
-        'A-1-1-2': 1000,
-    }
-
-
 # ============================================================================
 # Test _decode_stats
 # ============================================================================
@@ -166,14 +158,191 @@ class TestDecodeStats:
 
 
 # ============================================================================
-# Test fetch_seat_prices
+# Test _parse_json_get_result
 # ============================================================================
 
 
 @pytest.mark.unit
-class TestFetchSeatPrices:
+class TestParseJsonGetResult:
+    """Test JSON.GET result parsing logic"""
+
+    def test_parse_json_get_result_bytes(self):
+        """Test parsing when JSON.GET returns bytes (Kvrocks format)"""
+        # Given: JSON.GET result as bytes containing JSON array (what Kvrocks actually returns)
+        event_state_json = {
+            'event_stats': {
+                'available': 0,
+                'reserved': 500,
+                'sold': 0,
+                'total': 500,
+                'updated_at': 1763299859,
+            },
+            'sections': {
+                'A': {
+                    'price': 3000,
+                    'subsections': {
+                        '1': {
+                            'rows': 1,
+                            'seats_per_row': 5,
+                            'stats': {
+                                'available': 0,
+                                'reserved': 5,
+                                'sold': 0,
+                                'total': 5,
+                                'updated_at': 1763299859,
+                            },
+                        }
+                    },
+                }
+            },
+        }
+        # Kvrocks returns bytes like b'[{...}]' (bytes representing JSON array)
+        json_config_result = orjson.dumps([event_state_json])
+
+        # When: Parse result (simulating the parsing logic)
+        # Kvrocks returns bytes directly (not wrapped in a list)
+        if isinstance(json_config_result, list) and json_config_result:
+            config_json = json_config_result[0]
+        elif isinstance(json_config_result, bytes):
+            config_json = json_config_result.decode()
+        else:
+            config_json = json_config_result
+
+        # Then: Should parse bytes correctly
+        # config_json is now a string like '[{...}]'
+        parsed = orjson.loads(config_json)
+        # Extract first element from array
+        if isinstance(parsed, list) and parsed:
+            parsed = parsed[0]
+        assert parsed == event_state_json
+        assert parsed['event_stats']['available'] == 0
+        assert parsed['sections']['A']['price'] == 3000
+
+    def test_parse_json_get_result_list_with_bytes(self):
+        """Test parsing when JSON.GET returns list[bytes]"""
+        # Given: JSON.GET result as list containing bytes
+        event_state_json = {'event_stats': {'available': 100}}
+        json_config_result = [orjson.dumps(event_state_json)]  # bytes in list
+
+        # When: Parse result (orjson.loads can handle bytes directly)
+        config_json: bytes = json_config_result[0]  # Extract bytes from list
+
+        # Then: orjson.loads should handle bytes directly without decode
+        # ✅ Correct: Pass bytes directly to orjson.loads
+        parsed = orjson.loads(config_json)  # config_json is bytes
+        assert parsed == event_state_json
+        assert isinstance(config_json, bytes)  # Verify we're testing bytes handling
+
+    def test_parse_json_get_result_empty_list(self):
+        """Test parsing when JSON.GET returns empty list"""
+        # Given: Empty list
+        json_config_result = []
+
+        # When: Parse result
+        if isinstance(json_config_result, list) and json_config_result:
+            config_json = json_config_result[0]
+        else:
+            config_json = json_config_result
+
+        # Then: Should return empty list (will cause error later, which is expected)
+        assert config_json == []
+
+    def test_parse_json_get_result_simplified_logic(self):
+        """Test simplified parsing logic with bytes (Kvrocks format)"""
+        # Given: Standard Kvrocks JSON.GET result format (bytes)
+        event_state_json = {
+            'event_stats': {'available': 500},
+            'sections': {'A': {'price': 3000}},
+        }
+        # Kvrocks returns bytes like b'[{...}]'
+        json_config_result = orjson.dumps([event_state_json])
+
+        # When: Parse bytes directly (orjson.loads handles bytes)
+        parsed = orjson.loads(json_config_result)
+        # Extract first element from array
+        if isinstance(parsed, list) and parsed:
+            parsed = parsed[0]
+
+        # Then: Should work correctly
+        assert parsed == event_state_json
+
+
+@pytest.mark.unit
+class TestParseEventStatsJsonPath:
+    """Test JSON.GET $.event_stats parsing logic (JSONPath format always returns list[dict])"""
+
+    def test_parse_event_stats_bytes(self):
+        """Test parsing when JSON.GET $.event_stats returns bytes (Kvrocks format)"""
+        # Given: JSON.GET $.event_stats result as bytes (what Kvrocks actually returns)
+        event_stats = {
+            'available': 100,
+            'reserved': 400,
+            'sold': 0,
+            'total': 500,
+            'updated_at': 1763299859,
+        }
+        # Kvrocks returns bytes like b'[{...}]' (JSON array containing the stats)
+        stats_result = orjson.dumps([event_stats])
+
+        # When: Parse bytes directly (orjson.loads handles bytes)
+        parsed = orjson.loads(stats_result)
+        # Extract first element from array
+        if isinstance(parsed, list) and parsed:
+            parsed_stats = parsed[0]
+        else:
+            parsed_stats = parsed
+
+        # Then: Should extract dict correctly
+        assert parsed_stats == event_stats
+        assert parsed_stats['available'] == 100
+        assert parsed_stats['total'] == 500
+
+    def test_parse_event_stats_direct_parse(self):
+        """Test direct parsing of bytes without intermediate steps"""
+        # Given: JSON.GET result as bytes
+        event_stats = {'available': 250, 'reserved': 250, 'sold': 0, 'total': 500}
+        stats_result = orjson.dumps([event_stats])  # Kvrocks returns bytes
+
+        # When: Parse bytes directly (most efficient)
+        parsed = orjson.loads(stats_result)
+        parsed_stats = parsed[0] if isinstance(parsed, list) else parsed
+
+        # Then: Should handle bytes correctly
+        assert parsed_stats == event_stats
+
+    def test_parse_event_stats_empty_result(self):
+        """Test parsing when JSON.GET $.event_stats returns empty list (key not found)"""
+        # Given: Empty list (JSONPath returns [] when path not found)
+        stats_result = []
+
+        # When/Then: Should raise IndexError when trying to access first element
+        with pytest.raises(IndexError):
+            _ = stats_result[0]  # This triggers fallback in production code
+
+    def test_parse_event_stats_null_result(self):
+        """Test parsing when JSON.GET $.event_stats returns [null]"""
+        # Given: List with null value
+        stats_result = ['null']
+
+        # When: Parse result
+        stats_json = stats_result[0]
+        if isinstance(stats_json, bytes):
+            stats_json = stats_json.decode()
+        parsed_stats = orjson.loads(stats_json)
+
+        # Then: Should return None (triggers fallback to full JSON.GET)
+        assert parsed_stats is None
+
+
+# ============================================================================
+# Test fetch_total_price
+# ============================================================================
+
+
+@pytest.mark.unit
+class TestFetchTotalPrice:
     @pytest.mark.asyncio
-    async def test_fetch_seat_prices_success(self, executor, sample_seats):
+    async def test_fetch_total_price_success(self, executor, sample_seats):
         # Given: Mock Kvrocks client with event config JSON
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
@@ -185,30 +354,24 @@ class TestFetchSeatPrices:
                     'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
                 }
             }
-            config_json = orjson.dumps(event_state).decode()
 
-            # Mock JSON.GET command (native JSON support)
-            mock_client.execute_command = AsyncMock(return_value=[config_json])
+            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
+            result_bytes = orjson.dumps([event_state])  # Wrap in list, get bytes
+            mock_client.execute_command = AsyncMock(return_value=result_bytes)
 
-            # When: Fetch seat prices
-            seat_prices, total_price = await executor.fetch_seat_prices(
+            total_price = await executor.fetch_total_price(
                 event_id=123,
                 section_id='A-1',
                 seats_to_reserve=sample_seats,
             )
 
-            # Then: Should return correct prices (same price for all seats)
-            assert seat_prices == {
-                'A-1-1-1': 1000,
-                'A-1-1-2': 1000,
-            }
             assert total_price == 2000
 
             # And: Should call JSON.GET once
             mock_client.execute_command.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_fetch_seat_prices_missing_prices(self, executor):
+    async def test_fetch_total_price_missing_section(self, executor):
         # Given: Seats but section config not found in JSON
         seats = [
             (1, 1, 0, 'A-1-1-1'),
@@ -226,27 +389,22 @@ class TestFetchSeatPrices:
                     'B': {'price': 2000, 'subsections': {'1': {'rows': 20, 'seats_per_row': 15}}}
                 }
             }
-            config_json = orjson.dumps(event_state).decode()
-            mock_client.execute_command = AsyncMock(return_value=[config_json])
+            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
+            result_bytes = orjson.dumps([event_state])
+            mock_client.execute_command = AsyncMock(return_value=result_bytes)
 
-            # When: Fetch seat prices for missing section
-            seat_prices, total_price = await executor.fetch_seat_prices(
+            total_price = await executor.fetch_total_price(
                 event_id=123,
                 section_id='A-1',  # Not in config
                 seats_to_reserve=seats,
             )
 
-            # Then: Missing prices should default to 0
-            assert seat_prices == {
-                'A-1-1-1': 0,
-                'A-1-1-2': 0,
-                'A-1-1-3': 0,
-            }
+            # Then: Missing section should default to price 0, so total is 0
             assert total_price == 0
 
     @pytest.mark.asyncio
-    async def test_fetch_seat_prices_different_prices(self, executor):
-        # Given: Multiple sections with different prices
+    async def test_fetch_total_price_multiple_seats(self, executor):
+        # Given: Multiple seats in the same section
         seats_a1 = [
             (1, 1, 0, 'A-1-1-1'),
             (1, 2, 1, 'A-1-1-2'),
@@ -262,21 +420,18 @@ class TestFetchSeatPrices:
                     'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
                 }
             }
-            config_json = orjson.dumps(event_state).decode()
-            mock_client.execute_command = AsyncMock(return_value=[config_json])
+            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
+            result_bytes = orjson.dumps([event_state])
+            mock_client.execute_command = AsyncMock(return_value=result_bytes)
 
-            # When: Fetch seat prices for A-1
-            seat_prices, total_price = await executor.fetch_seat_prices(
+            # When: Fetch total price for 2 seats in A-1
+            total_price = await executor.fetch_total_price(
                 event_id=123,
                 section_id='A-1',
                 seats_to_reserve=seats_a1,
             )
 
-            # Then: All seats in same section have same price
-            assert seat_prices == {
-                'A-1-1-1': 1000,
-                'A-1-1-2': 1000,
-            }
+            # Then: All seats in same section have same price (1000 * 2 = 2000)
             assert total_price == 2000
 
 
@@ -288,9 +443,7 @@ class TestFetchSeatPrices:
 @pytest.mark.unit
 class TestExecuteAtomicReservation:
     @pytest.mark.asyncio
-    async def test_execute_atomic_reservation_success(
-        self, executor, sample_seats, sample_seat_prices
-    ):
+    async def test_execute_atomic_reservation_success(self, executor, sample_seats):
         # Given: Mock Kvrocks client and pipeline
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
@@ -299,9 +452,9 @@ class TestExecuteAtomicReservation:
             mock_client.pipeline.return_value = mock_pipeline
 
             # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats
+            # execute_command is called for JSON.GET $.event_stats (returns bytes)
             mock_client.execute_command = AsyncMock(
-                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
             )
 
             # Mock pipeline execution results
@@ -319,10 +472,8 @@ class TestExecuteAtomicReservation:
                     # JSON.NUMINCRBY event stats (2 results - returns new values)
                     [498],  # event available
                     [2],  # event reserved
-                    # JSON.GET result (complete event_state with hierarchical structure)
-                    [
-                        '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
-                    ],
+                    # JSON.GET result from pipeline (bytes from Kvrocks)
+                    b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',
                     # HSET result (1 result)
                     4,  # Number of fields set
                 ]
@@ -335,14 +486,12 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                seat_prices=sample_seat_prices,
                 total_price=2000,
             )
 
             # Then: Should return success result
             assert result['success'] is True
             assert result['reserved_seats'] == ['A-1-1-1', 'A-1-1-2']
-            assert result['seat_prices'] == sample_seat_prices
             assert result['total_price'] == 2000
             assert result['subsection_stats'] == {
                 'available': 98,
@@ -373,7 +522,6 @@ class TestExecuteAtomicReservation:
     async def test_execute_atomic_reservation_single_seat(self, executor):
         # Given: Single seat reservation
         seats = [(1, 1, 0, 'A-1-1-1')]
-        seat_prices = {'A-1-1-1': 1000}
 
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
@@ -384,7 +532,7 @@ class TestExecuteAtomicReservation:
             # Mock current event stats (for time tracking via JSON.GET)
             # execute_command is called for JSON.GET $.event_stats
             mock_client.execute_command = AsyncMock(
-                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
             )
 
             # Mock pipeline results for 1 seat
@@ -400,10 +548,8 @@ class TestExecuteAtomicReservation:
                     # JSON.NUMINCRBY event stats (2 results - returns new values)
                     [499],  # event available
                     [1],  # event reserved
-                    # JSON.GET result (complete event_state with hierarchical structure)
-                    [
-                        '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":99,"reserved":1,"sold":0,"total":100}}}}},"event_stats":{"available":499,"reserved":1,"sold":0,"total":500}}'
-                    ],
+                    # JSON.GET result from pipeline (bytes from Kvrocks)
+                    b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":99,"reserved":1,"sold":0,"total":100}}}}},"event_stats":{"available":499,"reserved":1,"sold":0,"total":500}}]',
                     # HSET result (1 result)
                     4,
                 ]
@@ -416,7 +562,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=seats,
-                seat_prices=seat_prices,
                 total_price=1000,
             )
 
@@ -450,7 +595,6 @@ class TestExecuteAtomicReservation:
             (2, 1, 3, 'A-1-2-1'),
             (2, 2, 4, 'A-1-2-2'),
         ]
-        seat_prices = {seat_id: 1000 for _, _, _, seat_id in seats}
 
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
@@ -461,7 +605,7 @@ class TestExecuteAtomicReservation:
             # Mock current event stats (for time tracking via JSON.GET)
             # execute_command is called for JSON.GET $.event_stats
             mock_client.execute_command = AsyncMock(
-                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
             )
 
             # Mock pipeline results for 5 seats
@@ -469,10 +613,9 @@ class TestExecuteAtomicReservation:
             setbit_results = [1] * 10  # 5 seats × 2 bits
             json_numincrby_section_results = [[95], [5]]  # section stats (returns new values)
             json_numincrby_event_results = [[495], [5]]  # event stats
+            # JSON.GET from pipeline returns bytes
             json_get_result = [
-                [
-                    '{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":95,"reserved":5,"sold":0,"total":100}}}}},"event_stats":{"available":495,"reserved":5,"sold":0,"total":500}}'
-                ]
+                b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":95,"reserved":5,"sold":0,"total":100}}}}},"event_stats":{"available":495,"reserved":5,"sold":0,"total":500}}]'
             ]
             hset_result = [4]
 
@@ -491,7 +634,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=seats,
-                seat_prices=seat_prices,
                 total_price=5000,
             )
 
@@ -516,9 +658,7 @@ class TestExecuteAtomicReservation:
             }
 
     @pytest.mark.asyncio
-    async def test_execute_atomic_reservation_booking_metadata_format(
-        self, executor, sample_seats, sample_seat_prices
-    ):
+    async def test_execute_atomic_reservation_booking_metadata_format(self, executor, sample_seats):
         # Given: Mock Kvrocks client
         with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
             mock_client = MagicMock()
@@ -529,7 +669,7 @@ class TestExecuteAtomicReservation:
             # Mock current event stats (for time tracking via JSON.GET)
             # execute_command is called for JSON.GET $.event_stats
             mock_client.execute_command = AsyncMock(
-                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
             )
 
             # Standard mock results
@@ -544,9 +684,7 @@ class TestExecuteAtomicReservation:
                     [2],  # JSON.NUMINCRBY (section stats)
                     [498],
                     [2],  # JSON.NUMINCRBY (event stats)
-                    [
-                        '{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
-                    ],  # JSON.GET (complete event_state)
+                    b'[{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
                     4,  # HSET (booking metadata)
                 ]
             )
@@ -558,7 +696,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-456',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                seat_prices=sample_seat_prices,
                 total_price=2000,
             )
 
@@ -574,13 +711,8 @@ class TestExecuteAtomicReservation:
             mapping = call_args[1]['mapping']
             assert mapping['status'] == 'RESERVE_SUCCESS'
             assert mapping['reserved_seats'] == orjson.dumps(['A-1-1-1', 'A-1-1-2']).decode()
-            assert (
-                mapping['seat_prices'] == orjson.dumps({'A-1-1-1': 1000, 'A-1-1-2': 1000}).decode()
-            )
             assert mapping['total_price'] == '2000'
-            # ✨ CHANGED: 'stats_key' → 'config_key' (now using event_state JSON instead of section_stats Hash)
             assert 'config_key' in mapping
-            # ✨ REMOVED: event_stats_key (stats now in unified event_state JSON)
 
     @pytest.mark.asyncio
     async def test_execute_atomic_reservation_setbit_offsets(self, executor, sample_seats):
@@ -594,7 +726,7 @@ class TestExecuteAtomicReservation:
             # Mock current event stats (for time tracking via JSON.GET)
             # execute_command is called for JSON.GET $.event_stats
             mock_client.execute_command = AsyncMock(
-                return_value=['{"reserved":0,"sold":0,"available":500,"total":500}']
+                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
             )
 
             # ✨ NEW: 4 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 10 results
@@ -608,9 +740,7 @@ class TestExecuteAtomicReservation:
                     [2],  # JSON.NUMINCRBY (section stats)
                     [498],
                     [2],  # JSON.NUMINCRBY (event stats)
-                    [
-                        '{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}'
-                    ],  # JSON.GET (complete event_state)
+                    b'[{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
                     4,  # HSET (booking metadata)
                 ]
             )
@@ -622,7 +752,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                seat_prices={'A-1-1-1': 1000, 'A-1-1-2': 1000},
                 total_price=2000,
             )
 

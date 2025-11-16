@@ -99,6 +99,8 @@ class MockBookingCommandRepo(IBookingCommandRepo):
         )
 
         # Create mock tickets (using TicketRef as per repository)
+        # Price is calculated as total_price / number of seats
+        price_per_ticket = total_price // len(reserved_seats)
         tickets = [
             TicketRef(
                 id=idx + 1,
@@ -107,6 +109,7 @@ class MockBookingCommandRepo(IBookingCommandRepo):
                 subsection=subsection,
                 row=int(seat.split('-')[0]),
                 seat=int(seat.split('-')[1]),
+                price=price_per_ticket,
                 status=TicketStatus.RESERVED,
                 buyer_id=buyer_id,
                 created_at=datetime.now(timezone.utc),
@@ -183,7 +186,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats=subsection_stats,
         )
@@ -213,7 +215,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             event_stats=event_stats,
         )
@@ -239,7 +240,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats=subsection_stats,
             event_stats=event_stats,
@@ -268,7 +268,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
         )
 
@@ -291,7 +290,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats=None,
             event_stats=None,
@@ -316,7 +314,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats={'section_id': 'A-1', 'available': 8},
         )
@@ -353,7 +350,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats={'section_id': 'A-1', 'available': 8},
         )
@@ -377,7 +373,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1000},
             total_price=2000,
             subsection_stats=subsection_stats,
             event_stats=event_stats,
@@ -404,7 +399,6 @@ class TestUpdateBookingToPendingPaymentWithStats:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-3', 'A-1-1-4'],
-            seat_prices={'A-1-1-3': 1000, 'A-1-1-4': 1500},
             total_price=2500,
         )
 

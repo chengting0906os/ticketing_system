@@ -1,8 +1,8 @@
 """
 Seat State Command Handler Interface - Shared Kernel
 
-座位狀態命令處理器接口 - CQRS Command Side
-供 Ticketing 和 Seat Reservation 兩個 bounded context 使用
+CQRS Command Side
+Used by both Ticketing and Seat Reservation bounded contexts
 """
 
 from abc import ABC, abstractmethod
@@ -11,9 +11,9 @@ from typing import Dict, List, Optional
 
 class ISeatStateCommandHandler(ABC):
     """
-    座位狀態命令處理器接口 (CQRS Command)
+    Seat State Command Handler Interface (CQRS Command)
 
-    職責：只負責寫入操作，修改狀態
+    Responsibility: Write operations only, modifies state
     """
 
     @abstractmethod
@@ -24,28 +24,28 @@ class ISeatStateCommandHandler(ABC):
         booking_id: str,
         buyer_id: int,
         mode: str,  # 'manual' or 'best_available'
+        section: str,  # Required, not Optional
+        subsection: int,  # Required, not Optional
+        quantity: int,  # Required, not Optional
         seat_ids: Optional[List[str]] = None,  # for manual mode
-        section: Optional[str] = None,  # for best_available mode
-        subsection: Optional[int] = None,  # for best_available mode
-        quantity: Optional[int] = None,  # for best_available mode
     ) -> Dict:
         """
-        原子性預訂座位 - 統一接口，由 Lua 腳本根據 mode 分流
+        Atomically reserve seats - Unified interface, Lua script routes based on mode
 
         Args:
-            event_id: 活動 ID
-            booking_id: 訂單 ID
-            buyer_id: 買家 ID
-            mode: 預訂模式 ('manual' 或 'best_available')
-            seat_ids: 手動模式的座位 ID 列表
-            section: 自動模式的區域 (e.g., 'A')
-            subsection: 自動模式的子區域編號 (e.g., 1)
-            quantity: 自動模式需要的連續座位數量
+            event_id: Event ID
+            booking_id: Booking ID
+            buyer_id: Buyer ID
+            mode: Reservation mode ('manual' or 'best_available')
+            section: Section (e.g., 'A') - Required
+            subsection: Subsection number (e.g., 1) - Required
+            quantity: Number of seats - Required
+            seat_ids: List of seat IDs for manual mode (Optional, only for manual mode)
 
         Returns:
             Dict with keys:
                 - success: bool
-                - reserved_seats: List[str] (座位 ID 列表)
+                - reserved_seats: List[str] (List of seat IDs)
                 - error_message: Optional[str]
         """
         pass
@@ -53,11 +53,11 @@ class ISeatStateCommandHandler(ABC):
     @abstractmethod
     async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """
-        釋放座位 (RESERVED -> AVAILABLE)
+        Release seats (RESERVED -> AVAILABLE)
 
         Args:
-            seat_ids: 座位 ID 列表
-            event_id: 活動 ID
+            seat_ids: List of seat IDs
+            event_id: Event ID
 
         Returns:
             Dict mapping seat_id to success status
@@ -65,19 +65,16 @@ class ISeatStateCommandHandler(ABC):
         pass
 
     @abstractmethod
-    async def finalize_payment(
-        self, seat_id: str, event_id: int, timestamp: Optional[str] = None
-    ) -> bool:
+    async def finalize_payment(self, seat_id: str, event_id: int) -> bool:
         """
-        完成支付，將座位從 RESERVED 轉為 SOLD
+        Complete payment, change seat from RESERVED to SOLD
 
         Args:
-            seat_id: 座位 ID
-            event_id: 活動 ID
-            timestamp: 可選的時間戳
+            seat_id: Seat ID
+            event_id: Event ID
 
         Returns:
-            是否成功
+            Success status
         """
         pass
 
@@ -86,15 +83,15 @@ class ISeatStateCommandHandler(ABC):
         self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
     ) -> bool:
         """
-        初始化座位狀態
+        Initialize seat state
 
         Args:
-            seat_id: 座位 ID
-            event_id: 活動 ID
-            price: 座位價格
-            timestamp: 可選的時間戳
+            seat_id: Seat ID
+            event_id: Event ID
+            price: Seat price
+            timestamp: Optional timestamp
 
         Returns:
-            是否成功
+            Success status
         """
         pass

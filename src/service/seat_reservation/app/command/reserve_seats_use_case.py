@@ -9,6 +9,9 @@ from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
+from src.service.seat_reservation.app.interface.i_event_state_broadcaster import (
+    IEventStateBroadcaster,
+)
 from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
@@ -23,10 +26,10 @@ class ReservationRequest:
     buyer_id: int
     event_id: int
     selection_mode: str  # 'manual' or 'best_available'
-    quantity: Optional[int] = None
+    section_filter: str  # Required, not Optional
+    subsection_filter: int  # Required, not Optional
+    quantity: int  # Required, not Optional
     seat_positions: Optional[List[str]] = None  # Manually selected seat IDs
-    section_filter: Optional[str] = None
-    subsection_filter: Optional[int] = None
 
 
 @dataclass
@@ -61,16 +64,19 @@ class ReserveSeatsUseCase:
 
     Dependencies:
     - seat_state_handler: For Kvrocks seat reservation
-    - mq_publisher: For event publishing
+    - mq_publisher: For Kafka event publishing
+    - event_state_broadcaster: For Redis Pub/Sub cache updates
     """
 
     def __init__(
         self,
         seat_state_handler: ISeatStateCommandHandler,
         mq_publisher: ISeatReservationEventPublisher,
+        event_state_broadcaster: IEventStateBroadcaster,
     ):
         self.seat_state_handler = seat_state_handler
         self.mq_publisher = mq_publisher
+        self.event_state_broadcaster = event_state_broadcaster
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
@@ -122,12 +128,10 @@ class ReserveSeatsUseCase:
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
                     mode=request.selection_mode,
-                    seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
                     section=request.section_filter,
                     subsection=request.subsection_filter,
-                    quantity=request.quantity
-                    if request.selection_mode == 'best_available'
-                    else None,
+                    quantity=request.quantity,
+                    seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
                 )
 
                 # Step 3: Handle result
@@ -145,9 +149,16 @@ class ReserveSeatsUseCase:
                         f'{" 🎊 EVENT SOLD OUT!" if event_stats.get("available", 1) == 0 else ""}'
                     )
 
-                    # Step 4: Publish event to Ticketing Service (Kafka producer is buffered)
+                    # Step 4a: Broadcast event_state update via Redis Pub/Sub (real-time cache)
+                    await self.event_state_broadcaster.broadcast_event_state(
+                        event_id=request.event_id, event_state=event_state
+                    )
+                    Logger.base.debug(
+                        f'📤 [RESERVE] Broadcasted event_state to Redis Pub/Sub for event {request.event_id}'
+                    )
+
+                    # Step 4b: Publish event to Ticketing Service (Kafka - business logic)
                     # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
-                    # ✨ NEW: Passing entire event_state for full cache update
                     await self.mq_publisher.publish_seats_reserved(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
@@ -159,10 +170,9 @@ class ReserveSeatsUseCase:
                         total_price=total_price,
                         subsection_stats=subsection_stats,
                         event_stats=event_stats,
-                        event_state=event_state,  # ✨ NEW: Full config
                     )
                     Logger.base.info(
-                        f'📤 [RESERVE] Published seats_reserved event for booking {request.booking_id}'
+                        f'📤 [RESERVE] Published seats_reserved event to Kafka for booking {request.booking_id}'
                     )
 
                     return ReservationResult(
@@ -257,7 +267,7 @@ class ReserveSeatsUseCase:
                 raise DomainError('Best available selection requires valid quantity', 400)
             if request.quantity > 4:
                 raise DomainError('Cannot reserve more than 4 seats at once', 400)
-            if not request.section_filter or request.subsection_filter is None:
+            if not request.section_filter or request.subsection_filter < 1:
                 raise DomainError('Best available mode requires section and subsection filter', 400)
 
         else:

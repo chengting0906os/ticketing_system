@@ -100,7 +100,6 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-1', 'A-1-1-2'],  # section-subsection-row-seat format
-            seat_prices={'A-1-1-1': 1500, 'A-1-1-2': 1500},
             total_price=3000,
         )
 
@@ -113,7 +112,6 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['1-1', '1-2'],  # Converted to row-seat format
-            seat_prices={'1-1': 1500, '1-2': 1500},  # Price keys also converted
             total_price=3000,
         )
 
@@ -164,7 +162,6 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
             subsection=1,
             seat_selection_mode='manual',
             reserved_seats=['A-1-1-1', 'A-1-1-2'],
-            seat_prices={'A-1-1-1': 1500, 'A-1-1-2': 1500},
             total_price=3000,
         )
 

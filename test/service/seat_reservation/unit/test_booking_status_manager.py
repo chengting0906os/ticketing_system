@@ -110,7 +110,6 @@ class TestBookingStatusManager:
         mock_handler.metadata[str(booking_id)] = {
             'status': 'RESERVE_SUCCESS',
             'reserved_seats': '["A-1-1-1", "A-1-1-2"]',
-            'seat_prices': '{"A-1-1-1": 1000, "A-1-1-2": 1000}',
             'total_price': 2000,
             'subsection_stats': '{"section_id": "A-1", "available": 8}',
             'event_stats': '{"event_id": 1, "available": 98}',
@@ -124,7 +123,6 @@ class TestBookingStatusManager:
         assert result is not None
         assert result['success'] is True
         assert result['reserved_seats'] == ['A-1-1-1', 'A-1-1-2']
-        assert result['seat_prices'] == {'A-1-1-1': 1000, 'A-1-1-2': 1000}
         assert result['total_price'] == 2000
         assert result['subsection_stats'] == {'section_id': 'A-1', 'available': 8}
         assert result['event_stats'] == {'event_id': 1, 'available': 98}
@@ -203,7 +201,6 @@ class TestBookingStatusManager:
         assert result is not None
         assert result['success'] is True
         assert result['reserved_seats'] == []  # Default empty array
-        assert result['seat_prices'] == {}  # Default empty dict
         assert result['total_price'] == 0  # Default 0
 
     @pytest.mark.unit
@@ -215,7 +212,6 @@ class TestBookingStatusManager:
         mock_handler.metadata[str(booking_id)] = {
             'status': 'RESERVE_SUCCESS',
             'reserved_seats': '["A-1-1-1"]',
-            'seat_prices': '{"A-1-1-1": 1000}',
             'total_price': 1000,
             'subsection_stats': '{}',
             'event_stats': '{}',

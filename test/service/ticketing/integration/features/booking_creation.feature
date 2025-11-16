@@ -21,8 +21,8 @@ Feature: Booking with Seat Selection
   @smoke
   Scenario: Manual seat selection - happy path
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | seat_positions  |
-      | manual              | A-1-1-1,A-1-1-2 |
+      | seat_selection_mode | seat_positions |
+      | manual              | 1-1,1-2        |
     Then the response status code should be:
       | 201 |
     And the booking status should be:
@@ -48,8 +48,8 @@ Feature: Booking with Seat Selection
 
   Scenario: Cannot select more than 4 tickets
     When buyer creates booking with manual seat selection:
-      | seat_selection_mode | seat_positions                          |
-      | manual              | A-1-1-1,A-1-1-2,A-1-1-3,A-1-1-4,A-1-2-1 |
+      | seat_selection_mode | seat_positions        |
+      | manual              | 1-1,1-2,1-3,1-4,2-1 |
     Then the response status code should be:
       | 400 |
     And the error message should contain:
@@ -58,7 +58,7 @@ Feature: Booking with Seat Selection
   Scenario: Manual seat selection - single seat
     When buyer creates booking with manual seat selection:
       | seat_selection_mode | seat_positions |
-      | manual              | A-1-2-3        |
+      | manual              | 2-3            |
     Then the response status code should be:
       | 201 |
     And the booking status should be:

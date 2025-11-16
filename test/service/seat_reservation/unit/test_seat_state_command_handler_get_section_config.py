@@ -7,7 +7,7 @@ Test Focus:
 3. Cache hit returns cached value (no Kvrocks call)
 4. Cache miss fetches from Kvrocks and caches result
 5. Multiple calls with same key use cache
-6. JSON.GET with fallback to regular GET
+6. JSON.GET returns JSON array string
 """
 
 import orjson
@@ -35,27 +35,26 @@ class TestGetSectionConfig:
         """Mock Kvrocks client"""
         mock_client = MagicMock()
         mock_client.execute_command = AsyncMock()
-        mock_client.get = AsyncMock()
         return mock_client
 
     @pytest.fixture
     def sample_event_state(self):
         """Sample event config JSON structure (hierarchical)"""
         return {
+            'event_stats': {'available': 500, 'reserved': 0, 'sold': 0, 'total': 500},
             'sections': {
                 'A': {'price': 1000, 'subsections': {'1': {'rows': 10, 'seats_per_row': 15}}},
                 'B': {'price': 2000, 'subsections': {'2': {'rows': 20, 'seats_per_row': 25}}},
-            }
+            },
         }
 
     @pytest.mark.asyncio
-    async def test_get_section_config_success_json_get(
-        self, handler, mock_kvrocks_client, sample_event_state
-    ):
+    async def test_get_section_config_success(self, handler, mock_kvrocks_client, sample_event_state):
         """Test successful retrieval using JSON.GET command"""
-        # Given: Kvrocks supports JSON.GET and returns valid config
-        config_json = orjson.dumps(sample_event_state).decode()
-        mock_kvrocks_client.execute_command.return_value = [config_json]  # JSON.GET returns array
+        # Given: Kvrocks returns JSON array string
+        # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
 
         with patch(
             'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
@@ -67,81 +66,20 @@ class TestGetSectionConfig:
 
             # Then: Returns parsed config with price
             assert result == {'rows': 10, 'seats_per_row': 15, 'price': 1000}
-            mock_kvrocks_client.execute_command.assert_called_once()
-            mock_kvrocks_client.get.assert_not_called()  # Didn't fall back
+            # Note: In tests, _make_key may add a prefix (e.g., 'test_gw3_')
+            # We verify the call includes 'event_state:1' regardless of prefix
+            call_args = mock_kvrocks_client.execute_command.call_args[0]
+            assert call_args[0] == 'JSON.GET'
+            assert 'event_state:1' in call_args[1]
+            assert call_args[2] == '$'
 
     @pytest.mark.asyncio
-    async def test_get_section_config_success_fallback_get(
-        self, handler, mock_kvrocks_client, sample_event_state
+    async def test_get_section_config_empty_result_raises_error(
+        self, handler, mock_kvrocks_client
     ):
-        """Test successful retrieval using fallback GET when JSON.GET fails"""
-        # Given: JSON.GET fails, fallback to regular GET
-        config_json = orjson.dumps(sample_event_state).decode()
-        mock_kvrocks_client.execute_command.side_effect = Exception('JSON commands not supported')
-        mock_kvrocks_client.get.return_value = config_json
-
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
-        ) as mock_kvrocks:
-            mock_kvrocks.get_client.return_value = mock_kvrocks_client
-
-            # When: Get section config
-            result = await handler._get_section_config(event_id=1, section_id='A-1')
-
-            # Then: Returns parsed config using fallback
-            assert result == {'rows': 10, 'seats_per_row': 15, 'price': 1000}
-            mock_kvrocks_client.execute_command.assert_called_once()
-            mock_kvrocks_client.get.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_section_config_fallback_get_bytes(
-        self, handler, mock_kvrocks_client, sample_event_state
-    ):
-        """Test fallback GET with bytes response"""
-        # Given: GET returns bytes instead of string
-        config_json = orjson.dumps(sample_event_state)
-        mock_kvrocks_client.execute_command.side_effect = Exception('JSON not supported')
-        mock_kvrocks_client.get.return_value = config_json  # bytes
-
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
-        ) as mock_kvrocks:
-            mock_kvrocks.get_client.return_value = mock_kvrocks_client
-
-            # When: Get section config
-            result = await handler._get_section_config(event_id=1, section_id='A-1')
-
-            # Then: Correctly decodes bytes and returns config
-            assert result == {'rows': 10, 'seats_per_row': 15, 'price': 1000}
-
-    @pytest.mark.asyncio
-    async def test_get_section_config_not_found(self, handler, mock_kvrocks_client):
-        """Test ValueError when section not found in JSON"""
-        # Given: Event config exists but section not in it (hierarchical structure)
-        config_json = orjson.dumps(
-            {
-                'sections': {
-                    'B': {'price': 500, 'subsections': {'1': {'rows': 5, 'seats_per_row': 10}}}
-                }
-            }
-        ).decode()
-        mock_kvrocks_client.execute_command.return_value = [config_json]
-
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
-        ) as mock_kvrocks:
-            mock_kvrocks.get_client.return_value = mock_kvrocks_client
-
-            # When/Then: Raises ValueError for missing section
-            with pytest.raises(ValueError, match='Section config not found: A-1'):
-                await handler._get_section_config(event_id=1, section_id='A-1')
-
-    @pytest.mark.asyncio
-    async def test_get_section_config_empty_json(self, handler, mock_kvrocks_client):
-        """Test ValueError when event config is empty"""
-        # Given: Empty event config
-        mock_kvrocks_client.execute_command.return_value = [None]
-        mock_kvrocks_client.get.return_value = None
+        """Test ValueError when JSON.GET returns None or empty"""
+        # Given: JSON.GET returns None
+        mock_kvrocks_client.execute_command.return_value = None
 
         with patch(
             'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
@@ -149,8 +87,62 @@ class TestGetSectionConfig:
             mock_kvrocks.get_client.return_value = mock_kvrocks_client
 
             # When/Then: Raises ValueError
-            with pytest.raises(ValueError, match='Section config not found'):
+            with pytest.raises(ValueError, match='No event config found for event_id=1'):
                 await handler._get_section_config(event_id=1, section_id='A-1')
+
+    @pytest.mark.asyncio
+    async def test_get_section_config_empty_array_raises_index_error(
+        self, handler, mock_kvrocks_client
+    ):
+        """Test empty array raises IndexError when accessing first element"""
+        # Given: JSON.GET returns empty array
+        json_array_string = orjson.dumps([]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
+
+        with patch(
+            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
+        ) as mock_kvrocks:
+            mock_kvrocks.get_client.return_value = mock_kvrocks_client
+
+            # When/Then: Raises IndexError when accessing event_state_list[0]
+            with pytest.raises(IndexError):
+                await handler._get_section_config(event_id=1, section_id='A-1')
+
+    @pytest.mark.asyncio
+    async def test_get_section_config_section_not_found(
+        self, handler, mock_kvrocks_client, sample_event_state
+    ):
+        """Test KeyError when section not found in JSON"""
+        # Given: Event config exists but section 'Z' not in it
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
+
+        with patch(
+            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
+        ) as mock_kvrocks:
+            mock_kvrocks.get_client.return_value = mock_kvrocks_client
+
+            # When/Then: Raises KeyError when accessing subsection_config['rows']
+            with pytest.raises(KeyError):
+                await handler._get_section_config(event_id=1, section_id='Z-1')
+
+    @pytest.mark.asyncio
+    async def test_get_section_config_subsection_not_found(
+        self, handler, mock_kvrocks_client, sample_event_state
+    ):
+        """Test KeyError when subsection not found in JSON"""
+        # Given: Event config exists but subsection '99' not in section A
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
+
+        with patch(
+            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
+        ) as mock_kvrocks:
+            mock_kvrocks.get_client.return_value = mock_kvrocks_client
+
+            # When/Then: Raises KeyError when accessing subsection_config['rows']
+            with pytest.raises(KeyError):
+                await handler._get_section_config(event_id=1, section_id='A-99')
 
     @pytest.mark.asyncio
     async def test_get_section_config_cache_hit(self, handler, mock_kvrocks_client):
@@ -169,7 +161,6 @@ class TestGetSectionConfig:
             # Then: Returns cached value, no Kvrocks call
             assert result == {'rows': 10, 'seats_per_row': 15, 'price': 1000}
             mock_kvrocks_client.execute_command.assert_not_called()
-            mock_kvrocks_client.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_section_config_cache_miss_then_hit(
@@ -177,8 +168,8 @@ class TestGetSectionConfig:
     ):
         """Test cache miss fetches from Kvrocks, subsequent call hits cache"""
         # Given: Kvrocks returns valid config
-        config_json = orjson.dumps(sample_event_state).decode()
-        mock_kvrocks_client.execute_command.return_value = [config_json]
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
 
         with patch(
             'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
@@ -205,8 +196,8 @@ class TestGetSectionConfig:
     ):
         """Test different sections are cached separately"""
         # Given: Event config with multiple sections
-        config_json = orjson.dumps(sample_event_state).decode()
-        mock_kvrocks_client.execute_command.return_value = [config_json]
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
 
         with patch(
             'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
@@ -220,7 +211,7 @@ class TestGetSectionConfig:
             # Then: Each section cached separately with different values
             assert result1 == {'rows': 10, 'seats_per_row': 15, 'price': 1000}
             assert result2 == {'rows': 20, 'seats_per_row': 25, 'price': 2000}
-            # Both sections share same event config, so only 1 fetch
+            # Both sections fetch event config separately
             assert mock_kvrocks_client.execute_command.call_count == 2
 
             # When: Get same sections again (cache hit)
@@ -237,21 +228,23 @@ class TestGetSectionConfig:
         self, handler, mock_kvrocks_client
     ):
         """Test same section in different events are cached separately"""
-        # Given: Different event configs for different events (hierarchical structure)
-        event1_config = {
+        # Given: Different event configs for different events
+        event1_state = {
+            'event_stats': {'available': 150, 'reserved': 0, 'sold': 0, 'total': 150},
             'sections': {
                 'A': {'price': 1000, 'subsections': {'1': {'rows': 10, 'seats_per_row': 15}}}
-            }
+            },
         }
-        event2_config = {
+        event2_state = {
+            'event_stats': {'available': 500, 'reserved': 0, 'sold': 0, 'total': 500},
             'sections': {
                 'A': {'price': 2000, 'subsections': {'1': {'rows': 20, 'seats_per_row': 25}}}
-            }
+            },
         }
 
         mock_kvrocks_client.execute_command.side_effect = [
-            [orjson.dumps(event1_config).decode()],  # Event 1
-            [orjson.dumps(event2_config).decode()],  # Event 2
+            orjson.dumps([event1_state]).decode(),  # Event 1
+            orjson.dumps([event2_state]).decode(),  # Event 2
         ]
 
         with patch(
@@ -271,29 +264,13 @@ class TestGetSectionConfig:
             assert handler._config_cache[(1, 'A-1')] != handler._config_cache[(2, 'A-1')]
 
     @pytest.mark.asyncio
-    async def test_get_section_config_kvrocks_error_propagates(self, handler, mock_kvrocks_client):
-        """Test Kvrocks errors result in section not found"""
-        # Given: Both JSON.GET and fallback GET fail
-        mock_kvrocks_client.execute_command.side_effect = Exception('JSON failed')
-        mock_kvrocks_client.get.side_effect = Exception('Kvrocks connection failed')
-
-        with patch(
-            'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'
-        ) as mock_kvrocks:
-            mock_kvrocks.get_client.return_value = mock_kvrocks_client
-
-            # When/Then: Gracefully handles error and returns section not found
-            with pytest.raises(Exception, match='Section config not found: A-1'):
-                await handler._get_section_config(event_id=1, section_id='A-1')
-
-    @pytest.mark.asyncio
     async def test_get_section_config_parses_values(
         self, handler, mock_kvrocks_client, sample_event_state
     ):
         """Test config values are parsed as integers"""
         # Given: JSON with numeric values
-        config_json = orjson.dumps(sample_event_state).decode()
-        mock_kvrocks_client.execute_command.return_value = [config_json]
+        json_array_string = orjson.dumps([sample_event_state]).decode()
+        mock_kvrocks_client.execute_command.return_value = json_array_string
 
         with patch(
             'src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl.kvrocks_client'

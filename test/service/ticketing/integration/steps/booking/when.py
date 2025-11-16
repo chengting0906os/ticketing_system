@@ -185,27 +185,12 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
     seat_data = extract_table_data(step)
     selected_seat_locations = seat_data['seat_positions'].split(',')
 
-    # Convert seat location strings to the new dict format
-    seat_positions = []
+    # seat_positions are already in row-seat format (e.g., "1-1", "1-2")
+    seat_positions = [seat.strip() for seat in selected_seat_locations]
 
-    for seat_location in selected_seat_locations:
-        seat_location = seat_location.strip()
-        # Parse seat location: section-subsection-row-seat
-        parts = seat_location.split('-')
-        if len(parts) == 4:
-            section, subsection, row, seat = parts
-            # Directly convert to row-seat format
-            seat_positions.append(f'{row}-{seat}')
-
-    # Create booking with manual seat selection
-    if seat_positions:
-        first_seat = selected_seat_locations[0].strip()
-        parts = first_seat.split('-')
-        section = parts[0]
-        subsection = int(parts[1])
-    else:
-        section = 'A'
-        subsection = 1
+    # Section and subsection match the event setup (from Background)
+    section = 'A'
+    subsection = 1
 
     booking_request = {
         'event_id': booking_state['event_id'],

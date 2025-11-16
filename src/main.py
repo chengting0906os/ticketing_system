@@ -1,19 +1,9 @@
-"""
-Unified Ticketing System - Main Application
-Combines Ticketing Service and Seat Reservation Service into a single process.
-
-This unified architecture provides:
-- Single deployment unit for easier operations
-- Shared resource pools (database, Kvrocks) for efficiency
-- Unified observability and tracing
-- Lower operational overhead
-"""
-
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 from typing import TypeVar
 
+import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -55,6 +45,9 @@ from src.service.ticketing.app.query import (
     get_event_use_case,
     list_bookings_use_case,
     list_events_use_case,
+)
+from src.service.ticketing.driven_adapter.state.real_time_event_state_subscriber import (
+    RealTimeEventStateSubscriber,
 )
 from src.service.ticketing.driving_adapter.http_controller import user_controller
 from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
@@ -112,9 +105,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize database
     engine = get_engine()
-    if engine:
-        if tracing:
-            tracing.instrument_sqlalchemy(engine=engine)
+    if engine and tracing:
+        tracing.instrument_sqlalchemy(engine=engine)
         Logger.base.info('🗄️  [Unified Service] Database engine ready + instrumented')
 
     # Auto-instrument Redis/Kvrocks
@@ -144,32 +136,26 @@ async def lifespan(app: FastAPI):
 
     Logger.base.info('✅ [Unified Service] All services initialized')
 
-    # ========== Standalone Consumer Architecture ==========
-    # Consumers run as separate services via docker-compose.consumers.yml
-    #
-    # Benefits:
-    # - Independent scaling (scale consumers without affecting API)
-    # - Clean separation of concerns
-    # - No transactional ID conflicts
-    # - Easier to debug and monitor
-    #
-    # Usage:
-    #   docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
-    # ======================================================
+    # ========== Real-time Cache Update via Redis Pub/Sub ==========
+    # Redis Pub/Sub subscriber runs as background task for cache updates
+    # ================================================================
 
-    Logger.base.info(
-        '✅ [API Service] Ready to serve requests\n'
-        '   💡 Run consumers independently:\n'
-        '      docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d'
-    )
+    # Create task group for background tasks
+    async with anyio.create_task_group() as tg:
+        seat_availability_cache = container.seat_availability_query_handler()
+        redis_subscriber = RealTimeEventStateSubscriber(
+            event_id=event_id, cache_handler=seat_availability_cache
+        )
+        await redis_subscriber.start(task_group=tg)
+        Logger.base.info('✅ [Ticketing Service] Ready to serve requests with real-time cache')
 
-    # Yield for API service
-    yield
+        yield
 
-    # ============================================================================
-    # SHUTDOWN
-    # ============================================================================
-    Logger.base.info('🛑 [Unified Service] Shutting down...')
+        # ============================================================================
+        # SHUTDOWN
+        # ============================================================================
+        Logger.base.info('🛑 [Unified Service] Shutting down...')
+        tg.cancel_scope.cancel()
 
     # Flush all pending Kafka messages before shutdown
     try:
@@ -245,10 +231,6 @@ async def root():
     return {
         'service': 'Unified Ticketing System',
         'docs': '/docs',
-        'redoc': '/redoc',
-        'health': '/health',
-        'metrics': '/metrics',
-        'static': '/static/index.html',
     }
 
 

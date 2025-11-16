@@ -168,11 +168,11 @@ class TestCheckSubsectionAvailabilityIntegration:
 
     @pytest.mark.asyncio
     async def test_raises_not_found_error_when_section_not_exists(self, handler):
-        """Test: should raise NotFoundError when section does not exist"""
-        # Given: no data for this section in Kvrocks (conftest clears it)
+        """Test: should raise NotFoundError when event does not exist"""
+        # Given: no data for this event in Kvrocks (conftest clears it)
 
-        # When/Then
-        with pytest.raises(NotFoundError, match='Section Z-99 not found'):
+        # When/Then: Event check happens first, so error is 'Event 999 not found'
+        with pytest.raises(NotFoundError, match='Event 999 not found'):
             await handler.check_subsection_availability(
                 event_id=999, section='Z', subsection=99, required_quantity=1
             )

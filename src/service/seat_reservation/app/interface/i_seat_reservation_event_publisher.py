@@ -25,9 +25,8 @@ class ISeatReservationEventPublisher(ABC):
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
-        event_state: dict,  # ✨ NEW: Entire event config for full cache update
     ) -> None:
-        """Publish seat reservation success event with full event config"""
+        """Publish seat reservation success event (cache updates via Redis Pub/Sub)"""
         pass
 
     @abstractmethod

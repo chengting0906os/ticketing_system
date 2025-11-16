@@ -33,21 +33,17 @@ class SeatsReservedEvent:
     seat_selection_mode: str
     reserved_seats: List[str]
     total_price: int
-    # Subsection stats from Kvrocks (for cache update in Ticketing Service)
+    # Subsection stats from Kvrocks (for SSE broadcasting to frontend)
     # Check subsection_stats['available'] == 0 to know if subsection is sold out
     subsection_stats: dict[str, int] = attrs.Factory(
         dict
     )  # {'available': 95, 'reserved': 5, 'sold': 0, 'total': 100}
-    # Event-level stats from Kvrocks (for tracking total event sellout)
+    # Event-level stats from Kvrocks (for SSE broadcasting to frontend)
     # Check event_stats['available'] == 0 to know if entire event is sold out
     event_stats: dict[str, int] = attrs.Factory(
         dict
     )  # {'available': 49950, 'reserved': 50, 'sold': 0, 'total': 50000}
-    # ✨ NEW: Entire event config with ALL sections (eliminates lazy loading)
-    # Ticketing Service will update cache for ALL sections from this single event
-    event_state: dict = attrs.Factory(
-        dict
-    )  # {'sections': {'A-1': {...}, 'A-2': {...}, 'B-1': {...}}}
+    # Note: event_state removed - cache updates now via Redis Pub/Sub, not Kafka
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
@@ -93,9 +89,8 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
-        event_state: dict,  # ✨ NEW
     ) -> None:
-        """Publish seat reservation success event with full event config"""
+        """Publish seat reservation success event (cache updates via Redis Pub/Sub separately)"""
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
@@ -107,7 +102,6 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             total_price=total_price,
             subsection_stats=subsection_stats,
             event_stats=event_stats,
-            event_state=event_state,  # ✨ NEW
         )
 
         await publish_domain_event(

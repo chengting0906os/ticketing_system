@@ -3,6 +3,10 @@
 # =============================================================================
 # This file defines standalone Kafka consumers that run independently from the API service
 #
+# Services:
+# - reservation-service: Processes seat reservations + publishes Redis Pub/Sub
+# - booking-service: Processes booking creation (subscribes to SeatsReservedEvent)
+#
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
 #
@@ -14,93 +18,6 @@
 # =============================================================================
 
 services:
-  # =============================================================================
-  # Booking Service (Standalone Consumer)
-  # =============================================================================
-  # Processes booking events from Kafka (booking-confirmed, booking-failed, etc.)
-  # Updates Kvrocks state and publishes downstream events
-  # =============================================================================
-  booking-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: development
-      args:
-        SERVICE_TYPE: consumer
-    image: booking-service:latest
-    command:
-      - /bin/sh
-      - -c
-      - |
-        export KAFKA_CONSUMER_INSTANCE_ID="booking-service-consumer-$$(hostname)"
-        export KAFKA_PRODUCER_INSTANCE_ID="booking-service-producer-$$(hostname)"
-        /app/.venv/bin/python src/service/ticketing/driving_adapter/mq_consumer/start_booking_consumer.py
-    environment:
-      # Python
-      PYTHONPATH: /app
-
-      # Application (can override .env values)
-      EVENT_ID: "${EVENT_ID:-1}"
-      DEBUG: "${DEBUG:-False}"
-      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
-      TZ: "Asia/Taipei"
-
-      # Database (required by Settings model)
-      POSTGRES_SERVER: postgres
-      POSTGRES_USER: py_arch_lab
-      POSTGRES_PASSWORD: py_arch_lab
-      POSTGRES_DB: ticketing_system_db
-      POSTGRES_PORT: "5432"
-
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
-      KVROCKS_PORT: "6666"
-
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
-      # Note: KAFKA_*_INSTANCE_ID is set dynamically in the command using $(hostname)
-
-      # OpenTelemetry
-      OTEL_SERVICE_NAME: booking-service
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      OTEL_TRACES_EXPORTER: otlp
-      OTEL_METRICS_EXPORTER: none
-      OTEL_LOGS_EXPORTER: none
-      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
-    env_file:
-      - .env
-    volumes:
-      - ./src:/app/src:ro
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka1:
-        condition: service_started
-      kafka2:
-        condition: service_started
-      kafka3:
-        condition: service_started
-      kvrocks:
-        condition: service_started
-      jaeger:
-        condition: service_healthy
-    networks:
-      - ticketing-network
-    restart: unless-stopped
-    deploy:
-      replicas: 4  # Run 4 booking service instances
-      resources:
-        limits:
-          cpus: '0.5'  # 0.5 core per instance (2 cores total for 4 instances)
-          memory: 1024M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
-    labels:
-      - "service.type=consumer"
-      - "service.name=booking-service"
-
   # =============================================================================
   # Seat Reservation Service (Standalone Consumer)
   # =============================================================================
@@ -180,3 +97,91 @@ services:
     labels:
       - "service.type=consumer"
       - "service.name=reservation-service"
+
+  # =============================================================================
+  # Booking Service (Standalone Consumer)
+  # =============================================================================
+  # This service processes SeatsReservedEvent to create bookings
+  # - Runs independently for better resource isolation
+  # - Independent scaling from API service
+  # - Clean separation of concerns
+  # =============================================================================
+  booking-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+      args:
+        SERVICE_TYPE: consumer
+    image: booking-service:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export KAFKA_CONSUMER_INSTANCE_ID="booking-service-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="booking-service-producer-$$(hostname)"
+        /app/.venv/bin/python src/service/ticketing/driving_adapter/start_booking_consumer.py
+    environment:
+      # Python
+      PYTHONPATH: /app
+
+      # Application
+      EVENT_ID: "${EVENT_ID:-1}"
+      DEBUG: "${DEBUG:-False}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      TZ: "Asia/Taipei"
+
+      # Database (must match core_setting.py variable names)
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-ticketing_system_db}"
+      POSTGRES_USER: "${POSTGRES_USER:-py_arch_lab}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-py_arch_lab}"
+
+      # Kvrocks (for SSE broadcasting state)
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: "6666"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+
+      # OpenTelemetry
+      OTEL_SERVICE_NAME: booking-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_started
+      jaeger:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Run 2 booking service instances
+      resources:
+        limits:
+          cpus: '0.5'  # 0.5 core per instance (1 core total for 2 instances)
+          memory: 1024M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+    labels:
+      - "service.type=consumer"
+      - "service.name=booking-service"

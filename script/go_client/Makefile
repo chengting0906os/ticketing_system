@@ -1,4 +1,4 @@
-# Ticketing System - Go Load Testing Makefile
+# Ticketing System - Go Load Tesㄠg Makefile
 # Run from: script/go_client/
 # Usage: make <target>
 

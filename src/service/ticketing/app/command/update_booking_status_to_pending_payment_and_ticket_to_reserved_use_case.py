@@ -100,28 +100,31 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
 
             # Broadcast SSE event for real-time updates
             try:
+                # Convert TicketRef objects to dicts for JSON serialization
+                ticket_dicts = []
+                for ticket in tickets:
+                    ticket_dict = {
+                        'id': ticket.id,
+                        'section': ticket.section,
+                        'subsection': ticket.subsection,
+                        'row': ticket.row,
+                        'seat_num': ticket.seat,
+                        'price': ticket.price,
+                        'status': ticket.status.value,
+                        'seat_identifier': f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}',
+                    }
+                    ticket_dicts.append(ticket_dict)
+
                 event_data: dict[str, Any] = {
                     'event_type': 'status_update',
                     'booking_id': str(booking_id),
                     'status': 'pending_payment',
                     'total_price': total_price,
                     'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'tickets': [
-                        {
-                            'id': ticket.id,
-                            'section': ticket.section,
-                            'subsection': ticket.subsection,
-                            'row': ticket.row,
-                            'seat_num': ticket.seat,
-                            'price': ticket.price,
-                            'status': ticket.status.value,
-                            'seat_identifier': f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}',
-                        }
-                        for ticket in tickets
-                    ],
+                    'tickets': ticket_dicts,
                 }
 
-                # Add seat availability stats if provided
+                # Only include stats if they have values (not None and not empty)
                 if subsection_stats:
                     event_data['subsection_stats'] = subsection_stats
                 if event_stats:
