@@ -54,15 +54,15 @@ class AtomicReservationExecutor:
 
         return decoded
 
-    async def fetch_seat_prices(
+    async def fetch_total_price(
         self,
         *,
         event_id: int,
         section_id: str,
         seats_to_reserve: List[tuple],
-    ) -> tuple[Dict[str, int], int]:
+    ) -> int:
         """
-        Pre-fetch section price from event config JSON.
+        Pre-fetch section price from event config JSON and calculate total.
 
         ## Why Pre-fetch?
 
@@ -86,7 +86,7 @@ class AtomicReservationExecutor:
         ## Example
 
         Input: seats_to_reserve = [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
-        Output: ({'A-1-1-1': 1000, 'A-1-1-2': 1000}, 2000)
+        Output: 2000
 
         Args:
             event_id: Event identifier (e.g., 123)
@@ -95,9 +95,7 @@ class AtomicReservationExecutor:
                 Example: [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
 
         Returns:
-            Tuple of:
-            - seat_prices: Dict mapping seat_id to price (e.g., {'A-1-1-1': 1000})
-            - total_price: Sum of all prices (e.g., 2000)
+            total_price: Sum of all prices (e.g., 2000)
         """
         # Get Redis client (lightweight dict lookup, returns existing connection pool)
         client = kvrocks_client.get_client()
@@ -159,20 +157,16 @@ class AtomicReservationExecutor:
                 f'Requested: {section_name} (from {section_id})'
             )
 
-        # Calculate total price and build price mapping
+        # Calculate total price
         # All seats in same section have same price
         num_seats = len(seats_to_reserve)
         total_price = section_price * num_seats
-
-        seat_prices = {}
-        for _, _, _, seat_id in seats_to_reserve:
-            seat_prices[seat_id] = section_price
 
         Logger.base.debug(
             f'💰 [PRICE-FETCH] Section {section_id}: {num_seats} seats × {section_price} = {total_price}'
         )
 
-        return seat_prices, total_price
+        return total_price
 
     async def execute_atomic_reservation(
         self,
@@ -182,7 +176,6 @@ class AtomicReservationExecutor:
         booking_id: str,
         bf_key: str,
         seats_to_reserve: List[tuple],
-        seat_prices: Dict[str, int],
         total_price: int,
     ) -> Dict:
         """
@@ -251,7 +244,6 @@ class AtomicReservationExecutor:
             bf_key: Bitfield key for seat states (e.g., 'seats_bf:123:A-1')
             seats_to_reserve: List of (row, seat_num, seat_index, seat_id) tuples
                 Example: [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
-            seat_prices: Pre-fetched seat prices (e.g., {'A-1-1-1': 1000, 'A-1-1-2': 1000})
             total_price: Pre-calculated total price (e.g., 2000)
 
         Returns:
@@ -259,7 +251,6 @@ class AtomicReservationExecutor:
             {
                 'success': True,
                 'reserved_seats': ['A-1-1-1', 'A-1-1-2'],
-                'seat_prices': {'A-1-1-1': 1000, 'A-1-1-2': 1000},
                 'total_price': 2000,
                 'subsection_stats': {'available': 98, 'reserved': 2},
                 'event_stats': {'available': 98, 'reserved': 2},
@@ -383,7 +374,6 @@ class AtomicReservationExecutor:
             mapping={
                 'status': 'RESERVE_SUCCESS',
                 'reserved_seats': orjson.dumps(reserved_seats).decode(),
-                'seat_prices': orjson.dumps(seat_prices).decode(),
                 'total_price': str(total_price),
                 'config_key': config_key,  # ✨ Unified config (sections + event_stats)
             },
@@ -485,7 +475,6 @@ class AtomicReservationExecutor:
         return {
             'success': True,
             'reserved_seats': reserved_seats,
-            'seat_prices': seat_prices,
             'total_price': total_price,
             'subsection_stats': subsection_stats,  # Backward compatibility
             'event_stats': event_stats,

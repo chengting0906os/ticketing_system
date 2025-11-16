@@ -39,7 +39,6 @@ class BookingStatusManager:
         return {
             'success': False,
             'reserved_seats': None,
-            'seat_prices': None,
             'total_price': 0,
             'subsection_stats': {},
             'event_stats': {},
@@ -77,7 +76,6 @@ class BookingStatusManager:
             )
 
             reserved_seats = orjson.loads(metadata.get('reserved_seats', '[]'))
-            seat_prices = orjson.loads(metadata.get('seat_prices', '{}'))
             total_price = int(metadata.get('total_price', 0))
             subsection_stats = orjson.loads(metadata.get('subsection_stats', '{}'))
             event_stats = orjson.loads(metadata.get('event_stats', '{}'))
@@ -85,7 +83,6 @@ class BookingStatusManager:
             return {
                 'success': True,
                 'reserved_seats': reserved_seats,
-                'seat_prices': seat_prices,
                 'total_price': total_price,
                 'subsection_stats': subsection_stats,
                 'event_stats': event_stats,

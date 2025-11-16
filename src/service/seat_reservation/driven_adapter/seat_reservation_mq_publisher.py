@@ -32,7 +32,6 @@ class SeatsReservedEvent:
     subsection: int
     seat_selection_mode: str
     reserved_seats: List[str]
-    seat_prices: dict[str, int]
     total_price: int
     # Subsection stats from Kvrocks (for cache update in Ticketing Service)
     # Check subsection_stats['available'] == 0 to know if subsection is sold out
@@ -91,7 +90,6 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: List[str],
-        seat_prices: dict[str, int],
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
@@ -106,7 +104,6 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             subsection=subsection,
             seat_selection_mode=seat_selection_mode,
             reserved_seats=reserved_seats,
-            seat_prices=seat_prices,
             total_price=total_price,
             subsection_stats=subsection_stats,
             event_stats=event_stats,

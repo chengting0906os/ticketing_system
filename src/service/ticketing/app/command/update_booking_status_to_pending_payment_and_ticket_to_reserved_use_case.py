@@ -32,7 +32,6 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: list[str],
-        seat_prices: dict[str, int],
         total_price: int,
         subsection_stats: dict | None = None,
         event_stats: dict | None = None,
@@ -77,14 +76,6 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             if not seat_positions:
                 raise ValueError('No valid seat positions after conversion')
 
-            # Convert seat_prices keys from 'section-subsection-row-seat' to 'row-seat'
-            converted_prices = {}
-            for seat_id, price in seat_prices.items():
-                parts = seat_id.split('-')
-                if len(parts) == 4:
-                    row_seat = f'{parts[2]}-{parts[3]}'
-                    converted_prices[row_seat] = price
-
             # Use atomic upsert operation: create booking + tickets in 1 DB round-trip
             # This method is idempotent - if booking exists, returns existing
             # Returns dict with booking and tickets to avoid extra query
@@ -96,7 +87,6 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
                 subsection=subsection,
                 seat_selection_mode=seat_selection_mode,
                 reserved_seats=seat_positions,
-                seat_prices=converted_prices,
                 total_price=total_price,
             )
 

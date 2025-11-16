@@ -22,7 +22,6 @@ class ISeatReservationEventPublisher(ABC):
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: List[str],
-        seat_prices: dict[str, int],
         total_price: int,
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],

@@ -98,7 +98,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         return {
             'success': False,
             'reserved_seats': [],
-            'seat_prices': {},
             'total_price': 0,
             'subsection_stats': {},
             'event_stats': {},
@@ -390,8 +389,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 )
                 return self._error_result(error)
 
-            # Pre-fetch seat prices
-            seat_prices, total_price = await self.reservation_executor.fetch_seat_prices(
+            # Calculate total price
+            total_price = await self.reservation_executor.fetch_total_price(
                 event_id=event_id,
                 section_id=section_id,
                 seats_to_reserve=seats_to_reserve,
@@ -404,7 +403,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 booking_id=booking_id,
                 bf_key=bf_key,
                 seats_to_reserve=seats_to_reserve,
-                seat_prices=seat_prices,
                 total_price=total_price,
             )
 
@@ -475,8 +473,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 for row, seat_num, seat_index in found_seats
             ]
 
-            # Pre-fetch seat prices
-            seat_prices, total_price = await self.reservation_executor.fetch_seat_prices(
+            # Calculate total price
+            total_price = await self.reservation_executor.fetch_total_price(
                 event_id=event_id,
                 section_id=section_id,
                 seats_to_reserve=seats_to_reserve,
@@ -489,7 +487,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 booking_id=booking_id,
                 bf_key=bf_key,
                 seats_to_reserve=seats_to_reserve,
-                seat_prices=seat_prices,
                 total_price=total_price,
             )
 

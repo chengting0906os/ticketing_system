@@ -279,7 +279,6 @@ class BookingMqConsumer:
         subsection = message.get('subsection')
         seat_selection_mode = message.get('seat_selection_mode')
         reserved_seats = message.get('reserved_seats', [])
-        seat_prices = message.get('seat_prices', {})
         total_price = message.get('total_price', 0)
         subsection_stats = message.get('subsection_stats', {})
         event_stats = message.get('event_stats', {})
@@ -324,7 +323,6 @@ class BookingMqConsumer:
             subsection=subsection or 0,
             seat_selection_mode=seat_selection_mode or 'manual',
             reserved_seats=reserved_seats,
-            seat_prices=seat_prices,
             total_price=total_price,
             subsection_stats=subsection_stats if subsection_stats else None,
             event_stats=event_stats if event_stats else None,

@@ -65,7 +65,6 @@ class MockBookingCommandRepo(IBookingCommandRepo):
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: list[str],
-        seat_prices: dict[str, int],
         total_price: int,
     ) -> dict:
         """Mock implementation that returns booking and tickets"""
@@ -79,7 +78,6 @@ class MockBookingCommandRepo(IBookingCommandRepo):
                 'subsection': subsection,
                 'seat_selection_mode': seat_selection_mode,
                 'reserved_seats': reserved_seats,
-                'seat_prices': seat_prices,
                 'total_price': total_price,
             }
         )
@@ -109,7 +107,6 @@ class MockBookingCommandRepo(IBookingCommandRepo):
                 subsection=subsection,
                 row=int(seat.split('-')[0]),
                 seat=int(seat.split('-')[1]),
-                price=seat_prices.get(seat, 1000),
                 status=TicketStatus.RESERVED,
                 buyer_id=buyer_id,
                 created_at=datetime.now(timezone.utc),

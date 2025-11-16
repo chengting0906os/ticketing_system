@@ -9,10 +9,10 @@ from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 from src.service.seat_reservation.app.interface.i_seat_reservation_event_publisher import (
     ISeatReservationEventPublisher,
 )
+from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 
 
 @dataclass
@@ -133,7 +133,6 @@ class ReserveSeatsUseCase:
                 # Step 3: Handle result
                 if result['success']:
                     reserved_seats = result['reserved_seats']
-                    seat_prices = result['seat_prices']
                     total_price = result['total_price']
                     subsection_stats = result.get('subsection_stats', {})
                     event_stats = result.get('event_stats', {})
@@ -157,7 +156,6 @@ class ReserveSeatsUseCase:
                         subsection=request.subsection_filter or 0,
                         seat_selection_mode=request.selection_mode,
                         reserved_seats=reserved_seats,
-                        seat_prices=seat_prices,
                         total_price=total_price,
                         subsection_stats=subsection_stats,
                         event_stats=event_stats,
@@ -251,14 +249,14 @@ class ReserveSeatsUseCase:
         if request.selection_mode == 'manual':
             if not request.seat_positions:
                 raise DomainError('Manual selection requires seat positions', 400)
-            if len(request.seat_positions) > 6:
-                raise DomainError('Cannot reserve more than 6 seats at once', 400)
+            if len(request.seat_positions) > 4:
+                raise DomainError('Cannot reserve more than 4 seats at once', 400)
 
         elif request.selection_mode == 'best_available':
             if not request.quantity or request.quantity <= 0:
                 raise DomainError('Best available selection requires valid quantity', 400)
-            if request.quantity > 6:
-                raise DomainError('Cannot reserve more than 6 seats at once', 400)
+            if request.quantity > 4:
+                raise DomainError('Cannot reserve more than 4 seats at once', 400)
             if not request.section_filter or request.subsection_filter is None:
                 raise DomainError('Best available mode requires section and subsection filter', 400)
 

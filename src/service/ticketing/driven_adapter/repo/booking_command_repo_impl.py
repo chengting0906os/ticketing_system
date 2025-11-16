@@ -279,7 +279,6 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: list[str],
-        seat_prices: dict[str, int],
         total_price: int,
     ) -> dict:
         """
@@ -299,7 +298,6 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             subsection: Subsection number
             seat_selection_mode: 'manual' or 'best_available'
             reserved_seats: List of reserved seat identifiers (format: "row-seat" like "1-1")
-            seat_prices: Dict mapping seat_id -> price
             total_price: Sum of all seat prices
 
         Returns:

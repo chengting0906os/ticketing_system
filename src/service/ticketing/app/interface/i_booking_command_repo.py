@@ -84,7 +84,6 @@ class IBookingCommandRepo(ABC):
         subsection: int,
         seat_selection_mode: str,
         reserved_seats: list[str],
-        seat_prices: dict[str, int],
         total_price: int,
     ) -> dict:
         """
@@ -93,7 +92,7 @@ class IBookingCommandRepo(ABC):
 
         Flow:
         1. Create booking record (status=PENDING_PAYMENT, total_price, seat_positions)
-        2. Update ticket records (status=RESERVED) with individual prices
+        2. Update ticket records (status=RESERVED) with buyer_id
         Both in single CTE transaction, returns both booking and tickets.
 
         Args:
@@ -104,7 +103,6 @@ class IBookingCommandRepo(ABC):
             subsection: Subsection number
             seat_selection_mode: 'manual' or 'best_available'
             reserved_seats: List of reserved seat identifiers (format: "row-seat")
-            seat_prices: Dict mapping seat_id -> price
             total_price: Sum of all seat prices
 
         Returns:
