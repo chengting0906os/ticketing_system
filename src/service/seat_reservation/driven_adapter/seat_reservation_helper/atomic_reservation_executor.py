@@ -20,41 +20,6 @@ def _make_key(key: str) -> str:
 
 
 class AtomicReservationExecutor:
-    @staticmethod
-    def _decode_stats(stats_raw: Dict) -> Dict:
-        """
-        Decode stats from Redis bytes/strings to proper types.
-
-        Redis returns data as bytes or strings depending on configuration.
-        This method normalizes the data to Python dict with int values.
-
-        Args:
-            stats_raw: Raw stats from Redis (e.g., {b'available': b'100'})
-
-        Returns:
-            Dict with decoded integer values (e.g., {'available': 100})
-        """
-        if not stats_raw:
-            return {}
-
-        decoded = {}
-        for key, value in stats_raw.items():
-            # Handle both bytes and string keys (e.g., b'available' → 'available')
-            if isinstance(key, bytes):
-                key: str = key.decode()
-
-            # Handle both bytes and string values (e.g., b'100' → '100')
-            if isinstance(value, bytes):
-                value: str = value.decode()
-
-            # Convert to int (default to 0 if conversion fails)
-            try:
-                decoded[key] = int(value)
-            except (ValueError, TypeError):
-                decoded[key] = 0
-
-        return decoded
-
     async def fetch_total_price(
         self,
         *,
