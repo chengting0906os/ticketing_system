@@ -211,107 +211,6 @@ class TestParseEventStatsJsonPath:
 
 
 # ============================================================================
-# Test fetch_total_price
-# ============================================================================
-
-
-@pytest.mark.unit
-class TestFetchTotalPrice:
-    @pytest.mark.asyncio
-    async def test_fetch_total_price_success(self, executor, sample_seats):
-        # Given: Mock Kvrocks client with event config JSON
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-
-            # Mock event config JSON with hierarchical structure (price at section level)
-            event_state = {
-                'sections': {
-                    'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
-                }
-            }
-
-            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
-            result_bytes = orjson.dumps([event_state])  # Wrap in list, get bytes
-            mock_client.execute_command = AsyncMock(return_value=result_bytes)
-
-            total_price = await executor.fetch_total_price(
-                event_id=123,
-                section_id='A-1',
-                seats_to_reserve=sample_seats,
-            )
-
-            assert total_price == 2000
-
-            # And: Should call JSON.GET once
-            mock_client.execute_command.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_fetch_total_price_missing_section(self, executor):
-        # Given: Seats but section config not found in JSON
-        seats = [
-            (1, 1, 0, 'A-1-1-1'),
-            (1, 2, 1, 'A-1-1-2'),
-            (1, 3, 2, 'A-1-1-3'),
-        ]
-
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-
-            # Mock event config JSON without the requested section (hierarchical structure)
-            event_state = {
-                'sections': {
-                    'B': {'price': 2000, 'subsections': {'1': {'rows': 20, 'seats_per_row': 15}}}
-                }
-            }
-            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
-            result_bytes = orjson.dumps([event_state])
-            mock_client.execute_command = AsyncMock(return_value=result_bytes)
-
-            total_price = await executor.fetch_total_price(
-                event_id=123,
-                section_id='A-1',  # Not in config
-                seats_to_reserve=seats,
-            )
-
-            # Then: Missing section should default to price 0, so total is 0
-            assert total_price == 0
-
-    @pytest.mark.asyncio
-    async def test_fetch_total_price_multiple_seats(self, executor):
-        # Given: Multiple seats in the same section
-        seats_a1 = [
-            (1, 1, 0, 'A-1-1-1'),
-            (1, 2, 1, 'A-1-1-2'),
-        ]
-
-        with patch.object(atomic_reservation_executor, KVROCKS_CLIENT_ATTR) as mock_kvrocks:
-            mock_client = MagicMock()
-            mock_kvrocks.get_client.return_value = mock_client
-
-            # Mock event config JSON with hierarchical structure (price 1000 at section level)
-            event_state = {
-                'sections': {
-                    'A': {'price': 1000, 'subsections': {'1': {'rows': 25, 'seats_per_row': 20}}}
-                }
-            }
-            # Mock JSON.GET command - Kvrocks returns bytes like b'[{...}]'
-            result_bytes = orjson.dumps([event_state])
-            mock_client.execute_command = AsyncMock(return_value=result_bytes)
-
-            # When: Fetch total price for 2 seats in A-1
-            total_price = await executor.fetch_total_price(
-                event_id=123,
-                section_id='A-1',
-                seats_to_reserve=seats_a1,
-            )
-
-            # Then: All seats in same section have same price (1000 * 2 = 2000)
-            assert total_price == 2000
-
-
-# ============================================================================
 # Test execute_atomic_reservation
 # ============================================================================
 
@@ -327,10 +226,10 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats (returns bytes)
+            # Mock current event_state (for price calculation and time tracking via JSON.GET)
+            # execute_command is called for JSON.GET event_state (returns bytes with full state including sections)
             mock_client.execute_command = AsyncMock(
-                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
+                return_value=b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":100,"reserved":0,"sold":0,"total":100}}}}},"event_stats":{"reserved":0,"sold":0,"available":500,"total":500}}]'
             )
 
             # Mock pipeline execution results
@@ -362,7 +261,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                total_price=2000,
             )
 
             # Then: Should return success result
@@ -405,10 +303,10 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats
+            # Mock current event_state (for price calculation and time tracking via JSON.GET)
+            # execute_command is called for JSON.GET event_state
             mock_client.execute_command = AsyncMock(
-                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
+                return_value=b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":100,"reserved":0,"sold":0,"total":100}}}}},"event_stats":{"reserved":0,"sold":0,"available":500,"total":500}}]'
             )
 
             # Mock pipeline results for 1 seat
@@ -438,7 +336,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=seats,
-                total_price=1000,
             )
 
             # Then: Should correctly handle single seat
@@ -478,10 +375,10 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats
+            # Mock current event_state (for price calculation and time tracking via JSON.GET)
+            # execute_command is called for JSON.GET event_state
             mock_client.execute_command = AsyncMock(
-                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
+                return_value=b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":100,"reserved":0,"sold":0,"total":100}}}}},"event_stats":{"reserved":0,"sold":0,"available":500,"total":500}}]'
             )
 
             # Mock pipeline results for 5 seats
@@ -510,7 +407,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=seats,
-                total_price=5000,
             )
 
             # Then: Should correctly handle multiple seats
@@ -542,10 +438,10 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats
+            # Mock current event_state (for price calculation and time tracking via JSON.GET)
+            # execute_command is called for JSON.GET event_state
             mock_client.execute_command = AsyncMock(
-                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
+                return_value=b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":100,"reserved":0,"sold":0,"total":100}}}}},"event_stats":{"reserved":0,"sold":0,"available":500,"total":500}}]'
             )
 
             # Standard mock results
@@ -560,7 +456,7 @@ class TestExecuteAtomicReservation:
                     [2],  # JSON.NUMINCRBY (section stats)
                     [498],
                     [2],  # JSON.NUMINCRBY (event stats)
-                    b'[{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
+                    b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
                     4,  # HSET (booking metadata)
                 ]
             )
@@ -572,7 +468,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-456',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                total_price=2000,
             )
 
             # Then: Should call hset with correct booking metadata
@@ -599,10 +494,10 @@ class TestExecuteAtomicReservation:
             mock_kvrocks.get_client.return_value = mock_client
             mock_client.pipeline.return_value = mock_pipeline
 
-            # Mock current event stats (for time tracking via JSON.GET)
-            # execute_command is called for JSON.GET $.event_stats
+            # Mock current event_state (for price calculation and time tracking via JSON.GET)
+            # execute_command is called for JSON.GET event_state
             mock_client.execute_command = AsyncMock(
-                return_value=b'[{"reserved":0,"sold":0,"available":500,"total":500}]'
+                return_value=b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":100,"reserved":0,"sold":0,"total":100}}}}},"event_stats":{"reserved":0,"sold":0,"available":500,"total":500}}]'
             )
 
             # ✨ NEW: 4 setbit + 4 JSON.NUMINCRBY + 1 JSON.GET + 1 HSET = 10 results
@@ -616,7 +511,7 @@ class TestExecuteAtomicReservation:
                     [2],  # JSON.NUMINCRBY (section stats)
                     [498],
                     [2],  # JSON.NUMINCRBY (event stats)
-                    b'[{"sections":{"A-1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
+                    b'[{"sections":{"A":{"price":1000,"subsections":{"1":{"stats":{"available":98,"reserved":2,"sold":0,"total":100}}}}},"event_stats":{"available":498,"reserved":2,"sold":0,"total":500}}]',  # JSON.GET returns bytes
                     4,  # HSET (booking metadata)
                 ]
             )
@@ -628,7 +523,6 @@ class TestExecuteAtomicReservation:
                 booking_id='booking-123',
                 bf_key='seats_bf:123:A-1',
                 seats_to_reserve=sample_seats,
-                total_price=2000,
             )
 
             # Then: Setbit should be called with correct offsets

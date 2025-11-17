@@ -100,7 +100,7 @@ both-f: both-full
 # 🔥 RESERVED LOAD TEST (Sellout Testing)
 # ==============================================================================
 
-.PHONY: rlt rlt-dev rlt-staging rlt-prod frlt
+.PHONY: rlt rlt-dev rlt-staging rlt-prod frlt frlt-1k frlt-staging frlt-prod
 rlt: build-reserved  ## 🔥 Reserved Load Test - Auto-detect env (random 1-4 tickets, 100 workers)
 	@echo "$(COLOR_BLUE)🔥 Running reserved load test...$(COLOR_RESET)"
 	@if [ "$(DEPLOY_ENV)" = "production" ]; then \
@@ -150,6 +150,15 @@ frlt: build-full-reserved  ## 🚀 Full Reserved Load Test - Configurable (WORKE
 		echo "$(COLOR_YELLOW)📊 Development mode: 500 seats$(COLOR_RESET)"; \
 		./$(FULL_RESERVED_BIN) -env development -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
 	fi
+
+frlt-1k: build-full-reserved  ## 🚀 Full Reserved Load Test - 1000 seats (local_dev_1000)
+	@$(MAKE) frlt DEPLOY_ENV=local_dev_1000
+
+frlt-staging: build-full-reserved  ## 🚀 Full Reserved Load Test - 5000 seats (staging)
+	@$(MAKE) frlt DEPLOY_ENV=staging
+
+frlt-prod: build-full-reserved  ## 🚀 Full Reserved Load Test - 50000 seats (production)
+	@$(MAKE) frlt DEPLOY_ENV=production
 
 # ==============================================================================
 # 🔄 COMBINED LOAD TESTS (Run in PARALLEL)
@@ -251,7 +260,12 @@ help:  ## 📖 Show this help message
 	@echo "  rlt-1k             - Local Dev 1000 (1,000 seats)"
 	@echo "  rlt-staging        - Staging (5,000 seats)"
 	@echo "  rlt-prod           - Production (50,000 seats)"
+	@echo ""
+	@echo "$(COLOR_CYAN)🚀 FULL RESERVED LOAD TEST (All Seats, 1 per Worker)$(COLOR_RESET)"
 	@echo "  frlt               - Full reserved (configurable: WORKERS=100 BATCH=1)"
+	@echo "  frlt-1k            - Full reserved - 1000 seats (local_dev_1000)"
+	@echo "  frlt-staging       - Full reserved - 5000 seats (staging)"
+	@echo "  frlt-prod          - Full reserved - 50000 seats (production)"
 	@echo ""
 	@echo "$(COLOR_CYAN)🔄 COMBINED TESTS (Parallel)$(COLOR_RESET)"
 	@echo "  both-medium        - CLT Medium + RLT Development"
@@ -272,6 +286,9 @@ help:  ## 📖 Show this help message
 	@echo "  make t                              # Quick tiny test"
 	@echo "  make rlt                            # Run sellout test (auto-detect env)"
 	@echo "  make rlt-dev                        # Run sellout test (500 seats)"
+	@echo "  make rlt-1k                         # Run sellout test (1000 seats)"
+	@echo "  make frlt-1k                        # Full reserved test (1000 seats)"
+	@echo "  make frlt-staging                   # Full reserved test (5000 seats)"
 	@echo "  API_HOST=http://alb.aws.com make m  # Test against AWS"
 	@echo "  DEPLOY_ENV=production make rlt      # Test production (50K seats)"
 	@echo "  WORKERS=500 BATCH=2 make frlt       # Custom full reserved test"

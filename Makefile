@@ -8,6 +8,9 @@ AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output t
 # API Configuration (can be overridden via environment variables)
 API_HOST ?= http://localhost:8100
 
+# Deployment environment for seeding (can be overridden via environment variables)
+DEPLOY_ENV ?= local_dev
+
 # ==============================================================================
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
@@ -55,12 +58,21 @@ migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message'
 migrate-history:  ## 📜 Show migration history
 	@uv run alembic -c $(ALEMBIC_CONFIG) history
 
-re-seed:  ## 🔄 Reset and re-seed database
+re-seed:  ## 🔄 Reset and re-seed database (usage: make re-seed DEPLOY_ENV=local_dev_1000)
 	@echo "🗑️  Resetting database..."
 	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.reset_database
-	@echo "🌱 Seeding database..."
-	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.seed_data
+	@echo "🌱 Seeding database with DEPLOY_ENV=$(DEPLOY_ENV)..."
+	@DEPLOY_ENV=$(DEPLOY_ENV) POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
+
+re-seed-1k:  ## 🔄 Reset and seed with 1000 seats (local_dev_1000)
+	@$(MAKE) re-seed DEPLOY_ENV=local_dev_1000
+
+re-seed-staging:  ## 🔄 Reset and seed with 5000 seats (staging)
+	@$(MAKE) re-seed DEPLOY_ENV=staging
+
+re-seed-prod:  ## 🔄 Reset and seed with 50000 seats (production)
+	@$(MAKE) re-seed DEPLOY_ENV=production
 
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
@@ -213,7 +225,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=3 --scale reservation-service=1 --scale booking-service=10
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=3 --scale reservation-service=10 --scale booking-service=10
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -284,7 +296,11 @@ tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
 #   make go-clt-l          # Large concurrent load test
 #   make go-clt-f          # Full concurrent load test
 #   make go-rlt            # Reserved load test (auto-detect env)
+#   make go-rlt-1k         # Reserved load test (1000 seats)
 #   make go-frlt           # Full reserved load test (WORKERS=100 BATCH=1)
+#   make go-frlt-1k        # Full reserved load test (1000 seats)
+#   make go-frlt-staging   # Full reserved load test (5000 seats)
+#   make go-frlt-prod      # Full reserved load test (50000 seats)
 #   make go-both-m         # Both tests in parallel - medium
 #   make go-both-l         # Both tests in parallel - large
 #   make go-both-f         # Both tests in parallel - full
@@ -362,7 +378,10 @@ help:
 	@echo "  migrate-down - Rollback one migration"
 	@echo "  migrate-new - Create new migration (usage: make migrate-new MSG='message')"
 	@echo "  migrate-history - Show migration history"
-	@echo "  re-seed     - Reset and re-seed database"
+	@echo "  re-seed     - Reset and re-seed database (usage: DEPLOY_ENV=local_dev_1000 make re-seed)"
+	@echo "  re-seed-1k  - Reset and seed with 1000 seats"
+	@echo "  re-seed-staging - Reset and seed with 5000 seats"
+	@echo "  re-seed-prod - Reset and seed with 50000 seats"
 	@echo "  psql        - Connect to PostgreSQL"
 	@echo "  dm          - Run migrations in Docker"
 	@echo "  ds          - Seed data in Docker (500/5K/50K seats)"
@@ -416,6 +435,8 @@ help:
 	@echo "💡 EXAMPLES"
 	@echo "  make dra                                # Fresh start with Docker"
 	@echo "  make reset                              # Quick reset (no restart)"
+	@echo "  make re-seed-1k                         # Seed 1000 seats"
+	@echo "  DEPLOY_ENV=staging make re-seed         # Seed 5000 seats"
 	@echo "  make test test/service/ticketing/       # Test specific directory"
 	@echo "  make migrate-new MSG='add user table'   # Create migration"
 	@echo "  make scale-ticketing N=5                # Scale to 5 API instances"

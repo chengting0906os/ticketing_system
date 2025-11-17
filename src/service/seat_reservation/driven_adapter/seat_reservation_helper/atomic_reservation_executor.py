@@ -20,98 +20,6 @@ def _make_key(key: str) -> str:
 
 
 class AtomicReservationExecutor:
-    async def fetch_total_price(
-        self,
-        *,
-        event_id: int,
-        section_id: str,
-        seats_to_reserve: List[tuple],
-    ) -> int:
-        """
-        Pre-fetch section price from event config JSON and calculate total.
-
-        ## Why Pre-fetch?
-
-        Prices are stored in unified event config JSON (event_state:{event_id}).
-        Each section has ONE price (not per seat), simplifying the data structure.
-
-        We pre-fetch the config once, which is safe because:
-        - Seat prices are READ-ONLY during reservation (they don't change)
-        - This doesn't affect consistency (we still verify availability later)
-
-        ## Data Structure
-
-        event_state:{event_id} contains:
-        {
-            "sections": {
-                "A-1": {"rows": 25, "seats_per_row": 20, "price": 1000},
-                "B-1": {"rows": 20, "seats_per_row": 15, "price": 2000}
-            }
-        }
-
-        ## Example
-
-        Input: seats_to_reserve = [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
-        Output: 2000
-
-        Args:
-            event_id: Event identifier (e.g., 123)
-            section_id: Section identifier (e.g., 'A-1')
-            seats_to_reserve: List of (row, seat_num, seat_index, seat_id) tuples
-                Example: [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
-
-        Returns:
-            total_price: Sum of all prices (e.g., 2000)
-        """
-        tracer = trace.get_tracer(__name__)
-
-        with tracer.start_as_current_span(
-            'executor.fetch_price',
-            attributes={
-                'event.id': event_id,
-            },
-        ):
-            # Get Redis client (lightweight dict lookup, returns existing connection pool)
-            client = kvrocks_client.get_client()
-            config_key = _make_key(f'event_state:{event_id}')
-
-            # Fetch event config JSON
-            try:
-                # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
-                result = await client.execute_command('JSON.GET', config_key, '$')
-
-                if not result:
-                    Logger.base.error(
-                        f'❌ [EXECUTOR-READ] No event config found for event_id={event_id}'
-                    )
-                    event_state = {}
-                else:
-                    # Parse JSON string array and extract first element
-                    event_state_list = orjson.loads(result)
-                    event_state = event_state_list[0]
-
-            except Exception as e:
-                Logger.base.error(f'❌ [EXECUTOR-READ] Failed to fetch event config: {e}')
-                event_state = {}
-
-            # Extract section price from hierarchical structure
-            # section_id format: "A-1" -> extract section name "A" for price lookup
-            section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
-            section_config = event_state.get('sections', {}).get(section_name, {})
-            section_price = section_config.get('price', 0)
-
-            if not section_config:
-                Logger.base.error(
-                    f'❌ [EXECUTOR-READ] Section not found! Available sections: {list(event_state.get("sections", {}).keys())}, '
-                    f'Requested: {section_name} (from {section_id})'
-                )
-
-            # Calculate total price
-            # All seats in same section have same price
-            num_seats = len(seats_to_reserve)
-            total_price = section_price * num_seats
-            return total_price
-
     async def execute_atomic_reservation(
         self,
         *,
@@ -120,7 +28,6 @@ class AtomicReservationExecutor:
         booking_id: str,
         bf_key: str,
         seats_to_reserve: List[tuple],
-        total_price: int,
     ) -> Dict:
         """
         Execute seat reservation using Redis pipeline for batching.
@@ -188,7 +95,6 @@ class AtomicReservationExecutor:
             bf_key: Bitfield key for seat states (e.g., 'seats_bf:123:A-1')
             seats_to_reserve: List of (row, seat_num, seat_index, seat_id) tuples
                 Example: [(1, 1, 0, 'A-1-1-1'), (1, 2, 1, 'A-1-1-2')]
-            total_price: Pre-calculated total price (e.g., 2000)
 
         Returns:
             Dict with reservation results:
@@ -221,6 +127,7 @@ class AtomicReservationExecutor:
             result = await client.execute_command('JSON.GET', event_state_key, '$')
             if not result:
                 # If JSON key doesn't exist, initialize with empty stats
+                event_state_dict: Dict[str, Any] = {}
                 current_stats = {}
             else:
                 # Parse bytes to list, then unwrap to get dict
@@ -229,6 +136,23 @@ class AtomicReservationExecutor:
 
             current_reserved_count = int(current_stats.get('reserved', 0))
             current_total_seats = int(current_stats.get('total', 0))
+
+            # ========== Calculate total price from event_state (reuse fetched data) ==========
+            # Extract section price from hierarchical structure in event_state_dict
+            # section_id format: "A-1" -> extract section name "A" for price lookup
+            section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
+            section_config = event_state_dict.get('sections', {}).get(section_name, {})
+            section_price = section_config.get('price', 0)
+
+            if not section_config:
+                Logger.base.error(
+                    f'❌ [EXECUTOR] Section not found! Available sections: {list(event_state_dict.get("sections", {}).keys())}, '
+                    f'Requested: {section_name} (from {section_id})'
+                )
+
+            # Calculate total price (all seats in same section have same price)
+            num_seats = len(seats_to_reserve)
+            total_price = section_price * num_seats
 
             # Create pipeline with MULTI/EXEC for isolation
             # transaction=True: Prevents command interleaving by other clients

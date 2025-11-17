@@ -288,21 +288,13 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     )
                     return self._error_result(error)
 
-                # Calculate total price
-                total_price = await self.reservation_executor.fetch_total_price(
-                    event_id=event_id,
-                    section_id=section_id,
-                    seats_to_reserve=seats_to_reserve,
-                )
-
-                # Execute atomic reservation
+                # Execute atomic reservation (price calculated internally)
                 result = await self.reservation_executor.execute_atomic_reservation(
                     event_id=event_id,
                     section_id=section_id,
                     booking_id=booking_id,
                     bf_key=bf_key,
                     seats_to_reserve=seats_to_reserve,
-                    total_price=total_price,
                 )
 
                 return result
@@ -359,21 +351,13 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     for row, seat_num, seat_index in found_seats
                 ]
 
-                # Calculate total price
-                total_price = await self.reservation_executor.fetch_total_price(
-                    event_id=event_id,
-                    section_id=section_id,
-                    seats_to_reserve=seats_to_reserve,
-                )
-
-                # Execute atomic reservation
+                # Execute atomic reservation (price calculated internally)
                 result = await self.reservation_executor.execute_atomic_reservation(
                     event_id=event_id,
                     section_id=section_id,
                     booking_id=booking_id,
                     bf_key=bf_key,
                     seats_to_reserve=seats_to_reserve,
-                    total_price=total_price,
                 )
 
                 return result
