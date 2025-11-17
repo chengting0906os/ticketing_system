@@ -452,12 +452,6 @@ class SeatReservationConsumer:
     async def _execute_reservation(self, command: Dict) -> bool:
         """Execute seat reservation - Only responsible for calling use case"""
         try:
-            Logger.base.info(
-                f'🪑 [EXECUTE] booking={command["booking_id"]}, '
-                f'section={command["section"]}-{command["subsection"]}, '
-                f'qty={command["quantity"]}, mode={command["seat_selection_mode"]}'
-            )
-
             request = ReservationRequest(
                 booking_id=command['booking_id'],
                 buyer_id=command['buyer_id'],

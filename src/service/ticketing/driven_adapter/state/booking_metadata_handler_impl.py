@@ -149,7 +149,6 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
                 for k, v in metadata.items()
             }
 
-            Logger.base.info(f'✅ [BOOKING-META] Retrieved metadata for booking {booking_id}')
             return result
 
         except Exception as e:

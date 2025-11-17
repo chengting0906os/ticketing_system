@@ -99,9 +99,6 @@ class BookingStatusManager:
 
         elif status == 'PENDING_RESERVATION':
             # Initial state - proceed with reservation
-            Logger.base.info(
-                f'🔄 [IDEMPOTENCY] Booking {booking_id} status=PENDING_RESERVATION, proceeding with reservation'
-            )
             return None
 
         else:

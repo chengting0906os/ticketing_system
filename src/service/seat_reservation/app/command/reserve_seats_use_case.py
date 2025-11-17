@@ -164,9 +164,6 @@ class ReserveSeatsUseCase:
                         subsection_stats=subsection_stats,
                         event_stats=event_stats,
                     )
-                    Logger.base.info(
-                        f'📤 [RESERVE] Published seats_reserved event to Kafka for booking {request.booking_id}'
-                    )
 
                     return ReservationResult(
                         success=True,
