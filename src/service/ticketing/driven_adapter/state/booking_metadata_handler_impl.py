@@ -4,10 +4,11 @@ Booking Metadata Handler Implementation
 Kvrocks-based implementation for managing booking metadata.
 """
 
-import os
 from datetime import datetime, timezone
-from typing import Dict, Optional
+import os
+from typing import Any, Dict, List, Optional
 
+from opentelemetry import trace
 import orjson
 
 from src.platform.logging.loguru_io import Logger
@@ -52,6 +53,19 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
 
     BOOKING_TTL = 3600  # 1 hour
 
+    # Lua script for atomic HSET + EXPIRE
+    # More efficient than pipeline: single network round-trip, executes by SHA1
+    LUA_HSET_EXPIRE = """
+    redis.call('HSET', KEYS[1], unpack(ARGV, 1, #ARGV - 1))
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[#ARGV]))
+    return 1
+    """
+
+    def __init__(self):
+        """Initialize tracer and register Lua scripts"""
+        self.tracer = trace.get_tracer(__name__)
+        self._hset_expire_script: Any = None  # Lazy registration on first use
+
     @Logger.io
     async def save_booking_metadata(
         self,
@@ -66,40 +80,55 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
         seat_positions: list[str],
     ) -> None:
         """Save booking metadata to Kvrocks with TTL"""
-        try:
-            client = kvrocks_client.get_client()
-            key = _make_key(f'booking:{booking_id}')
-            now = datetime.now(timezone.utc).isoformat()
+        with self.tracer.start_as_current_span(
+            'booking_meta.save',
+            attributes={
+                'booking.id': booking_id,
+                'cache.system': 'kvrocks',
+                'cache.operation': 'hset_expire',
+            },
+        ):
+            try:
+                client = kvrocks_client.get_client()
+                key = _make_key(f'booking:{booking_id}')
+                now = datetime.now(timezone.utc).isoformat()
 
-            # Store as Hash for partial updates and atomic operations
-            metadata = {
-                'booking_id': booking_id,
-                'buyer_id': str(buyer_id),
-                'event_id': str(event_id),
-                'section': section,
-                'subsection': str(subsection),
-                'quantity': str(quantity),
-                'seat_selection_mode': seat_selection_mode,
-                'seat_positions': orjson.dumps(seat_positions).decode(),
-                'status': 'PENDING_RESERVATION',
-                'created_at': now,
-                'updated_at': now,
-            }
+                # Store as Hash for partial updates and atomic operations
+                metadata = {
+                    'booking_id': booking_id,
+                    'buyer_id': str(buyer_id),
+                    'event_id': str(event_id),
+                    'section': section,
+                    'subsection': str(subsection),
+                    'quantity': str(quantity),
+                    'seat_selection_mode': seat_selection_mode,
+                    'seat_positions': orjson.dumps(seat_positions).decode(),
+                    'status': 'PENDING_RESERVATION',
+                    'created_at': now,
+                    'updated_at': now,
+                }
 
-            # Use pipeline for atomicity
-            pipe = client.pipeline()
-            pipe.hset(key, mapping=metadata)  # type: ignore
-            pipe.expire(key, self.BOOKING_TTL)
-            await pipe.execute()
+                # Lazy register Lua script on first use
+                if self._hset_expire_script is None:
+                    self._hset_expire_script = client.register_script(self.LUA_HSET_EXPIRE)
 
-            Logger.base.info(
-                f'✅ [BOOKING-META] Saved metadata for booking {booking_id} '
-                f'(section={section}-{subsection}, qty={quantity})'
-            )
+                # Build args for Lua script: field1, value1, field2, value2, ..., TTL
+                args: List[Any] = []
+                for k, v in metadata.items():
+                    args.append(k)
+                    args.append(v)
+                args.append(self.BOOKING_TTL)
 
-        except Exception as e:
-            Logger.base.error(f'❌ [BOOKING-META] Failed to save metadata: {e}')
-            raise
+                # Execute Lua script (atomic HSET + EXPIRE in single round-trip)
+                await self._hset_expire_script(keys=[key], args=args)
+
+            except Exception as e:
+                Logger.base.error(f'❌ [BOOKING-META] Failed to save metadata: {e}')
+                # Record exception on span
+                span = trace.get_current_span()
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                raise
 
     @Logger.io
     async def get_booking_metadata(self, *, booking_id: str) -> Optional[Dict]:

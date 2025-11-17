@@ -46,13 +46,6 @@ class UpdateBookingToPendingPaymentAndTicketToReservedUseCase:
             'use_case.update_booking_to_pending_payment',
             attributes={
                 'booking.id': str(booking_id),
-                'event.id': event_id,
-                'buyer.id': buyer_id,
-                'seat.section': section,
-                'seat.subsection': subsection,
-                'seat.mode': seat_selection_mode,
-                'seats.count': len(reserved_seats),
-                'booking.total_price': total_price,
             },
         ):
             # Validation - Fail Fast

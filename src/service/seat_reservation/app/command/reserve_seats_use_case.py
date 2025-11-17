@@ -142,13 +142,6 @@ class ReserveSeatsUseCase:
                     event_stats = result.get('event_stats', {})
                     event_state = result.get('event_state', {})
 
-                    Logger.base.info(
-                        f'✅ [RESERVE] Successfully reserved {len(reserved_seats)} seats '
-                        f'in Kvrocks for booking {request.booking_id} (total: {total_price})'
-                        f'{" 🎉 SUBSECTION SOLD OUT!" if subsection_stats.get("available", 1) == 0 else ""}'
-                        f'{" 🎊 EVENT SOLD OUT!" if event_stats.get("available", 1) == 0 else ""}'
-                    )
-
                     # Step 4a: Broadcast event_state update via Redis Pub/Sub (real-time cache)
                     await self.event_state_broadcaster.broadcast_event_state(
                         event_id=request.event_id, event_state=event_state
@@ -187,6 +180,13 @@ class ReserveSeatsUseCase:
 
                     Logger.base.warning(f'⚠️ [RESERVE] Reservation failed: {error_msg}')
 
+                    # Set error attributes on span
+                    span = trace.get_current_span()
+                    span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
+                    span.set_attribute('error', True)
+                    span.set_attribute('error.type', 'reservation_failed')
+                    span.set_attribute('error.message', error_msg)
+
                     # Send failure notification with full booking info
                     await self.mq_publisher.publish_reservation_failed(
                         booking_id=request.booking_id,
@@ -211,6 +211,13 @@ class ReserveSeatsUseCase:
                 Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
                 error_msg = str(e)
 
+                # Record exception on span
+                span = trace.get_current_span()
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
+                span.set_attribute('error', True)
+                span.set_attribute('error.type', 'domain_error')
+
                 # Send error notification with full booking info
                 await self.mq_publisher.publish_reservation_failed(
                     booking_id=request.booking_id,
@@ -233,6 +240,13 @@ class ReserveSeatsUseCase:
             except Exception as e:
                 Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
                 error_msg = 'Internal server error'
+
+                # Record exception on span
+                span = trace.get_current_span()
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
+                span.set_attribute('error', True)
+                span.set_attribute('error.type', 'unexpected_error')
 
                 # Send error notification with full booking info
                 await self.mq_publisher.publish_reservation_failed(

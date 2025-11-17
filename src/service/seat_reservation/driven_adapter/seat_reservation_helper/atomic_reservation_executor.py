@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import os
 from typing import Any, Awaitable, Dict, List, cast
 
+from opentelemetry import trace
 import orjson
 from redis.asyncio import Redis
 
@@ -97,76 +98,61 @@ class AtomicReservationExecutor:
         Returns:
             total_price: Sum of all prices (e.g., 2000)
         """
-        # Get Redis client (lightweight dict lookup, returns existing connection pool)
-        client = kvrocks_client.get_client()
-        config_key = _make_key(f'event_state:{event_id}')
+        tracer = trace.get_tracer(__name__)
 
-        # Fetch event config JSON
-        config_json = None
-        try:
-            # Try JSON.GET first (Kvrocks native JSON support)
-            # JSON.GET with $ returns a string like '[{"sections":{...}}]'
-            result = await client.execute_command('JSON.GET', config_key, '$')
-            Logger.base.debug(f'🔍 [EXECUTOR-READ] JSON.GET succeeded for {config_key}')
+        with tracer.start_as_current_span(
+            'executor.fetch_price',
+            attributes={
+                'event.id': event_id,
+                'seat.section_id': section_id,
+                'seat.count': len(seats_to_reserve),
+            },
+        ):
+            # Get Redis client (lightweight dict lookup, returns existing connection pool)
+            client = kvrocks_client.get_client()
+            config_key = _make_key(f'event_state:{event_id}')
 
-            if result:
-                # JSON.GET with $ returns a list like ['{"sections":{...}}']
-                # Extract the first element if it's a list
-                if isinstance(result, list) and result:
-                    config_json = result[0]  # Get JSON string from list
-                elif isinstance(result, bytes):
-                    config_json = result.decode()
-                else:
-                    config_json = result
-
-                # Ensure it's a string
-                if isinstance(config_json, bytes):
-                    config_json = config_json.decode()
-
-        except Exception as e:
-            Logger.base.debug(f'🔍 [EXECUTOR-READ] JSON.GET failed: {e}, trying fallback')
-            # Fallback: Regular GET if JSON commands not supported
+            # Fetch event config JSON
             try:
-                config_json = await client.get(config_key)
-                if isinstance(config_json, bytes):
-                    config_json = config_json.decode()
-                Logger.base.debug(f'🔍 [EXECUTOR-READ] Fallback GET succeeded for {config_key}')
-            except Exception as fallback_error:
+                # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
+                result = await client.execute_command('JSON.GET', config_key, '$')
+
+                if not result:
+                    Logger.base.error(
+                        f'❌ [EXECUTOR-READ] No event config found for event_id={event_id}'
+                    )
+                    event_state = {}
+                else:
+                    # Parse JSON string array and extract first element
+                    event_state_list = orjson.loads(result)
+                    event_state = event_state_list[0]
+
+            except Exception as e:
+                Logger.base.error(f'❌ [EXECUTOR-READ] Failed to fetch event config: {e}')
+                event_state = {}
+
+            # Extract section price from hierarchical structure
+            # section_id format: "A-1" -> extract section name "A" for price lookup
+            section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
+            section_config = event_state.get('sections', {}).get(section_name, {})
+            section_price = section_config.get('price', 0)
+
+            if not section_config:
                 Logger.base.error(
-                    f'❌ [EXECUTOR-READ] Both JSON.GET and GET failed for {config_key}: {fallback_error}'
+                    f'❌ [EXECUTOR-READ] Section not found! Available sections: {list(event_state.get("sections", {}).keys())}, '
+                    f'Requested: {section_name} (from {section_id})'
                 )
-                config_json = None
 
-        # Parse JSON
-        if config_json:
-            event_state = orjson.loads(config_json)
-            # If JSON.GET returned an array like [{"sections":{...}}], extract first element
-            if isinstance(event_state, list) and event_state:
-                event_state = event_state[0]
-        else:
-            event_state = {}
-        # Extract section price from hierarchical structure
-        # section_id format: "A-1" -> extract section name "A" for price lookup
-        section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
-        section_config = event_state.get('sections', {}).get(section_name, {})
-        section_price = section_config.get('price', 0)
+            # Calculate total price
+            # All seats in same section have same price
+            num_seats = len(seats_to_reserve)
+            total_price = section_price * num_seats
 
-        if not section_config:
-            Logger.base.error(
-                f'❌ [EXECUTOR-READ] Section not found! Available sections: {list(event_state.get("sections", {}).keys())}, '
-                f'Requested: {section_name} (from {section_id})'
+            Logger.base.debug(
+                f'💰 [PRICE-FETCH] Section {section_id}: {num_seats} seats × {section_price} = {total_price}'
             )
 
-        # Calculate total price
-        # All seats in same section have same price
-        num_seats = len(seats_to_reserve)
-        total_price = section_price * num_seats
-
-        Logger.base.debug(
-            f'💰 [PRICE-FETCH] Section {section_id}: {num_seats} seats × {section_price} = {total_price}'
-        )
-
-        return total_price
+            return total_price
 
     async def execute_atomic_reservation(
         self,
@@ -257,192 +243,202 @@ class AtomicReservationExecutor:
                 'error_message': None
             }
         """
-        # Get Redis client (lightweight dict lookup)
-        client = kvrocks_client.get_client()
+        tracer = trace.get_tracer(__name__)
 
-        # ========== STEP 0: Read current stats BEFORE pipeline (for sellout tracking) ==========
-        # We need to know the current reserved count to determine if this is the first ticket
-        event_state_key = _make_key(f'event_state:{event_id}')
-
-        # Read entire event_state (simpler and more reliable than JSONPath $.event_stats)
-        # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
-        result = await client.execute_command('JSON.GET', event_state_key, '$')
-        if not result:
-            # If JSON key doesn't exist, initialize with empty stats
-            current_stats = {}
-        else:
-            # Parse bytes to list, then unwrap to get dict
-            event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
-            current_stats = event_state_dict.get('event_stats', {})
-
-        current_reserved_count = int(current_stats.get('reserved', 0))
-        current_total_seats = int(current_stats.get('total', 0))
-
-        # Create pipeline with MULTI/EXEC for isolation
-        # transaction=True: Prevents command interleaving by other clients
-        pipe = client.pipeline(transaction=True)
-        reserved_seats = []
-
-        # ========== STEP 1: Reserve seats in bitfield ==========
-        # Update each seat's status from AVAILABLE (00) to RESERVED (01)
-        #
-        # Bitfield encoding (2 bits per seat):
-        # - AVAILABLE: 00 (bit0=0, bit1=0)
-        # - RESERVED:  01 (bit0=0, bit1=1)
-        # - SOLD:      10 (bit0=1, bit1=0)
-        #
-        # Example: Seat at index 5
-        # - offset = 5 * 2 = 10
-        # - bit0 at position 10 → set to 0
-        # - bit1 at position 11 → set to 1
-        for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
-            offset = seat_index * 2
-            pipe.setbit(bf_key, offset, 0)  # bit0 = 0
-            pipe.setbit(bf_key, offset + 1, 1)  # bit1 = 1
-            reserved_seats.append(seat_id)
-
-        # ========== STEP 2: Update statistics ==========
-        # Update both subsection and event-level statistics atomically in single JSON
-        # After reserving 2 seats:
-        # - event_state:123.sections.A.subsections.1.stats → {available: 98, reserved: 2}
-        # - event_state:123.event_stats → {available: 498, reserved: 2}
-        config_key = _make_key(f'event_state:{event_id}')
-        num_seats = len(seats_to_reserve)
-
-        # Extract section and subsection for hierarchical navigation
-        section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
-        subsection_num = section_id.split('-')[1]  # e.g., "A-1" -> "1"
-
-        # ✨ Update subsection stats in JSON (atomic JSON.NUMINCRBY with hierarchical path)
-        pipe.execute_command(
-            'JSON.NUMINCRBY',
-            config_key,
-            f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.available",
-            -num_seats,
-        )
-        pipe.execute_command(
-            'JSON.NUMINCRBY',
-            config_key,
-            f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.reserved",
-            num_seats,
-        )
-
-        # ✨ NEW: Update event-level stats in JSON (no separate Hash)
-        pipe.execute_command('JSON.NUMINCRBY', config_key, '$.event_stats.available', -num_seats)
-        pipe.execute_command('JSON.NUMINCRBY', config_key, '$.event_stats.reserved', num_seats)
-
-        # ========== STEP 3: Fetch updated statistics ==========
-        # ✨ Get ENTIRE event_state JSON (all sections + event_stats) for Kafka event
-        # This eliminates lazy loading in ticketing service - cache always fully populated
-        pipe.execute_command('JSON.GET', config_key, '$')
-
-        # ========== STEP 4: Save booking metadata ==========
-        # Save booking metadata for tracking reservation status
-        # Note: We save stats references (keys) here, not the actual stats
-        # The actual stats will be decoded from the pipeline results
-        booking_key = _make_key(f'booking:{booking_id}')
-        pipe.hset(
-            booking_key,
-            mapping={
-                'status': 'RESERVE_SUCCESS',
-                'reserved_seats': orjson.dumps(reserved_seats).decode(),
-                'total_price': str(total_price),
-                'config_key': config_key,  # ✨ Unified config (sections + event_stats)
+        with tracer.start_as_current_span(
+            'executor.atomic_reservation',
+            attributes={
+                'booking.id': booking_id,
             },
-        )
+        ):
+            # Get Redis client (lightweight dict lookup)
+            client = kvrocks_client.get_client()
 
-        # ========== Execute pipeline (batch all commands) ==========
-        # Execute all queued commands in sequence
-        # Each individual command (SETBIT, JSON.NUMINCRBY, JSON.GET, HSET) is atomic
-        # Pipeline reduces network round-trips for better performance
-        results = await pipe.execute()
+            # ========== STEP 0: Read current stats BEFORE pipeline (for sellout tracking) ==========
+            # We need to know the current reserved count to determine if this is the first ticket
+            event_state_key = _make_key(f'event_state:{event_id}')
 
-        # ========== Parse statistics from pipeline results ==========
-        # Calculate indices based on pipeline structure:
-        #
-        # Results layout:
-        # - [0 to num_seats*2-1]: setbit results (2 per seat)
-        # - [num_seats*2]: JSON.NUMINCRBY section available (returns new value as string "98")
-        # - [num_seats*2+1]: JSON.NUMINCRBY section reserved (returns new value as string "2")
-        # - [num_seats*2+2]: JSON.NUMINCRBY event available (returns new value as string "498")
-        # - [num_seats*2+3]: JSON.NUMINCRBY event reserved (returns new value as string "2")
-        # - [num_seats*2+4]: JSON.GET event_state (ENTIRE config with ALL sections + event_stats)
-        # - [num_seats*2+5]: HSET result (booking metadata)
-        #
-        # Example with 2 seats:
-        # - Results[0-3]: 4 setbit results
-        # - Results[4-7]: 4 JSON.NUMINCRBY results (section x2 + event x2)
-        # - Results[8]: event_state (JSON.GET $) ← (2*2 + 4)
-        # - Results[9]: HSET result
-        event_state_idx = num_seats * 2 + 4
+            # Read entire event_state (simpler and more reliable than JSONPath $.event_stats)
+            # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
+            result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if not result:
+                # If JSON key doesn't exist, initialize with empty stats
+                current_stats = {}
+            else:
+                # Parse bytes to list, then unwrap to get dict
+                event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+                current_stats = event_state_dict.get('event_stats', {})
 
-        # Parse JSON.GET result from pipeline (format: bytes from Kvrocks)
-        # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
-        json_config_result = results[event_state_idx]
-        event_state: Dict[str, Any] = (
-            orjson.loads(json_config_result)[0] if json_config_result else {}
-        )
+            current_reserved_count = int(current_stats.get('reserved', 0))
+            current_total_seats = int(current_stats.get('total', 0))
 
-        # Extract specific subsection stats from hierarchical structure
-        section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
-        subsection_num = section_id.split('-')[1]  # e.g., "A-1" -> "1"
-        section_stats_data: Dict[str, Any] = (
-            event_state.get('sections', {})
-            .get(section_name, {})
-            .get('subsections', {})
-            .get(subsection_num, {})
-            .get('stats', {})
-        )
-        subsection_stats = {
-            'available': int(section_stats_data.get('available', 0)),
-            'reserved': int(section_stats_data.get('reserved', 0)),
-            'sold': int(section_stats_data.get('sold', 0)),
-            'total': int(section_stats_data.get('total', 0)),
-        }
+            # Create pipeline with MULTI/EXEC for isolation
+            # transaction=True: Prevents command interleaving by other clients
+            pipe = client.pipeline(transaction=True)
+            reserved_seats = []
 
-        event_stats_data: Dict[str, Any] = event_state.get('event_stats', {})
-        event_stats = {
-            'available': int(event_stats_data.get('available', 0)),
-            'reserved': int(event_stats_data.get('reserved', 0)),
-            'sold': int(event_stats_data.get('sold', 0)),
-            'total': int(event_stats_data.get('total', 0)),
-        }
+            # ========== STEP 1: Reserve seats in bitfield ==========
+            # Update each seat's status from AVAILABLE (00) to RESERVED (01)
+            #
+            # Bitfield encoding (2 bits per seat):
+            # - AVAILABLE: 00 (bit0=0, bit1=0)
+            # - RESERVED:  01 (bit0=0, bit1=1)
+            # - SOLD:      10 (bit0=1, bit1=0)
+            #
+            # Example: Seat at index 5
+            # - offset = 5 * 2 = 10
+            # - bit0 at position 10 → set to 0
+            # - bit1 at position 11 → set to 1
+            for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
+                offset = seat_index * 2
+                pipe.setbit(bf_key, offset, 0)  # bit0 = 0
+                pipe.setbit(bf_key, offset + 1, 1)  # bit1 = 1
+                reserved_seats.append(seat_id)
 
-        # ========== STEP 5: Track sellout timing (AFTER pipeline) ==========
-        # Track first ticket sold (if this was the first reservation)
-        # Wrapped in try-except to ensure sellout tracking doesn't break reservation flow
-        try:
-            await self._track_first_ticket(
-                client=client,
-                event_id=event_id,
-                current_reserved_count=current_reserved_count,
+            # ========== STEP 2: Update statistics ==========
+            # Update both subsection and event-level statistics atomically in single JSON
+            # After reserving 2 seats:
+            # - event_state:123.sections.A.subsections.1.stats → {available: 98, reserved: 2}
+            # - event_state:123.event_stats → {available: 498, reserved: 2}
+            config_key = _make_key(f'event_state:{event_id}')
+            num_seats = len(seats_to_reserve)
+
+            # Extract section and subsection for hierarchical navigation
+            section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
+            subsection_num = section_id.split('-')[1]  # e.g., "A-1" -> "1"
+
+            # ✨ Update subsection stats in JSON (atomic JSON.NUMINCRBY with hierarchical path)
+            pipe.execute_command(
+                'JSON.NUMINCRBY',
+                config_key,
+                f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.available",
+                -num_seats,
             )
-        except Exception:
-            # Silently fail if sellout tracking fails (non-critical feature)
-            pass
-
-        # Track sold out event (if event just sold out)
-        try:
-            await self._track_sold_out(
-                client=client,
-                event_id=event_id,
-                new_available_count=event_stats.get('available', 0),
-                total_seats=current_total_seats,
+            pipe.execute_command(
+                'JSON.NUMINCRBY',
+                config_key,
+                f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.reserved",
+                num_seats,
             )
-        except Exception:
-            # Silently fail if sellout tracking fails (non-critical feature)
-            pass
 
-        # Return complete reservation result (includes event_state for use case to broadcast)
-        return {
-            'success': True,
-            'reserved_seats': reserved_seats,
-            'total_price': total_price,
-            'subsection_stats': subsection_stats,  # For SSE broadcasting
-            'event_stats': event_stats,  # For SSE broadcasting
-            'event_state': event_state,  # For Redis Pub/Sub broadcasting (use case responsibility)
-            'error_message': None,
-        }
+            # ✨ NEW: Update event-level stats in JSON (no separate Hash)
+            pipe.execute_command(
+                'JSON.NUMINCRBY', config_key, '$.event_stats.available', -num_seats
+            )
+            pipe.execute_command('JSON.NUMINCRBY', config_key, '$.event_stats.reserved', num_seats)
+
+            # ========== STEP 3: Fetch updated statistics ==========
+            # ✨ Get ENTIRE event_state JSON (all sections + event_stats) for Kafka event
+            # This eliminates lazy loading in ticketing service - cache always fully populated
+            pipe.execute_command('JSON.GET', config_key, '$')
+
+            # ========== STEP 4: Save booking metadata ==========
+            # Save booking metadata for tracking reservation status
+            # Note: We save stats references (keys) here, not the actual stats
+            # The actual stats will be decoded from the pipeline results
+            booking_key = _make_key(f'booking:{booking_id}')
+            pipe.hset(
+                booking_key,
+                mapping={
+                    'status': 'RESERVE_SUCCESS',
+                    'reserved_seats': orjson.dumps(reserved_seats).decode(),
+                    'total_price': str(total_price),
+                    'config_key': config_key,  # ✨ Unified config (sections + event_stats)
+                },
+            )
+
+            # ========== Execute pipeline (batch all commands) ==========
+            # Execute all queued commands in sequence
+            # Each individual command (SETBIT, JSON.NUMINCRBY, JSON.GET, HSET) is atomic
+            # Pipeline reduces network round-trips for better performance
+            results = await pipe.execute()
+
+            # ========== Parse statistics from pipeline results ==========
+            # Calculate indices based on pipeline structure:
+            #
+            # Results layout:
+            # - [0 to num_seats*2-1]: setbit results (2 per seat)
+            # - [num_seats*2]: JSON.NUMINCRBY section available (returns new value as string "98")
+            # - [num_seats*2+1]: JSON.NUMINCRBY section reserved (returns new value as string "2")
+            # - [num_seats*2+2]: JSON.NUMINCRBY event available (returns new value as string "498")
+            # - [num_seats*2+3]: JSON.NUMINCRBY event reserved (returns new value as string "2")
+            # - [num_seats*2+4]: JSON.GET event_state (ENTIRE config with ALL sections + event_stats)
+            # - [num_seats*2+5]: HSET result (booking metadata)
+            #
+            # Example with 2 seats:
+            # - Results[0-3]: 4 setbit results
+            # - Results[4-7]: 4 JSON.NUMINCRBY results (section x2 + event x2)
+            # - Results[8]: event_state (JSON.GET $) ← (2*2 + 4)
+            # - Results[9]: HSET result
+            event_state_idx = num_seats * 2 + 4
+
+            # Parse JSON.GET result from pipeline (format: bytes from Kvrocks)
+            # JSONPath $ returns bytes like b'[{"event_stats": {...}}]'
+            json_config_result = results[event_state_idx]
+            event_state: Dict[str, Any] = (
+                orjson.loads(json_config_result)[0] if json_config_result else {}
+            )
+
+            # Extract specific subsection stats from hierarchical structure
+            section_name = section_id.split('-')[0]  # e.g., "A-1" -> "A"
+            subsection_num = section_id.split('-')[1]  # e.g., "A-1" -> "1"
+            section_stats_data: Dict[str, Any] = (
+                event_state.get('sections', {})
+                .get(section_name, {})
+                .get('subsections', {})
+                .get(subsection_num, {})
+                .get('stats', {})
+            )
+            subsection_stats = {
+                'available': int(section_stats_data.get('available', 0)),
+                'reserved': int(section_stats_data.get('reserved', 0)),
+                'sold': int(section_stats_data.get('sold', 0)),
+                'total': int(section_stats_data.get('total', 0)),
+            }
+
+            event_stats_data: Dict[str, Any] = event_state.get('event_stats', {})
+            event_stats = {
+                'available': int(event_stats_data.get('available', 0)),
+                'reserved': int(event_stats_data.get('reserved', 0)),
+                'sold': int(event_stats_data.get('sold', 0)),
+                'total': int(event_stats_data.get('total', 0)),
+            }
+
+            # ========== STEP 5: Track sellout timing (AFTER pipeline) ==========
+            # Track first ticket sold (if this was the first reservation)
+            # Wrapped in try-except to ensure sellout tracking doesn't break reservation flow
+            try:
+                await self._track_first_ticket(
+                    client=client,
+                    event_id=event_id,
+                    current_reserved_count=current_reserved_count,
+                )
+            except Exception:
+                # Silently fail if sellout tracking fails (non-critical feature)
+                pass
+
+            # Track sold out event (if event just sold out)
+            try:
+                await self._track_all_reserved(
+                    client=client,
+                    event_id=event_id,
+                    new_available_count=event_stats.get('available', 0),
+                    total_seats=current_total_seats,
+                )
+            except Exception:
+                # Silently fail if sellout tracking fails (non-critical feature)
+                pass
+
+            # Return complete reservation result (includes event_state for use case to broadcast)
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'total_price': total_price,
+                'subsection_stats': subsection_stats,  # For SSE broadcasting
+                'event_stats': event_stats,  # For SSE broadcasting
+                'event_state': event_state,  # For Redis Pub/Sub broadcasting (use case responsibility)
+                'error_message': None,
+            }
 
     @staticmethod
     @Logger.io
@@ -472,7 +468,7 @@ class AtomicReservationExecutor:
 
     @staticmethod
     @Logger.io
-    async def _track_sold_out(
+    async def _track_all_reserved(
         *,
         client: Redis,
         event_id: int,

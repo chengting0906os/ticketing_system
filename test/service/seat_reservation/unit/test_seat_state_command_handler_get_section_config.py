@@ -49,7 +49,9 @@ class TestGetSectionConfig:
         }
 
     @pytest.mark.asyncio
-    async def test_get_section_config_success(self, handler, mock_kvrocks_client, sample_event_state):
+    async def test_get_section_config_success(
+        self, handler, mock_kvrocks_client, sample_event_state
+    ):
         """Test successful retrieval using JSON.GET command"""
         # Given: Kvrocks returns JSON array string
         # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
@@ -74,9 +76,7 @@ class TestGetSectionConfig:
             assert call_args[2] == '$'
 
     @pytest.mark.asyncio
-    async def test_get_section_config_empty_result_raises_error(
-        self, handler, mock_kvrocks_client
-    ):
+    async def test_get_section_config_empty_result_raises_error(self, handler, mock_kvrocks_client):
         """Test ValueError when JSON.GET returns None or empty"""
         # Given: JSON.GET returns None
         mock_kvrocks_client.execute_command.return_value = None

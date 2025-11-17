@@ -114,11 +114,16 @@ class CreateBookingUseCase:
         Raises:
             DomainError: If seat availability check fails or metadata save fails
         """
-        with self.tracer.start_as_current_span('use_case.create_booking'):
-            # Step 1: Generate UUID7 booking ID
-            booking_id_uuid = uuid_utils.uuid7()  # Generate UUID7
-            booking_id_str = str(booking_id_uuid)
+        # Step 1: Generate UUID7 booking ID
+        booking_id_uuid = uuid_utils.uuid7()  # Generate UUID7
+        booking_id_str = str(booking_id_uuid)
 
+        with self.tracer.start_as_current_span(
+            'use_case.create_booking',
+            attributes={
+                'booking.id': booking_id_str,
+            },
+        ):
             Logger.base.info(
                 f'📝 [CREATE-BOOKING] Generated UUID7: {booking_id_str} '
                 f'for buyer {buyer_id}, section {section}-{subsection}'

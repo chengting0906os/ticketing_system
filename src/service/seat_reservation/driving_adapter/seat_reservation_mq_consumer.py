@@ -259,6 +259,11 @@ class SeatReservationConsumer:
     @Logger.io
     def _process_release_seat(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
         """Process seat release - Support DLQ (release operations usually don't need retry)"""
+        # Extract trace context from message for distributed tracing
+        trace_headers = message.get('_trace_headers', {})
+        if trace_headers:
+            extract_trace_context(headers=trace_headers)
+
         # Extract partition info
         partition_info = ''
         if hasattr(context, 'partition'):
@@ -281,47 +286,47 @@ class SeatReservationConsumer:
             )
             return {'success': False, 'error': error_msg, 'sent_to_dlq': True}
 
-        try:
-            # PERFORMANCE OPTIMIZATION: Release all seats in a SINGLE batch call
-            # instead of N sequential calls to reduce portal overhead
-            Logger.base.info(
-                f'🔓 [RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats in batch{partition_info}'
-            )
+        booking_id = message.get('booking_id', 'unknown')
+        event_id = message.get('event_id', self.event_id)
 
-            batch_request = ReleaseSeatsBatchRequest(
-                seat_ids=seat_positions, event_id=self.event_id
-            )
-            # pyrefly: ignore  # missing-attribute
-            result = self.portal.call(self.release_seat_use_case.execute_batch, batch_request)
-
-            # Log results
-            if result.successful_seats:
+        with self.tracer.start_as_current_span(
+            'consumer.process_release',
+            attributes={
+                'messaging.system': 'kafka',
+                'messaging.operation': 'process',
+                'booking.id': booking_id,
+            },
+        ):
+            try:
+                # PERFORMANCE OPTIMIZATION: Release all seats in a SINGLE batch call
+                # instead of N sequential calls to reduce portal overhead
                 Logger.base.info(
-                    f'✅ [RELEASE-{self.instance_id}] Released {result.total_released}/{len(seat_positions)} seats'
+                    f'🔓 [RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats in batch{partition_info}'
                 )
 
-            if result.failed_seats:
-                Logger.base.warning(
-                    f'⚠️ [RELEASE-{self.instance_id}] Failed to release {len(result.failed_seats)} seats: {result.failed_seats}'
+                batch_request = ReleaseSeatsBatchRequest(seat_ids=seat_positions, event_id=event_id)
+                # pyrefly: ignore  # missing-attribute
+                result = self.portal.call(self.release_seat_use_case.execute_batch, batch_request)
+
+                # Log results
+
+                return {
+                    'success': True,
+                    'released_seats': result.successful_seats,
+                    'failed_seats': result.failed_seats,
+                    'total_released': result.total_released,
+                }
+
+            except Exception as e:
+                Logger.base.error(f'❌ [RELEASE] {e}')
+                # Send to DLQ
+                self._send_to_dlq(
+                    message=message,
+                    original_topic='release_ticket_status_to_available_in_kvrocks',
+                    error=str(e),
+                    retry_count=0,
                 )
-
-            return {
-                'success': True,
-                'released_seats': result.successful_seats,
-                'failed_seats': result.failed_seats,
-                'total_released': result.total_released,
-            }
-
-        except Exception as e:
-            Logger.base.error(f'❌ [RELEASE] {e}')
-            # Send to DLQ
-            self._send_to_dlq(
-                message=message,
-                original_topic='release_ticket_status_to_available_in_kvrocks',
-                error=str(e),
-                retry_count=0,
-            )
-            return {'success': False, 'error': str(e), 'sent_to_dlq': True}
+                return {'success': False, 'error': str(e), 'sent_to_dlq': True}
 
     @Logger.io
     def _process_finalize_payment(
