@@ -69,8 +69,6 @@ class AtomicReservationExecutor:
             'executor.fetch_price',
             attributes={
                 'event.id': event_id,
-                'seat.section_id': section_id,
-                'seat.count': len(seats_to_reserve),
             },
         ):
             # Get Redis client (lightweight dict lookup, returns existing connection pool)
@@ -112,11 +110,6 @@ class AtomicReservationExecutor:
             # All seats in same section have same price
             num_seats = len(seats_to_reserve)
             total_price = section_price * num_seats
-
-            Logger.base.debug(
-                f'💰 [PRICE-FETCH] Section {section_id}: {num_seats} seats × {section_price} = {total_price}'
-            )
-
             return total_price
 
     async def execute_atomic_reservation(

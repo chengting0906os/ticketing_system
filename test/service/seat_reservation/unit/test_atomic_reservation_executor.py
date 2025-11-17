@@ -60,8 +60,8 @@ class TestParseJsonGetResult:
     """Test JSON.GET result parsing logic"""
 
     def test_parse_json_get_result_bytes(self):
-        """Test parsing when JSON.GET returns bytes (Kvrocks format)"""
-        # Given: JSON.GET result as bytes containing JSON array (what Kvrocks actually returns)
+        """Test parsing when JSON.GET returns JSON string (Kvrocks format)"""
+        # Given: JSON.GET result as JSON string (what Kvrocks actually returns)
         event_state_json = {
             'event_stats': {
                 'available': 0,
@@ -89,72 +89,59 @@ class TestParseJsonGetResult:
                 }
             },
         }
-        # Kvrocks returns bytes like b'[{...}]' (bytes representing JSON array)
+        # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
         json_config_result = orjson.dumps([event_state_json])
 
-        # When: Parse result (simulating the parsing logic)
-        # Kvrocks returns bytes directly (not wrapped in a list)
-        if isinstance(json_config_result, list) and json_config_result:
-            config_json = json_config_result[0]
-        elif isinstance(json_config_result, bytes):
-            config_json = json_config_result.decode()
-        else:
-            config_json = json_config_result
+        # When: Parse JSON string directly (simplified pattern)
+        event_state_list = orjson.loads(json_config_result)
+        parsed = event_state_list[0]
 
-        # Then: Should parse bytes correctly
-        # config_json is now a string like '[{...}]'
-        parsed = orjson.loads(config_json)
-        # Extract first element from array
-        if isinstance(parsed, list) and parsed:
-            parsed = parsed[0]
+        # Then: Should parse correctly
         assert parsed == event_state_json
         assert parsed['event_stats']['available'] == 0
         assert parsed['sections']['A']['price'] == 3000
 
-    def test_parse_json_get_result_list_with_bytes(self):
-        """Test parsing when JSON.GET returns list[bytes]"""
-        # Given: JSON.GET result as list containing bytes
+    def test_parse_json_get_result_with_array(self):
+        """Test parsing JSON.GET result with array wrapper"""
+        # Given: JSON.GET with $ wraps result in array
         event_state_json = {'event_stats': {'available': 100}}
-        json_config_result = [orjson.dumps(event_state_json)]  # bytes in list
+        # JSON.GET returns: '[{"event_stats":{"available":100}}]'
+        json_config_result = orjson.dumps([event_state_json])
 
-        # When: Parse result (orjson.loads can handle bytes directly)
-        config_json: bytes = json_config_result[0]  # Extract bytes from list
+        # When: Parse result (simplified pattern)
+        event_state_list = orjson.loads(json_config_result)
+        parsed = event_state_list[0]
 
-        # Then: orjson.loads should handle bytes directly without decode
-        # ✅ Correct: Pass bytes directly to orjson.loads
-        parsed = orjson.loads(config_json)  # config_json is bytes
+        # Then: Should extract first element correctly
         assert parsed == event_state_json
-        assert isinstance(config_json, bytes)  # Verify we're testing bytes handling
 
-    def test_parse_json_get_result_empty_list(self):
-        """Test parsing when JSON.GET returns empty list"""
-        # Given: Empty list
-        json_config_result = []
+    def test_parse_json_get_result_none(self):
+        """Test parsing when JSON.GET returns None (key not found)"""
+        # Given: None result (key not found)
+        json_config_result = None
 
-        # When: Parse result
-        if isinstance(json_config_result, list) and json_config_result:
-            config_json = json_config_result[0]
+        # When/Then: Should handle None case
+        if not json_config_result:
+            event_state = {}
         else:
-            config_json = json_config_result
+            event_state_list = orjson.loads(json_config_result)
+            event_state = event_state_list[0]
 
-        # Then: Should return empty list (will cause error later, which is expected)
-        assert config_json == []
+        assert event_state == {}
 
     def test_parse_json_get_result_simplified_logic(self):
-        """Test simplified parsing logic with bytes (Kvrocks format)"""
-        # Given: Standard Kvrocks JSON.GET result format (bytes)
+        """Test simplified parsing logic (new pattern)"""
+        # Given: Standard JSON.GET result format
         event_state_json = {
             'event_stats': {'available': 500},
             'sections': {'A': {'price': 3000}},
         }
-        # Kvrocks returns bytes like b'[{...}]'
+        # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
         json_config_result = orjson.dumps([event_state_json])
 
-        # When: Parse bytes directly (orjson.loads handles bytes)
-        parsed = orjson.loads(json_config_result)
-        # Extract first element from array
-        if isinstance(parsed, list) and parsed:
-            parsed = parsed[0]
+        # When: Parse with simplified pattern (no isinstance checks needed)
+        event_state_list = orjson.loads(json_config_result)
+        parsed = event_state_list[0]
 
         # Then: Should work correctly
         assert parsed == event_state_json
@@ -165,8 +152,8 @@ class TestParseEventStatsJsonPath:
     """Test JSON.GET $.event_stats parsing logic (JSONPath format always returns list[dict])"""
 
     def test_parse_event_stats_bytes(self):
-        """Test parsing when JSON.GET $.event_stats returns bytes (Kvrocks format)"""
-        # Given: JSON.GET $.event_stats result as bytes (what Kvrocks actually returns)
+        """Test parsing when JSON.GET $.event_stats returns JSON string"""
+        # Given: JSON.GET $.event_stats result (what Kvrocks actually returns)
         event_stats = {
             'available': 100,
             'reserved': 400,
@@ -174,16 +161,12 @@ class TestParseEventStatsJsonPath:
             'total': 500,
             'updated_at': 1763299859,
         }
-        # Kvrocks returns bytes like b'[{...}]' (JSON array containing the stats)
+        # JSON.GET with $.event_stats returns: '[{"available":100,...}]'
         stats_result = orjson.dumps([event_stats])
 
-        # When: Parse bytes directly (orjson.loads handles bytes)
-        parsed = orjson.loads(stats_result)
-        # Extract first element from array
-        if isinstance(parsed, list) and parsed:
-            parsed_stats = parsed[0]
-        else:
-            parsed_stats = parsed
+        # When: Parse with simplified pattern
+        parsed_list = orjson.loads(stats_result)
+        parsed_stats = parsed_list[0]
 
         # Then: Should extract dict correctly
         assert parsed_stats == event_stats
@@ -191,16 +174,17 @@ class TestParseEventStatsJsonPath:
         assert parsed_stats['total'] == 500
 
     def test_parse_event_stats_direct_parse(self):
-        """Test direct parsing of bytes without intermediate steps"""
-        # Given: JSON.GET result as bytes
+        """Test direct parsing without intermediate steps"""
+        # Given: JSON.GET result as JSON string
         event_stats = {'available': 250, 'reserved': 250, 'sold': 0, 'total': 500}
-        stats_result = orjson.dumps([event_stats])  # Kvrocks returns bytes
+        # JSON.GET returns: '[{"available":250,...}]'
+        stats_result = orjson.dumps([event_stats])
 
-        # When: Parse bytes directly (most efficient)
-        parsed = orjson.loads(stats_result)
-        parsed_stats = parsed[0] if isinstance(parsed, list) else parsed
+        # When: Parse directly (most efficient)
+        parsed_list = orjson.loads(stats_result)
+        parsed_stats = parsed_list[0]
 
-        # Then: Should handle bytes correctly
+        # Then: Should parse correctly
         assert parsed_stats == event_stats
 
     def test_parse_event_stats_empty_result(self):
@@ -214,14 +198,13 @@ class TestParseEventStatsJsonPath:
 
     def test_parse_event_stats_null_result(self):
         """Test parsing when JSON.GET $.event_stats returns [null]"""
-        # Given: List with null value
-        stats_result = ['null']
+        # Given: JSON array with null
+        # JSON.GET returns: '[null]' when key exists but value is null
+        stats_result = orjson.dumps([None])
 
         # When: Parse result
-        stats_json = stats_result[0]
-        if isinstance(stats_json, bytes):
-            stats_json = stats_json.decode()
-        parsed_stats = orjson.loads(stats_json)
+        parsed_list = orjson.loads(stats_result)
+        parsed_stats = parsed_list[0]
 
         # Then: Should return None (triggers fallback to full JSON.GET)
         assert parsed_stats is None

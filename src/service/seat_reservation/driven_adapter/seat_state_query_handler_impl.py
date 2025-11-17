@@ -55,41 +55,22 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         config_key = _make_key(f'event_state:{event_id}')
 
         # Fetch event config JSON
-        config_json = None
         try:
-            # Try JSON.GET first (Kvrocks native JSON support)
-            # JSON.GET with $ returns a string like '[{"sections":{...}}]'
+            # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
             result = await client.execute_command('JSON.GET', config_key, '$')
             Logger.base.debug(f'🔍 [QUERY-READ] JSON.GET succeeded for {config_key}')
 
-            if result:
-                # Parse the JSON string first
-                if isinstance(result, bytes):
-                    result = result.decode()
-                parsed = orjson.loads(result)  # This gives us a list
-
-                # Extract first element from the array
-                if isinstance(parsed, list) and parsed:
-                    config_json = orjson.dumps(parsed[0]).decode()  # Convert back to JSON string
-                else:
-                    config_json = result
+            if not result:
+                Logger.base.error(f'❌ [QUERY-READ] No event config found for event_id={event_id}')
+                event_state = {}
+            else:
+                # Parse JSON string array and extract first element
+                event_state_list = orjson.loads(result)
+                event_state = event_state_list[0]
 
         except Exception as e:
-            Logger.base.debug(f'🔍 [QUERY-READ] JSON.GET failed: {e}, trying fallback')
-            # Fallback: Regular GET if JSON commands not supported
-            try:
-                config_json = await client.get(config_key)
-                if isinstance(config_json, bytes):
-                    config_json = config_json.decode()
-                Logger.base.debug(f'🔍 [QUERY-READ] Fallback GET succeeded for {config_key}')
-            except Exception as fallback_error:
-                Logger.base.error(
-                    f'❌ [QUERY-READ] Both JSON.GET and GET failed for {config_key}: {fallback_error}'
-                )
-                config_json = None
-
-        # Parse JSON (config_json is now a JSON string of the dict, not the array)
-        event_state = orjson.loads(config_json) if config_json else {}
+            Logger.base.error(f'❌ [QUERY-READ] Failed to fetch event config: {e}')
+            event_state = {}
 
         # Debug: Log what we're reading
         Logger.base.info(
@@ -196,44 +177,19 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         config_key = _make_key(f'event_state:{event_id}')
 
         try:
-            # Try JSON.GET first (Kvrocks native JSON support)
+            # JSON.GET with $ returns: '[{"event_stats":{...},"sections":{...}}]'
             result = await client.execute_command('JSON.GET', config_key, '$')
 
             if not result:
                 return {}
 
-            # Handle result (could be list or string depending on Kvrocks version)
-            if isinstance(result, list) and result:
-                config_json = result[0]
-            elif isinstance(result, bytes):
-                config_json = result.decode()
-            else:
-                config_json = result
-
-            # Ensure it's a string
-            if isinstance(config_json, bytes):
-                config_json = config_json.decode()
-
-            # Parse JSON
-            event_state = orjson.loads(config_json)
-            # If JSON.GET returned an array, extract first element
-            if isinstance(event_state, list) and event_state:
-                event_state = event_state[0]
+            # Parse JSON string array and extract first element
+            event_state_list = orjson.loads(result)
+            event_state = event_state_list[0]
 
         except Exception as e:
-            Logger.base.debug(f'🔍 [QUERY] JSON.GET failed: {e}, trying fallback')
-            # Fallback: Regular GET if JSON commands not supported
-            try:
-                config_json = await client.get(config_key)
-                if not config_json:
-                    return {}
-                if isinstance(config_json, bytes):
-                    config_json = config_json.decode()
-                event_state = orjson.loads(config_json)
-                if isinstance(event_state, list) and event_state:
-                    event_state = event_state[0]
-            except Exception:
-                return {}
+            Logger.base.debug(f'🔍 [QUERY] Failed to fetch event config: {e}')
+            return {}
 
         # Extract stats from hierarchical structure (sections -> subsections -> stats)
         all_stats = {}
