@@ -150,7 +150,7 @@ filterwarnings = [
     "ignore::pluggy.PluggyTeardownRaisedWarning",
 ]
 testpaths = ["test"]
-addopts = "-v --tb=short --strict-markers -n 6 --ignore=test/deployment --import-mode=importlib"
+addopts = "-v --tb=short --strict-markers  --import-mode=importlib"
 norecursedirs = [".git", ".tox", "dist", "build", "*.egg", "__pycache__"]
 
 [tool.pyright]

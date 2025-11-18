@@ -71,6 +71,9 @@ re-seed-1k:  ## 🔄 Reset and seed with 1000 seats (local_dev_1000)
 re-seed-staging:  ## 🔄 Reset and seed with 5000 seats (staging)
 	@$(MAKE) re-seed DEPLOY_ENV=staging
 
+re-seed-2k:  ## 🔄 Reset and seed with 2000 seats (local_dev_2k)
+	@$(MAKE) re-seed DEPLOY_ENV=local_dev_2k
+
 re-seed-prod:  ## 🔄 Reset and seed with 50000 seats (production)
 	@$(MAKE) re-seed DEPLOY_ENV=production
 
@@ -82,24 +85,24 @@ psql:  ## 🐘 Connect to PostgreSQL
 # ==============================================================================
 
 .PHONY: test t-smoke t-quick t-unit t-e2e t-bdd test-cdk
-test:  ## 🧪 Run unit tests (excludes CDK and E2E)
-	@uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
+pytest:  ## 🧪 Run unit tests (excludes CDK and E2E)
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
-	@uv run pytest  -m "smoke" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest  -m "smoke" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
 
 t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
-	@uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
 
 t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
-	@uv run pytest -m unit -v -n 6 $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
 
 t-e2e:  ## 🧪 Run E2E tests
-	@uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
 test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
 	@echo "⚠️  Warning: CDK tests are CPU intensive and may take 1-2 minutes"
-	@uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 %:
 	@:
@@ -225,7 +228,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=3 --scale reservation-service=10 --scale booking-service=10
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=4 --scale reservation-service=10 --scale booking-service=10
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -266,24 +269,14 @@ drk:  ## 🌊 Reset Kafka in Docker
 
 tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
 	@docker-compose exec ticketing-service uv run pytest test/ \
+		-n 4\
 		--ignore=test/service/e2e \
 		--ignore=test/deployment \
 		--ignore=test/infrastructure \
 		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
 		-v
 
-tdinfra:  ## 🏗️ Run infrastructure tests in Docker
-	@echo "🏗️  Testing infrastructure components in Docker..."
-	@docker-compose exec ticketing-service uv run pytest test/infrastructure/ -v --tb=short
-	@echo "✅ Infrastructure tests complete!"
 
-tdci:  ## 🤖 Run CI tests (exclude infra, api, e2e, deployment)
-	@docker-compose exec ticketing-service uv run pytest test/ \
-		--ignore=test/service/e2e \
-		--ignore=test/infrastructure \
-		--ignore=test/deployment \
-		-m "not api and not infra and not e2e" \
-		-v
 
 # ==============================================================================
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
@@ -380,6 +373,7 @@ help:
 	@echo "  migrate-history - Show migration history"
 	@echo "  re-seed     - Reset and re-seed database (usage: DEPLOY_ENV=local_dev_1000 make re-seed)"
 	@echo "  re-seed-1k  - Reset and seed with 1000 seats"
+	@echo "  re-seed-2k  - Reset and seed with 2000 seats"
 	@echo "  re-seed-staging - Reset and seed with 5000 seats"
 	@echo "  re-seed-prod - Reset and seed with 50000 seats"
 	@echo "  psql        - Connect to PostgreSQL"

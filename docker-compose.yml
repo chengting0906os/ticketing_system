@@ -81,8 +81,10 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '1.5'
           memory: 3G
         reservations:
+          cpus: '1'
           memory: 1G
 
   kafka2:
@@ -116,8 +118,10 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '1.5'
           memory: 3G
         reservations:
+          cpus: '1'
           memory: 1G
 
   kafka3:
@@ -151,8 +155,10 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '1.5'
           memory: 3G
         reservations:
+          cpus: '1'
           memory: 1G
 
   kafka-ui:

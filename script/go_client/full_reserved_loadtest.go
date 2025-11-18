@@ -30,6 +30,7 @@ import (
 type JSONConfig struct {
 	LocalDev     EnvironmentConfig `json:"local_dev"`
 	LocalDev1000 EnvironmentConfig `json:"local_dev_1000"`
+	LocalDev2k   EnvironmentConfig `json:"local_dev_2k"`
 	Development  EnvironmentConfig `json:"development"`
 	Staging      EnvironmentConfig `json:"staging"`
 	Production   EnvironmentConfig `json:"production"`
@@ -87,10 +88,12 @@ func loadSeatingConfig(env string) (EnvironmentConfig, error) {
 		config = jsonConfig.Production
 	case "staging":
 		config = jsonConfig.Staging
-	case "development":
-		config = jsonConfig.Development
+	case "local_dev_2k":
+		config = jsonConfig.LocalDev2k
 	case "local_dev_1000":
 		config = jsonConfig.LocalDev1000
+	case "development":
+		config = jsonConfig.Development
 	default: // local_dev
 		config = jsonConfig.LocalDev
 	}

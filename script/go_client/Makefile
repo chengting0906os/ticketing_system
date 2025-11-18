@@ -100,7 +100,7 @@ both-f: both-full
 # 🔥 RESERVED LOAD TEST (Sellout Testing)
 # ==============================================================================
 
-.PHONY: rlt rlt-dev rlt-staging rlt-prod frlt frlt-1k frlt-staging frlt-prod
+.PHONY: rlt rlt-dev rlt-staging rlt-prod frlt frlt-1k frlt-2k frlt-staging frlt-prod
 rlt: build-reserved  ## 🔥 Reserved Load Test - Auto-detect env (random 1-4 tickets, 100 workers)
 	@echo "$(COLOR_BLUE)🔥 Running reserved load test...$(COLOR_RESET)"
 	@if [ "$(DEPLOY_ENV)" = "production" ]; then \
@@ -109,6 +109,9 @@ rlt: build-reserved  ## 🔥 Reserved Load Test - Auto-detect env (random 1-4 ti
 	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
 		echo "$(COLOR_YELLOW)📊 Staging mode: 5,000 seats$(COLOR_RESET)"; \
 		./$(RESERVED_BIN) -env staging -event 1 -workers 100 -host $(API_HOST); \
+	elif [ "$(DEPLOY_ENV)" = "local_dev_2k" ]; then \
+		echo "$(COLOR_YELLOW)📊 Local Dev 2k mode: 2,000 seats$(COLOR_RESET)"; \
+		./$(RESERVED_BIN) -env local_dev_2k -event 1 -workers 100 -host $(API_HOST); \
 	elif [ "$(DEPLOY_ENV)" = "local_dev_1000" ]; then \
 		echo "$(COLOR_YELLOW)📊 Local Dev 1000 mode: 1,000 seats$(COLOR_RESET)"; \
 		./$(RESERVED_BIN) -env local_dev_1000 -event 1 -workers 100 -host $(API_HOST); \
@@ -143,6 +146,9 @@ frlt: build-full-reserved  ## 🚀 Full Reserved Load Test - Configurable (WORKE
 	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
 		echo "$(COLOR_YELLOW)📊 Staging mode: 5,000 seats$(COLOR_RESET)"; \
 		./$(FULL_RESERVED_BIN) -env staging -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
+	elif [ "$(DEPLOY_ENV)" = "local_dev_2k" ]; then \
+		echo "$(COLOR_YELLOW)📊 Local Dev 2k mode: 2,000 seats$(COLOR_RESET)"; \
+		./$(FULL_RESERVED_BIN) -env local_dev_2k -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
 	elif [ "$(DEPLOY_ENV)" = "local_dev_1000" ]; then \
 		echo "$(COLOR_YELLOW)📊 Local Dev 1000 mode: 1,000 seats$(COLOR_RESET)"; \
 		./$(FULL_RESERVED_BIN) -env local_dev_1000 -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
@@ -153,6 +159,9 @@ frlt: build-full-reserved  ## 🚀 Full Reserved Load Test - Configurable (WORKE
 
 frlt-1k: build-full-reserved  ## 🚀 Full Reserved Load Test - 1000 seats (local_dev_1000)
 	@$(MAKE) frlt DEPLOY_ENV=local_dev_1000
+
+frlt-2k: build-full-reserved  ## 🚀 Full Reserved Load Test - 2000 seats (local_dev_2k)
+	@$(MAKE) frlt DEPLOY_ENV=local_dev_2k
 
 frlt-staging: build-full-reserved  ## 🚀 Full Reserved Load Test - 5000 seats (staging)
 	@$(MAKE) frlt DEPLOY_ENV=staging
@@ -219,6 +228,8 @@ check-env:  ## 🔍 Check current environment settings
 		echo "  📊 Seats:     50,000 seats"; \
 	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
 		echo "  📊 Seats:     5,000 seats"; \
+	elif [ "$(DEPLOY_ENV)" = "local_dev_2k" ]; then \
+		echo "  📊 Seats:     2,000 seats"; \
 	elif [ "$(DEPLOY_ENV)" = "local_dev_1000" ]; then \
 		echo "  📊 Seats:     1,000 seats"; \
 	else \
@@ -264,6 +275,7 @@ help:  ## 📖 Show this help message
 	@echo "$(COLOR_CYAN)🚀 FULL RESERVED LOAD TEST (All Seats, 1 per Worker)$(COLOR_RESET)"
 	@echo "  frlt               - Full reserved (configurable: WORKERS=100 BATCH=1)"
 	@echo "  frlt-1k            - Full reserved - 1000 seats (local_dev_1000)"
+	@echo "  frlt-2k            - Full reserved - 2000 seats (local_dev_2k)"
 	@echo "  frlt-staging       - Full reserved - 5000 seats (staging)"
 	@echo "  frlt-prod          - Full reserved - 50000 seats (production)"
 	@echo ""
@@ -288,6 +300,7 @@ help:  ## 📖 Show this help message
 	@echo "  make rlt-dev                        # Run sellout test (500 seats)"
 	@echo "  make rlt-1k                         # Run sellout test (1000 seats)"
 	@echo "  make frlt-1k                        # Full reserved test (1000 seats)"
+	@echo "  make frlt-2k                        # Full reserved test (2000 seats)"
 	@echo "  make frlt-staging                   # Full reserved test (5000 seats)"
 	@echo "  API_HOST=http://alb.aws.com make m  # Test against AWS"
 	@echo "  DEPLOY_ENV=production make rlt      # Test production (50K seats)"
