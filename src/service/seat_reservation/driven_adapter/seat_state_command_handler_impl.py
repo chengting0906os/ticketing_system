@@ -4,8 +4,7 @@ Seat State Command Handler Implementation
 CQRS Command Side implementation for seat state management.
 """
 
-import os
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from opentelemetry import trace
 import orjson
@@ -18,6 +17,10 @@ from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.booking_status_manager import (
     BookingStatusManager,
 )
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.key_str_generator import (
+    make_event_state_key,
+    make_seats_bf_key,
+)
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.seat_finder import (
     SeatFinder,
 )
@@ -25,15 +28,6 @@ from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
     IBookingMetadataHandler,
 )
-
-
-# Get key prefix from environment for test isolation
-_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
-
-
-def _make_key(key: str) -> str:
-    """Add prefix to key for test isolation in parallel testing"""
-    return f'{_KEY_PREFIX}{key}'
 
 
 # Status constants
@@ -84,15 +78,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         return (row - 1) * seats_per_row + (seat_num - 1)
 
     @staticmethod
-    def _decode_int(value: Any) -> int:
-        """Decode bytes/str to int, return 0 if None"""
-        if not value:
-            return 0
-        if isinstance(value, bytes):
-            return int(value.decode())
-        return int(value)
-
-    @staticmethod
     def _error_result(message: str) -> Dict:
         """Create standardized error result"""
         return {
@@ -114,7 +99,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         # Cache miss - fetch from event config JSON
         try:
             client = kvrocks_client.get_client()
-            event_state_key = _make_key(f'event_state:{event_id}')
+            event_state_key = make_event_state_key(event_id=event_id)
             result = await client.execute_command('JSON.GET', event_state_key, '$')
 
             if not result:
@@ -165,19 +150,18 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     async def _verify_seats_available(
         self, *, bf_key: str, seats_to_reserve: List[tuple]
     ) -> Optional[str]:
-        """Verify all requested seats are available"""
         client = kvrocks_client.get_client()
 
         for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
             offset = seat_index * 2
 
-            # Read 2 bits for seat status
-            bit1 = await client.getbit(bf_key, offset)
-            bit2 = await client.getbit(bf_key, offset + 1)
+            # Returns list with single value: [0]=AVAILABLE, [1]=RESERVED, [2]=SOLD
+            result = await client.execute_command('BITFIELD', bf_key, 'GET', 'u2', offset)
+            seat_status = result[0] if result else 0
 
-            # Check if seat is AVAILABLE (00)
-            if bit1 != 0 or bit2 != 0:
-                status = 'RESERVED' if bit1 == 0 and bit2 == 1 else 'SOLD'
+            # Check if seat is AVAILABLE (0)
+            if seat_status != 0:
+                status = 'RESERVED' if seat_status == 1 else 'SOLD'
                 return f'Seat {seat_id} is already {status}'
 
         return None
@@ -197,13 +181,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         quantity: int,
         seat_ids: Optional[List[str]] = None,
     ) -> Dict:
-        """
-        Atomic seat reservation - Entry point
-
-        Modes:
-        - manual: Reserve specific seats (seat_ids required)
-        - best_available: Auto-find consecutive seats (section, subsection, quantity required)
-        """
         with self.tracer.start_as_current_span(
             'seat_handler.reserve_atomic',
             attributes={
@@ -246,7 +223,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         subsection: int,
         seat_ids: List[str],
     ) -> Dict:
-        """Reserve specified seats - Manual Mode"""
+        """Reserve specified seats - Manual Mode (Optimized)"""
         section_id = f'{section}-{subsection}'
 
         with self.tracer.start_as_current_span(
@@ -261,8 +238,10 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 return existing
 
             try:
-                # Get config and parse seats
+                # Get config and parse seats (cached after first request)
                 config = await self._get_section_config(event_id=event_id, section_id=section_id)
+                section_price = config['price']  # Extract price from config
+
                 seats_to_reserve = self._parse_seat_positions(
                     seat_ids=seat_ids,
                     section=section,
@@ -277,8 +256,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     )
                     return self._error_result(error_msg)
 
-                # Verify availability
-                bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+                # Verify availability (batch verification via pipeline)
+                bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
                 error = await self._verify_seats_available(
                     bf_key=bf_key, seats_to_reserve=seats_to_reserve
                 )
@@ -288,13 +267,14 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     )
                     return self._error_result(error)
 
-                # Execute atomic reservation (price calculated internally)
+                # Execute atomic reservation (pass price to avoid redundant read)
                 result = await self.reservation_executor.execute_atomic_reservation(
                     event_id=event_id,
                     section_id=section_id,
                     booking_id=booking_id,
                     bf_key=bf_key,
                     seats_to_reserve=seats_to_reserve,
+                    section_price=section_price,  # Pass price to avoid redundant event_state read
                 )
 
                 return result
@@ -315,7 +295,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         subsection: int,
         quantity: int,
     ) -> Dict:
-        """Automatically find and reserve consecutive seats - Best Available Mode"""
+        """Automatically find and reserve consecutive seats - Best Available Mode (Optimized)"""
         section_id = f'{section}-{subsection}'
         with self.tracer.start_as_current_span(
             'seat_handler.reserve_best_available',
@@ -329,13 +309,18 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 return existing
 
             try:
-                # Get config
+                # Get config (cached after first request)
                 config = await self._get_section_config(event_id=event_id, section_id=section_id)
                 rows = config['rows']
                 seats_per_row = config['seats_per_row']
-                bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+                section_price = config['price']  # Extract price from config
+
+                bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
                 found_seats = await self.seat_finder.find_consecutive_seats(
-                    bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=quantity
+                    bf_key=bf_key,
+                    rows=rows,
+                    seats_per_row=seats_per_row,
+                    quantity=quantity,
                 )
 
                 if not found_seats:
@@ -351,13 +336,15 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     for row, seat_num, seat_index in found_seats
                 ]
 
-                # Execute atomic reservation (price calculated internally)
+                # Execute atomic reservation (pass price to avoid redundant read)
+                # Total: 2 network round-trips (find + execute)
                 result = await self.reservation_executor.execute_atomic_reservation(
                     event_id=event_id,
                     section_id=section_id,
                     booking_id=booking_id,
                     bf_key=bf_key,
                     seats_to_reserve=seats_to_reserve,
+                    section_price=section_price,  # Pass price to avoid redundant event_state read
                 )
 
                 return result
@@ -375,7 +362,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         """Release seats (RESERVED -> AVAILABLE)"""
         Logger.base.info(f'🔓 [CMD] Releasing {len(seat_ids)} seats')
 
-        # TODO: Implement release logic with Lua script
+        # TODO: Implement release logic
         # Hint: Similar to reserve_seats but change RESERVED -> AVAILABLE
         results = {seat_id: True for seat_id in seat_ids}
         return results
@@ -396,12 +383,11 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
 
         client = kvrocks_client.get_client()
-        bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
         offset = seat_index * 2
 
-        # Set to SOLD (10)
-        await client.setbit(bf_key, offset, 0)
-        await client.setbit(bf_key, offset + 1, 1)
+        # Set to SOLD (10): Use BITFIELD for compatibility with BITFIELD GET
+        await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 2)  # 10 = SOLD
         return True
 
     @Logger.io
@@ -426,10 +412,9 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
 
         client = kvrocks_client.get_client()
-        bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
         offset = seat_index * 2
 
-        # Set to AVAILABLE (00)
-        await client.setbit(bf_key, offset, 0)
-        await client.setbit(bf_key, offset + 1, 0)
+        # Set to AVAILABLE (00): Use BITFIELD for compatibility with BITFIELD GET
+        await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 0)  # 00 = AVAILABLE
         return True

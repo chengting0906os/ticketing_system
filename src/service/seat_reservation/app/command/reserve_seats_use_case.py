@@ -235,7 +235,7 @@ class ReserveSeatsUseCase:
                     event_id=request.event_id,
                 )
             except Exception as e:
-                Logger.base.error(f'❌ [RESERVE] Unexpected error: {e}')
+                Logger.base.exception(f'❌ [RESERVE] Unexpected error: {e}')
                 error_msg = 'Internal server error'
 
                 # Record exception on span
@@ -266,7 +266,6 @@ class ReserveSeatsUseCase:
                 )
 
     def _validate_request(self, request: ReservationRequest) -> None:
-        """Validate reservation request"""
         if request.selection_mode == 'manual':
             if not request.seat_positions:
                 raise DomainError('Manual selection requires seat positions', 400)

@@ -16,6 +16,7 @@ from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.seat_reservation.driving_adapter.seat_reservation_mq_consumer import (
     SeatReservationConsumer,
 )
@@ -48,11 +49,15 @@ def main() -> None:
 
             # Initialize Kvrocks for consumer event loop
             try:
-                portal.call(kvrocks_client.initialize)  # type: ignore
+                client = portal.call(kvrocks_client.initialize)  # type: ignore
                 Logger.base.info('📡 [Standalone Seat Reservation Consumer] Kvrocks initialized')
+
+                # Initialize Lua scripts
+                portal.call(lambda: lua_script_executor.initialize(client=client))  # type: ignore
+                Logger.base.info('🔥 [Standalone Seat Reservation Consumer] Lua scripts loaded')
             except Exception as e:
                 Logger.base.error(
-                    f'❌ [Standalone Seat Reservation Consumer] Failed to initialize Kvrocks: {e}'
+                    f'❌ [Standalone Seat Reservation Consumer] Failed to initialize Kvrocks/Lua: {e}'
                 )
                 raise
 

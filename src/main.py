@@ -25,6 +25,7 @@ from src.platform.message_queue.event_publisher import flush_all_messages
 from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.platform.state.lua_script_executor import lua_script_executor
 
 # Seat Reservation Service imports
 from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
@@ -115,8 +116,12 @@ async def lifespan(app: FastAPI):
         Logger.base.info('📊 [Unified Service] Redis instrumentation configured')
 
     # Initialize Kvrocks connection pool (fail-fast)
-    await kvrocks_client.initialize()
+    client = await kvrocks_client.initialize()
     Logger.base.info('📡 [Unified Service] Kvrocks initialized')
+
+    # Initialize Lua scripts
+    await lua_script_executor.initialize(client=client)
+    Logger.base.info('🔥 [Unified Service] Lua scripts loaded')
 
     # Initialize asyncpg connection pool (eager initialization)
     await get_asyncpg_pool()

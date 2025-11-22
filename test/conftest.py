@@ -51,6 +51,7 @@ os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 import src.platform.state.kvrocks_client  # noqa: E402
 from test.kvrocks_test_client import kvrocks_test_client_async  # noqa: E402
 
+
 src.platform.state.kvrocks_client.kvrocks_client = kvrocks_test_client_async
 
 # =============================================================================
@@ -239,23 +240,26 @@ async def clean_kvrocks():
     """
     Clean Kvrocks before and after each test
 
-    Uses test-only client to avoid coupling with production implementation.
+    Uses the monkey-patched kvrocks_client (async version).
     """
-    from test.kvrocks_test_client import kvrocks_test_client
+    from src.platform.state.kvrocks_client import kvrocks_client
+
+    # Initialize for current event loop (required for per-loop test client)
+    await kvrocks_client.initialize()
 
     # Clean Kvrocks data before test
     key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
-    client = kvrocks_test_client.connect()
-    keys: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
+    client = kvrocks_client.get_client()
+    keys: list[str] = await client.keys(f'{key_prefix}*')  # type: ignore
     if keys:
-        client.delete(*keys)
+        await client.delete(*keys)
 
     yield
 
     # Cleanup after test
-    keys_after: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
+    keys_after: list[str] = await client.keys(f'{key_prefix}*')  # type: ignore
     if keys_after:
-        client.delete(*keys_after)
+        await client.delete(*keys_after)
 
 
 @pytest.fixture(autouse=True, scope='function')

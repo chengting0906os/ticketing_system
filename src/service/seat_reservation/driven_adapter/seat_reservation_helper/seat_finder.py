@@ -4,20 +4,13 @@ Seat Finder
 Handles finding consecutive available seats using bitfield operations.
 """
 
-import os
 from typing import List, Optional
+
+import orjson
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
-
-
-# Get key prefix from environment for test isolation
-_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
-
-
-def _make_key(key: str) -> str:
-    """Add prefix to key for test isolation in parallel testing"""
-    return f'{_KEY_PREFIX}{key}'
+from src.platform.state.lua_script_executor import lua_script_executor
 
 
 class SeatFinder:
@@ -41,7 +34,7 @@ class SeatFinder:
         quantity: int,
     ) -> Optional[List[tuple]]:
         """
-        Find N consecutive available seats
+        Find N consecutive available seats using Lua script (1 network round-trip)
 
         Args:
             bf_key: Bitfield key
@@ -54,46 +47,23 @@ class SeatFinder:
         """
         client = kvrocks_client.get_client()
 
-        Logger.base.debug(
-            f'🔍 [SEAT-FINDER] Searching for {quantity} consecutive seats '
-            f'(rows={rows}, seats_per_row={seats_per_row})'
-        )
+        try:
+            result = await lua_script_executor.find_consecutive_seats(
+                client=client,
+                keys=[bf_key],
+                args=[str(rows), str(seats_per_row), str(quantity)],
+            )
 
-        # Scan each row to find consecutive available seats
-        for row in range(1, rows + 1):
-            consecutive_count = 0
-            start_seat = None
-            found_seats = []
+            if result is None:
+                Logger.base.warning(f'❌ [SEAT-FINDER-LUA] No {quantity} consecutive seats found')
+                return None
 
-            for seat_num in range(1, seats_per_row + 1):
-                seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
-                offset = seat_index * 2
+            # Parse JSON result from Lua: [[row, seat_num, seat_index], ...]
+            found_seats = orjson.loads(result)
+            found_seats_tuples = [tuple(seat) for seat in found_seats]
 
-                # Read 2 bits for seat status
-                bit1 = await client.getbit(bf_key, offset)
-                bit2 = await client.getbit(bf_key, offset + 1)
+            return found_seats_tuples
 
-                # Status: 00 = AVAILABLE, 01 = RESERVED, 10 = SOLD
-                is_available = bit1 == 0 and bit2 == 0
-
-                if is_available:
-                    if consecutive_count == 0:
-                        start_seat = seat_num
-                    consecutive_count += 1
-                    found_seats.append((row, seat_num, seat_index))
-
-                    # Found enough consecutive seats
-                    if consecutive_count == quantity:
-                        Logger.base.debug(
-                            f'✅ [SEAT-FINDER] Found {quantity} consecutive seats: '
-                            f'row {row}, seats {start_seat}-{seat_num}'
-                        )
-                        return found_seats
-                else:
-                    # Reset counter
-                    consecutive_count = 0
-                    start_seat = None
-                    found_seats = []
-
-        Logger.base.warning(f'❌ [SEAT-FINDER] No {quantity} consecutive seats found')
-        return None
+        except Exception as e:
+            Logger.base.error(f'❌ [SEAT-FINDER-LUA] Script execution failed: {e}')
+            raise

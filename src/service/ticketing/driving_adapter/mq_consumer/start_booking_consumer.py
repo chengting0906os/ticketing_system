@@ -17,6 +17,7 @@ from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.ticketing.driving_adapter.mq_consumer.booking_mq_consumer import (
     BookingMqConsumer,
 )
@@ -53,10 +54,14 @@ def main() -> None:
 
             # Initialize Kvrocks for consumer event loop
             try:
-                portal.call(kvrocks_client.initialize)  # type: ignore
+                client = portal.call(kvrocks_client.initialize)  # type: ignore
                 Logger.base.info('📡 [Booking Service] Kvrocks initialized')
+
+                # Initialize Lua scripts
+                portal.call(lambda: lua_script_executor.initialize(client=client))  # type: ignore
+                Logger.base.info('🔥 [Booking Service] Lua scripts loaded')
             except Exception as e:
-                Logger.base.error(f'❌ [Booking Service] Failed to initialize Kvrocks: {e}')
+                Logger.base.error(f'❌ [Booking Service] Failed to initialize Kvrocks/Lua: {e}')
                 raise
 
             # Initialize asyncpg pool for consumer event loop
