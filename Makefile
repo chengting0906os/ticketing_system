@@ -68,13 +68,13 @@ re-seed:  ## 🔄 Reset and re-seed database (usage: make re-seed DEPLOY_ENV=loc
 re-seed-1k:  ## 🔄 Reset and seed with 1000 seats (local_dev_1000)
 	@$(MAKE) re-seed DEPLOY_ENV=local_dev_1000
 
-re-seed-staging:  ## 🔄 Reset and seed with 5000 seats (staging)
+re-seed-5k:  ## 🔄 Reset and seed with 5000 seats (staging)
 	@$(MAKE) re-seed DEPLOY_ENV=staging
 
 re-seed-2k:  ## 🔄 Reset and seed with 2000 seats (local_dev_2k)
 	@$(MAKE) re-seed DEPLOY_ENV=local_dev_2k
 
-re-seed-prod:  ## 🔄 Reset and seed with 50000 seats (production)
+re-seed-50k:  ## 🔄 Reset and seed with 50000 seats (production)
 	@$(MAKE) re-seed DEPLOY_ENV=production
 
 psql:  ## 🐘 Connect to PostgreSQL
@@ -277,6 +277,23 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped feat
 		-v
 
 
+
+# ==============================================================================
+# 🎯 K6 LOAD TESTING
+# ==============================================================================
+
+.PHONY: k6-local k6-stress k6-prod k6-prod-stress
+k6-local:  ## 🎯 Run k6 load test (local: peak 250 RPS, 1 min)
+	@k6 run script/k6/local/load-test.js
+
+k6-stress:  ## 💥 Run k6 stress test (local: peak 500 RPS)
+	@k6 run script/k6/local/stress-test.js
+
+k6-prod:  ## 🚀 Run k6 load test (production: peak 2500 RPS)
+	@k6 run -e API_URL=$(API_HOST) script/k6/production/load-test.js
+
+k6-prod-stress:  ## 💥 Run k6 stress test (production: peak 7000 RPS)
+	@k6 run -e API_URL=$(API_HOST) script/k6/production/stress-test.js
 
 # ==============================================================================
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
