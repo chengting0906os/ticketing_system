@@ -92,9 +92,27 @@ jobs:
         run: |
           uv sync --all-extras --dev
           
-      - name: Setup environment variables for database migration
+      # NOTE: Plaintext credentials below are for CI testing ONLY.
+      # Production uses AWS Secrets Manager via CDK (see deployment/cdk/stacks/)
+      - name: Setup environment variables
         run: |
-          cp .env.example .env
+          cat <<EOF > .env
+          POSTGRES_SERVER=localhost
+          POSTGRES_USER=py_arch_lab
+          POSTGRES_PASSWORD=py_arch_lab
+          POSTGRES_DB=ticketing_system_db
+          POSTGRES_PORT=5432
+          KVROCKS_HOST=localhost
+          KVROCKS_PORT=6666
+          KVROCKS_DB=0
+          ENVIRONMENT=test
+          SECRET_KEY=ci-test-secret-key
+          ACCESS_TOKEN_EXPIRE_MINUTES=1440
+          REFRESH_TOKEN_EXPIRE_DAYS=30
+          ALGORITHM=HS256
+          RESET_PASSWORD_TOKEN_SECRET=ci-test-reset-token
+          VERIFICATION_TOKEN_SECRET=ci-test-verification-token
+          EOF
 
       - name: Create static directory
         run: |

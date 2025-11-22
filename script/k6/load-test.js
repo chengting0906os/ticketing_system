@@ -1,172 +1,201 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { Rate, Trend, Counter } from 'k6/metrics';
+import { check, group } from 'k6';
+import { Trend, Counter } from 'k6/metrics';
+import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
 // Custom metrics
-const bookingSuccessRate = new Rate('booking_success_rate');
-const bookingDuration = new Trend('booking_duration');
-const authFailures = new Counter('auth_failures');
-const sectionErrors = new Counter('section_errors');
+const bookingTime = new Trend('booking_time', true);
+const bookingCompleted = new Counter('booking_completed');
+const bookingFailed = new Counter('booking_failed');
 
-// Test configuration
+// Test configuration - ramping-arrival-rate for precise RPS control
 export const options = {
-  stages: [
-    { duration: '30s', target: 10 },   // Ramp up to 10 users
-    { duration: '1m', target: 50 },    // Ramp up to 50 users
-    { duration: '2m', target: 50 },    // Stay at 50 users
-    { duration: '30s', target: 100 },  // Spike to 100 users
-    { duration: '1m', target: 100 },   // Stay at 100 users
-    { duration: '30s', target: 0 },    // Ramp down to 0 users
-  ],
+  discardResponseBodies: true,
+  scenarios: {
+    load: {
+      executor: 'ramping-arrival-rate',
+      startRate: 10,       // Start at 10 RPS
+      timeUnit: '1s',
+      preAllocatedVUs: 500,
+      maxVUs: 1000,
+      stages: [
+        { target: 50, duration: '30s' },   // Ramp up to 50 RPS
+        { target: 100, duration: '1m' },   // Ramp up to 100 RPS
+        { target: 100, duration: '2m' },   // Stay at 100 RPS
+        { target: 200, duration: '30s' },  // Spike to 200 RPS
+        { target: 200, duration: '1m' },   // Stay at 200 RPS
+        { target: 50, duration: '30s' },   // Ramp down to 50 RPS
+      ],
+      gracefulStop: '10s',
+    },
+  },
   thresholds: {
-    'http_req_duration': ['p(95)<3000'], // 95% of requests should be below 3s
-    'booking_success_rate': ['rate>0.95'], // 95% success rate
-    'http_req_failed': ['rate<0.05'], // Less than 5% failures
+    'booking_time': ['p(95)<3000'],        // 95% of bookings under 3s
+    'http_req_failed': ['rate<0.05'],      // Less than 5% failures
   },
 };
 
-// Configuration
+// Configuration from environment variables
 const BASE_URL = __ENV.API_URL || 'http://localhost:8000';
 const EVENT_ID = parseInt(__ENV.EVENT_ID || '1');
+const NUM_USERS = parseInt(__ENV.NUM_USERS || '10');
 
-// Test data - match database seeded data
+// Test data - sections and subsections
 const SECTIONS = ['A', 'B', 'C'];
 const SUBSECTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const USERS = [
-  { email: 'b_1@t.com', password: 'P@ssw0rd' },
-  { email: 'b_2@t.com', password: 'P@ssw0rd' },
-  { email: 'b_3@t.com', password: 'P@ssw0rd' },
-  { email: 'b_4@t.com', password: 'P@ssw0rd' },
-  { email: 'b_5@t.com', password: 'P@ssw0rd' },
-  { email: 'b_6@t.com', password: 'P@ssw0rd' },
-  { email: 'b_7@t.com', password: 'P@ssw0rd' },
-  { email: 'b_8@t.com', password: 'P@ssw0rd' },
-  { email: 'b_9@t.com', password: 'P@ssw0rd' },
-  { email: 'b_10@t.com', password: 'P@ssw0rd' },
-];
 
-// Global token storage (one per VU)
-let authToken = null;
+// Generate users array based on NUM_USERS
+function generateUsers(count) {
+  const users = [];
+  for (let i = 1; i <= count; i++) {
+    users.push({
+      email: `b_${i}@t.com`,
+      password: 'P@ssw0rd',
+    });
+  }
+  return users;
+}
+
+// Login and get auth token
+function login(baseUrl, user) {
+  const payload = JSON.stringify({
+    email: user.email,
+    password: user.password,
+  });
+
+  const res = http.post(`${baseUrl}/api/user/login`, payload, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const success = check(res, {
+    'login status is 200': (r) => r.status === 200,
+    'has auth cookie': (r) => r.cookies['fastapiusersauth'] !== undefined,
+  });
+
+  if (!success) {
+    console.error(`Login failed for ${user.email}: ${res.status}`);
+    return null;
+  }
+
+  const cookieJar = http.cookieJar();
+  const cookies = cookieJar.cookiesForURL(baseUrl);
+  return cookies['fastapiusersauth'];
+}
+
+// Setup - runs once before test starts
+export function setup() {
+  console.log(`🚀 Starting k6 load test...`);
+  console.log(`📍 Target: ${BASE_URL}`);
+  console.log(`🎫 Event ID: ${EVENT_ID}`);
+  console.log(`👥 Users: ${NUM_USERS}`);
+
+  // Health check
+  const healthRes = http.get(`${BASE_URL}/health`);
+  const isHealthy = check(healthRes, {
+    'API is healthy': (r) => r.status === 200,
+  });
+
+  if (!isHealthy) {
+    throw new Error(`Setup failed: API health check failed with status ${healthRes.status}`);
+  }
+
+  // Login all users and collect tokens
+  const users = generateUsers(NUM_USERS);
+  const authTokens = [];
+
+  for (const user of users) {
+    const token = login(BASE_URL, user);
+    if (token) {
+      authTokens.push(token);
+    }
+  }
+
+  if (authTokens.length === 0) {
+    throw new Error('Setup failed: No users could login');
+  }
+
+  console.log(`✅ Setup complete: ${authTokens.length} users logged in`);
+
+  return {
+    baseUrl: BASE_URL,
+    eventId: EVENT_ID,
+    authTokens: authTokens,
+    sections: SECTIONS,
+    subsections: SUBSECTIONS,
+  };
+}
 
 // Helper: Get random element from array
 function randomElement(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// Helper: Login and get auth token
-function login() {
-  const user = USERS[__VU % USERS.length]; // Distribute users across VUs
-
-  const loginPayload = JSON.stringify({
-    email: user.email,
-    password: user.password,
-  });
-
-  const loginRes = http.post(`${BASE_URL}/api/user/login`, loginPayload, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  const loginSuccess = check(loginRes, {
-    'login status is 200': (r) => r.status === 200,
-    'has auth cookie': (r) => r.cookies['fastapiusersauth'] !== undefined,
-  });
-
-  if (!loginSuccess) {
-    authFailures.add(1);
-    console.error(`Login failed for ${user.email}: ${loginRes.status} - ${loginRes.body}`);
-    return null;
-  }
-
-  // Extract cookie
-  const cookieJar = http.cookieJar();
-  const cookies = cookieJar.cookiesForURL(BASE_URL);
-  return cookies['fastapiusersauth'];
-}
-
-// Setup function - runs once per VU at start
-export function setup() {
-  console.log('🚀 Starting k6 load test...');
-  console.log(`📍 Target: ${BASE_URL}`);
-  console.log(`🎫 Event ID: ${EVENT_ID}`);
-  console.log(`👥 Users: ${USERS.length}`);
-
-  // Health check
-  const healthRes = http.get(`${BASE_URL}/health`);
-  check(healthRes, {
-    'API is healthy': (r) => r.status === 200,
-  });
-
-  return { baseUrl: BASE_URL, eventId: EVENT_ID };
-}
-
-// Main test function - runs repeatedly for each VU
+// Main test function - runs for each iteration
 export default function (data) {
-  // Login once per VU session (reuse token)
-  if (!authToken) {
-    authToken = login();
-    if (!authToken) {
-      return; // Skip iteration if login failed
+  group('reserve seats', function () {
+    // Pick a random auth token
+    const authToken = randomElement(data.authTokens);
+
+    // Random section and subsection
+    const section = randomElement(data.sections);
+    const subsection = randomElement(data.subsections);
+    const quantity = randomIntBetween(1, 4);
+
+    const payload = JSON.stringify({
+      event_id: data.eventId,
+      section: section,
+      subsection: subsection,
+      seat_selection_mode: 'best_available',
+      seat_positions: [],
+      quantity: quantity,
+    });
+
+    const params = {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': `fastapiusersauth=${authToken}`,
+      },
+      responseType: 'text',
+    };
+
+    // POST booking request
+    const bookingRes = http.post(`${data.baseUrl}/api/booking`, payload, params);
+
+    const success = check(bookingRes, {
+      'booking status is 201': (r) => r.status === 201,
+    });
+
+    if (!success) {
+      bookingFailed.add(1);
+      return;
     }
-  }
 
-  // Generate random booking request
-  const section = randomElement(SECTIONS);
-  const subsection = randomElement(SUBSECTIONS);
-  const quantity = Math.floor(Math.random() * 3) + 1; // 1-3 seats
+    // GET booking to verify (optional - like reference script)
+    const bookingId = bookingRes.body;
+    const getParams = {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': `fastapiusersauth=${authToken}`,
+      },
+    };
 
-  const bookingPayload = JSON.stringify({
-    event_id: data.eventId,
-    section: section,
-    subsection: subsection,
-    seat_selection_mode: 'best_available',
-    seat_positions: [],
-    quantity: quantity,
-  });
+    const getRes = http.get(`${data.baseUrl}/api/booking/${bookingId}`, getParams);
 
-  // Send booking request with auth cookie
-  const bookingRes = http.post(`${BASE_URL}/api/booking`, bookingPayload, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cookie': `fastapiusersauth=${authToken}`,
-    },
-    tags: { name: 'CreateBooking' },
-  });
+    const verified = check(getRes, {
+      'get booking status is 200': (r) => r.status === 200,
+    });
 
-  // Check response
-  const success = check(bookingRes, {
-    'booking status is 201': (r) => r.status === 201,
-    'booking has id': (r) => {
-      try {
-        const body = JSON.parse(r.body);
-        return body.id !== undefined;
-      } catch (e) {
-        return false;
-      }
-    },
-  });
-
-  // Record metrics
-  bookingSuccessRate.add(success);
-  bookingDuration.add(bookingRes.timings.duration);
-
-  // Handle failures
-  if (!success) {
-    if (bookingRes.status === 401 || bookingRes.status === 403) {
-      // Re-login on auth failure
-      authToken = login();
-    } else if (bookingRes.status === 404) {
-      sectionErrors.add(1);
-      console.warn(`Section not found: ${section}-${subsection}`);
+    if (verified) {
+      // Record total time (booking + verification)
+      bookingTime.add(bookingRes.timings.duration + getRes.timings.duration);
+      bookingCompleted.add(1);
     } else {
-      console.error(`Booking failed: ${bookingRes.status} - ${bookingRes.body.substring(0, 200)}`);
+      bookingFailed.add(1);
     }
-  }
-
-  // Think time - simulate user behavior
-  sleep(Math.random() * 2 + 1); // 1-3 seconds
+  });
 }
 
-// Teardown function - runs once at end
+// Teardown - runs once after test ends
 export function teardown(data) {
   console.log('✅ k6 load test completed!');
 }
