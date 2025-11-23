@@ -9,7 +9,7 @@ Features:
 
 import os
 import time
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional
 
 from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
@@ -45,6 +45,8 @@ class SeatReservationConsumer:
     2. release_ticket_status_to_available_in_kvrocks - Release seats
     3. finalize_ticket_status_to_paid_in_kvrocks - Finalize payment
     """
+
+    PROCESSING_GUARANTEE: Literal['at-least-once', 'exactly-once'] = 'at-least-once'
 
     def __init__(self):
         self.event_id = int(os.getenv('EVENT_ID', '1'))
@@ -102,19 +104,18 @@ class SeatReservationConsumer:
         app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
             consumer_group=self.consumer_group_id,
-            processing_guarantee='exactly-once',  # 🆕 Enable exactly-once processing
-            commit_interval=0,  # 🆕 Disable auto-commit interval, let transactions manage
+            processing_guarantee=self.PROCESSING_GUARANTEE,
+            commit_interval=0.2,  # Commit every 200ms for high-throughput scenarios
             producer_extra_config=self.kafka_config.producer_config,
             consumer_extra_config=self.kafka_config.consumer_config,
-            on_processing_error=self._on_processing_error,  # 🆕 Error handling callback
+            on_processing_error=self._on_processing_error,
         )
 
         Logger.base.info(
-            f'🪑 [SEAT-RESERVATION] Created exactly-once Kafka app\n'
+            f'🪑 [SEAT-RESERVATION] Created Kafka app\n'
             f'   👥 Group: {self.consumer_group_id}\n'
             f'   🎫 Event: {self.event_id}\n'
-            f'   🔒 Processing: exactly-once\n'
-            f'   🔑 Transactional ID: {self.kafka_config.transactional_id}\n'
+            f'   🔒 Processing: {self.PROCESSING_GUARANTEE}\n'
             f'   ⚠️ Error handling: enabled'
         )
         return app
@@ -198,7 +199,6 @@ class SeatReservationConsumer:
 
     # ========== Message Handlers ==========
 
-    @Logger.io
     def _process_reservation_request(
         self, message: Dict, key: Any = None, context: Any = None
     ) -> Dict:
@@ -232,8 +232,6 @@ class SeatReservationConsumer:
                 'messaging.operation': 'process',
                 'booking.id': booking_id,
                 'event.id': event_id,
-                'seat.section': section,
-                'seat.mode': mode,
             },
         ):
             Logger.base.info(
@@ -385,7 +383,6 @@ class SeatReservationConsumer:
 
     # ========== Reservation Logic ==========
 
-    @Logger.io
     async def _handle_reservation_async(self, event_data: Any) -> bool:
         """
         Process seat reservation event - Only responsible for routing to use case
@@ -404,7 +401,6 @@ class SeatReservationConsumer:
         await self._execute_reservation(command)
         return True
 
-    @Logger.io
     def _parse_event_data(self, event_data: Any) -> Optional[Dict]:
         """Parse event data"""
         try:
@@ -422,7 +418,6 @@ class SeatReservationConsumer:
             Logger.base.error(f'❌ Parse failed: {e}')
             return None
 
-    @Logger.io
     def _create_reservation_command(self, event_data: Dict) -> Dict:
         """Create reservation command
 
@@ -448,7 +443,6 @@ class SeatReservationConsumer:
             'seat_positions': event_data.get('seat_positions', []),
         }
 
-    @Logger.io
     async def _execute_reservation(self, command: Dict) -> bool:
         """Execute seat reservation - Only responsible for calling use case"""
         try:
@@ -492,7 +486,7 @@ class SeatReservationConsumer:
                     f'🚀 [SEAT-RESERVATION-{self.instance_id}] Started\n'
                     f'   📊 Event: {self.event_id}\n'
                     f'   👥 Group: {self.consumer_group_id}\n'
-                    f'   🔒 Processing: exactly-once\n'
+                    f'   🔒 Processing: {self.PROCESSING_GUARANTEE}\n'
                     f'   📦 Waiting for partition assignment...'
                 )
 

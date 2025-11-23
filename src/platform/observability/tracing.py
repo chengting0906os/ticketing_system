@@ -11,11 +11,13 @@ Provides:
 import os
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import context as otel_context, trace
+from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.propagate import extract
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
@@ -23,8 +25,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 
 class TracingConfig:
     """
-    Centralized OpenTelemetry tracing configuration.
-
     Usage:
         # Initialize once at app startup
         tracing = TracingConfig(service_name="ticketing-service")
@@ -41,14 +41,6 @@ class TracingConfig:
         otlp_endpoint: str | None = None,
         enable_console: bool = False,
     ) -> None:
-        """
-        Initialize tracing configuration.
-
-        Args:
-            service_name: Name of the service (e.g., "ticketing-service")
-            otlp_endpoint: OTLP exporter endpoint (e.g., "http://jaeger:4317")
-            enable_console: Enable console span export for debugging
-        """
         self.service_name = service_name
         self.otlp_endpoint = otlp_endpoint or os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT')
         self.enable_console = (
@@ -84,26 +76,9 @@ class TracingConfig:
         trace.set_tracer_provider(self._provider)
 
     def instrument_fastapi(self, *, app: Any) -> None:
-        """
-        Auto-instrument FastAPI application.
-
-        Args:
-            app: FastAPI application instance
-        """
         FastAPIInstrumentor.instrument_app(app)
 
     def instrument_sqlalchemy(self, *, engine: Any) -> None:
-        """
-        Auto-instrument SQLAlchemy engine.
-
-        Args:
-            engine: SQLAlchemy engine instance (AsyncEngine or Engine)
-
-        Note:
-            For AsyncEngine, automatically extracts and instruments the
-            underlying sync_engine since OpenTelemetry events don't support
-            async engines.
-        """
         # Handle AsyncEngine by instrumenting its sync_engine
         if hasattr(engine, 'sync_engine'):
             SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
@@ -111,15 +86,10 @@ class TracingConfig:
             SQLAlchemyInstrumentor().instrument(engine=engine)
 
     def instrument_redis(self) -> None:
-        """
-        Auto-instrument Redis client globally.
-        """
         RedisInstrumentor().instrument()
 
     def get_tracer(self, *, name: str) -> trace.Tracer:
         """
-        Get a tracer for manual span creation.
-
         Args:
             name: Tracer name (typically __name__ of the module)
 
@@ -129,11 +99,6 @@ class TracingConfig:
         return trace.get_tracer(name)
 
     def shutdown(self) -> None:
-        """
-        Shutdown tracing and flush remaining spans.
-
-        Should be called on application shutdown.
-        """
         if self._provider:
             self._provider.shutdown()
 
@@ -160,20 +125,53 @@ def inject_trace_context(*, headers: dict[str, str] | None = None) -> dict[str, 
     return headers
 
 
-def extract_trace_context(*, headers: dict[str, str] | None = None) -> None:
+def extract_trace_context(*, headers: dict[str, str] | None = None) -> Context:
     """
-    Extract trace context from Kafka message headers.
+    Extract trace context from Kafka message headers and attach to current context.
 
-    Usage:
-        extract_trace_context(headers=message.headers())
-        with tracer.start_as_current_span("process_message"):
-            # This span will be linked to the producer's trace
-            process_message(message)
+    This enables distributed tracing across services by propagating trace context
+    through Kafka messages. The consumer can continue the same trace started by
+    the producer.
+
+    Flow::
+
+        Producer (Ticketing)              Consumer (Reservation)
+              │                                  │
+              ├─  Span: publish_event            │
+              │   headers: {traceparent:...}     │
+              │   ───────────────────────────>   │
+              │                                  ├─ Span: process_message (child)
+              │                                  │    └─ Span: reserve_seats
+              │                                  │
+              └──────────── Same Trace ──────────┘
+
+    Example:
+        Producer side (inject trace context)::
+
+            headers = inject_trace_context() # headers = {"traceparent": "00-{trace_id}-{span_id}-01"}
+            producer.send("topic", value=event, headers=headers)
+
+        Consumer side (extract and continue trace)::
+
+            def handle_message(message):
+                # Extract trace context from Kafka headers
+                ctx = extract_trace_context(headers=dict(message.headers()))
+
+                # New spans will be children of the producer's span
+                with tracer.start_as_current_span("process_message", context=ctx):
+                    process_booking_event(message.value())
 
     Args:
-        headers: Kafka message headers dictionary
-    """
-    from opentelemetry.propagate import extract
+        headers: Kafka message headers dictionary containing trace context
+            (e.g., {"traceparent": "00-abc123-def456-01"})
 
+    Returns:
+        Context object with extracted trace context, or current context if no headers
+    """
     if headers:
-        extract(headers)
+        # Extract returns a new Context with the propagated data
+        ctx = extract(headers)
+        # Attach the context to make it the current context
+        otel_context.attach(ctx)
+        return ctx
+    return otel_context.get_current()

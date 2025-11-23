@@ -20,7 +20,7 @@ Features:
 
 import os
 import time
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional
 
 from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
@@ -61,6 +61,8 @@ class BookingMqConsumer:
 
     All PostgreSQL operations, stateless processing
     """
+
+    PROCESSING_GUARANTEE: Literal['at-least-once', 'exactly-once'] = 'at-least-once'
 
     def __init__(
         self,
@@ -119,23 +121,22 @@ class BookingMqConsumer:
 
     @Logger.io
     def _create_kafka_app(self) -> Application:
-        """Create Kafka application with Exactly-Once support and error handling configuration"""
+        """Create Kafka application with At-Least-Once for lower latency"""
         app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
             consumer_group=self.consumer_group_id,
-            processing_guarantee='exactly-once',  # 🆕 Enable exactly-once processing
-            commit_interval=0,  # 🆕 Disable auto-commit interval, let transactions manage
+            processing_guarantee=self.PROCESSING_GUARANTEE,
+            commit_interval=0.2,  # Commit every 200ms for high-throughput scenarios
             producer_extra_config=self.kafka_config.producer_config,
             consumer_extra_config=self.kafka_config.consumer_config,
-            on_processing_error=self._on_processing_error,  # 🆕 Error handling callback
+            on_processing_error=self._on_processing_error,
         )
 
         Logger.base.info(
-            f'🎫 [TICKETING] Created exactly-once Kafka app\n'
+            f'🎫 [TICKETING] Created Kafka app\n'
             f'   👥 Group: {self.consumer_group_id}\n'
             f'   🎫 Event: {self.event_id}\n'
-            f'   🔒 Processing: exactly-once\n'
-            f'   🔑 Transactional ID: {self.kafka_config.transactional_id}\n'
+            f'   🔒 Processing: {self.PROCESSING_GUARANTEE}\n'
             f'   ⚠️ Error handling: enabled'
         )
         return app
@@ -417,7 +418,7 @@ class BookingMqConsumer:
                     f'🚀 [TICKETING-{self.instance_id}] Started\n'
                     f'   📊 Event: {self.event_id}\n'
                     f'   👥 Group: {self.consumer_group_id}\n'
-                    f'   🔒 Processing: exactly-once\n'
+                    f'   🔒 Processing: {self.PROCESSING_GUARANTEE}\n'
                     f'   📦 Waiting for partition assignment...'
                 )
 

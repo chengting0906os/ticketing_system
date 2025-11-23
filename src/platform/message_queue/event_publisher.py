@@ -21,6 +21,7 @@ from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 # Global Quix Application instance
 _quix_app: Application | None = None
 _global_producer = None  # Global producer instance
+PROCESSING_GUARANTEE: Literal['at-least-once', 'exactly-once'] = 'at-least-once'
 
 
 def _get_global_producer():
@@ -50,27 +51,32 @@ def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
 
 
 def _get_quix_app() -> Application:
-    """Get global Quix Application instance - supports Exactly-Once semantics"""
+    """Get global Quix Application instance - supports At-Least-Once semantics"""
     global _quix_app
     if _quix_app is None:
-        # Generate unique transaction ID (for exactly-once)
-        instance_id = settings.KAFKA_PRODUCER_INSTANCE_ID
-        transactional_id = f'ticketing-producer-{instance_id}'
-
         _quix_app = Application(
             broker_address=settings.KAFKA_BOOTSTRAP_SERVERS,
-            processing_guarantee='exactly-once',  # Enable exactly-once
+            processing_guarantee=PROCESSING_GUARANTEE,
             producer_extra_config={
+                # === Idempotent Producer ===
+                # Each message gets a sequence number (PID + seq),
+                # broker tracks per-producer sequence, duplicates auto-discarded on retry
                 'enable.idempotence': True,
+                # acks=all: wait for all in-sync replicas to acknowledge (required for idempotence)
                 'acks': 'all',
+                # Retry up to 3 times on transient failures (network, leader election)
                 'retries': 3,
+                # === Batching & Compression (throughput optimization) ===
+                # Snappy: fast compression, ~50% size reduction, low CPU overhead
                 'compression.type': 'snappy',
-                'transactional.id': transactional_id,  # Transaction ID
-                'max.in.flight.requests.per.connection': 5,  # Exactly-once optimization
-                # Batching configuration for optimal throughput
-                'linger.ms': 50,  # Wait up to 10ms to batch messages
-                'batch.size': 32768,  # 32KB batch size (default: 16KB)
-                'batch.num.messages': 1000,  # Max messages per batch
+                # Max concurrent requests per broker connection (5 is safe with idempotence)
+                'max.in.flight.requests.per.connection': 5,
+                # Wait up to 50ms to accumulate messages into batch (latency vs throughput tradeoff)
+                'linger.ms': 50,
+                # Max batch size in bytes (32KB, sends when reached even if linger.ms not elapsed)
+                'batch.size': 32768,
+                # Max messages per batch (sends when reached)
+                'batch.num.messages': 500,
             },
         )
     return _quix_app
@@ -165,11 +171,6 @@ async def publish_domain_event(
 
 def flush_all_messages(timeout: float = 10.0) -> int:
     """
-    Flush all pending messages - call this before application shutdown
-
-    Args:
-        timeout: Maximum time to wait for flush (seconds)
-
     Returns:
         Number of messages still pending after timeout
 

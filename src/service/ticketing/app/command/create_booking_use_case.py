@@ -130,17 +130,17 @@ class CreateBookingUseCase:
             )
 
             # Step 2: Fail Fast - Check seat availability before any writes
-            has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                required_quantity=quantity,
-            )
+            # has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
+            #     event_id=event_id,
+            #     section=section,
+            #     subsection=subsection,
+            #     required_quantity=quantity,
+            # )
 
-            if not has_enough_seats:
-                raise DomainError(
-                    f'Insufficient seats available in section {section}-{subsection}', 400
-                )
+            # if not has_enough_seats:
+            #     raise DomainError(
+            #         f'Insufficient seats available in section {section}-{subsection}', 400
+            #     )
 
             # Step 3: Save booking metadata to Kvrocks (fast, temporary storage)
             # This will be used by Seat Reservation Service during processing

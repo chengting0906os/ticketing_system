@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.key_str_generator import (
     make_booking_key,
     make_event_state_key,
@@ -256,6 +257,72 @@ class AtomicReservationExecutor:
                 'event_state': event_state,
                 'error_message': None,
             }
+
+    async def execute_find_and_reserve(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        booking_id: str,
+        bf_key: str,
+        rows: int,
+        seats_per_row: int,
+        quantity: int,
+        section_price: int,
+    ) -> Dict:
+        """
+        Find and reserve seats in one method (best_available mode).
+
+        Combines find_consecutive_seats (Lua) + execute_atomic_reservation (Pipeline).
+        """
+        tracer = trace.get_tracer(__name__)
+        section_id = f'{section}-{subsection}'
+
+        with tracer.start_as_current_span(
+            'executor.find_and_reserve',
+            attributes={
+                'booking.id': booking_id,
+            },
+        ):
+            client = kvrocks_client.get_client()
+
+            # ========== STEP 1: Find consecutive seats (Lua script) ==========
+            lua_result = await lua_script_executor.find_consecutive_seats(
+                client=client,
+                keys=[bf_key],
+                args=[str(rows), str(seats_per_row), str(quantity)],
+            )
+
+            if lua_result is None:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'total_price': 0,
+                    'subsection_stats': {},
+                    'event_stats': {},
+                    'event_state': {},
+                    'error_message': f'No {quantity} consecutive seats available',
+                }
+
+            # Parse found seats from Lua: [[row, seat_num, seat_index], ...]
+            found_seats = orjson.loads(lua_result)
+
+            # ========== STEP 2: Convert to reservation format ==========
+            seats_to_reserve = [
+                (row, seat_num, seat_index, f'{section}-{subsection}-{row}-{seat_num}')
+                for row, seat_num, seat_index in found_seats
+            ]
+
+            # ========== STEP 3: Execute atomic reservation ==========
+            return await self.execute_atomic_reservation(
+                event_id=event_id,
+                section_id=section_id,
+                booking_id=booking_id,
+                bf_key=bf_key,
+                seats_to_reserve=seats_to_reserve,
+                section_price=section_price,
+            )
 
     @staticmethod
     async def _track_first_ticket(

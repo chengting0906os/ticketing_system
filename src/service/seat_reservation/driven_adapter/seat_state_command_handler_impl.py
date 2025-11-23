@@ -295,7 +295,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         subsection: int,
         quantity: int,
     ) -> Dict:
-        """Automatically find and reserve consecutive seats - Best Available Mode (Optimized)"""
+        """Automatically find and reserve consecutive seats - Best Available Mode"""
         section_id = f'{section}-{subsection}'
         with self.tracer.start_as_current_span(
             'seat_handler.reserve_best_available',
@@ -313,39 +313,27 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 config = await self._get_section_config(event_id=event_id, section_id=section_id)
                 rows = config['rows']
                 seats_per_row = config['seats_per_row']
-                section_price = config['price']  # Extract price from config
+                section_price = config['price']
 
                 bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
-                found_seats = await self.seat_finder.find_consecutive_seats(
+
+                # Execute find + reserve in one method
+                result = await self.reservation_executor.execute_find_and_reserve(
+                    event_id=event_id,
+                    section=section,
+                    subsection=subsection,
+                    booking_id=booking_id,
                     bf_key=bf_key,
                     rows=rows,
                     seats_per_row=seats_per_row,
                     quantity=quantity,
+                    section_price=section_price,
                 )
 
-                if not found_seats:
-                    error_msg = f'No {quantity} consecutive seats available'
+                if not result['success']:
                     await self.status_manager.save_reservation_failure(
-                        booking_id=booking_id, error_message=error_msg
+                        booking_id=booking_id, error_message=result['error_message']
                     )
-                    return self._error_result(error_msg)
-
-                # Convert to reservation format
-                seats_to_reserve = [
-                    (row, seat_num, seat_index, f'{section}-{subsection}-{row}-{seat_num}')
-                    for row, seat_num, seat_index in found_seats
-                ]
-
-                # Execute atomic reservation (pass price to avoid redundant read)
-                # Total: 2 network round-trips (find + execute)
-                result = await self.reservation_executor.execute_atomic_reservation(
-                    event_id=event_id,
-                    section_id=section_id,
-                    booking_id=booking_id,
-                    bf_key=bf_key,
-                    seats_to_reserve=seats_to_reserve,
-                    section_price=section_price,  # Pass price to avoid redundant event_state read
-                )
 
                 return result
 

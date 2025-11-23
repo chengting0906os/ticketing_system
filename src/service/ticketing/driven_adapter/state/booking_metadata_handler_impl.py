@@ -66,7 +66,6 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
         self.tracer = trace.get_tracer(__name__)
         self._hset_expire_script: Any = None  # Lazy registration on first use
 
-    @Logger.io
     async def save_booking_metadata(
         self,
         *,

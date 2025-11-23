@@ -213,10 +213,21 @@ class KafkaConfig:
         return {
             'transactional.id': self.transactional_id,
             'retries': settings.KAFKA_PRODUCER_RETRIES,
+            # Connection retry settings - handle broker not ready during startup
+            'reconnect.backoff.ms': 1000,  # Initial reconnect backoff (1s)
+            'reconnect.backoff.max.ms': 30000,  # Max reconnect backoff (30s)
+            'socket.connection.setup.timeout.ms': 60000,  # Connection timeout (60s)
         }
 
     @property
     def consumer_config(self) -> dict:
         return {
             'auto.offset.reset': settings.KAFKA_CONSUMER_AUTO_OFFSET_RESET,
+            # Connection retry settings - handle broker not ready during startup
+            'reconnect.backoff.ms': 1000,  # Initial reconnect backoff (1s)
+            'reconnect.backoff.max.ms': 30000,  # Max reconnect backoff (30s)
+            'socket.connection.setup.timeout.ms': 60000,  # Connection timeout (60s)
+            # Consumer group settings
+            'session.timeout.ms': 45000,  # Session timeout (45s)
+            'heartbeat.interval.ms': 15000,  # Heartbeat interval (15s)
         }

@@ -42,10 +42,8 @@ def main() -> None:
 
     # Get dependencies from DI container
     event_broadcaster = container.booking_event_broadcaster()
-    seat_availability_cache = container.seat_availability_query_handler()
     consumer = BookingMqConsumer(
         event_broadcaster=event_broadcaster,
-        seat_availability_cache=seat_availability_cache,
     )
 
     def run_with_portal() -> None:
