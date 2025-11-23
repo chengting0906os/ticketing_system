@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     Logger.base.info('🚀 [Unified Service] Starting up...')
 
     # Setup OpenTelemetry tracing (environment-aware: Jaeger local, X-Ray AWS)
-    tracing = TracingConfig(service_name='unified-ticketing-service')
+    tracing = TracingConfig(service_name='ticketing-service')
     tracing.setup()
     Logger.base.info('📊 [Unified Service] OpenTelemetry tracing configured')
 
@@ -201,7 +201,7 @@ app = FastAPI(
 
 # Auto-instrument FastAPI (must be done before mounting routes)
 # Note: This creates auto-spans for all HTTP requests (path, method, status, duration)
-tracing_config = TracingConfig(service_name='unified-ticketing-service')
+tracing_config = TracingConfig(service_name='ticketing-service')
 tracing_config.instrument_fastapi(app=app)
 Logger.base.info('📊 [Unified Service] FastAPI auto-instrumentation enabled')
 

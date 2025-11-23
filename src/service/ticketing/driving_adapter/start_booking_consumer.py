@@ -30,7 +30,7 @@ def main() -> None:
     Logger.base.info('🚀 [Standalone Booking Consumer] Starting...')
 
     # Setup OpenTelemetry tracing
-    tracing = TracingConfig(service_name='booking-consumer')
+    tracing = TracingConfig(service_name='booking-service')
     tracing.setup()
     Logger.base.info('📊 [Standalone Booking Consumer] OpenTelemetry configured')
 

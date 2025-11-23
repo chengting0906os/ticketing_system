@@ -80,7 +80,7 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
     ) -> None:
         """Save booking metadata to Kvrocks with TTL"""
         with self.tracer.start_as_current_span(
-            'booking_meta.save',
+            'use_case.booking_meta.save',
             attributes={
                 'booking.id': booking_id,
                 'cache.system': 'kvrocks',

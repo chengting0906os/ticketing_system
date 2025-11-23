@@ -42,27 +42,32 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
     async def _fetch_and_cache_event_state(self, *, event_id: int) -> None:
         """Fetch event_state from Kvrocks and cache it"""
-        client = kvrocks_client.get_client()
-        key = _make_key(f'event_state:{event_id}')
+        with self.tracer.start_as_current_span('use_case.cache.fetch_event_state') as span:
+            span.set_attribute('event_id', event_id)
+            client = kvrocks_client.get_client()
+            key = _make_key(f'event_state:{event_id}')
 
-        # Try JSON.GET, fallback to GET
-        try:
-            result = await client.execute_command('JSON.GET', key, '$')
-            if isinstance(result, list) and result:
-                result = result[0]
-            json_str = result
-        except Exception:
-            return
+            # Try JSON.GET, fallback to GET
+            try:
+                result = await client.execute_command('JSON.GET', key, '$')
+                if isinstance(result, list) and result:
+                    result = result[0]
+                json_str = result
+            except Exception:
+                span.set_attribute('cache.hit', False)
+                return
 
-        if not json_str:
-            return
+            if not json_str:
+                span.set_attribute('cache.hit', False)
+                return
 
-        # Parse and cache
-        event_state = orjson.loads(json_str)
-        if isinstance(event_state, list) and event_state:
-            event_state = event_state[0]
+            # Parse and cache
+            event_state = orjson.loads(json_str)
+            if isinstance(event_state, list) and event_state:
+                event_state = event_state[0]
 
-        self._cache[event_id] = {'data': event_state, 'timestamp': time.time()}
+            self._cache[event_id] = {'data': event_state, 'timestamp': time.time()}
+            span.set_attribute('cache.hit', True)
 
     def _is_expired(self, *, entry: CacheEntry) -> bool:
         return time.time() - entry['timestamp'] > self._ttl_seconds
@@ -71,7 +76,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> bool:
         """Check if subsection has sufficient seats (event-driven cache with TTL)"""
-        with self.tracer.start_as_current_span('cache.check_availability') as span:
+        with self.tracer.start_as_current_span('use_case.cache.check_availability') as span:
             section_id = f'{section}-{subsection}'
 
             # Check cache validity (must exist and not expired)

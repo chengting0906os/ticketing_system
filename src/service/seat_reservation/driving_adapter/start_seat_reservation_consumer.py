@@ -26,7 +26,7 @@ def main() -> None:
     Logger.base.info('🚀 [Standalone Seat Reservation Consumer] Starting...')
 
     # Setup OpenTelemetry tracing
-    tracing = TracingConfig(service_name='seat-reservation-consumer')
+    tracing = TracingConfig(service_name='reservation-service')
     tracing.setup()
     Logger.base.info('📊 [Standalone Seat Reservation Consumer] OpenTelemetry configured')
 

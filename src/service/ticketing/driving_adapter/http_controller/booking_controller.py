@@ -5,6 +5,7 @@ from typing import List
 import anyio
 from dependency_injector.wiring import Provide
 from fastapi import APIRouter, Depends, HTTPException, status
+from opentelemetry import trace
 import orjson
 from sse_starlette.sse import EventSourceResponse
 import uuid_utils
@@ -40,6 +41,7 @@ from src.service.ticketing.driving_adapter.schema.booking_schema import (
 
 
 router = APIRouter()
+tracer = trace.get_tracer(__name__)
 
 
 @router.get('/my_booking', response_model=List[BookingWithDetailsResponse])
@@ -64,28 +66,36 @@ async def create_booking(
     current_user: UserEntity = Depends(require_buyer),
     booking_use_case: CreateBookingUseCase = Depends(CreateBookingUseCase.depends),
 ) -> BookingResponse:
-    # Create booking - ticket validation and reservation are now handled atomically inside use case
-    booking = await booking_use_case.create_booking(
-        buyer_id=current_user.id or 0,
-        event_id=request.event_id,
-        section=request.section,
-        subsection=request.subsection,
-        seat_selection_mode=request.seat_selection_mode,
-        seat_positions=request.seat_positions,
-        quantity=request.quantity,
-    )
+    with tracer.start_as_current_span('controller.create_booking') as span:
+        span.set_attribute('event_id', request.event_id)
+        span.set_attribute('section', request.section)
+        span.set_attribute('subsection', request.subsection)
+        span.set_attribute('buyer_id', current_user.id or 0)
 
-    if booking.id is None:
-        raise ValueError('Booking ID should not be None after creation.')
+        # Create booking - ticket validation and reservation are now handled atomically inside use case
+        booking = await booking_use_case.create_booking(
+            buyer_id=current_user.id or 0,
+            event_id=request.event_id,
+            section=request.section,
+            subsection=request.subsection,
+            seat_selection_mode=request.seat_selection_mode,
+            seat_positions=request.seat_positions,
+            quantity=request.quantity,
+        )
 
-    return BookingResponse(
-        id=booking.id,
-        buyer_id=booking.buyer_id,
-        event_id=booking.event_id,
-        total_price=booking.total_price,
-        status=booking.status.value,  # Should be 'pending_payment' now
-        created_at=booking.created_at,
-    )
+        if booking.id is None:
+            raise ValueError('Booking ID should not be None after creation.')
+
+        span.set_attribute('booking.id', str(booking.id))
+
+        return BookingResponse(
+            id=booking.id,
+            buyer_id=booking.buyer_id,
+            event_id=booking.event_id,
+            total_price=booking.total_price,
+            status=booking.status.value,  # Should be 'pending_payment' now
+            created_at=booking.created_at,
+        )
 
 
 @router.get('/{booking_id}')
