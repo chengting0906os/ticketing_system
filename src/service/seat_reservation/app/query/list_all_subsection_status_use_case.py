@@ -1,46 +1,17 @@
 """
-座位可用性查詢用例
-從 Kvrocks 獲取實時座位狀態，結合 PostgreSQL 獲取基本信息
+Seat Availability Query Use Case
+Get real-time seat status from Kvrocks, combined with basic information from PostgreSQL
 """
-
-from dataclasses import dataclass
-from typing import List
 
 from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
 
 
-@dataclass
-class SubsectionAvailability:
-    """子區域可用性信息"""
-
-    subsection: int
-    total_seats: int
-    available_seats: int
-    status: str
-
-
-@dataclass
-class PriceGroupAvailability:
-    """價格組可用性信息"""
-
-    price: int
-    subsections: List[SubsectionAvailability]
-
-
-@dataclass
-class EventAvailabilityStatus:
-    """活動整體可用性狀態"""
-
-    event_id: int
-    price_groups: List[PriceGroupAvailability]
-
-
 class ListAllSubSectionStatusUseCase:
     """
-    座位可用性查詢用例
+    Seat Availability Query Use Case
 
-    從 Kvrocks 獲取所有 section 的統計資訊
+    Get statistics for all sections from Kvrocks
     """
 
     def __init__(self, seat_state_handler: ISeatStateQueryHandler):
@@ -49,16 +20,16 @@ class ListAllSubSectionStatusUseCase:
     @Logger.io
     async def execute(self, *, event_id: int) -> dict:
         """
-        獲取活動所有 section 的統計資訊（從 Kvrocks 讀取）
+        Get statistics for all sections of an event (read from Kvrocks)
 
-        優化策略：
-        1. 直接查詢 Kvrocks（獨立服務，可插隊查詢）
-        2. 底層 Kvrocks 持久化（零數據丟失）
-        3. 預期性能：~10-30ms（查詢 100 個 section，Pipeline 優化）
-        4. 不受 Kafka backlog 影響
+        Optimization strategy:
+        1. Query Kvrocks directly (independent service, can skip queue)
+        2. Kvrocks persistence at the bottom layer (zero data loss)
+        3. Expected performance: ~10-30ms (querying 100 sections, Pipeline optimized)
+        4. Not affected by Kafka backlog
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
             {
@@ -70,7 +41,7 @@ class ListAllSubSectionStatusUseCase:
                 "total_sections": 100
             }
         """
-        # 使用 SeatStateHandler 獲取統計資料
+        # Use SeatStateHandler to get statistics
         all_sections = await self.seat_state_handler.list_all_subsection_status(event_id=event_id)
 
         Logger.base.info(

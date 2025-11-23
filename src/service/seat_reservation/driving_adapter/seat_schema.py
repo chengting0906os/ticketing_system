@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class SeatResponse(BaseModel):
     """
-    座位響應 Schema（從 Kvrocks 查詢，不含 ticket_id）
+    Seat Response Schema (queried from Kvrocks, without ticket_id)
     """
 
     event_id: int
@@ -19,7 +19,7 @@ class SeatResponse(BaseModel):
 
 
 class SectionStatsResponse(BaseModel):
-    """Section 統計響應"""
+    """Section Statistics Response"""
 
     section_id: str
     total: int

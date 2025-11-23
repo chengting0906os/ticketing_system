@@ -3,14 +3,14 @@ from prometheus_client import Counter, Gauge, Histogram
 
 class TicketingMetrics:
     """
-    票務系統核心指標收集器
+    Ticketing System Core Metrics Collector
 
-    專門為 50K 票券 × 100 區域場景設計
-    追蹤 Kafka consumer 效能和座位預訂業務指標
+    Designed specifically for 50K tickets x 100 sections scenario
+    Tracks Kafka consumer performance and seat reservation business metrics
     """
 
     def __init__(self):
-        # ========== Kafka Consumer 指標 ==========
+        # ========== Kafka Consumer Metrics ==========
         self.kafka_messages_processed = Counter(
             'kafka_consumer_messages_processed_total',
             'Total processed messages',
@@ -36,7 +36,7 @@ class TicketingMetrics:
             ['service', 'topic', 'error_type', 'event_id'],
         )
 
-        # ========== 座位預訂業務指標 ==========
+        # ========== Seat Reservation Business Metrics ==========
         self.seat_reservation_requests = Counter(
             'seat_reservation_requests_total',
             'Total seat reservation requests',
@@ -60,7 +60,7 @@ class TicketingMetrics:
             'concurrent_bookings_gauge', 'Active booking processes', ['event_id']
         )
 
-        # ========== Kvrocks/Redis 操作指標 ==========
+        # ========== Kvrocks/Redis Operation Metrics ==========
         self.kvrocks_operations = Counter(
             'kvrocks_operations_total',
             'Total Kvrocks operations',
@@ -74,7 +74,7 @@ class TicketingMetrics:
             buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
         )
 
-        # ========== 系統健康指標 ==========
+        # ========== System Health Metrics ==========
         self.service_uptime = Gauge(
             'service_uptime_seconds', 'Service uptime in seconds', ['service', 'instance_id']
         )
@@ -90,7 +90,6 @@ class TicketingMetrics:
     def record_kafka_message_processed(
         self, *, service: str, topic: str, partition: str, event_id: int, processing_time: float
     ):
-        """記錄 Kafka 訊息處理"""
         self.kafka_messages_processed.labels(
             service=service, topic=topic, partition=partition, event_id=event_id
         ).inc()
@@ -100,7 +99,6 @@ class TicketingMetrics:
         ).observe(processing_time)
 
     def record_kafka_error(self, *, service: str, topic: str, error_type: str, event_id: int):
-        """記錄 Kafka 錯誤"""
         self.kafka_consumer_errors.labels(
             service=service, topic=topic, error_type=error_type, event_id=event_id
         ).inc()
@@ -108,7 +106,6 @@ class TicketingMetrics:
     def record_seat_reservation(
         self, *, event_id: int, section: str, mode: str, result: str, duration: float
     ):
-        """記錄座位預訂"""
         self.seat_reservation_requests.labels(
             event_id=event_id, section=section, mode=mode, result=result
         ).inc()
@@ -120,7 +117,6 @@ class TicketingMetrics:
     def update_seat_availability(
         self, *, event_id: int, section: str, subsection: str, ratio: float
     ):
-        """更新座位可用性比例"""
         self.seat_availability.labels(
             event_id=event_id, section=section, subsection=subsection
         ).set(ratio)
@@ -128,7 +124,6 @@ class TicketingMetrics:
     def record_kvrocks_operation(
         self, *, operation: str, event_id: int, result: str, duration: float
     ):
-        """記錄 Kvrocks 操作"""
         self.kvrocks_operations.labels(operation=operation, event_id=event_id, result=result).inc()
 
         self.kvrocks_operation_duration.labels(operation=operation, event_id=event_id).observe(
@@ -136,5 +131,5 @@ class TicketingMetrics:
         )
 
 
-# 全域 metrics 實例
+# Global metrics instance
 metrics = TicketingMetrics()

@@ -1,17 +1,17 @@
 """
-Event Ticketing Aggregate - 活動票務聚合根
+Event Ticketing Aggregate - Aggregate Root for Event Ticketing
 
-【DDD 設計原則】
-- EventTicketingAggregate 是聚合根 (Aggregate Root)
-- Event 和 Ticket 都是聚合內的實體
-- 所有票務操作都通過聚合根進行
-- 保證事務一致性和業務規則
+[DDD Design Principles]
+- EventTicketingAggregate is the Aggregate Root
+- Event and Ticket are entities within the aggregate
+- All ticketing operations go through the aggregate root
+- Ensures transactional consistency and business rules
 
-【業務不變式】
-- 活動必須有有效的座位配置
-- 票務數量必須與座位配置一致
-- 票務狀態變更必須符合業務規則
-- 活動狀態和票務狀態必須保持一致
+[Business Invariants]
+- Event must have valid seating configuration
+- Ticket count must match seating configuration
+- Ticket status changes must follow business rules
+- Event status and ticket status must remain consistent
 """
 
 from datetime import datetime, timezone
@@ -20,19 +20,12 @@ from typing import Dict, List, Optional
 import attrs
 
 from src.platform.logging.loguru_io import Logger
-from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.domain.enum.event_status import EventStatus
+from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 @attrs.define
 class Ticket:
-    """
-    Ticket Entity - 聚合內實體
-
-    票務實體現在是 EventTicketingAggregate 的一部分
-    不再是獨立的聚合根
-    """
-
     event_id: int
     section: str
     subsection: int
@@ -48,12 +41,10 @@ class Ticket:
 
     @property
     def seat_identifier(self) -> str:
-        """座位標識符"""
         return f'{self.section}-{self.subsection}-{self.row}-{self.seat}'
 
     @Logger.io
     def reserve(self, *, buyer_id: int) -> None:
-        """預訂票務"""
         if self.status != TicketStatus.AVAILABLE:
             raise ValueError(f'Cannot reserve ticket with status {self.status}')
 
@@ -63,7 +54,6 @@ class Ticket:
 
     @Logger.io
     def sell(self) -> None:
-        """售出票務"""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot sell ticket with status {self.status}')
 
@@ -71,7 +61,6 @@ class Ticket:
 
     @Logger.io
     def release(self) -> None:
-        """釋放票務"""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot release ticket with status {self.status}')
 
@@ -81,7 +70,6 @@ class Ticket:
 
     @Logger.io
     def cancel_reservation(self, *, buyer_id: int) -> None:
-        """取消預訂"""
         if self.status != TicketStatus.RESERVED:
             raise ValueError(f'Cannot cancel reservation for ticket with status {self.status}')
 
@@ -92,19 +80,12 @@ class Ticket:
 
 
 def _validate_non_empty_string(instance, attribute, value):
-    """驗證字串不能為空"""
     if not value or not value.strip():
         raise ValueError(f'Event {attribute.name} cannot be empty')
 
 
 @attrs.define
 class Event:
-    """
-    Event Entity - 聚合內實體
-
-    活動實體現在是 EventTicketingAggregate 的一部分
-    """
-
     name: str = attrs.field(validator=_validate_non_empty_string)
     description: str = attrs.field(validator=_validate_non_empty_string)
     seller_id: int
@@ -119,24 +100,10 @@ class Event:
 
 @attrs.define
 class EventTicketingAggregate:
-    """
-    Event Ticketing Aggregate Root - 活動票務聚合根
-
-    這是整個活動票務系統的聚合根，包含：
-    1. Event 實體 - 活動資訊
-    2. Tickets 集合 - 所有票務
-
-    負責：
-    1. 活動的生命週期管理
-    2. 票務的創建和管理
-    3. 業務規則的執行
-    4. 聚合內一致性保證
-    """
-
-    # Event 實體
+    # Event entity
     event: Event
 
-    # Tickets 集合 - 聚合內實體
+    # Tickets collection - entities within aggregate
     tickets: List[Ticket] = attrs.field(factory=list)
 
     @classmethod
@@ -152,16 +119,14 @@ class EventTicketingAggregate:
         is_active: bool = True,
     ) -> 'EventTicketingAggregate':
         """
-        創建帶票務的活動 - 聚合根工廠方法
+        Create event with tickets - Aggregate root factory method
 
-        這是創建 EventTicketingAggregate 的唯一正確方式
-        確保活動和票務同時創建，保持聚合一致性
+        This is the only correct way to create EventTicketingAggregate.
+        Ensures event and tickets are created together, maintaining aggregate consistency.
         """
 
-        # 驗證座位配置
+        # Validate seating configuration
         cls._validate_seating_config(seating_config)
-
-        # 創建 Event 實體 (初始狀態為 DRAFT)
         event = Event(
             name=name,
             description=description,
@@ -169,11 +134,11 @@ class EventTicketingAggregate:
             venue_name=venue_name,
             seating_config=seating_config,
             is_active=is_active,
-            status=EventStatus.DRAFT,  # 初始狀態為 DRAFT，等票務創建完成後再轉為 AVAILABLE
+            status=EventStatus.DRAFT,  # Initial status is DRAFT, changes to AVAILABLE after tickets are created
             created_at=datetime.now(timezone.utc),
         )
 
-        # 創建聚合根
+        # Create aggregate root
         aggregate = cls(event=event, tickets=[])
 
         return aggregate
@@ -181,12 +146,12 @@ class EventTicketingAggregate:
     @Logger.io
     def generate_tickets(self) -> List[tuple]:
         """
-        根據座位配置生成票務
+        Generate tickets based on seating configuration
 
-        必須在活動持久化後調用（需要 event.id）
+        Must be called after event is persisted (requires event.id)
 
         Returns:
-            ticket_tuples: 適合批量插入的票務資料格式
+            ticket_tuples: Ticket data format suitable for batch insert
                 [(event_id, section, subsection, row, seat, price, status), ...]
         """
         if not self.event.id:
@@ -198,7 +163,7 @@ class EventTicketingAggregate:
         self.tickets = self._generate_tickets_from_seating_config()
         Logger.base.info(f'Generated {len(self.tickets)} tickets for event {self.event.id}')
 
-        # 同時返回批量插入格式
+        # Also return batch insert format
         ticket_tuples = [
             (
                 ticket.event_id,
@@ -215,7 +180,6 @@ class EventTicketingAggregate:
         return ticket_tuples
 
     def _generate_tickets_from_seating_config(self) -> List[Ticket]:
-        """根據座位配置生成票務實體"""
         if not self.event.id:
             raise ValueError('Event must have an ID before generating tickets')
 
@@ -249,7 +213,6 @@ class EventTicketingAggregate:
 
     @staticmethod
     def _validate_seating_config(seating_config: Dict) -> None:
-        """驗證座位配置的業務規則"""
         if not isinstance(seating_config, dict) or 'sections' not in seating_config:
             raise ValueError('Invalid seating configuration: must contain sections')
 
@@ -305,14 +268,14 @@ class EventTicketingAggregate:
     @Logger.io
     def reserve_tickets(self, *, ticket_ids: List[int], buyer_id: int) -> List[Ticket]:
         """
-        預訂票務 - 聚合內業務邏輯
+        Reserve tickets - Aggregate business logic
 
         Args:
-            ticket_ids: 要預訂的票務 ID 列表
-            buyer_id: 購買者 ID
+            ticket_ids: List of ticket IDs to reserve
+            buyer_id: Buyer ID
 
         Returns:
-            已預訂的票務列表
+            List of reserved tickets
         """
         reserved_tickets = []
 
@@ -321,15 +284,15 @@ class EventTicketingAggregate:
             if not ticket:
                 raise ValueError(f'Ticket {ticket_id} not found in this event')
 
-            # 檢查票務狀態
+            # Check ticket status
             if ticket.status != TicketStatus.AVAILABLE:
                 raise ValueError(f'Ticket {ticket_id} is not available for reservation')
 
-            # 執行預訂
+            # Execute reservation
             ticket.reserve(buyer_id=buyer_id)
             reserved_tickets.append(ticket)
 
-        # 更新活動狀態
+        # Update event status
         self.update_event_status_based_on_tickets()
 
         return reserved_tickets
@@ -337,7 +300,7 @@ class EventTicketingAggregate:
     @Logger.io
     def cancel_ticket_reservations(self, *, ticket_ids: List[int], buyer_id: int) -> List[Ticket]:
         """
-        取消票務預訂 - 聚合內業務邏輯
+        Cancel ticket reservations - Aggregate business logic
         """
         cancelled_tickets = []
 
@@ -346,15 +309,15 @@ class EventTicketingAggregate:
             if not ticket:
                 raise ValueError(f'Ticket {ticket_id} not found in this event')
 
-            # 檢查票務狀態和所有權
+            # Check ticket status and ownership
             if ticket.buyer_id != buyer_id:
                 raise ValueError(f'Ticket {ticket_id} does not belong to buyer {buyer_id}')
 
-            # 執行取消
+            # Execute cancellation
             ticket.cancel_reservation(buyer_id=buyer_id)
             cancelled_tickets.append(ticket)
 
-        # 更新活動狀態
+        # Update event status
         self.update_event_status_based_on_tickets()
 
         return cancelled_tickets
@@ -362,7 +325,7 @@ class EventTicketingAggregate:
     @Logger.io
     def finalize_tickets_as_sold(self, *, ticket_ids: List[int]) -> List[Ticket]:
         """
-        將票務標記為已售出
+        Mark tickets as sold
         """
         sold_tickets = []
 
@@ -371,24 +334,22 @@ class EventTicketingAggregate:
             if not ticket:
                 raise ValueError(f'Ticket {ticket_id} not found in this event')
 
-            # 執行售出
+            # Execute sale
             ticket.sell()
             sold_tickets.append(ticket)
 
-        # 更新活動狀態
+        # Update event status
         self.update_event_status_based_on_tickets()
 
         return sold_tickets
 
     def _find_ticket_by_id(self, ticket_id: int) -> Optional[Ticket]:
-        """在聚合內查找票務"""
         for ticket in self.tickets:
             if ticket.id == ticket_id:
                 return ticket
         return None
 
     def get_tickets_by_section(self, *, section: str, subsection: int) -> List[Ticket]:
-        """獲取特定區域的票務"""
         return [
             ticket
             for ticket in self.tickets
@@ -396,40 +357,32 @@ class EventTicketingAggregate:
         ]
 
     def get_available_tickets(self) -> List[Ticket]:
-        """獲取所有可用票務"""
         return [t for t in self.tickets if t.status == TicketStatus.AVAILABLE]
 
     def get_reserved_tickets(self) -> List[Ticket]:
-        """獲取所有已預訂票務"""
         return [t for t in self.tickets if t.status == TicketStatus.RESERVED]
 
     def get_sold_tickets(self) -> List[Ticket]:
-        """獲取所有已售出票務"""
         return [t for t in self.tickets if t.status == TicketStatus.SOLD]
 
     @property
     def total_tickets_count(self) -> int:
-        """總票數"""
         return len(self.tickets)
 
     @property
     def available_tickets_count(self) -> int:
-        """可用票數"""
         return len(self.get_available_tickets())
 
     @property
     def reserved_tickets_count(self) -> int:
-        """已預訂票數"""
         return len(self.get_reserved_tickets())
 
     @property
     def sold_tickets_count(self) -> int:
-        """已售出票數"""
         return len(self.get_sold_tickets())
 
     @Logger.io
     def update_event_status_based_on_tickets(self) -> None:
-        """根據票務狀態更新活動狀態"""
         if self.available_tickets_count == 0 and self.total_tickets_count > 0:
             self.event.status = EventStatus.SOLD_OUT
         elif self.total_tickets_count > 0:
@@ -440,10 +393,10 @@ class EventTicketingAggregate:
     @Logger.io
     def activate(self) -> None:
         """
-        啟用活動 - 從 DRAFT 轉為 AVAILABLE
+        Activate event - Change from DRAFT to AVAILABLE
 
-        只有在票務都創建完成後才能啟用活動
-        確保活動在所有準備工作完成後才開放購買
+        Event can only be activated after all tickets are created.
+        Ensures event is only open for purchase after all preparation is complete.
         """
         if self.event.status != EventStatus.DRAFT:
             raise ValueError(
@@ -457,7 +410,6 @@ class EventTicketingAggregate:
         self.event.status = EventStatus.AVAILABLE
 
     def get_statistics(self) -> dict:
-        """獲取聚合統計信息"""
         return {
             'event_id': self.event.id,
             'event_name': self.event.name,

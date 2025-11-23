@@ -1,6 +1,6 @@
 """
 Get Section Seats Detail Use Case
-獲取指定 section/subsection 的所有座位詳情
+Get all seat details for a specified section/subsection
 """
 
 from src.platform.logging.loguru_io import Logger
@@ -9,12 +9,12 @@ from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
 
 class ListSectionSeatsDetailUseCase:
     """
-    獲取指定區域的所有座位詳情 Use Case
+    Get All Seat Details for Specified Section Use Case
 
-    職責：
-    - 驗證 section 是否存在
-    - 調用 Handler 獲取座位列表
-    - 計算統計資料
+    Responsibilities:
+    - Verify section exists
+    - Call Handler to get seat list
+    - Calculate statistics
     """
 
     def __init__(self, seat_state_handler: ISeatStateQueryHandler):
@@ -23,12 +23,12 @@ class ListSectionSeatsDetailUseCase:
     @Logger.io
     async def execute(self, event_id: int, section: str, subsection: int) -> dict:
         """
-        執行查詢
+        Execute query
 
         Args:
-            event_id: 活動 ID
-            section: 區域代碼 (e.g., 'A')
-            subsection: 子區域編號 (e.g., 1)
+            event_id: Event ID
+            section: Section code (e.g., 'A')
+            subsection: Subsection number (e.g., 1)
 
         Returns:
             {
@@ -58,17 +58,17 @@ class ListSectionSeatsDetailUseCase:
 
         section_id = f'{section}-{subsection}'
 
-        # 從 Handler 獲取座位列表
+        # Get seat list from Handler
         seats_data = await self.seat_state_handler.list_all_subsection_seats(
             event_id=event_id, section=section, subsection=subsection
         )
 
-        # 檢查 event section 是否存在 (空列表表示不存在)
+        # Check if event section exists (empty list indicates not found)
         if not seats_data:
             Logger.base.warning(f'❌ [USE-CASE] Event {event_id} section {section_id} not found')
             raise NotFoundError('Event not found')
 
-        # 計算統計數據
+        # Calculate statistics
         total_count = len(seats_data)
         available_count = sum(1 for seat in seats_data if seat['status'] == 'available')
         reserved_count = sum(1 for seat in seats_data if seat['status'] == 'reserved')

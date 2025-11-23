@@ -1,8 +1,8 @@
 """
 Event Ticketing Command Repository Implementation - CQRS Write Side (Raw SQL with asyncpg)
 
-統一的活動票務命令倉儲實現
-使用 EventTicketingAggregate 作為操作單位，保證聚合一致性
+Unified event ticketing command repository implementation
+Uses EventTicketingAggregate as the unit of operation to ensure aggregate consistency
 
 Performance: Using raw SQL with asyncpg for maximum performance
 """
@@ -35,10 +35,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     async def create_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
-        """創建 Event Aggregate (包含 Event 和 Tickets)"""
+        """Create Event Aggregate (including Event and Tickets)"""
         async with (await get_asyncpg_pool()).acquire() as conn:
             async with conn.transaction():
-                # 1. 保存 Event
+                # 1. Save Event
                 event_row = await conn.fetchrow(
                     """
                     INSERT INTO event (
@@ -58,10 +58,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     event_aggregate.event.status.value,
                 )
 
-                # 2. 更新 Event 實體的 ID
+                # 2. Update Event entity ID
                 event_aggregate.event.id = event_row['id']
 
-                # 3. 保存 Tickets (如果有的話)
+                # 3. Save Tickets (if any)
                 if event_aggregate.tickets:
                     ticket_records = [
                         (
@@ -89,7 +89,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                         ticket_records,
                     )
 
-                    # 獲取插入的 ticket IDs
+                    # Get inserted ticket IDs
                     ticket_rows = await conn.fetch(
                         """
                         SELECT id, event_id, section, subsection, row_number, seat_number,
@@ -101,7 +101,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                         event_row['id'],
                     )
 
-                    # 更新 Ticket 實體的 ID
+                    # Update Ticket entity IDs
                     for i, ticket_row in enumerate(ticket_rows):
                         if i < len(event_aggregate.tickets):
                             event_aggregate.tickets[i].id = ticket_row['id']
@@ -119,16 +119,16 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         event_aggregate: EventTicketingAggregate,
         ticket_tuples: Optional[List[tuple]] = None,
     ) -> EventTicketingAggregate:
-        """創建 Event Aggregate 使用高效能批量票務創建
+        """Create Event Aggregate using high-performance batch ticket creation
 
-        注意：這個方法假設 Event 已經存在並且有 ID
-        只會批量創建 tickets，不會重新創建 event
+        Note: This method assumes Event already exists and has an ID.
+        Only batch creates tickets, does not recreate event.
         """
-        # 檢查 Event 是否已經有 ID（已經持久化）
+        # Check if Event already has an ID (already persisted)
         if not event_aggregate.event.id:
             raise ValueError('Event must be persisted before using batch ticket creation')
 
-        # 高效能批量創建票務
+        # High-performance batch ticket creation
         if event_aggregate.tickets:
             Logger.base.info(
                 f'🚀 [BATCH_CREATE] Using high-performance batch creation for {len(event_aggregate.tickets)} tickets'
@@ -136,11 +136,11 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
 
             start_time = time.time()
 
-            # 使用傳入的批量數據，如果沒有則從 tickets 生成
+            # Use provided batch data, or generate from tickets if not provided
             if ticket_tuples is None:
                 ticket_tuples = [
                     (
-                        event_aggregate.event.id,  # 使用已存在的 event_id
+                        event_aggregate.event.id,  # Use existing event_id
                         ticket.section,
                         ticket.subsection,
                         ticket.row,
@@ -155,7 +155,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
 
             actual_tuples = ticket_tuples
 
-            # 使用 asyncpg connection pool 進行 COPY 操作
+            # Use asyncpg connection pool for COPY operation
             async with (await get_asyncpg_pool()).acquire() as conn:
                 # COPY operation
                 copy_start = time.time()
@@ -190,7 +190,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                 fetch_time = time.time() - fetch_start
                 Logger.base.info(f'  🔍 [BATCH_CREATE] Fetch completed ({fetch_time:.3f}s)')
 
-            # 更新 Ticket 實體的 ID
+            # Update Ticket entity IDs
             convert_start = time.time()
             for i, row in enumerate(rows):
                 if i < len(event_aggregate.tickets):
@@ -215,13 +215,13 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     async def update_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
-        """更新 Event Aggregate"""
+        """Update Event Aggregate"""
         if not event_aggregate.event.id:
             raise ValueError('Event must have an ID to be updated')
 
         async with (await get_asyncpg_pool()).acquire() as conn:
             async with conn.transaction():
-                # 1. 更新 Event
+                # 1. Update Event
                 await conn.execute(
                     """
                     UPDATE event
@@ -242,10 +242,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     event_aggregate.event.id,
                 )
 
-                # 2. 更新 Tickets
+                # 2. Update Tickets
                 for ticket in event_aggregate.tickets:
                     if ticket.id:
-                        # 更新現有票務
+                        # Update existing ticket
                         await conn.execute(
                             """
                             UPDATE ticket
@@ -262,7 +262,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                             ticket.id,
                         )
                     else:
-                        # 新增票務
+                        # Insert new ticket
                         ticket_row = await conn.fetchrow(
                             """
                             INSERT INTO ticket (
@@ -298,7 +298,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         status: TicketStatus,
         buyer_id: Optional[int] = None,
     ) -> List[Ticket]:
-        """批量更新票務狀態"""
+        """Batch update ticket status"""
         if not ticket_ids:
             return []
 
@@ -381,14 +381,14 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:
         """
-        刪除 Event Aggregate (cascade delete tickets)
+        Delete Event Aggregate (cascade delete tickets)
 
         Used for compensating transactions when Kvrocks initialization fails.
         """
         async with (await get_asyncpg_pool()).acquire() as conn:
             try:
                 async with conn.transaction():
-                    # 先刪除票務
+                    # First delete tickets
                     tickets_result = await conn.execute(
                         """
                         DELETE FROM ticket
@@ -397,7 +397,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                         event_id,
                     )
 
-                    # 然後刪除活動
+                    # Then delete event
                     event_result = await conn.execute(
                         """
                         DELETE FROM event
@@ -406,7 +406,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                         event_id,
                     )
 
-                    # 解析刪除的行數 (格式: "DELETE n")
+                    # Parse deleted row count (format: "DELETE n")
                     tickets_count = int(tickets_result.split()[-1]) if tickets_result else 0
                     event_count = int(event_result.split()[-1]) if event_result else 0
 

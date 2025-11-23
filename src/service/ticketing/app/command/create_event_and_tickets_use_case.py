@@ -28,22 +28,6 @@ from src.service.ticketing.domain.enum.event_status import EventStatus
 
 
 class CreateEventAndTicketsUseCase:
-    """
-    Create Event and Tickets Use Case
-
-    Responsibilities (Clean Architecture):
-    1. Orchestrate aggregate creation (domain logic)
-    2. Coordinate repository operations (each repo manages its own atomic transaction)
-    3. Delegate infrastructure setup to orchestrator (separation of concerns)
-    4. Handle Kvrocks initialization (fail-fast)
-
-    Note: 不使用 UoW 的原因
-    - EventTicketingCommandRepo 使用 asyncpg pool 進行批量插入（繞過 SQLAlchemy session）
-    - 每個 repo 操作都是原子的（自己管理 commit/rollback）
-    - 無法將 PostgreSQL + Kvrocks 包在同一個 transaction（分散式系統特性）
-    - 如果 Kvrocks 失敗，PostgreSQL 已經 commit，只能透過 exception 通知上層
-    """
-
     def __init__(
         self,
         event_ticketing_command_repo: IEventTicketingCommandRepo,
@@ -145,8 +129,8 @@ class CreateEventAndTicketsUseCase:
             raise Exception('Event ID is missing after creation')
 
         # 5. Initialize seats in Kvrocks (fail-fast with compensating transaction)
-        # 注意：此時 PostgreSQL 已經 commit，無法 rollback
-        # 如果失敗，執行補償交易（刪除已創建的 event 和 tickets）
+        # Note: At this point PostgreSQL has already committed, cannot rollback
+        # If failed, execute compensating transaction (delete created event and tickets)
         try:
             result = await self.init_state_handler.initialize_seats_from_config(  # raw sql
                 event_id=event_id,
@@ -161,7 +145,7 @@ class CreateEventAndTicketsUseCase:
             )
 
         except Exception as e:
-            # Compensating transaction: 刪除已創建的 event 和 tickets
+            # Compensating transaction: delete created event and tickets
             Logger.base.error(
                 f'❌ Kvrocks initialization failed, rolling back PostgreSQL data: {e}'
             )

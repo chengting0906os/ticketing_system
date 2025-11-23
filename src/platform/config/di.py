@@ -13,7 +13,6 @@ from src.service.seat_reservation.app.command.finalize_seat_payment_use_case imp
 )
 from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.seat_reservation.domain.seat_selection_domain import SeatSelectionDomain
 from src.service.seat_reservation.driven_adapter.event_state_broadcaster_impl import (
     EventStateBroadcasterImpl,
 )
@@ -102,8 +101,7 @@ class Container(containers.DeclarativeContainer):
     # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
     event_state_broadcaster = providers.Factory(EventStateBroadcasterImpl)
 
-    # Seat Reservation Domain and Use Cases (CQRS)
-    seat_selection_domain = providers.Factory(SeatSelectionDomain)
+    # Seat Reservation Use Cases (CQRS)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
 
     # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler

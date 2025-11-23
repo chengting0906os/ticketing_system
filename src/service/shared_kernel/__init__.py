@@ -1,6 +1,6 @@
 """
-Shared Kernel - 共享內核
+Shared Kernel - Shared Core
 
-跨 Bounded Context 的核心領域概念
-供 Ticketing 和 Seat Reservation 服務共享
+Core domain concepts across Bounded Contexts
+Shared by Ticketing and Seat Reservation services
 """

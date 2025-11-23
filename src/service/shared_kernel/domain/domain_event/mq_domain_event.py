@@ -7,19 +7,19 @@ from uuid_utils import UUID
 @runtime_checkable
 class MqDomainEvent(Protocol):
     """
-    領域事件協議定義
+    Domain Event Protocol Definition
 
-    【MVP原則】所有領域事件必須包含的最基本屬性：
-    - aggregate_id: 業務實體ID（如booking_id）
-    - occurred_at: 事件發生時間
+    [MVP Principle] Essential attributes that all domain events must contain:
+    - aggregate_id: Business entity ID (e.g., booking_id)
+    - occurred_at: Event occurrence time
     """
 
     @property
     def aggregate_id(self) -> Union[int, str, UUID]:
-        """業務聚合根ID，用於分區和關聯 (支援 int, str, UUID)"""
+        """Business aggregate root ID, used for partitioning and association (supports int, str, UUID)"""
         ...
 
     @property
     def occurred_at(self) -> datetime:
-        """事件發生時間戳"""
+        """Event occurrence timestamp"""
         ...

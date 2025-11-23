@@ -57,7 +57,7 @@ class UserEntity:
 
     @staticmethod
     def validate_role(role: UserRole) -> None:
-        """驗證角色是否有效"""
+        """Validate if the role is valid"""
         valid_roles = [r.value for r in UserRole.__members__.values()]
         if role not in valid_roles:
             raise DomainError(f'Invalid role: {role}. Must be one of: {", ".join(valid_roles)}')
@@ -69,6 +69,6 @@ class UserEntity:
         if not isinstance(password_hasher, IPasswordHasher):
             raise TypeError('password_hasher must implement PasswordHasher interface')
 
-        # 使用 SecretStr 保護敏感密碼資料
+        # Use SecretStr to protect sensitive password data
         secret_password = SecretStr(plain_password)
         self.hashed_password = password_hasher.hash_password(plain_password=secret_password)

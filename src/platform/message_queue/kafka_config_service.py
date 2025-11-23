@@ -1,6 +1,6 @@
 """
 Kafka Configuration Service
-為活動配置 Kafka topics 和 partition strategy
+Configures Kafka topics and partition strategy for events
 """
 
 import asyncio
@@ -16,9 +16,9 @@ from .section_based_partition_strategy import SectionBasedPartitionStrategy
 
 class KafkaConfigService(IKafkaConfigService):
     """
-    Kafka 配置服務
+    Kafka Configuration Service
 
-    負責為新活動配置:
+    Responsible for configuring new events:
     1. Event-specific topics
     2. Section-based partition strategy
 
@@ -56,25 +56,23 @@ class KafkaConfigService(IKafkaConfigService):
             return False
 
     async def _create_event_topics(self, event_id: int) -> None:
-        """創建 event-specific topics"""
         Logger.base.info(
             f'🎯 [KAFKA_CONFIG] Creating event-specific topics for EVENT_ID={event_id}'
         )
 
         topics = KafkaTopicBuilder.get_all_topics(event_id=event_id)
 
-        # 並行創建所有 topics 以提高效率
+        # Create all topics in parallel for efficiency
         tasks = [self._create_single_topic(topic) for topic in topics]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 統計結果
+        # Summarize results
         success_count = sum(1 for result in results if result is True)
         Logger.base.info(
             f'📊 [KAFKA_CONFIG] Created {success_count}/{len(topics)} topics successfully'
         )
 
     async def _create_single_topic(self, topic: str) -> bool:
-        """創建單個 topic"""
         try:
             # Use full path to docker or search PATH explicitly
             docker_cmd = self._find_docker_executable()
@@ -96,7 +94,7 @@ class KafkaConfigService(IKafkaConfigService):
                 '3',
             ]
 
-            # 使用 asyncio 執行 subprocess
+            # Use asyncio to execute subprocess
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -123,24 +121,24 @@ class KafkaConfigService(IKafkaConfigService):
             return False
 
     def _analyze_partition_distribution(self, event_id: int, seating_config: Dict) -> None:
-        """分析並記錄 partition 分佈策略"""
+        """Analyze and log partition distribution strategy"""
         Logger.base.info(
             f'📊 [KAFKA_CONFIG] Analyzing partition distribution for EVENT_ID={event_id}'
         )
 
-        # 獲取區域到 partition 的映射
+        # Get section to partition mapping
         sections = seating_config.get('sections', [])
         mapping = self.partition_strategy.get_section_partition_mapping(sections, event_id)
 
-        # 計算負載分佈
+        # Calculate load distribution
         loads = self.partition_strategy.calculate_expected_load(seating_config, event_id)
 
-        # 記錄映射關係
+        # Log mapping relationships
         Logger.base.info('🗺️ [KAFKA_CONFIG] Subsection-to-Partition Mapping:')
         for subsection, partition in mapping.items():
             Logger.base.info(f'   {subsection} → Partition {partition}')
 
-        # 記錄負載分佈
+        # Log load distribution
         Logger.base.info('⚖️ [KAFKA_CONFIG] Partition Load Distribution:')
         total_seats = 0
         for partition_id in sorted(loads.keys()):

@@ -27,7 +27,7 @@ class GetEventUseCase:
 
     @Logger.io
     async def get_by_id(self, event_id: int) -> Optional[EventTicketingAggregate]:
-        """獲取活動聚合根（不含票務，性能優化）"""
+        """Get event aggregate root (excluding tickets for performance optimization)"""
         Logger.base.info(f'🔍 [GET_EVENT] Loading event aggregate for event {event_id}')
 
         event_aggregate = (

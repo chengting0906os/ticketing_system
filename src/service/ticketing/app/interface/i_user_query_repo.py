@@ -5,7 +5,7 @@ from src.service.ticketing.domain.entity.user_entity import UserEntity
 
 
 class IUserQueryRepo(ABC):
-    """用戶查詢倉庫抽象介面 (Domain Layer) - 處理讀取操作"""
+    """User Query Repository Abstract Interface (Domain Layer) - Handles read operations"""
 
     @abstractmethod
     async def get_by_email(self, email: str) -> Optional[UserEntity]:

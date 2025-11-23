@@ -1,7 +1,7 @@
 """
 Seat State Query Handler Implementation
 
-座位狀態查詢處理器實作 - CQRS Query Side
+Seat State Query Handler Implementation - CQRS Query Side
 
 Cache Strategy (Polling-based):
 - Background task polls Kvrocks every 0.5s to refresh all seat stats
@@ -43,12 +43,12 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @staticmethod
     def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
-        """計算座位在 Bitfield 中的 index"""
+        """Calculate the seat index in the Bitfield"""
         return (row - 1) * seats_per_row + (seat_num - 1)
 
     @Logger.io
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
-        """從 event config JSON 獲取 section 配置"""
+        """Get section configuration from event config JSON"""
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
@@ -108,7 +108,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @Logger.io
     async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
-        """獲取指定座位的狀態"""
+        """Get the states of specified seats"""
         Logger.base.info(f'🔍 [QUERY] Getting states for {len(seat_ids)} seats')
 
         seat_states = {}
@@ -156,7 +156,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
     @Logger.io
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
-        """獲取座位價格"""
+        """Get seat price"""
         seat_states = await self.get_seat_states([seat_id], event_id)
         seat_state = seat_states.get(seat_id)
         return seat_state.get('price') if seat_state else None
@@ -164,7 +164,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
     @Logger.io
     async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
         """
-        獲取活動所有 subsection 的統計資訊
+        Get statistics for all subsections of an event
 
         ✨ NEW: Uses JSON.GET to fetch all section stats in one call
         (Previously: Pipeline with N HGETALL calls)
@@ -218,7 +218,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         self, event_id: int, section: str, subsection: int
     ) -> List[Dict]:
         """
-        獲取指定 subsection 的所有座位（包括 available, reserved, sold）
+        Get all seats in a specified subsection (including available, reserved, sold)
 
         Performance optimization:
         - Uses GETRANGE to fetch entire bitfield in ONE Redis call (instead of 2N getbit calls)

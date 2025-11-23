@@ -1,6 +1,6 @@
 """
 Finalize Seat Payment Use Case
-座位支付完成用例
+Seat payment completion use case
 """
 
 from dataclasses import dataclass
@@ -11,8 +11,6 @@ from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 
 @dataclass
 class FinalizeSeatPaymentRequest:
-    """座位支付完成請求"""
-
     seat_id: str
     event_id: int
     timestamp: str
@@ -20,22 +18,17 @@ class FinalizeSeatPaymentRequest:
 
 @dataclass
 class FinalizeSeatPaymentResult:
-    """座位支付完成結果"""
-
     success: bool
     seat_id: str
     error_message: str = ''
 
 
 class FinalizeSeatPaymentUseCase:
-    """座位支付完成用例"""
-
     def __init__(self, seat_state_handler: ISeatStateCommandHandler):
         self.seat_state_handler = seat_state_handler
 
     @Logger.io
     async def execute(self, request: FinalizeSeatPaymentRequest) -> FinalizeSeatPaymentResult:
-        """執行座位支付完成"""
         try:
             Logger.base.info(f'💰 [FINALIZE-SEAT] Finalizing payment for seat {request.seat_id}')
 

@@ -1,8 +1,8 @@
 """
 Seat State Query Handler Interface - Shared Kernel
 
-座位狀態查詢處理器接口 - CQRS Query Side
-供 Ticketing 和 Seat Reservation 兩個 bounded context 使用
+Seat State Query Handler Interface - CQRS Query Side
+Used by both Ticketing and Seat Reservation bounded contexts
 """
 
 from abc import ABC, abstractmethod
@@ -11,19 +11,19 @@ from typing import Dict, List, Optional
 
 class ISeatStateQueryHandler(ABC):
     """
-    座位狀態查詢處理器接口 (CQRS Query)
+    Seat State Query Handler Interface (CQRS Query)
 
-    職責：只負責讀取操作，不修改狀態
+    Responsibility: Only handles read operations, does not modify state
     """
 
     @abstractmethod
     async def get_seat_states(self, seat_ids: List[str], event_id: int) -> Dict[str, Dict]:
         """
-        獲取指定座位的狀態
+        Get the state of specified seats
 
         Args:
-            seat_ids: 座位 ID 列表
-            event_id: 活動 ID
+            seat_ids: List of seat IDs
+            event_id: Event ID
 
         Returns:
             Dict mapping seat_id to seat state
@@ -33,24 +33,24 @@ class ISeatStateQueryHandler(ABC):
     @abstractmethod
     async def get_seat_price(self, seat_id: str, event_id: int) -> Optional[int]:
         """
-        獲取座位價格
+        Get seat price
 
         Args:
-            seat_id: 座位 ID
-            event_id: 活動 ID
+            seat_id: Seat ID
+            event_id: Event ID
 
         Returns:
-            座位價格，None 表示座位不存在
+            Seat price, None if seat does not exist
         """
         pass
 
     @abstractmethod
     async def list_all_subsection_status(self, event_id: int) -> Dict[str, Dict]:
         """
-        獲取活動所有 subsection 的統計資訊
+        Get statistics for all subsections of an event
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
             Dict mapping section_id to stats:
@@ -66,14 +66,14 @@ class ISeatStateQueryHandler(ABC):
         self, event_id: int, section: str, subsection: int
     ) -> List[Dict]:
         """
-        獲取指定 subsection 的所有座位（包括 available, reserved, sold）
+        Get all seats in a specified subsection (including available, reserved, sold)
 
         Args:
-            event_id: 活動 ID
-            section: 區域代碼
-            subsection: 子區域編號
+            event_id: Event ID
+            section: Section code
+            subsection: Subsection number
 
         Returns:
-            座位列表，每個座位包含 section, subsection, row, seat_num, price, status, seat_identifier
+            List of seats, each containing section, subsection, row, seat_num, price, status, seat_identifier
         """
         pass

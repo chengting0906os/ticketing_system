@@ -1,7 +1,3 @@
-"""
-Authentication Controller - 簡化版本，只有 login 和 create
-"""
-
 from typing import Optional
 
 from dependency_injector.wiring import Provide, inject
@@ -85,10 +81,10 @@ async def login(
     response.set_cookie(
         key='fastapiusersauth',
         value=token,
-        max_age=7 * 24 * 60 * 60,  # 7 天
+        max_age=7 * 24 * 60 * 60,  # 7 days
         httponly=True,
         samesite='lax',
-        secure=False,  # 生產環境設為 True
+        secure=False,  # Set to True in production
     )
 
     return UserResponse(

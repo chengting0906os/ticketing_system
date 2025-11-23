@@ -1,8 +1,8 @@
 """
 Seat Command DTOs - Shared Kernel
 
-座位命令 DTOs - 定義座位狀態變更操作的 domain contracts
-包含：釋放座位、完成支付等命令操作的請求/結果
+Seat Command DTOs - Defines domain contracts for seat state change operations
+Includes: Request/Result for seat release, payment completion, and other command operations
 """
 
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ReleaseSeatRequest:
-    """座位釋放請求"""
+    """Seat release request"""
 
     seat_id: str
     event_id: int
@@ -21,7 +21,7 @@ class ReleaseSeatRequest:
 
 @dataclass
 class ReleaseSeatResult:
-    """座位釋放結果"""
+    """Seat release result"""
 
     success: bool
     seat_id: str
@@ -29,18 +29,18 @@ class ReleaseSeatResult:
 
     @classmethod
     def success_result(cls, seat_id: str) -> 'ReleaseSeatResult':
-        """創建成功結果"""
+        """Create success result"""
         return cls(success=True, seat_id=seat_id)
 
     @classmethod
     def failure_result(cls, seat_id: str, error: str) -> 'ReleaseSeatResult':
-        """創建失敗結果"""
+        """Create failure result"""
         return cls(success=False, seat_id=seat_id, error_message=error)
 
 
 @dataclass
 class ReleaseSeatsBatchRequest:
-    """批次座位釋放請求 - Performance optimization for releasing multiple seats"""
+    """Batch seat release request - Performance optimization for releasing multiple seats"""
 
     seat_ids: list[str]
     event_id: int
@@ -48,7 +48,7 @@ class ReleaseSeatsBatchRequest:
 
 @dataclass
 class ReleaseSeatsBatchResult:
-    """批次座位釋放結果"""
+    """Batch seat release result"""
 
     successful_seats: list[str]
     failed_seats: list[str]
@@ -57,7 +57,7 @@ class ReleaseSeatsBatchResult:
 
     @classmethod
     def success_result(cls, seat_ids: list[str]) -> 'ReleaseSeatsBatchResult':
-        """創建全部成功結果"""
+        """Create all-success result"""
         return cls(
             successful_seats=seat_ids,
             failed_seats=[],
@@ -69,7 +69,7 @@ class ReleaseSeatsBatchResult:
     def partial_result(
         cls, successful_seats: list[str], failed_seats: list[str], error_messages: dict[str, str]
     ) -> 'ReleaseSeatsBatchResult':
-        """創建部分成功結果"""
+        """Create partial success result"""
         return cls(
             successful_seats=successful_seats,
             failed_seats=failed_seats,

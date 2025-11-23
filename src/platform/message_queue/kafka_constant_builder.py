@@ -1,15 +1,15 @@
 class ServiceNames:
-    """服務名稱常數"""
+    """Service name constants"""
 
-    TICKETING_SERVICE = 'ticketing-service'  # 整合 booking + event_ticketing
+    TICKETING_SERVICE = 'ticketing-service'  # Integrates booking + event_ticketing
     SEAT_RESERVATION_SERVICE = 'seat-reservation-service'
 
 
 class KafkaTopicBuilder:
     """
-    Kafka Topic 命名統一建構器
+    Kafka Topic Naming Unified Builder
 
-    使用格式: event-id-{event_id}______{action}______{from_service}___to___{to_service}
+    Format: event-id-{event_id}______{action}______{from_service}___to___{to_service}
     """
 
     # ====== To Seat Reservation Service =======
@@ -25,13 +25,13 @@ class KafkaTopicBuilder:
     def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
         return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
 
-    # ====== To Ticketing Service (包含 Booking + Event Ticketing) =======
+    # ====== To Ticketing Service (includes Booking + Event Ticketing) =======
 
     @staticmethod
     def update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
         *, event_id: int
     ) -> str:
-        """座位預訂成功後，同時更新 Booking 和 Ticket 狀態（原子操作）"""
+        """After successful seat reservation, update both Booking and Ticket status (atomic operation)"""
         return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
@@ -68,14 +68,14 @@ class KafkaTopicBuilder:
 
 class KafkaConsumerGroupBuilder:
     """
-    Kafka Consumer Group 命名統一建構器
+    Kafka Consumer Group Naming Unified Builder
 
-    使用格式: event-id-{event_id}_____{service_name}-{event_id}
+    Format: event-id-{event_id}_____{service_name}-{event_id}
     """
 
     @staticmethod
     def ticketing_service(*, event_id: int) -> str:
-        """Ticketing Service (整合 booking + event_ticketing)"""
+        """Ticketing Service (integrates booking + event_ticketing)"""
         return f'event-id-{event_id}_____{ServiceNames.TICKETING_SERVICE}--{event_id}'
 
     @staticmethod
@@ -84,7 +84,7 @@ class KafkaConsumerGroupBuilder:
 
     @staticmethod
     def get_all_consumer_groups(*, event_id: int) -> list[str]:
-        """獲取所有 consumer groups (Ticketing + Seat Reservation)"""
+        """Get all consumer groups (Ticketing + Seat Reservation)"""
         return [
             KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
             KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
@@ -93,12 +93,12 @@ class KafkaConsumerGroupBuilder:
 
 class KafkaProducerTransactionalIdBuilder:
     """
-    Kafka Producer Transactional ID 命名統一建構器
+    Kafka Producer Transactional ID Naming Unified Builder
 
-    Transactional ID 是 Kafka exactly-once 語義的核心：
-    - 確保 producer 冪等性 (防止重複寫入)
-    - 每個 producer instance 必須有唯一的 transactional.id
-    - 格式: {service_name}-producer-event-{event_id}-instance-{instance_id}
+    Transactional ID is the core of Kafka exactly-once semantics:
+    - Ensures producer idempotency (prevents duplicate writes)
+    - Each producer instance must have a unique transactional.id
+    - Format: {service_name}-producer-event-{event_id}-instance-{instance_id}
 
     Environment Variables:
     - KAFKA_PRODUCER_INSTANCE_ID: Producer instance identifier (default: "1")
@@ -117,9 +117,9 @@ class KafkaProducerTransactionalIdBuilder:
 
 class PartitionKeyBuilder:
     """
-    Partition Key 命名統一建構器
+    Partition Key Naming Unified Builder
 
-    使用格式: event-{event_id}-section-{section}-partition-{partition_number}
+    Format: event-{event_id}-section-{section}-partition-{partition_number}
     """
 
     @staticmethod

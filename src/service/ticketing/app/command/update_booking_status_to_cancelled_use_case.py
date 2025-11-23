@@ -57,40 +57,40 @@ class UpdateBookingToCancelledUseCase:
     @Logger.io
     async def execute(self, *, booking_id: UUID, buyer_id: int) -> Booking:
         """
-        執行訂單狀態更新為取消
+        Execute booking status update to cancelled
 
         Args:
-            booking_id: 訂單 ID
-            buyer_id: 買家 ID
+            booking_id: Booking ID
+            buyer_id: Buyer ID
 
         Returns:
-            更新後的訂單
+            Updated booking
 
         Raises:
-            NotFoundError: 訂單不存在
-            ForbiddenError: 無權取消此訂單
-            DomainError: 訂單狀態不允許取消（由 domain 層拋出）
+            NotFoundError: Booking not found
+            ForbiddenError: Not authorized to cancel this booking
+            DomainError: Booking status does not allow cancellation (thrown by domain layer)
         """
-        # 查詢訂單（Fail Fast）
+        # Query booking (Fail Fast)
         booking = await self.booking_command_repo.get_by_id(booking_id=booking_id)
         if not booking:
             raise NotFoundError('Booking not found')
 
-        # 驗證所有權（Fail Fast）
+        # Validate ownership (Fail Fast)
         if booking.buyer_id != buyer_id:
             raise ForbiddenError('Only the buyer can cancel this booking')
 
-        # 標記為取消狀態（domain 會驗證狀態轉換）
+        # Mark as cancelled status (domain will validate state transition)
         cancelled_booking = booking.cancel()
         updated_booking = await self.booking_command_repo.update_status_to_cancelled(
             booking=cancelled_booking
         )
 
-        # 查詢關聯的 tickets（透過 seat_positions）
+        # Query related tickets (via seat_positions)
         tickets = await self.booking_command_repo.get_tickets_by_booking_id(booking_id=booking_id)
         ticket_ids = [ticket.id for ticket in tickets if ticket.id]
 
-        # 取得座位位置資訊（從 tickets 建構完整的 seat identifiers）
+        # Get seat position information (construct complete seat identifiers from tickets)
         # Format: section-subsection-row-seat (e.g., "A-1-1-1")
         seat_positions = [
             f'{ticket.section}-{ticket.subsection}-{ticket.row}-{ticket.seat}' for ticket in tickets
@@ -99,7 +99,7 @@ class UpdateBookingToCancelledUseCase:
             f'🎫 [CANCEL] Found {len(seat_positions)} seat positions: {seat_positions}'
         )
 
-        # 發送 BookingCancelledEvent 到 Kafka（釋放 Kvrocks 座位）
+        # Publish BookingCancelledEvent to Kafka (release Kvrocks seats)
         if ticket_ids:
             Logger.base.info(
                 f'🔓 [CANCEL] Publishing cancellation event for {len(ticket_ids)} tickets'

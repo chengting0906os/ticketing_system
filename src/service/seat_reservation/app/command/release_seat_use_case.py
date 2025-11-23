@@ -1,6 +1,6 @@
 """
 Release Seat Use Case
-座位釋放用例
+Seat release use case
 """
 
 from src.platform.logging.loguru_io import Logger
@@ -14,14 +14,14 @@ from src.service.shared_kernel.app.dto import (
 
 
 class ReleaseSeatUseCase:
-    """座位釋放用例"""
+    """Seat Release Use Case"""
 
     def __init__(self, seat_state_handler: ISeatStateCommandHandler):
         self.seat_state_handler = seat_state_handler
 
     @Logger.io
     async def execute(self, request: ReleaseSeatRequest) -> ReleaseSeatResult:
-        """執行單一座位釋放"""
+        """Execute single seat release"""
         try:
             Logger.base.info(f'🔓 [RELEASE-SEAT] Releasing seat {request.seat_id}')
 
@@ -51,7 +51,7 @@ class ReleaseSeatUseCase:
     @Logger.io
     async def execute_batch(self, request: ReleaseSeatsBatchRequest) -> ReleaseSeatsBatchResult:
         """
-        執行批次座位釋放 - Performance optimization
+        Execute batch seat release - Performance optimization
 
         Releases multiple seats in a SINGLE operation instead of N sequential calls.
         This reduces portal overhead and improves throughput significantly.

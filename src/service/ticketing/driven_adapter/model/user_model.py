@@ -1,7 +1,3 @@
-"""
-User Model (Infrastructure Layer) - 不依賴 FastAPI-Users
-"""
-
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, func

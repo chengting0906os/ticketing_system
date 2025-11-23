@@ -1,14 +1,14 @@
 """
 Event Ticketing Command Repository Interface
 
-統一的活動票務命令倉儲接口 - CQRS Write Side
-取代原本分離的 event_command_repo 和 ticket_command_repo
+Unified event ticketing command repository interface - CQRS Write Side
+Replaces the previously separated event_command_repo and ticket_command_repo
 
-【設計原則】
-- 以 Event Aggregate 為操作單位
-- 保證聚合的事務一致性
-- 只負責寫入操作
-- 支持批量操作優化
+[Design Principles]
+- Operate on Event Aggregate as the unit
+- Ensure aggregate transaction consistency
+- Only responsible for write operations
+- Support batch operation optimization
 """
 
 from abc import ABC, abstractmethod
@@ -22,20 +22,20 @@ from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 class IEventTicketingCommandRepo(ABC):
-    """Event Ticketing 命令倉儲接口 - CQRS Write Side"""
+    """Event Ticketing Command Repository Interface - CQRS Write Side"""
 
     @abstractmethod
     async def create_event_aggregate(
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """
-        創建 Event Aggregate (包含 Event 和 Tickets)
+        Create Event Aggregate (including Event and Tickets)
 
         Args:
-            event_aggregate: 活動聚合根
+            event_aggregate: Event aggregate root
 
         Returns:
-            保存後的聚合根 (包含生成的 ID)
+            Saved aggregate root (including generated ID)
         """
         pass
 
@@ -47,17 +47,17 @@ class IEventTicketingCommandRepo(ABC):
         ticket_tuples: Optional[List[tuple]] = None,
     ) -> EventTicketingAggregate:
         """
-        使用高效能批量方式創建帶有大量票務的 Event Aggregate
+        Create Event Aggregate with large number of tickets using high-performance batch method
 
-        注意：這個方法假設 Event 已經存在並且有 ID
-        專門用於需要創建大量票務的場景（如數萬張票）
+        Note: This method assumes Event already exists and has an ID
+        Specifically designed for scenarios requiring creation of large numbers of tickets (e.g., tens of thousands)
 
         Args:
-            event_aggregate: 已有 Event ID 的活動聚合根
-            ticket_tuples: 預先準備好的批量插入資料格式（可選）
+            event_aggregate: Event aggregate root with existing Event ID
+            ticket_tuples: Pre-prepared batch insert data format (optional)
 
         Returns:
-            保存後的聚合根（包含所有票務 ID）
+            Saved aggregate root (including all ticket IDs)
         """
         pass
 
@@ -66,13 +66,13 @@ class IEventTicketingCommandRepo(ABC):
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """
-        更新 Event Aggregate
+        Update Event Aggregate
 
         Args:
-            event_aggregate: 要更新的活動聚合根
+            event_aggregate: Event aggregate root to update
 
         Returns:
-            更新後的聚合根
+            Updated aggregate root
         """
         pass
 
@@ -81,27 +81,27 @@ class IEventTicketingCommandRepo(ABC):
         self, *, ticket_ids: List[int], status: TicketStatus, buyer_id: Optional[int] = None
     ) -> List[Ticket]:
         """
-        批量更新票務狀態
+        Batch update tickets status
 
         Args:
-            ticket_ids: 票務 ID 列表
-            status: 新狀態
-            buyer_id: 購買者 ID (可選)
+            ticket_ids: List of ticket IDs
+            status: New status
+            buyer_id: Buyer ID (optional)
 
         Returns:
-            更新後的票務列表
+            List of updated tickets
         """
         pass
 
     @abstractmethod
     async def delete_event_aggregate(self, *, event_id: int) -> bool:
         """
-        刪除 Event Aggregate (cascade delete tickets)
+        Delete Event Aggregate (cascade delete tickets)
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            是否刪除成功
+            Whether deletion was successful
         """
         pass

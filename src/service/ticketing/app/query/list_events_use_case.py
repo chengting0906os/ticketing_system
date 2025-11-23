@@ -27,7 +27,7 @@ class ListEventsUseCase:
 
     @Logger.io
     async def get_by_seller(self, seller_id: int) -> List[EventTicketingAggregate]:
-        """獲取賣家的所有活動（不含票務，性能優化）"""
+        """Get all events for a seller (excluding tickets for performance optimization)"""
         Logger.base.info(f'📋 [LIST_BY_SELLER] Loading events for seller {seller_id}')
 
         events = await self.event_ticketing_query_repo.list_events_by_seller(seller_id=seller_id)
@@ -37,7 +37,7 @@ class ListEventsUseCase:
 
     @Logger.io
     async def list_available(self) -> List[EventTicketingAggregate]:
-        """獲取所有可用活動（不含票務，性能優化）"""
+        """Get all available events (excluding tickets for performance optimization)"""
         Logger.base.info('🌟 [LIST_AVAILABLE] Loading all available events')
 
         events = await self.event_ticketing_query_repo.list_available_events()

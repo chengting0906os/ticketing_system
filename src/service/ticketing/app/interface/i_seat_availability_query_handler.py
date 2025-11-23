@@ -1,7 +1,7 @@
 """
 Seat Availability Query Handler Interface
 
-座位可用性查詢處理器接口 - Used by ticketing service to check seat availability
+Seat availability query handler interface - Used by ticketing service to check seat availability
 before creating bookings (Fail Fast principle)
 """
 
@@ -10,10 +10,10 @@ from abc import ABC, abstractmethod
 
 class ISeatAvailabilityQueryHandler(ABC):
     """
-    座位可用性查詢處理器接口
+    Seat Availability Query Handler Interface
 
-    職責：讓 ticketing service 在建立 booking 前先檢查座位是否足夠
-    這是跨服務的查詢接口，遵循 Fail Fast 原則
+    Responsibility: Allow ticketing service to check if enough seats are available before creating booking
+    This is a cross-service query interface, following the Fail Fast principle
     """
 
     @abstractmethod
@@ -21,13 +21,13 @@ class ISeatAvailabilityQueryHandler(ABC):
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> bool:
         """
-        檢查指定 subsection 是否有足夠的可用座位
+        Check if the specified subsection has enough available seats
 
         Args:
-            event_id: 活動 ID
-            section: 區域代碼 (e.g., 'A', 'B')
-            subsection: 子區域編號 (e.g., 1, 2)
-            required_quantity: 需要的座位數量
+            event_id: Event ID
+            section: Section code (e.g., 'A', 'B')
+            subsection: Subsection number (e.g., 1, 2)
+            required_quantity: Required number of seats
 
         Returns:
             True if enough seats available, False otherwise

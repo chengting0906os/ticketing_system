@@ -50,8 +50,6 @@ class EventCreateWithTicketConfigRequest(BaseModel):
 
 
 class TicketResponse(BaseModel):
-    """票券回應 Schema"""
-
     id: int
     event_id: int
     section: str

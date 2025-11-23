@@ -1,8 +1,8 @@
 """
 Event Ticketing Query Repository Implementation - CQRS Read Side
 
-統一的活動票務查詢倉儲實現
-提供豐富的查詢接口，支持多種查詢視角和性能優化
+Unified event ticketing query repository implementation
+Provides rich query interfaces, supports multiple query perspectives and performance optimization
 """
 
 from contextlib import asynccontextmanager
@@ -54,7 +54,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             raise RuntimeError('No session or session_factory available')
 
     def _model_to_event(self, event_model: EventModel) -> Event:
-        """將 EventModel 轉換為 Event 實體"""
+        """Convert EventModel to Event entity"""
         return Event(
             name=event_model.name,
             description=event_model.description,
@@ -69,7 +69,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
         )
 
     def _model_to_ticket(self, ticket_model: TicketModel) -> Ticket:
-        """將 TicketModel 轉換為 Ticket 實體"""
+        """Convert TicketModel to Ticket entity"""
         return Ticket(
             event_id=ticket_model.event_id,
             section=ticket_model.section,
@@ -89,7 +89,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
     async def get_event_aggregate_by_id_with_tickets(
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
-        """根據 ID 獲取完整的 Event Aggregate（使用 JOIN 優化為單次查詢）"""
+        """Get complete Event Aggregate by ID (optimized to single query using JOIN)"""
         async with self._get_session() as session:
             # Use LEFT JOIN to fetch event and tickets in one query
             result = await session.execute(
@@ -122,7 +122,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def list_events_by_seller(self, *, seller_id: int) -> List[EventTicketingAggregate]:
-        """獲取賣家的所有活動 (不包含 tickets，性能優化)"""
+        """Get all events for a seller (excluding tickets for performance optimization)"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(EventModel).where(EventModel.seller_id == seller_id)
@@ -142,7 +142,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def list_available_events(self) -> List[EventTicketingAggregate]:
-        """獲取所有可用活動 (不包含 tickets，性能優化)"""
+        """Get all available events (excluding tickets for performance optimization)"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(EventModel)
@@ -164,7 +164,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
     async def get_tickets_by_event_and_section(
         self, *, event_id: int, section: str, subsection: int
     ) -> List[Ticket]:
-        """獲取特定區域的票務"""
+        """Get tickets for a specific section"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
@@ -183,7 +183,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
-        """獲取活動的所有可用票務"""
+        """Get all available tickets for an event"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
@@ -199,7 +199,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_reserved_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
-        """獲取活動的所有已預訂票務"""
+        """Get all reserved tickets for an event"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel)
@@ -215,7 +215,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
-        """獲取活動的所有票務（不限狀態）"""
+        """Get all tickets for an event (regardless of status)"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel).where(TicketModel.event_id == event_id)
@@ -231,7 +231,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
-        """獲取購買者的所有票務"""
+        """Get all tickets for a buyer"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel).where(TicketModel.buyer_id == buyer_id)
@@ -247,7 +247,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
-        """根據 ID 列表獲取票務"""
+        """Get tickets by ID list"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(TicketModel).where(TicketModel.id.in_(ticket_ids))
@@ -261,7 +261,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     @Logger.io
     async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
-        """檢查活動是否已有票務"""
+        """Check if tickets exist for an event"""
         async with self._get_session() as session:
             result = await session.execute(
                 select(func.count(TicketModel.id)).where(TicketModel.event_id == event_id)

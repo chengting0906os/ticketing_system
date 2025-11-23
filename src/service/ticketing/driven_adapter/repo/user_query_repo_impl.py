@@ -55,7 +55,7 @@ class UserQueryRepoImpl(IUserQueryRepo):
             if not user_model:
                 return None
 
-            # 使用 SecretStr 保護敏感密碼資料
+            # Use SecretStr to protect sensitive password data
             secret_password = SecretStr(plain_password)
 
             if not self.password_hasher.verify_password(

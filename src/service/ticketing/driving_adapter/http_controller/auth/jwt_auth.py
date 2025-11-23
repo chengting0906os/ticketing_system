@@ -55,10 +55,10 @@ class JwtAuth:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail='Not authenticated'
             )
 
-        # 解碼 token，取得所有用戶資訊
+        # Decode token, get all user information
         payload = self.decode_jwt_token(token)
 
-        # 驗證必要欄位
+        # Validate required fields
         user_id = payload.get('user_id')
         email = payload.get('email')
         name = payload.get('name')
@@ -68,7 +68,7 @@ class JwtAuth:
         if not user_id or not email or not name or not role or is_active is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
 
-        # 從 JWT payload 重建 UserEntity（不查 DB）
+        # Rebuild UserEntity from JWT payload (no DB query)
         user_entity = UserEntity(
             id=user_id,
             email=email,
@@ -77,7 +77,7 @@ class JwtAuth:
             is_active=is_active,
         )
 
-        # 驗證用戶狀態（基於 JWT payload）
+        # Validate user status (based on JWT payload)
         if not user_entity.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User is inactive')
 

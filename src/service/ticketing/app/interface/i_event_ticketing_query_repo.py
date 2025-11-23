@@ -1,14 +1,14 @@
 """
 Event Ticketing Query Repository Interface
 
-統一的活動票務查詢倉儲接口 - CQRS Read Side
-取代原本分離的 event_query_repo 和 ticket_query_repo
+Unified event ticketing query repository interface - CQRS Read Side
+Replaces the previously separated event_query_repo and ticket_query_repo
 
-【設計原則】
-- 提供豐富的查詢接口
-- 支持多種查詢視角
-- 性能優化的查詢方法
-- 只負責讀取操作
+[Design Principles]
+- Provide rich query interfaces
+- Support multiple query perspectives
+- Performance optimized query methods
+- Only responsible for read operations
 """
 
 from abc import ABC, abstractmethod
@@ -21,43 +21,43 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 
 
 class IEventTicketingQueryRepo(ABC):
-    """Event Ticketing 查詢倉儲接口 - CQRS Read Side"""
+    """Event Ticketing Query Repository Interface - CQRS Read Side"""
 
     @abstractmethod
     async def get_event_aggregate_by_id_with_tickets(
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
         """
-        根據 ID 獲取完整的 Event Aggregate
+        Get complete Event Aggregate by ID
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            活動聚合根 (包含所有 tickets) 或 None
+            Event aggregate root (including all tickets) or None
         """
         pass
 
     @abstractmethod
     async def list_events_by_seller(self, *, seller_id: int) -> List[EventTicketingAggregate]:
         """
-        獲取賣家的所有活動 (不包含 tickets，性能優化)
+        Get all events for a seller (excluding tickets for performance optimization)
 
         Args:
-            seller_id: 賣家 ID
+            seller_id: Seller ID
 
         Returns:
-            活動聚合根列表 (tickets 為空列表)
+            List of event aggregate roots (tickets as empty list)
         """
         pass
 
     @abstractmethod
     async def list_available_events(self) -> List[EventTicketingAggregate]:
         """
-        獲取所有可用活動 (不包含 tickets，性能優化)
+        Get all available events (excluding tickets for performance optimization)
 
         Returns:
-            可用活動聚合根列表 (tickets 為空列表)
+            List of available event aggregate roots (tickets as empty list)
         """
         pass
 
@@ -66,92 +66,92 @@ class IEventTicketingQueryRepo(ABC):
         self, *, event_id: int, section: str, subsection: int
     ) -> List[Ticket]:
         """
-        獲取特定區域的票務
+        Get tickets for a specific section
 
         Args:
-            event_id: 活動 ID
-            section: 區域
-            subsection: 子區域
+            event_id: Event ID
+            section: Section
+            subsection: Subsection
 
         Returns:
-            票務列表
+            List of tickets
         """
         pass
 
     @abstractmethod
     async def get_available_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         """
-        獲取活動的所有可用票務
+        Get all available tickets for an event
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            可用票務列表
+            List of available tickets
         """
         pass
 
     @abstractmethod
     async def get_reserved_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         """
-        獲取活動的所有已預訂票務
+        Get all reserved tickets for an event
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            已預訂票務列表
+            List of reserved tickets
         """
         pass
 
     @abstractmethod
     async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
         """
-        獲取活動的所有票務（不限狀態）
+        Get all tickets for an event (regardless of status)
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            所有票務列表
+            List of all tickets
         """
         pass
 
     @abstractmethod
     async def get_tickets_by_buyer(self, *, buyer_id: int) -> List[Ticket]:
         """
-        獲取購買者的所有票務
+        Get all tickets for a buyer
 
         Args:
-            buyer_id: 購買者 ID
+            buyer_id: Buyer ID
 
         Returns:
-            票務列表
+            List of tickets
         """
         pass
 
     @abstractmethod
     async def get_tickets_by_ids(self, *, ticket_ids: List[int]) -> List[Ticket]:
         """
-        根據 ID 列表獲取票務
+        Get tickets by ID list
 
         Args:
-            ticket_ids: 票務 ID 列表
+            ticket_ids: List of ticket IDs
 
         Returns:
-            票務列表
+            List of tickets
         """
         pass
 
     @abstractmethod
     async def check_tickets_exist_for_event(self, *, event_id: int) -> bool:
         """
-        檢查活動是否已有票務
+        Check if tickets exist for an event
 
         Args:
-            event_id: 活動 ID
+            event_id: Event ID
 
         Returns:
-            是否存在票務
+            Whether tickets exist
         """
         pass

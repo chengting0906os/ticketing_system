@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     KVROCKS_PORT: int = 6666
     KVROCKS_DB: int = 0
     KVROCKS_PASSWORD: str = ''
-    REDIS_DECODE_RESPONSES: bool = True  # Kvrocks 也用 Redis 協議
+    REDIS_DECODE_RESPONSES: bool = True  # Kvrocks also uses Redis protocol
 
     # Kvrocks Connection Pool Configuration
     KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool

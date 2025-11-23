@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ticketing.events;
 
-// 基礎領域事件結構
+// Base domain event structure
 message MqDomainEvent {
   string event_id = 1;
   string event_type = 2;
@@ -10,10 +10,10 @@ message MqDomainEvent {
   string aggregate_type = 4;
   int64 occurred_at = 5;  // Unix timestamp
   map<string, string> metadata = 6;
-  bytes data = 7;  // 序列化的事件數據
+  bytes data = 7;  // Serialized event data
 }
 
-// 票務預訂成功事件
+// Ticket reservation successful event
 message TicketsReservedEvent {
   string buyer_id = 1;
   string booking_id = 2;
@@ -23,7 +23,7 @@ message TicketsReservedEvent {
   double total_price = 6;
 }
 
-// 票務預訂失敗事件
+// Ticket reservation failed event
 message TicketReservationFailedEvent {
   string request_id = 1;
   string buyer_id = 2;
@@ -33,7 +33,7 @@ message TicketReservationFailedEvent {
   int32 requested_quantity = 6;
 }
 
-// 訂單支付成功事件
+// Booking payment successful event
 message BookingPaidEvent {
   string booking_id = 1;
   string buyer_id = 2;
@@ -43,7 +43,7 @@ message BookingPaidEvent {
   int64 paid_at = 6;
 }
 
-// 訂單取消事件
+// Booking cancelled event
 message BookingCancelledEvent {
   string booking_id = 1;
   string buyer_id = 2;
