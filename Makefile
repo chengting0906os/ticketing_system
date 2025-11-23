@@ -228,7 +228,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=4 --scale reservation-service=50 --scale booking-service=10
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=20 --scale reservation-service=20 --scale booking-service=20
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
