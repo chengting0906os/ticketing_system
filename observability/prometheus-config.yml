@@ -1,35 +1,24 @@
-# Prometheus 配置 - 票務系統監控
-# 針對 50K 票券 × 100 區域場景優化
+# Prometheus Configuration - Ticketing System Monitoring
+# Optimized for 50K tickets x 100 sections scenario
 
 global:
-  scrape_interval: 5s      # 高頻收集 (適合高負載場景)
-  evaluation_interval: 5s  # 快速告警響應
+  scrape_interval: 5s       # High-frequency collection for high-load scenarios
+  evaluation_interval: 5s   # Fast alerting response
 
-# 抓取配置
+# Scrape configuration
 scrape_configs:
-  # 票務系統主服務 (運行在 host 上)
+  # Ticketing System main service (via nginx load balancer)
   - job_name: 'ticketing-system'
     static_configs:
-      - targets: ['host.docker.internal:8000']  # FastAPI 服務
+      - targets: ['ticketing-nginx-lb:80']
     metrics_path: '/metrics'
-    scrape_interval: 2s              # 核心服務更頻繁監控
 
-  # Kafka JMX metrics (可選)
-  - job_name: 'kafka-jmx'
-    static_configs:
-      - targets:
-          - 'kafka1:9101'
-          - 'kafka2:9102'
-          - 'kafka3:9103'
-    scrape_interval: 5s
-
-  # Jaeger metrics (分散式追蹤監控)
+  # Jaeger metrics (distributed tracing monitoring)
   - job_name: 'jaeger'
     static_configs:
       - targets: ['jaeger:14269']
     metrics_path: '/metrics'
-    scrape_interval: 5s
 
-# 告警規則 (暫時移除，按需添加)
+# Alert rules (disabled, add as needed)
 # rule_files:
 #   - "alert_rules.yml"

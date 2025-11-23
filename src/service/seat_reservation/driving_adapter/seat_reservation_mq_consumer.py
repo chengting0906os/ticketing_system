@@ -27,7 +27,6 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
-from src.platform.metrics.ticketing_metrics import metrics
 from src.platform.observability.tracing import extract_trace_context
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentRequest,
@@ -213,10 +212,7 @@ class SeatReservationConsumer:
         if trace_headers:
             extract_trace_context(headers=trace_headers)
 
-        start_time = time.time()
         event_id = message.get('event_id', self.event_id)
-        section = message.get('section', 'unknown')
-        mode = message.get('seat_selection_mode', 'unknown')
 
         # Extract partition info from Quix Streams context
         partition_info = ''
@@ -241,16 +237,6 @@ class SeatReservationConsumer:
             # Execute reservation logic (exceptions will be caught by on_processing_error)
             # pyrefly: ignore  # missing-attribute
             result = self.portal.call(self._handle_reservation_async, message)
-
-            # Record successful reservation
-            processing_time = time.time() - start_time
-            metrics.record_seat_reservation(
-                event_id=event_id,
-                section=section,
-                mode=mode,
-                result='success',
-                duration=processing_time,
-            )
 
             return {'success': True, 'result': result}
 
