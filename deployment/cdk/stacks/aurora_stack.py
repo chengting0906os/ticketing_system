@@ -39,6 +39,7 @@ class AuroraStack(Stack):
         vpc: ec2.IVpc | None = None,
         min_capacity: float = 2,
         max_capacity: float = 64,
+        deploy_env: str = 'development',
         **kwargs,
     ) -> None:
         """
@@ -50,8 +51,10 @@ class AuroraStack(Stack):
             vpc: Optional VPC to deploy Aurora cluster. If not provided, creates a new VPC.
             min_capacity: Minimum Aurora Capacity Units (default: 0.5 ACU)
             max_capacity: Maximum Aurora Capacity Units (default: 64 ACU)
+            deploy_env: Deployment environment (development, staging, production)
             **kwargs: Additional stack properties
         """
+        self.deploy_env = deploy_env
         super().__init__(scope, construct_id, **kwargs)
 
         # ============= VPC =============
@@ -297,7 +300,7 @@ def handler(event, context):
             'ALB',
             vpc=vpc,
             internet_facing=True,
-            load_balancer_name='ticketing-alb',
+            load_balancer_name=f'ticketing-alb-{self.deploy_env}',
         )
 
         # ALB listener with default 404 response

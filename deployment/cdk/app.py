@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 
 import aws_cdk as cdk
+import yaml
+
 from stacks.aurora_stack import AuroraStack
 from stacks.booking_service_stack import BookingServiceStack
 from stacks.ec2_kafka_stack import EC2KafkaStack
@@ -15,7 +17,6 @@ from stacks.ec2_kvrocks_stack import EC2KvrocksStack
 from stacks.loadtest_stack import LoadTestStack
 from stacks.reservation_service_stack import ReservationServiceStack
 from stacks.ticketing_service_stack import TicketingServiceStack
-import yaml
 
 
 app = cdk.App()
@@ -51,6 +52,7 @@ aurora_stack = AuroraStack(
     env=env,
     min_capacity=config['aurora']['min_acu'],
     max_capacity=config['aurora']['max_acu'],
+    deploy_env=deploy_env,
     description=f'Aurora Serverless v2 ({config["aurora"]["min_acu"]}-{config["aurora"]["max_acu"]} ACU)',
 )
 

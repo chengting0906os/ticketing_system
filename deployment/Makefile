@@ -79,6 +79,45 @@ aws-go-rlt-5k:  ## 🔥 AWS Reserved Load Test - 5,000 seats (development: 50 wo
 aws-go-rlt-50k:  ## 🔥 AWS Reserved Load Test - 50,000 seats (production: 100 workers)
 	@$(MAKE) -f deployment/Makefile aws-go-rlt DEPLOY_ENV=production
 
+# AWS Full Reserved Load Test (1 ticket per worker, deterministic)
+.PHONY: aws-go-frlt aws-go-frlt-1k aws-go-frlt-2k aws-go-frlt-5k aws-go-frlt-50k
+
+aws-go-frlt:  ## 🚀 AWS Full Reserved Load Test - Buys all seats (1 ticket per worker, configurable WORKERS/BATCH)
+	@echo "🚀 Running AWS FULL reserved load test (Go)..."
+	@ALB_DNS=$$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`ticketing-alb`].DNSName' --output text); \
+	WORKERS=$${WORKERS:-100}; \
+	BATCH=$${BATCH:-1}; \
+	echo "🎯 Target: http://$$ALB_DNS"; \
+	echo "📊 Workers: $$WORKERS, Batch: $$BATCH"; \
+	if [ "$(DEPLOY_ENV)" = "production" ]; then \
+		echo "📊 Production mode: 50,000 seats"; \
+		cd script/go_client && ./full_reserved_loadtest -env production -event 1 -workers $$WORKERS -batch $$BATCH -host http://$$ALB_DNS; \
+	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
+		echo "📊 Staging mode: 5,000 seats"; \
+		cd script/go_client && ./full_reserved_loadtest -env staging -event 1 -workers $$WORKERS -batch $$BATCH -host http://$$ALB_DNS; \
+	elif [ "$(DEPLOY_ENV)" = "local_dev_2k" ]; then \
+		echo "📊 Local Dev 2k mode: 2,000 seats"; \
+		cd script/go_client && ./full_reserved_loadtest -env local_dev_2k -event 1 -workers $$WORKERS -batch $$BATCH -host http://$$ALB_DNS; \
+	elif [ "$(DEPLOY_ENV)" = "local_dev_1000" ]; then \
+		echo "📊 Local Dev 1000 mode: 1,000 seats"; \
+		cd script/go_client && ./full_reserved_loadtest -env local_dev_1000 -event 1 -workers $$WORKERS -batch $$BATCH -host http://$$ALB_DNS; \
+	else \
+		echo "📊 Development mode: 500 seats"; \
+		cd script/go_client && ./full_reserved_loadtest -env development -event 1 -workers $$WORKERS -batch $$BATCH -host http://$$ALB_DNS; \
+	fi
+
+aws-go-frlt-1k:  ## 🚀 AWS Full Reserved Load Test - 1,000 seats (local_dev_1000)
+	@$(MAKE) -f deployment/Makefile aws-go-frlt DEPLOY_ENV=local_dev_1000
+
+aws-go-frlt-2k:  ## 🚀 AWS Full Reserved Load Test - 2,000 seats (local_dev_2k)
+	@$(MAKE) -f deployment/Makefile aws-go-frlt DEPLOY_ENV=local_dev_2k
+
+aws-go-frlt-5k:  ## 🚀 AWS Full Reserved Load Test - 5,000 seats (staging)
+	@$(MAKE) -f deployment/Makefile aws-go-frlt DEPLOY_ENV=staging
+
+aws-go-frlt-50k:  ## 🚀 AWS Full Reserved Load Test - 50,000 seats (production)
+	@$(MAKE) -f deployment/Makefile aws-go-frlt DEPLOY_ENV=production
+
 # AWS Reserved Load Test via ECS Task (runs inside AWS, much faster)
 .PHONY: aws-rlt-ecs aws-rlt-ecs-500 aws-rlt-ecs-5k  aws-rlt-ecs-50k
 
@@ -203,22 +242,28 @@ aws-loadtest-exec:  ## 🔧 Exec into running LoadTest task (interactive shell)
 	echo ""; \
 	echo "🎯 Once inside, you can run:"; \
 	echo ""; \
-	echo "  📊 Go Load Testing (cd script/go_client first!):"; \
+	echo "  🐍 Python Commands (re-seed, reset):"; \
+	echo "    cd /app"; \
+	echo "    DEPLOY_ENV=development uv run python -m script.seed_data        # Seed data"; \
+	echo "    uv run python -m script.reset_database                          # Reset DB + Kvrocks"; \
+	echo ""; \
+	echo "  📊 Go Load Testing (already in /app/script/go_client):"; \
 	echo "    # Using Make commands:"; \
 	echo "    make rlt                                    # Reserved (100 workers, random 1-4 tickets)"; \
 	echo "    make frlt WORKERS=500 BATCH=1               # Full reserved (500 workers, 1 ticket each)"; \
 	echo "    make clt-medium                             # Concurrent (500 req, 25 concurrency)"; \
-	echo "    make both-medium                            # Both tests in parallel"; \
 	echo ""; \
 	echo "    # Direct binary execution:"; \
 	echo "    ./reserved_loadtest -env development -event 1 -workers 100"; \
 	echo "    ./full_reserved_loadtest -env development -event 1 -workers 500 -batch 1"; \
 	echo "    ./concurrent_loadtest -requests 500 -concurrency 25 -clients 25"; \
 	echo ""; \
-	echo "    # Available Make targets: rlt, frlt, clt-tiny, clt-small, clt-medium, clt-large"; \
-	echo "    # See: make help (for full list)"; \
-	echo ""; \
-
+	aws ecs execute-command \
+		--cluster ticketing-cluster \
+		--task $$TASK_ARN \
+		--container loadtest \
+		--interactive \
+		--command "/bin/sh"
 
 aws-loadtest-stop:  ## 🛑 Stop all running LoadTest tasks
 	@echo "🛑 Stopping all LoadTest tasks..."
@@ -516,15 +561,14 @@ ecr-push-reservation:  ## 🪑 Build and push seat-reservation service to ECR (p
 	@echo "🪑 Building and pushing seat-reservation-service to ECR (production)..."
 	@./deployment/script/ecr-push.sh production seat-reservation
 
-ecr-push-loadtest:  ## 🧪 Build and push Go loadtest to ECR (production)
-	@echo "🧪 Building and pushing Go loadtest to ECR (production)..."
+ecr-push-loadtest:  ## 🧪 Build and push loadtest (Go + Python) to ECR
+	@echo "🧪 Building and pushing loadtest (Go + Python) to ECR..."
 	@AWS_ACCOUNT_ID=$(AWS_ACCOUNT_ID); \
 	AWS_REGION=$(AWS_REGION); \
 	aws ecr get-login-password --region $$AWS_REGION | docker login --username AWS --password-stdin $$AWS_ACCOUNT_ID.dkr.ecr.$$AWS_REGION.amazonaws.com; \
-	cd script && \
-	docker build --platform linux/amd64 -t $$AWS_ACCOUNT_ID.dkr.ecr.$$AWS_REGION.amazonaws.com/ticketing-loadtest:latest -f go_client/Dockerfile . && \
+	cd .. && docker build --platform linux/amd64 -t $$AWS_ACCOUNT_ID.dkr.ecr.$$AWS_REGION.amazonaws.com/ticketing-loadtest:latest -f script/go_client/Dockerfile . && \
 	docker push $$AWS_ACCOUNT_ID.dkr.ecr.$$AWS_REGION.amazonaws.com/ticketing-loadtest:latest && \
-	echo "✅ Go loadtest pushed to ECR"
+	echo "✅ Loadtest (Go + Python) pushed to ECR"
 
 ecr-push-staging:  ## 🧪 Build and push all services to ECR (staging)
 	@echo "🧪 Building and pushing all services to ECR (staging)..."
@@ -648,103 +692,8 @@ aws-reset-kvrocks:  ## 🗑️ Flush Kvrocks data on AWS (connect to EC2 and flu
 		--query 'Command.CommandId' --output text
 	@echo "✅ Kvrocks flushed"
 
-aws-seed:  ## 🌱 Seed data on AWS Aurora (via ECS task, auto-detects DEPLOY_ENV)
-	@echo "🌱 Seeding initial data..."
-	@TASK_DEF=$$(aws ecs describe-services --cluster ticketing-cluster --services ticketing-development-ticketing-service --region us-west-2 --query 'services[0].taskDefinition' --output text); \
-	if [ "$(DEPLOY_ENV)" = "production" ]; then \
-		echo "📊 Production mode: seeding with 50,000 seats"; \
-		aws ecs run-task \
-			--cluster ticketing-cluster \
-			--task-definition $$TASK_DEF \
-			--launch-type FARGATE \
-			--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
-			--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","python","-m","script.seed_data"],"environment":[{"name":"DEPLOY_ENV","value":"production"}]}]}' \
-			--query 'tasks[0].taskArn' --output text; \
-	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
-		echo "📊 Staging mode: seeding with 25,000 seats"; \
-		aws ecs run-task \
-			--cluster ticketing-cluster \
-			--task-definition $$TASK_DEF \
-			--launch-type FARGATE \
-			--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
-			--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","python","-m","script.seed_data"],"environment":[{"name":"DEPLOY_ENV","value":"staging"}]}]}' \
-			--query 'tasks[0].taskArn' --output text; \
-	elif [ "$(DEPLOY_ENV)" = "development" ]; then \
-		echo "📊 Development mode: seeding with 5,000 seats"; \
-		aws ecs run-task \
-			--cluster ticketing-cluster \
-			--task-definition $$TASK_DEF \
-			--launch-type FARGATE \
-			--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
-			--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","python","-m","script.seed_data"],"environment":[{"name":"DEPLOY_ENV","value":"development"}]}]}' \
-			--query 'tasks[0].taskArn' --output text; \
-	else \
-		echo "📊 Local dev mode: seeding with 500 seats"; \
-		aws ecs run-task \
-			--cluster ticketing-cluster \
-			--task-definition $$TASK_DEF \
-			--launch-type FARGATE \
-			--network-configuration "awsvpcConfiguration={subnets=[$(shell aws ec2 describe-subnets --filters "Name=tag:Name,Values=TicketingAuroraStack/TicketingVpc/PrivateSubnet*" --query 'Subnets[0].SubnetId' --output text)],securityGroups=[$(shell aws ec2 describe-security-groups --filters "Name=group-name,Values=*AuroraSecurityGroup*" --query 'SecurityGroups[0].GroupId' --output text)]}" \
-			--overrides '{"containerOverrides":[{"name":"Container","command":["uv","run","python","-m","script.seed_data"],"environment":[{"name":"DEPLOY_ENV","value":"local_dev"}]}]}' \
-			--query 'tasks[0].taskArn' --output text; \
-	fi
-	@echo "✅ Seed task started"
 
-# AWS Seed Full (Complete seed workflow with reset)
-.PHONY: aws-seed-full aws-seed-full-500 aws-seed-full-5k aws-seed-full-25k aws-seed-full-50k
 
-aws-seed-full:  ## 🚀 Complete seed workflow: reset-db → reset-kafka → reset-kvrocks → seed (auto-detects DEPLOY_ENV)
-	@echo "🚀 ==================== AWS COMPLETE SEED WORKFLOW ===================="
-	@echo "⚠️  This will:"
-	@echo "   1. Reset database (drop + recreate + migrate)"
-	@echo "   2. Reset Kafka topics"
-	@echo "   3. Flush Kvrocks"
-	@echo "   4. Seed initial data"
-	@echo ""
-	@if [ "$(DEPLOY_ENV)" = "production" ]; then \
-		echo "📊 Production mode: 50,000 seats"; \
-	elif [ "$(DEPLOY_ENV)" = "staging" ]; then \
-		echo "📊 Staging mode: 25,000 seats"; \
-	elif [ "$(DEPLOY_ENV)" = "development" ]; then \
-		echo "📊 Development mode: 5,000 seats"; \
-	else \
-		echo "📊 Local dev mode: 500 seats"; \
-	fi
-	@echo ""
-	@echo "Continue? (y/N)"
-	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
-	@echo ""
-	@echo "🗑️  Step 1/4: Resetting database..."
-	@$(MAKE) -f deployment/Makefile aws-reset-db
-	@echo ""
-	@echo "🌊 Step 2/4: Resetting Kafka topics..."
-	@$(MAKE) -f deployment/Makefile aws-reset-kafka
-	@echo ""
-	@echo "🧹 Step 3/4: Flushing Kvrocks..."
-	@$(MAKE) -f deployment/Makefile aws-reset-kvrocks
-	@echo ""
-	@echo "🌱 Step 4/4: Seeding data..."
-	@$(MAKE) -f deployment/Makefile aws-seed
-	@echo ""
-	@echo "⏳ Waiting 10s for seed task to start..."
-	@sleep 10
-	@echo ""
-	@echo "✅ ==================== SEED WORKFLOW COMPLETE ===================="
-	@echo "   💡 Check seed logs: make aws-logs"
-	@echo "   💡 Verify data: make aws-db-list"
-	@echo ""
-
-aws-seed-full-500:  ## 🌱 Complete seed workflow - 500 seats (local_dev)
-	@$(MAKE) -f deployment/Makefile aws-seed-full DEPLOY_ENV=local_dev
-
-aws-seed-full-5k:  ## 🌱 Complete seed workflow - 5,000 seats (development)
-	@$(MAKE) -f deployment/Makefile aws-seed-full DEPLOY_ENV=development
-
-aws-seed-full-25k:  ## 🌱 Complete seed workflow - 25,000 seats (staging)
-	@$(MAKE) -f deployment/Makefile aws-seed-full DEPLOY_ENV=staging
-
-aws-seed-full-50k:  ## 🌱 Complete seed workflow - 50,000 seats (production)
-	@$(MAKE) -f deployment/Makefile aws-seed-full DEPLOY_ENV=production
 
 aws-stop:  ## 🛑 Stop ALL AWS services (ECS + EC2 Kafka + EC2 Kvrocks + LoadTest, keep Aurora only)
 	@echo "🛑 Stopping ALL AWS services..."
@@ -786,13 +735,14 @@ aws-stop:  ## 🛑 Stop ALL AWS services (ECS + EC2 Kafka + EC2 Kvrocks + LoadTe
 		--query 'service.serviceName' --output text 2>/dev/null || echo "⚠️  ticketing-development-reservation-service not found"
 	@echo "✅ ECS services scaled to 0 (where found)"
 	@echo ""
-	@echo "🔌 Stopping EC2 Kafka instance..."
-	@INSTANCE_ID=$$(aws ec2 describe-instances \
-		--filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	if [ "$$INSTANCE_ID" != "None" ] && [ -n "$$INSTANCE_ID" ]; then \
-		aws ec2 stop-instances --instance-ids $$INSTANCE_ID --query 'StoppingInstances[0].InstanceId' --output text; \
-		echo "✅ EC2 Kafka stopped: $$INSTANCE_ID"; \
+	@echo "🔌 Stopping EC2 Kafka instances (all 3 brokers)..."
+	@INSTANCE_IDS=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=kafka-broker-*" "Name=instance-state-name,Values=running" \
+		--query 'Reservations[*].Instances[*].InstanceId' --output text | tr '\t' ' '); \
+	if [ -n "$$INSTANCE_IDS" ] && [ "$$INSTANCE_IDS" != "None" ]; then \
+		echo "📦 Found Kafka instances: $$INSTANCE_IDS"; \
+		aws ec2 stop-instances --instance-ids $$INSTANCE_IDS --query 'StoppingInstances[*].InstanceId' --output text; \
+		echo "✅ EC2 Kafka stopped: $$INSTANCE_IDS"; \
 	else \
 		echo "⚠️  EC2 Kafka already stopped or not found"; \
 	fi
@@ -833,14 +783,15 @@ aws-start:  ## ▶️  Start ALL AWS services (ECS + EC2 Kafka + EC2 Kvrocks)
 		echo "⚠️  EC2 Kvrocks ASG not found"; \
 	fi
 	@echo ""
-	@echo "🔌 Starting EC2 Kafka instance..."
-	@INSTANCE_ID=$$(aws ec2 describe-instances \
-		--filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=stopped" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	if [ "$$INSTANCE_ID" != "None" ] && [ -n "$$INSTANCE_ID" ]; then \
-		aws ec2 start-instances --instance-ids $$INSTANCE_ID --query 'StartingInstances[0].InstanceId' --output text; \
-		echo "✅ EC2 Kafka starting: $$INSTANCE_ID"; \
-		echo "⏳ Waiting 60s for Kafka to be ready..."; \
+	@echo "🔌 Starting EC2 Kafka instances (all 3 brokers)..."
+	@INSTANCE_IDS=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=kafka-broker-*" "Name=instance-state-name,Values=stopped" \
+		--query 'Reservations[*].Instances[*].InstanceId' --output text | tr '\t' ' '); \
+	if [ -n "$$INSTANCE_IDS" ] && [ "$$INSTANCE_IDS" != "None" ]; then \
+		echo "📦 Found Kafka instances: $$INSTANCE_IDS"; \
+		aws ec2 start-instances --instance-ids $$INSTANCE_IDS --query 'StartingInstances[*].InstanceId' --output text; \
+		echo "✅ EC2 Kafka starting: $$INSTANCE_IDS"; \
+		echo "⏳ Waiting 60s for Kafka cluster to be ready..."; \
 		sleep 60; \
 	else \
 		echo "⚠️  EC2 Kafka already running or not found"; \

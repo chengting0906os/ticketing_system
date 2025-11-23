@@ -60,9 +60,9 @@ migrate-history:  ## 📜 Show migration history
 
 re-seed:  ## 🔄 Reset and re-seed database (usage: make re-seed DEPLOY_ENV=local_dev_1000)
 	@echo "🗑️  Resetting database..."
-	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.reset_database
+	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost uv run python -m script.reset_database
 	@echo "🌱 Seeding database with DEPLOY_ENV=$(DEPLOY_ENV)..."
-	@DEPLOY_ENV=$(DEPLOY_ENV) POSTGRES_SERVER=localhost KVROCKS_HOST=localhost KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run python -m script.seed_data
+	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost DEPLOY_ENV=$(DEPLOY_ENV) uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
 
 re-seed-1k:  ## 🔄 Reset and seed with 1000 seats (local_dev_1000)
@@ -228,7 +228,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=4 --scale reservation-service=10 --scale booking-service=10
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=4 --scale reservation-service=50 --scale booking-service=10
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -432,6 +432,12 @@ help:
 	@echo "  go-clt-l    - Concurrent Load Test - Large (10K req, 50 concurrency)"
 	@echo "  go-clt-f    - Concurrent Load Test - Full (50K req, 100 concurrency)"
 	@echo "  go-rlt      - Reserved Load Test - Buys all seats (DEPLOY_ENV: local_dev/development/production)"
+	@echo "  go-rlt-1k   - Reserved Load Test - 1,000 seats (local_dev_1000)"
+	@echo "  go-frlt     - Full Reserved Load Test - Configurable (WORKERS=100 BATCH=1)"
+	@echo "  go-frlt-1k  - Full Reserved Load Test - 1,000 seats"
+	@echo "  go-frlt-2k  - Full Reserved Load Test - 2,000 seats"
+	@echo "  go-frlt-5k  - Full Reserved Load Test - 5,000 seats (staging)"
+	@echo "  go-frlt-50k - Full Reserved Load Test - 50,000 seats (production)"
 	@echo ""
 	@echo "☁️  AWS OPERATIONS (delegated to deployment/Makefile)"
 	@echo "  dev-deploy-full  - Build + Push + Deploy to development"

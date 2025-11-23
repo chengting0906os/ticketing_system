@@ -86,14 +86,13 @@ services:
       - ticketing-network
     restart: unless-stopped
     deploy:
-      replicas: 4  # Run 4 reservation service instances
       resources:
         limits:
-          cpus: '0.5'  # 0.5 core per instance (2 cores total for 4 instances)
-          memory: 1024M
+          cpus: '0.25' # 0.5 core per instance (2 cores total for 4 instances)
+          memory: 512M
         reservations:
           cpus: '0.1'
-          memory: 256M
+          memory: 128M
     labels:
       - "service.type=consumer"
       - "service.name=reservation-service"
@@ -174,14 +173,13 @@ services:
       - ticketing-network
     restart: unless-stopped
     deploy:
-      replicas: 2  # Run 2 booking service instances
       resources:
         limits:
-          cpus: '0.5'  # 0.5 core per instance (1 core total for 2 instances)
-          memory: 1024M
+          cpus: '0.25' # 0.5 core per instance (1 core total for 2 instances)
+          memory: 512M
         reservations:
           cpus: '0.1'
-          memory: 256M
+          memory: 128M
     labels:
       - "service.type=consumer"
       - "service.name=booking-service"

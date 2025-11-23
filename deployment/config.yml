@@ -43,17 +43,17 @@ production:
     # Booking Consumer - Deployed as standalone ECS service
     # Processes booking confirmations and seat allocations
     booking:
-      min_tasks: 20        # Minimum 20 consumers
-      max_tasks: 100       # Maximum 100 consumers (50 vCPU)
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 100       # 100 consumers (fixed)
+      max_tasks: 100       # 100 consumers (25 vCPU @ 0.25 vCPU each)
+      task_cpu: 256        # 0.25 vCPU per consumer
+      task_memory: 512     # 0.5 GB RAM per consumer
 
     # Reservation Service (processes seat reservations + Kvrocks polling)
     reservation:
-      min_tasks: 50        # Minimum 50 consumers (10000 TPS target)
-      max_tasks: 200       # Maximum 200 consumers (100 vCPU)
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 100       # 100 consumers (fixed)
+      max_tasks: 100       # 100 consumers (25 vCPU @ 0.25 vCPU each)
+      task_cpu: 256        # 0.25 vCPU per consumer
+      task_memory: 512     # 0.5 GB RAM per consumer
 
   # Aurora Serverless v2 Auto-scaling
   aurora:
@@ -61,11 +61,15 @@ production:
     max_acu: 64          # Maximum Aurora Capacity Units (peak load)
     # Single master configuration for cost savings
 
-  # EC2 Kafka Configuration (self-hosted, 3 brokers on single instance)
+  # EC2 Kafka Configuration (3 instances for high availability)
+  # 3 Kafka brokers on separate EC2 instances across 3 AZs
+  # Cost: ~$195/month (3 × c7i.large) vs MSK Express ~$1,029/month
   kafka:
-    instance_type: m6id.large    # EC2 instance type (2 vCPU, 8 GB RAM, 118 GB NVMe)
-    storage_type: nvme           # Use local NVMe storage (instance store)
-    # 3 Kafka brokers run in Docker containers on this single instance
+    type: ec2                            # ec2 or msk_express
+    instance_type: c7i.large             # Compute optimized (2 vCPU, 4 GB RAM)
+    instance_count: 3                    # 3 brokers across 3 AZs
+    storage_type: ebs                    # EBS gp3 (c7i has no instance store)
+    storage_gb: 30                       # EBS storage per broker
 
   # EC2 Kvrocks Configuration (self-hosted Redis alternative)
   kvrocks:
@@ -139,28 +143,30 @@ staging:
     # Booking Consumer - Deployed as standalone ECS service
     # Processes booking confirmations and seat allocations
     booking:
-      min_tasks: 5         # 5 consumers minimum for staging
-      max_tasks: 25        # Max 25 consumers (12.5 vCPU)
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 50       # 100 consumers (fixed)
+      max_tasks: 50       # 100 consumers (25 vCPU @ 0.25 vCPU each)
+      task_cpu: 256        # 0.25 vCPU per consumer
+      task_memory: 512     # 0.5 GB RAM per consumer
 
     # Reservation Service (moderate for pre-production testing)
     reservation:
-      min_tasks: 10        # 10 consumers minimum
-      max_tasks: 50        # Max 50 consumers (25 vCPU)
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 50       # 100 consumers (fixed)
+      max_tasks: 50       # 100 consumers (25 vCPU @ 0.25 vCPU each)
+      task_cpu: 256        # 0.25 vCPU per consumer
+      task_memory: 512     # 0.5 GB RAM per consumer
 
   # Aurora Serverless v2 (moderate)
   aurora:
     min_acu: 2           # Moderate minimum
     max_acu: 32          # Half of production max
 
-  # EC2 Kafka Configuration (same as production)
+  # EC2 Kafka Configuration (3 instances for high availability)
   kafka:
-    instance_type: m6id.large    # EC2 instance type (2 vCPU, 8 GB RAM, 118 GB NVMe)
-    storage_type: nvme           # Use local NVMe storage (instance store)
-    # 3 Kafka brokers run in Docker containers on this single instance
+    type: ec2                            # ec2 or msk_express
+    instance_type: c7i.large             # Compute optimized (2 vCPU, 4 GB RAM)
+    instance_count: 3                    # 3 brokers across 3 AZs
+    storage_type: ebs                    # EBS gp3 (c7i has no instance store)
+    storage_gb: 30                       # EBS storage per broker
 
   # EC2 Kvrocks Configuration (moderate performance for staging)
   kvrocks:
@@ -218,7 +224,7 @@ development:
 
   # ECS Auto-scaling (minimal for dev)
   ecs:
-    min_tasks: 4
+    min_tasks: 3
     max_tasks: 8
     cpu_threshold: 60
     memory_threshold: 60
@@ -235,28 +241,30 @@ development:
     # Booking Consumer - Deployed as standalone ECS service
     # Processes booking confirmations and seat allocations
     booking:
-      min_tasks: 5         # 5 consumers for dev
-      max_tasks: 10        # Max 10 consumers
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 20         # 8 consumers for dev
+      max_tasks: 20        # Max 10 consumers
+      task_cpu: 256        # 0.5 vCPU per consumer
+      task_memory: 512    # 1 GB RAM per consumer
 
     # Reservation Service (minimal for testing)
     reservation:
-      min_tasks: 5         # 5 consumers for dev
-      max_tasks: 10        # Max 10 consumers
-      task_cpu: 512        # 0.5 vCPU per consumer
-      task_memory: 1024    # 1 GB RAM per consumer
+      min_tasks: 20         # 8 consumers for dev
+      max_tasks: 20        # Max 10 consumers
+      task_cpu: 256        # 0.5 vCPU per consumer
+      task_memory: 512    # 1 GB RAM per consumer
 
   # Aurora Serverless v2 (minimal)
   aurora:
     min_acu: 0.5
     max_acu: 8
 
-  # EC2 Kafka Configuration (ARM Graviton for cost optimization)
+  # EC2 Kafka Configuration (3 instances for high availability)
   kafka:
-    instance_type: t4g.medium    # ARM Graviton2 (2 vCPU, 4 GB) - 20% cheaper than t3
-    storage_type: ebs            # Use EBS storage (t4g doesn't have instance store)
-    # 3 Kafka brokers run in Docker containers on this single instance
+    type: ec2                            # ec2 or msk_express
+    instance_type: c7g.large             # Graviton ARM (2 vCPU, 4 GB RAM) - 20% cheaper
+    instance_count: 3                    # 3 brokers across 3 AZs
+    storage_type: ebs                    # EBS gp3 (c7g has no instance store)
+    storage_gb: 30                       # EBS storage per broker
 
   # EC2 Kvrocks Configuration (NVMe required for performance)
   kvrocks:

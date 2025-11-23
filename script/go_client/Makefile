@@ -1,4 +1,4 @@
-# Ticketing System - Go Load Tesㄠg Makefile
+# Ticketing System - Go Load Testing Makefile
 # Run from: script/go_client/
 # Usage: make <target>
 
@@ -6,11 +6,33 @@
 # 📋 CONFIGURATION
 # ==============================================================================
 
-# API Configuration (can be overridden via environment variables)
-API_HOST ?= http://localhost:8100
+# Load .env file if it exists (for local development)
+# This reads ENVIRONMENT from .env and uses it as DEPLOY_ENV default
+ENV_FILE := $(wildcard ../../.env)
+ifneq ($(ENV_FILE),)
+  # Extract ENVIRONMENT from .env file
+  ENV_FROM_FILE := $(shell grep -E '^ENVIRONMENT=' ../../.env 2>/dev/null | cut -d'=' -f2)
+  ifneq ($(ENV_FROM_FILE),)
+    DEPLOY_ENV ?= $(ENV_FROM_FILE)
+  else
+    DEPLOY_ENV ?= local_dev
+  endif
+else # No .env file, default to local_dev for safety
+  DEPLOY_ENV ?= local_dev
+endif
 
-# Deployment environment (development, staging, production, local_dev_1000)
-DEPLOY_ENV ?= development
+# API Configuration - auto-detect based on DEPLOY_ENV if not set
+ifndef API_HOST
+  ifeq ($(DEPLOY_ENV),development)
+    API_HOST = http://ticketing-alb-879134627.us-west-2.elb.amazonaws.com
+  else ifeq ($(DEPLOY_ENV),staging)
+    API_HOST = http://ticketing-alb-staging.us-west-2.elb.amazonaws.com
+  else ifeq ($(DEPLOY_ENV),production)
+    API_HOST = http://ticketing-alb-prod.us-west-2.elb.amazonaws.com
+  else
+    API_HOST = http://localhost:8100
+  endif
+endif
 
 # Binary names
 CONCURRENT_BIN = concurrent_loadtest
@@ -34,20 +56,32 @@ build: build-concurrent build-reserved build-full-reserved  ## 🔨 Build all bi
 
 build-all: build  ## 🔨 Alias for 'build'
 
-build-concurrent:  ## 🔨 Build concurrent load test binary
-	@echo "$(COLOR_CYAN)🔨 Building concurrent load test...$(COLOR_RESET)"
-	@go build -tags concurrent -o $(CONCURRENT_BIN)
-	@echo "$(COLOR_GREEN)✅ Built: $(CONCURRENT_BIN)$(COLOR_RESET)"
+build-concurrent:  ## 🔨 Build concurrent load test binary (skipped if binary exists)
+	@if [ -x "./$(CONCURRENT_BIN)" ]; then \
+		echo "$(COLOR_GREEN)✅ $(CONCURRENT_BIN) already exists, skipping build$(COLOR_RESET)"; \
+	else \
+		echo "$(COLOR_CYAN)🔨 Building concurrent load test...$(COLOR_RESET)"; \
+		go build -tags concurrent -o $(CONCURRENT_BIN); \
+		echo "$(COLOR_GREEN)✅ Built: $(CONCURRENT_BIN)$(COLOR_RESET)"; \
+	fi
 
-build-reserved:  ## 🔨 Build reserved load test binary
-	@echo "$(COLOR_CYAN)🔨 Building reserved load test...$(COLOR_RESET)"
-	@go build -tags reserved -o $(RESERVED_BIN)
-	@echo "$(COLOR_GREEN)✅ Built: $(RESERVED_BIN)$(COLOR_RESET)"
+build-reserved:  ## 🔨 Build reserved load test binary (skipped if binary exists)
+	@if [ -x "./$(RESERVED_BIN)" ]; then \
+		echo "$(COLOR_GREEN)✅ $(RESERVED_BIN) already exists, skipping build$(COLOR_RESET)"; \
+	else \
+		echo "$(COLOR_CYAN)🔨 Building reserved load test...$(COLOR_RESET)"; \
+		go build -tags reserved -o $(RESERVED_BIN); \
+		echo "$(COLOR_GREEN)✅ Built: $(RESERVED_BIN)$(COLOR_RESET)"; \
+	fi
 
-build-full-reserved:  ## 🔨 Build full reserved load test binary (500 workers, 1 ticket each)
-	@echo "$(COLOR_CYAN)🔨 Building full reserved load test...$(COLOR_RESET)"
-	@go build -tags full_reserved -o $(FULL_RESERVED_BIN)
-	@echo "$(COLOR_GREEN)✅ Built: $(FULL_RESERVED_BIN)$(COLOR_RESET)"
+build-full-reserved:  ## 🔨 Build full reserved load test binary (skipped if binary exists)
+	@if [ -x "./$(FULL_RESERVED_BIN)" ]; then \
+		echo "$(COLOR_GREEN)✅ $(FULL_RESERVED_BIN) already exists, skipping build$(COLOR_RESET)"; \
+	else \
+		echo "$(COLOR_CYAN)🔨 Building full reserved load test...$(COLOR_RESET)"; \
+		go build -tags full_reserved -o $(FULL_RESERVED_BIN); \
+		echo "$(COLOR_GREEN)✅ Built: $(FULL_RESERVED_BIN)$(COLOR_RESET)"; \
+	fi
 
 clean:  ## 🧹 Remove all binaries
 	@echo "$(COLOR_YELLOW)🧹 Cleaning binaries...$(COLOR_RESET)"
@@ -79,12 +113,6 @@ clt-full: build-concurrent  ## 💪 Concurrent Load Test - Full (150000 requests
 	@echo "$(COLOR_BLUE)💪 Running Full concurrent load test...$(COLOR_RESET)"
 	@./$(CONCURRENT_BIN) -requests 150000 -concurrency 100 -clients 100 -host $(API_HOST)
 
-# Shortcuts
-t: clt-tiny
-s: clt-small
-m: clt-medium
-l: clt-large
-f: clt-full
 
 # Backward compatibility aliases (for main Makefile forwarding: make go-clt-t → make -C script/go_client clt-t)
 clt-t: clt-tiny
@@ -92,9 +120,6 @@ clt-s: clt-small
 clt-m: clt-medium
 clt-l: clt-large
 clt-f: clt-full
-both-m: both-medium
-both-l: both-large
-both-f: both-full
 
 # ==============================================================================
 # 🔥 RESERVED LOAD TEST (Sellout Testing)
@@ -169,31 +194,7 @@ frlt-staging: build-full-reserved  ## 🚀 Full Reserved Load Test - 5000 seats 
 frlt-prod: build-full-reserved  ## 🚀 Full Reserved Load Test - 50000 seats (production)
 	@$(MAKE) frlt DEPLOY_ENV=production
 
-# ==============================================================================
-# 🔄 COMBINED LOAD TESTS (Run in PARALLEL)
-# ==============================================================================
 
-.PHONY: both-medium both-large both-full
-both-medium: build-concurrent build-reserved  ## 🔄 Both Tests PARALLEL - Medium (CLT: 500/25 + RLT: 100 workers)
-	@echo "$(COLOR_BLUE)🔄 Running BOTH tests in PARALLEL - Medium$(COLOR_RESET)"
-	@./$(RESERVED_BIN) -env development -event 1 -workers 100 -host $(API_HOST) & \
-		./$(CONCURRENT_BIN) -requests 500 -concurrency 25 -clients 25 -host $(API_HOST) & \
-		wait
-	@echo "$(COLOR_GREEN)✅ Both tests completed!$(COLOR_RESET)"
-
-both-large: build-concurrent build-reserved  ## 🔄 Both Tests PARALLEL - Large (CLT: 5000/50 + RLT: 50 workers)
-	@echo "$(COLOR_BLUE)🔄 Running BOTH tests in PARALLEL - Large$(COLOR_RESET)"
-	@./$(CONCURRENT_BIN) -requests 5000 -concurrency 50 -clients 50 -host $(API_HOST) & \
-		./$(RESERVED_BIN) -env staging -event 1 -workers 50 -host $(API_HOST) & \
-		wait
-	@echo "$(COLOR_GREEN)✅ Both tests completed!$(COLOR_RESET)"
-
-both-full: build-concurrent build-reserved  ## 🔄 Both Tests PARALLEL - Full (CLT: 50000/100 + RLT: 100 workers)
-	@echo "$(COLOR_BLUE)🔄 Running BOTH tests in PARALLEL - Full$(COLOR_RESET)"
-	@./$(CONCURRENT_BIN) -requests 50000 -concurrency 100 -clients 100 -host $(API_HOST) & \
-		./$(RESERVED_BIN) -env production -event 1 -workers 100 -host $(API_HOST) & \
-		wait
-	@echo "$(COLOR_GREEN)✅ Both tests completed!$(COLOR_RESET)"
 
 # ==============================================================================
 # 🐳 DOCKER BUILD & RUN
@@ -242,6 +243,23 @@ version:  ## 📌 Show Go version
 	@go version
 
 # ==============================================================================
+# 📊 K6 LOAD TESTS
+# ==============================================================================
+
+K6_SCRIPT_DIR ?= /app/k6/local
+
+.PHONY: k6-load k6-stress
+k6-load:  ## 📊 Run k6 load test (peak 250 RPS)
+	@echo "$(COLOR_CYAN)📊 Running k6 load test...$(COLOR_RESET)"
+	@echo "$(COLOR_YELLOW)  API_HOST=$(API_HOST)$(COLOR_RESET)"
+	k6 run $(K6_SCRIPT_DIR)/load-test.js
+
+k6-stress:  ## 📊 Run k6 stress test (peak 500 RPS)
+	@echo "$(COLOR_CYAN)📊 Running k6 stress test...$(COLOR_RESET)"
+	@echo "$(COLOR_YELLOW)  API_HOST=$(API_HOST)$(COLOR_RESET)"
+	k6 run $(K6_SCRIPT_DIR)/stress-test.js
+
+# ==============================================================================
 # 📖 HELP
 # ==============================================================================
 
@@ -279,15 +297,15 @@ help:  ## 📖 Show this help message
 	@echo "  frlt-staging       - Full reserved - 5000 seats (staging)"
 	@echo "  frlt-prod          - Full reserved - 50000 seats (production)"
 	@echo ""
-	@echo "$(COLOR_CYAN)🔄 COMBINED TESTS (Parallel)$(COLOR_RESET)"
-	@echo "  both-medium        - CLT Medium + RLT Development"
-	@echo "  both-large         - CLT Large + RLT Staging"
-	@echo "  both-full          - CLT Full + RLT Production"
 	@echo ""
 	@echo "$(COLOR_CYAN)🐳 DOCKER$(COLOR_RESET)"
 	@echo "  docker-build       - Build Docker image"
 	@echo "  docker-run         - Run load test in Docker (ARGS='-env dev -event 1')"
 	@echo "  docker-test        - Quick Docker test (10 workers)"
+	@echo ""
+	@echo "$(COLOR_CYAN)📊 K6 LOAD TESTS$(COLOR_RESET)"
+	@echo "  k6-load            - k6 load test (peak 250 RPS, 60s)"
+	@echo "  k6-stress          - k6 stress test (peak 500 RPS, 70s)"
 	@echo ""
 	@echo "$(COLOR_CYAN)📊 UTILITIES$(COLOR_RESET)"
 	@echo "  check-env          - Show current configuration"
