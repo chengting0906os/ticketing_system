@@ -57,6 +57,9 @@ cpu.prof
 script/go_client/report/*
 !script/go_client/report/.gitkeep
 
+# GitHub
+.github/image/
+
 # CDK
 cdk.out/
 cdk.out.*/
