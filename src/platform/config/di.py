@@ -120,7 +120,7 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)
     seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
-        ttl_seconds=1.0,
+        ttl_seconds=3.0,
     )
 
     # MQ Infrastructure Orchestrator
