@@ -368,11 +368,11 @@ func main() {
 
 	// Parse command line flags
 	var (
-		host          string
-		eventID       int
-		env           string
-		numWorkers    int
-		batchSize     int
+		host       string
+		eventID    int
+		env        string
+		numWorkers int
+		batchSize  int
 	)
 
 	flag.StringVar(&host, "host", "", "API host (overrides API_HOST env var)")
@@ -472,10 +472,10 @@ func main() {
 	results := make(chan SubsectionResult, 100)
 
 	// Request timing tracking
-	var firstRequestTime atomic.Value  // When first request was sent
-	var lastRequestTime atomic.Value   // When last request was sent
-	var lastResponseTime atomic.Value  // When last response was received
-	var requestCount atomic.Int64      // Total number of requests sent
+	var firstRequestTime atomic.Value // When first request was sent
+	var lastRequestTime atomic.Value  // When last request was sent
+	var lastResponseTime atomic.Value // When last response was received
+	var requestCount atomic.Int64     // Total number of requests sent
 
 	// Start workers (Worker Pool Pattern)
 	fmt.Printf("\n   👷 Starting %d workers...\n", numWorkers)
@@ -646,11 +646,9 @@ func main() {
 
 	if tickets == int64(totalSeats) {
 		fmt.Println("🎉 All seats purchased! Complete sellout!")
-	} else if tickets >= int64(float64(totalSeats)*0.95) {
-		fmt.Println("✅ Near-complete sellout (>95%)")
 	}
 
-	fmt.Println("\n✅ Concurrent sellout test complete!")
+	fmt.Println("\n✅ Spike sellout test complete!")
 
 	// Generate Markdown Report
 	generateMarkdownReport(
