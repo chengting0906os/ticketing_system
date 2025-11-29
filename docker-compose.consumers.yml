@@ -3,9 +3,12 @@
 # =============================================================================
 # This file defines standalone Kafka consumers that run independently from the API service
 #
+# Architecture Flow:
+#   Ticketing (HTTP) → Booking Service → Reservation Service → PostgreSQL
+#
 # Services:
-# - reservation-service: Processes seat reservations + publishes Redis Pub/Sub
-# - booking-service: Processes booking creation (subscribes to SeatsReservedEvent)
+# - booking-service: Receives from Ticketing, saves metadata to Kvrocks, publishes to Reservation
+# - reservation-service: Reserves seats in Kvrocks, writes to PostgreSQL, SSE broadcast
 #
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d
@@ -21,10 +24,10 @@ services:
   # =============================================================================
   # Seat Reservation Service (Standalone Consumer)
   # =============================================================================
-  # This service runs independently as it:
-  # - Doesn't share state with API service
-  # - Only interacts with Kvrocks for reservation state
-  # - Processes reservation confirmations and expirations
+  # This service handles:
+  # - Seat reservation in Kvrocks (atomic operations)
+  # - PostgreSQL writes (booking + tickets)
+  # - SSE broadcast for real-time UI updates
   # =============================================================================
   reservation-service:
     build:
@@ -51,6 +54,13 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TZ: "Asia/Taipei"
 
+      # Database (for PostgreSQL writes)
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-ticketing_system_db}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+
       # Kvrocks
       KVROCKS_HOST: kvrocks
       KVROCKS_PORT: "6666"
@@ -72,6 +82,8 @@ services:
       - ./src:/app/src:ro
 
     depends_on:
+      postgres:
+        condition: service_healthy
       kafka1:
         condition: service_started
       kafka2:
@@ -107,10 +119,10 @@ services:
   # =============================================================================
   # Booking Service (Standalone Consumer)
   # =============================================================================
-  # This service processes SeatsReservedEvent to create bookings
-  # - Runs independently for better resource isolation
-  # - Independent scaling from API service
-  # - Clean separation of concerns
+  # This service handles booking metadata management:
+  # - Receives BookingCreated event from Ticketing Service
+  # - Saves booking metadata to Kvrocks
+  # - Publishes to Reservation Service for seat reservation
   # =============================================================================
   booking-service:
     build:
@@ -126,7 +138,7 @@ services:
       - |
         export KAFKA_CONSUMER_INSTANCE_ID="booking-service-consumer-$$(hostname)"
         export KAFKA_PRODUCER_INSTANCE_ID="booking-service-producer-$$(hostname)"
-        /app/.venv/bin/python src/service/ticketing/driving_adapter/start_booking_consumer.py
+        /app/.venv/bin/python src/service/booking/driving_adapter/mq_consumer/start_booking_consumer.py
     environment:
       # Python
       PYTHONPATH: /app
@@ -137,14 +149,7 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TZ: "Asia/Taipei"
 
-      # Database (must match core_setting.py variable names)
-      POSTGRES_SERVER: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: "${POSTGRES_DB:-ticketing_system_db}"
-      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-
-      # Kvrocks (for SSE broadcasting state)
+      # Kvrocks (for booking metadata storage)
       KVROCKS_HOST: kvrocks
       KVROCKS_PORT: "6666"
 
@@ -164,8 +169,6 @@ services:
       - ./src:/app/src:ro
 
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka1:
         condition: service_started
       kafka2:

@@ -129,7 +129,7 @@ class SeatReservationConsumer:
         # Define topic configuration
         topics = {
             'reservation': (
-                KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
+                KafkaTopicBuilder.booking_to_reservation_reserve_seats(
                     event_id=self.event_id
                 ),
                 self._process_reservation_request,

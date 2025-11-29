@@ -33,8 +33,8 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
-        """Publish BookingCreated event to ticket reservation topic"""
-        topic = KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
+        """Publish BookingCreated event to Booking Service for metadata creation"""
+        topic = KafkaTopicBuilder.ticketing_to_booking_create_metadata(
             event_id=event.event_id
         )
 
@@ -44,10 +44,10 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         partition_key = f'{event.event_id}:{event.section}-{event.subsection}'
 
         Logger.base.info(
-            f'\033[92m📤 [BOOKING Publisher] Publishing BookingCreated to Topic: {topic}\033[0m'
+            f'\033[92m📤 [TICKETING→BOOKING] Publishing BookingCreated to Topic: {topic}\033[0m'
         )
         Logger.base.info(
-            f'\033[92m📦 [BOOKING Publisher] Event content: event_id={event.event_id}, '
+            f'\033[92m📦 [TICKETING→BOOKING] Event content: event_id={event.event_id}, '
             f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}, '
             f'partition_key={partition_key}\033[0m'
         )
@@ -59,7 +59,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         )
 
         Logger.base.info(
-            '\033[92m✅ [BOOKING Publisher] BookingCreated event published successfully\033[0m'
+            '\033[92m✅ [TICKETING→BOOKING] BookingCreated event published successfully\033[0m'
         )
 
     @Logger.io
