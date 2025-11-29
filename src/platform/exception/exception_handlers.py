@@ -2,15 +2,10 @@ from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from src.platform.exception.exceptions import DomainError
-from src.platform.logging.loguru_io import Logger
+from src.platform.exception.exceptions import CustomBaseError
 
 
-async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
-    if exc.status_code >= 500:
-        Logger.base.exception(f'Domain error: {exc.message}')
-    else:
-        Logger.base.error(f'Domain error: {exc.message}')
+async def custom_error_handler(request: Request, exc: CustomBaseError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={'detail': exc.message})
 
 
@@ -19,7 +14,6 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    Logger.base.error(f'Validation error: {exc.errors()}')
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={'detail': exc.errors()},
@@ -27,7 +21,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 
 async def general_500_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    Logger.base.exception(f'Unhandled exception: {str(exc)}')
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={'detail': 'Internal server error'},
@@ -36,7 +29,7 @@ async def general_500_exception_handler(request: Request, exc: Exception) -> JSO
 
 # Exception handler mapping
 EXCEPTION_HANDLERS = {
-    DomainError: domain_error_handler,
+    CustomBaseError: custom_error_handler,
     ValueError: value_error_handler,
     RequestValidationError: validation_error_handler,
     Exception: general_500_exception_handler,  # Catch-all for unhandled exceptions

@@ -163,25 +163,25 @@ min_log_level = 'DEBUG' if settings.DEBUG else 'INFO'
 # Add console output with custom format
 custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level)
 
-# Add file output with daily rotation and compression
-# Use test_ prefix if in test environment
-# Generate filename with Taipei timezone
-taipei_tz = zoneinfo.ZoneInfo('Asia/Taipei')
-now_taipei = datetime.now(taipei_tz)
-log_filename = (
-    f'test_{now_taipei.strftime("%Y-%m-%d_%H")}.log'
-    if os.environ.get('TEST_LOG_DIR')
-    else f'{now_taipei.strftime("%Y-%m-%d_%H")}.log'
-)
-custom_logger.add(
-    f'{LOG_DIR}/{log_filename}',
-    format=io_log_format,
-    rotation='1 hour',  # Rotate every hour to match filename pattern
-    retention='7 days',
-    compression='gz',
-    enqueue=True,
-    level=min_log_level,
-)
+# Add file output only in DEBUG mode or when explicitly enabled
+# Production uses stdout only (collected by CloudWatch/Loki)
+if settings.DEBUG:
+    taipei_tz = zoneinfo.ZoneInfo('Asia/Taipei')
+    now_taipei = datetime.now(taipei_tz)
+    log_filename = (
+        f'test_{now_taipei.strftime("%Y-%m-%d_%H")}.log'
+        if os.environ.get('TEST_LOG_DIR')
+        else f'{now_taipei.strftime("%Y-%m-%d_%H")}.log'
+    )
+    custom_logger.add(
+        f'{LOG_DIR}/{log_filename}',
+        format=io_log_format,
+        rotation='1 hour',
+        retention='7 days',
+        compression='gz',
+        enqueue=True,
+        level=min_log_level,
+    )
 
 # Intercept standard logging → loguru
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)

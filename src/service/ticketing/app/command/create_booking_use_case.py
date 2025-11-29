@@ -124,6 +124,17 @@ class CreateBookingUseCase:
                 'booking.id': booking_id_str,
             },
         ):
+            booking = Booking.create(
+                id=booking_id_uuid,  # UUID7 object
+                buyer_id=buyer_id,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                seat_selection_mode=seat_selection_mode,
+                seat_positions=seat_positions,
+                quantity=quantity,
+            )
+
             Logger.base.info(
                 f'📝 [CREATE-BOOKING] Generated UUID7: {booking_id_str} '
                 f'for buyer {buyer_id}, section {section}-{subsection}'
@@ -141,9 +152,7 @@ class CreateBookingUseCase:
             )
 
             if not availability_result.has_enough_seats:
-                raise DomainError(
-                    f'Insufficient seats available in section {section}-{subsection}', 400
-                )
+                raise DomainError(f'Insufficient seats available in section {section}-{subsection}')
 
             # Step 3: Save booking metadata to Kvrocks (fast, temporary storage)
             # This will be used by Seat Reservation Service during processing
@@ -160,22 +169,9 @@ class CreateBookingUseCase:
                 )
             except Exception as e:
                 Logger.base.error(f'❌ [CREATE-BOOKING] Failed to save Kvrocks metadata: {e}')
-                raise DomainError(f'Failed to save booking metadata: {e}', 500)
+                raise Exception(f'Failed to save booking metadata: {e}')
 
-            # Step 4: Create booking entity (for event publishing)
-            # Note: Booking will be created by Seat Reservation Service after successful reservation
-            booking = Booking.create(
-                id=booking_id_uuid,  # UUID7 object
-                buyer_id=buyer_id,
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                seat_selection_mode=seat_selection_mode,
-                seat_positions=seat_positions,
-                quantity=quantity,
-            )
-
-            # Step 5: Publish domain event to Kafka
+            # Step 4: Publish domain event to Kafka
             # The event will use section-subsection as partition key for ordering
             # Include config (rows, seats_per_row, price) to avoid redundant Kvrocks lookups
             booking_created_event = BookingCreatedDomainEvent.from_booking_with_config(

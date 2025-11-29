@@ -4,9 +4,10 @@ from inspect import (
     isgeneratorfunction,
 )
 import types
-from typing import Any, Callable, Optional, TypeVar, cast, overload, ParamSpec
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast, overload
 
 from src.platform.config.core_setting import settings
+from src.platform.exception.exceptions import CustomBaseError
 from src.platform.logging.generator_wrapper import GeneratorWrapper
 from src.platform.logging.loguru_io_config import (
     ExtraField,
@@ -87,9 +88,17 @@ class LoguruIO:
                     self.log_return_content(return_value)
                     return return_value
                 except Exception as e:
-                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
-                        f'Exception: {type(e).__name__}: {e}'
-                    )
+                    # Skip if already logged (avoid duplicate logs when exception bubbles up)
+                    if not getattr(e, '_has_logged', False):
+                        e._has_logged = True
+                        if isinstance(e, CustomBaseError):
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).error(
+                                f'{type(e).__name__}: {e}'
+                            )
+                        else:
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                                f'{type(e).__name__}: {e}'
+                            )
                     if self.reraise:
                         raise
                     return None
@@ -108,9 +117,16 @@ class LoguruIO:
                     self.log_return_content(gen_obj)
                     return GeneratorWrapper(gen_obj, self)
                 except Exception as e:
-                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
-                        f'Exception: {type(e).__name__}: {e}'
-                    )
+                    if not getattr(e, '_has_logged', False):
+                        e._has_logged = True
+                        if isinstance(e, CustomBaseError):
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).error(
+                                f'{type(e).__name__}: {e}'
+                            )
+                        else:
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                                f'{type(e).__name__}: {e}'
+                            )
                     if self.reraise:
                         raise
                     return None
@@ -130,9 +146,16 @@ class LoguruIO:
                     self.log_return_content(return_value)
                     return return_value
                 except Exception as e:
-                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
-                        f'Exception: {type(e).__name__}: {e}'
-                    )
+                    if not getattr(e, '_has_logged', False):
+                        e._has_logged = True
+                        if isinstance(e, CustomBaseError):
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).error(
+                                f'{type(e).__name__}: {e}'
+                            )
+                        else:
+                            self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                                f'{type(e).__name__}: {e}'
+                            )
                     if self.reraise:
                         raise
                     return None

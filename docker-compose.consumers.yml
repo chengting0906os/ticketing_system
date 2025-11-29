@@ -93,6 +93,13 @@ services:
         reservations:
           cpus: '0.1'
           memory: 128M
+    logging:
+      driver: "local"
+      options:
+        max-size: "100m"
+        max-file: "100"
+        mode: "non-blocking"
+        max-buffer-size: "4m"
     labels:
       - "service.type=consumer"
       - "service.name=reservation-service"
@@ -180,6 +187,13 @@ services:
         reservations:
           cpus: '0.1'
           memory: 128M
+    logging:
+      driver: "local"
+      options:
+        max-size: "100m"
+        max-file: "100"
+        mode: "non-blocking"
+        max-buffer-size: "4m"
     labels:
       - "service.type=consumer"
       - "service.name=booking-service"

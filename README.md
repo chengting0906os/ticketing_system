@@ -19,8 +19,8 @@ resources:
 
 **Result (longest trace):** Producer → Consumer latency: **~11 seconds** (1.54s ~ 12.55s)
 
-![Before optimization - Jaeger trace](.github/image/v0.0.1-interval-jaejar-low.png)
-![Before optimization - Go client](.github/image/v0.0.1-interval-go-low.png)
+![Before optimization - Jaeger trace](.github/image/v0.0.1-more-containers/v0.0.1-interval-jaejar-slow.png)
+![Before optimization - Go client](.github/image/v0.0.1-more-containers/v0.0.1-interval-go-slow.png)
 
 ---
 
@@ -38,8 +38,8 @@ resources:
 
 **Result (longest trace):** Producer → Consumer latency: **~1 second** (4.35s ~ 5.53s)
 
-![After optimization - Jaeger trace](.github/image/v0.0.1-interval-jaejar-high.png)
-![After optimization - Go client](.github/image/v0.0.1-interval-go-high.png)
+![After optimization - Jaeger trace](.github/image/v0.0.1-more-containers/v0.0.1-interval-jaejar-fast.png)
+![After optimization - Go client](.github/image/v0.0.1-more-containers/v0.0.1-interval-go-fast.png)
 
 ---
 
@@ -116,7 +116,7 @@ docker cp <container>:/tmp/profile_*.svg ./observability/profiling/
 
 ### Bottlenecks Identified (from Flame Graph - Before Fix)
 
-![Flame Graph - Before Fix](.github/image/v0.0.2-py-spy/profile-before.svg)
+![Flame Graph - Before Fix](.github/image/v0.0.2-py-spy/flame-graph.png)
 
 **Biggest bottleneck call stack:**
 
@@ -130,6 +130,15 @@ publish_domain_event()                                    33.84%
                                 └── list_topics()         27.12%  ← Queries Kafka metadata
                                       └── AdminClient.list_topics()  20.68%
                                             └── __init__()            15.75%
+```
+
+**Loguru file sink bottleneck:**
+
+```text
+loguru/_handler.py:emit()                                 15.75%
+  └── _queued_writer()                                    15.75%  ← Async queue processing
+        └── _file_sink.py:write()                          9.86%  ← File I/O blocking
+              └── open().write()                           9.86%
 ```
 
 | Rank | Function | Samples | CPU % | Root Cause |
@@ -167,13 +176,72 @@ def _get_or_create_quix_topic_with_cache(topic_name: str):
 
 ```python
 # loguru_io_config.py - Conditional file logging
-if settings.DEBUG or os.environ.get('ENABLE_FILE_LOGGING'):
+if settings.DEBUG:
     custom_logger.add(file_sink, ...)  # Only in development
 ```
 
 ### Architecture Decision
 
-- **Development**: `DEBUG=true` enables file logging for convenience
-- **Production**: `DEBUG=false` uses stdout only, collected by CloudWatch/Docker logs
+- **Development**: `DEBUG=true` → File logging enabled (convenient for local debugging)
+- **Production**: `DEBUG=false` → Stdout only (logs still persisted via CloudWatch/Loki/Docker json-file driver)
 
-This separation ensures production performance while maintaining development convenience.
+---
+
+### Before vs After Comparison
+
+| Function | Before | After | Improvement |
+|----------|--------|-------|-------------|
+| `publish_domain_event` total | 247 samples (**33.84%**) | ~15 samples (**~4%**) | **88% ↓** |
+| ├─ `quixstreams/app.topic()` | 246 samples (**33.70%**) | 6 samples (**1.51%**) | **95.5% ↓** |
+| │ └─ `list_topics()` | 198 samples (**27.12%**) | 0 samples (**0%**) | **100% ↓** |
+| └─ `loguru/_file_sink.py:write` | 72 samples (**9.86%**) | 0 samples (**0%**) | **100% ↓** |
+
+**Key Observations:**
+
+1. **Topic Caching Works**: `app.topic()` dropped from 33.70% → 1.51% (only called on cache miss)
+2. **list_topics() Eliminated**: No longer called on every publish (0% CPU)
+3. **File Logging Disabled**: `_file_sink.py:write` completely eliminated in `DEBUG=false` mode
+4. **CPU Now Spent on Business Logic**: Top consumers are now `solve_dependencies` (18%), `start_span` (15%), `save_booking_metadata` (8%)
+
+---
+
+### Spike Test Results (1000 Concurrent Requests)
+
+> **Architecture Note:** This system uses **Response-First** pattern. The API responds immediately after publishing to Kafka (`202 Accepted`), actual seat reservation and booking creation happen asynchronously via consumers. Throughput measures API response speed, not end-to-end processing.
+
+#### Step 1: Before Optimization
+
+![Before optimization](.github/image/v0.0.2-py-spy/v0.0.2_1-before.png)
+
+#### Step 2: After Topic Caching
+
+![After topic caching](.github/image/v0.0.2-py-spy/v0.0.2_2-topic-cache.png)
+
+#### Step 3: After Logging Optimization (DEBUG=false)
+
+![After logging optimization](.github/image/v0.0.2-py-spy/v0.0.2_3-logging%20optimization.png)
+
+#### Performance Comparison
+
+| Metric | Before | + Topic Cache | + Logging Off | Total Improvement |
+|--------|--------|---------------|---------------|-------------------|
+| **Sellout Duration** ¹ | 13.91s | 3.31s | **2.53s** | **81.8% ↓** |
+| **Response Duration** ² | 7.13s | 3.33s | **1.08s** | **84.9% ↓** |
+| **P50** | 3.59s | 1.84s | **575ms** | **84.0% ↓** |
+| **P95** | 6.54s | 3.14s | **994ms** | **84.8% ↓** |
+| **P99** | 7.00s | 3.30s | **1.06s** | **84.9% ↓** |
+| **Throughput** | 140/s | 300/s | **930/s** | **6.6× ↑** |
+
+> ¹ **Sellout Duration** (`duration_seconds`): Time from first ticket reserved to all 1000 tickets sold (end-to-end, includes async consumer processing)
+>
+> ² **Response Duration**: Time for all 1000 HTTP requests to receive responses (API layer only)
+
+#### Incremental Gains
+
+| Optimization | Sellout | Response | P95 | Throughput | Gain |
+|--------------|---------|----------|-----|------------|------|
+| Baseline | 13.91s | 7.13s | 6.54s | 140/s | - |
+| + Topic Cache | 3.31s | 3.33s | 3.14s | 300/s | **76% faster sellout** |
+| + Logging Off | 2.53s | 1.08s | 994ms | 930/s | **24% faster sellout** |
+
+**Conclusion:** Two simple optimizations reduced sellout time from **13.91s → 2.53s** (82% faster), response time from **7.13s → 1.08s** (85% faster), and increased throughput from **140/s → 930/s** (6.6×)

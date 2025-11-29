@@ -21,6 +21,7 @@ from opentelemetry.propagate import extract
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 
 class TracingConfig:
@@ -59,8 +60,14 @@ class TracingConfig:
         # Create resource with service name
         resource = Resource(attributes={SERVICE_NAME: self.service_name})
 
-        # Create tracer provider
-        self._provider = TracerProvider(resource=resource)
+        # Sampling strategy: ALWAYS_ON at SDK level
+        # - Head-based sampling can't capture errors (error status unknown at span start)
+        # - For production volume control, use tail-based sampling in collector
+        #   (e.g., Jaeger, Tempo) to: keep 100% errors, sample 10% of success traces
+        sampler = ALWAYS_ON
+
+        # Create tracer provider with sampler
+        self._provider = TracerProvider(resource=resource, sampler=sampler)
 
         # Add OTLP exporter (works with Jaeger's OTLP receiver)
         if self.otlp_endpoint:
@@ -79,8 +86,7 @@ class TracingConfig:
         FastAPIInstrumentor.instrument_app(app, excluded_urls=excluded_urls)
 
     def instrument_sqlalchemy(self, *, engine: Any) -> None:
-        # Handle AsyncEngine by instrumenting its sync_engine
-        if hasattr(engine, 'sync_engine'):
+        if hasattr(engine, 'sync_engine'):  # Handle AsyncEngine by instrumenting its sync_engine
             SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
         else:
             SQLAlchemyInstrumentor().instrument(engine=engine)
