@@ -5,12 +5,12 @@ Seat Position Value Object - Shared Kernel
 Used to share the seat position concept between Ticketing and Seat Reservation bounded contexts
 """
 
-from dataclasses import dataclass
+import attrs
 
 from src.platform.exception.exceptions import DomainError
 
 
-@dataclass
+@attrs.define(frozen=True)
 class SeatPosition:
     """Seat Position (Value Object)"""
 

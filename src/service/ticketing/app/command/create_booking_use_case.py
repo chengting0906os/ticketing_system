@@ -130,14 +130,17 @@ class CreateBookingUseCase:
             )
 
             # Step 2: Fail Fast - Check seat availability before any writes
-            has_enough_seats = await self.seat_availability_handler.check_subsection_availability(
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-                required_quantity=quantity,
+            # Also retrieves config (rows, seats_per_row, price) to pass to downstream services
+            availability_result = (
+                await self.seat_availability_handler.check_subsection_availability(
+                    event_id=event_id,
+                    section=section,
+                    subsection=subsection,
+                    required_quantity=quantity,
+                )
             )
 
-            if not has_enough_seats:
+            if not availability_result.has_enough_seats:
                 raise DomainError(
                     f'Insufficient seats available in section {section}-{subsection}', 400
                 )
@@ -174,7 +177,10 @@ class CreateBookingUseCase:
 
             # Step 5: Publish domain event to Kafka
             # The event will use section-subsection as partition key for ordering
-            booking_created_event = BookingCreatedDomainEvent.from_booking(booking)
+            # Include config (rows, seats_per_row, price) to avoid redundant Kvrocks lookups
+            booking_created_event = BookingCreatedDomainEvent.from_booking_with_config(
+                booking, availability_result
+            )
 
             # Publish event (with minimal latency - Kafka producer is buffered)
             await self.event_publisher.publish_booking_created(event=booking_created_event)

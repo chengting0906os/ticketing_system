@@ -28,11 +28,12 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaTopicBuilder,
 )
 from src.platform.observability.tracing import extract_trace_context
-from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
+from src.service.seat_reservation.app.dto import (
     FinalizeSeatPaymentRequest,
+    ReservationRequest,
 )
-from src.service.seat_reservation.app.command.reserve_seats_use_case import ReservationRequest
 from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
+from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
 
 class SeatReservationConsumer:
@@ -337,7 +338,6 @@ class SeatReservationConsumer:
             request = FinalizeSeatPaymentRequest(
                 seat_id=seat_id,
                 event_id=self.event_id,
-                timestamp=message.get('timestamp', ''),
             )
 
             # pyrefly: ignore  # missing-attribute
@@ -418,20 +418,34 @@ class SeatReservationConsumer:
         if not all([booking_id, buyer_id, event_id]):
             raise ValueError('Missing required fields in event data')
 
+        # Extract config from upstream (required - fail fast if missing)
+        config = event_data['config']
+
         return {
             'booking_id': booking_id,
             'buyer_id': buyer_id,
             'event_id': event_id,
-            'section': event_data.get('section', ''),
-            'subsection': event_data.get('subsection', 0),
-            'quantity': event_data.get('quantity', 2),
-            'seat_selection_mode': event_data.get('seat_selection_mode', 'best_available'),
+            'section': event_data['section'],
+            'subsection': event_data['subsection'],
+            'quantity': event_data['quantity'],
+            'seat_selection_mode': event_data['seat_selection_mode'],
             'seat_positions': event_data.get('seat_positions', []),
+            # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
+            'rows': config['rows'],
+            'seats_per_row': config['seats_per_row'],
+            'price': config['price'],
         }
 
     async def _execute_reservation(self, command: Dict) -> bool:
         """Execute seat reservation - Only responsible for calling use case"""
         try:
+            # Build config from upstream (required - fail fast if missing)
+            config = SubsectionConfig(
+                rows=command['rows'],
+                seats_per_row=command['seats_per_row'],
+                price=command['price'],
+            )
+
             request = ReservationRequest(
                 booking_id=command['booking_id'],
                 buyer_id=command['buyer_id'],
@@ -441,6 +455,7 @@ class SeatReservationConsumer:
                 seat_positions=command['seat_positions'],
                 section_filter=command['section'],
                 subsection_filter=command['subsection'],
+                config=config,
             )
 
             # Call use case (use case is responsible for sending success/failure events)

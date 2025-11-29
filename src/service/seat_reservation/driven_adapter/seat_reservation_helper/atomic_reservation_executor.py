@@ -5,6 +5,7 @@ from opentelemetry import trace
 import orjson
 from redis.asyncio import Redis
 
+from src.platform.database.asyncpg_setting import get_asyncpg_pool
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -12,6 +13,7 @@ from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.seat_reservation.driven_adapter.seat_reservation_helper.key_str_generator import (
     make_booking_key,
     make_event_state_key,
+    make_seats_bf_key,
     make_sellout_timer_key,
 )
 
@@ -265,19 +267,25 @@ class AtomicReservationExecutor:
         section: str,
         subsection: int,
         booking_id: str,
-        bf_key: str,
+        quantity: int,
+        # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
         rows: int,
         seats_per_row: int,
-        quantity: int,
-        section_price: int,
+        price: int,
     ) -> Dict:
         """
         Find and reserve seats in one method (best_available mode).
+
+        Config (rows, seats_per_row, price) is passed from upstream through the event chain,
+        avoiding redundant Kvrocks lookups in Lua script.
+
+        If config is 0 (cache miss upstream), fetches from Kvrocks here.
 
         Combines find_consecutive_seats (Lua) + execute_atomic_reservation (Pipeline).
         """
         tracer = trace.get_tracer(__name__)
         section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
 
         with tracer.start_as_current_span(
             'executor.find_and_reserve',
@@ -287,7 +295,29 @@ class AtomicReservationExecutor:
         ):
             client = kvrocks_client.get_client()
 
-            # ========== STEP 1: Find consecutive seats (Lua script) ==========
+            # ========== STEP 0: Fetch config if missing (cache miss upstream) ==========
+            # Query PostgreSQL to distribute load (instead of Kvrocks)
+            if rows == 0 or seats_per_row == 0:
+                pool = await get_asyncpg_pool()
+                async with pool.acquire() as conn:
+                    row_result = await conn.fetchrow(
+                        'SELECT seating_config FROM event WHERE id = $1', event_id
+                    )
+                    if row_result:
+                        seating_config = row_result['seating_config']
+                        # Find section and subsection in seating_config
+                        for sec in seating_config.get('sections', []):
+                            if sec.get('name') == section:
+                                price = sec.get('price', 0)
+                                for subsec in sec.get('subsections', []):
+                                    if subsec.get('id') == subsection:
+                                        rows = subsec.get('rows', 0)
+                                        seats_per_row = subsec.get('seats_per_row', 0)
+                                        break
+                                break
+
+            # ========== STEP 1: Find consecutive seats ==========
+            # Config passed via ARGV (avoids Kvrocks fetch in Lua)
             lua_result = await lua_script_executor.find_consecutive_seats(
                 client=client,
                 keys=[bf_key],
@@ -305,13 +335,85 @@ class AtomicReservationExecutor:
                     'error_message': f'No {quantity} consecutive seats available',
                 }
 
-            # Parse found seats from Lua: [[row, seat_num, seat_index], ...]
-            found_seats = orjson.loads(lua_result)
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "seats_per_row": 20, "price": 0}
+            lua_data = orjson.loads(lua_result)
+            found_seats = lua_data['seats']
 
             # ========== STEP 2: Convert to reservation format ==========
             seats_to_reserve = [
                 (row, seat_num, seat_index, f'{section}-{subsection}-{row}-{seat_num}')
                 for row, seat_num, seat_index in found_seats
+            ]
+
+            # ========== STEP 3: Execute atomic reservation ==========
+            return await self.execute_atomic_reservation(
+                event_id=event_id,
+                section_id=section_id,
+                booking_id=booking_id,
+                bf_key=bf_key,
+                seats_to_reserve=seats_to_reserve,
+                section_price=price,
+            )
+
+    async def execute_manual_reservation(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        booking_id: str,
+        seat_ids: List[str],
+    ) -> Dict:
+        """
+        Verify and reserve manually selected seats (manual mode).
+
+        Lua script fetches config, validates seats, returns verified data.
+        Then execute_atomic_reservation does the actual reservation.
+        """
+        tracer = trace.get_tracer(__name__)
+        section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+
+        with tracer.start_as_current_span(
+            'executor.manual_reservation',
+            attributes={
+                'booking.id': booking_id,
+            },
+        ):
+            client = kvrocks_client.get_client()
+            event_state_key = make_event_state_key(event_id=event_id)
+
+            # ========== STEP 1: Verify seats via Lua (fetches config + validates) ==========
+            try:
+                lua_result = await lua_script_executor.verify_manual_seats(
+                    client=client,
+                    keys=[bf_key, event_state_key],
+                    args=[str(event_id), section, str(subsection)] + seat_ids,
+                )
+            except Exception as e:
+                error_msg = str(e)
+                # Parse Lua error format: "SEAT_UNAVAILABLE: Seat A-1-1-5 is already RESERVED"
+                if ':' in error_msg:
+                    error_msg = error_msg.split(':', 1)[1].strip()
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'total_price': 0,
+                    'subsection_stats': {},
+                    'event_stats': {},
+                    'event_state': {},
+                    'error_message': error_msg,
+                }
+
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "seats_per_row": 20, "price": 1800}
+            lua_data = orjson.loads(lua_result)
+            verified_seats = lua_data['seats']
+            section_price = lua_data['price']
+
+            # ========== STEP 2: Convert to reservation format ==========
+            seats_to_reserve = [
+                (row, seat_num, seat_index, seat_id)
+                for row, seat_num, seat_index, seat_id in verified_seats
             ]
 
             # ========== STEP 3: Execute atomic reservation ==========

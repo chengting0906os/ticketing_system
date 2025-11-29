@@ -7,6 +7,7 @@ from dependency_injector import containers, providers
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
+from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
     FinalizeSeatPaymentUseCase,
@@ -15,6 +16,15 @@ from src.service.seat_reservation.app.command.release_seat_use_case import Relea
 from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
 from src.service.seat_reservation.driven_adapter.event_state_broadcaster_impl import (
     EventStateBroadcasterImpl,
+)
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor import (
+    AtomicReservationExecutor,
+)
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.payment_finalizer import (
+    PaymentFinalizer,
+)
+from src.service.seat_reservation.driven_adapter.seat_reservation_helper.release_executor import (
+    ReleaseExecutor,
 )
 from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
     SeatReservationEventPublisher,
@@ -53,7 +63,6 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
     SeatAvailabilityQueryHandlerImpl,
 )
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
-from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 
 
 class Container(containers.DeclarativeContainer):
@@ -107,9 +116,17 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler
     booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)
 
+    # Seat Reservation Executors (stateless, can be Factory or Singleton)
+    atomic_reservation_executor = providers.Singleton(AtomicReservationExecutor)
+    release_executor = providers.Singleton(ReleaseExecutor)
+    payment_finalizer = providers.Singleton(PaymentFinalizer)
+
     seat_state_command_handler = providers.Singleton(
         SeatStateCommandHandlerImpl,
         booking_metadata_handler=booking_metadata_handler,
+        reservation_executor=atomic_reservation_executor,
+        release_executor=release_executor,
+        payment_finalizer=payment_finalizer,
     )
 
     # Ticketing Service - Init State Handler
@@ -120,7 +137,7 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)
     seat_availability_query_handler = providers.Singleton(
         SeatAvailabilityQueryHandlerImpl,
-        ttl_seconds=3.0,
+        ttl_seconds=10.0,
     )
 
     # MQ Infrastructure Orchestrator

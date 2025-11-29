@@ -7,6 +7,8 @@ before creating bookings (Fail Fast principle)
 
 from abc import ABC, abstractmethod
 
+from src.service.ticketing.app.dto import AvailabilityCheckResult
+
 
 class ISeatAvailabilityQueryHandler(ABC):
     """
@@ -19,7 +21,7 @@ class ISeatAvailabilityQueryHandler(ABC):
     @abstractmethod
     async def check_subsection_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
-    ) -> bool:
+    ) -> AvailabilityCheckResult:
         """
         Check if the specified subsection has enough available seats
 
@@ -30,7 +32,9 @@ class ISeatAvailabilityQueryHandler(ABC):
             required_quantity: Required number of seats
 
         Returns:
-            True if enough seats available, False otherwise
+            AvailabilityCheckResult with:
+            - has_enough_seats: True if enough seats available
+            - config: SubsectionConfig (rows, seats_per_row, price)
 
         Note:
             This checks 'available' seats only, not 'reserved' or 'sold'

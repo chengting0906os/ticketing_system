@@ -105,7 +105,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # Then
-        assert result is True
+        assert result.has_enough_seats is True
 
     @pytest.mark.asyncio
     async def test_returns_false_when_insufficient_seats(self, handler):
@@ -125,7 +125,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # Then
-        assert result is False
+        assert result.has_enough_seats is False
 
     @pytest.mark.asyncio
     async def test_queries_correct_kvrocks_key(self, handler):
@@ -142,7 +142,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # Then: should be able to read data and return correct result
-        assert result is True
+        assert result.has_enough_seats is True
 
         # Verify the event_state JSON was created
         config_key = _make_key('event_state:100')
@@ -192,7 +192,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # Then
-        assert result is True
+        assert result.has_enough_seats is True
 
     @pytest.mark.asyncio
     async def test_handles_available_count_as_string(self, handler):
@@ -209,4 +209,4 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # Then: should correctly handle and compare numbers
-        assert result is True
+        assert result.has_enough_seats is True

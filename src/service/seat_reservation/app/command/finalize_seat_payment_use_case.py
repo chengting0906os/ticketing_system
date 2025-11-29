@@ -3,24 +3,12 @@ Finalize Seat Payment Use Case
 Seat payment completion use case
 """
 
-from dataclasses import dataclass
-
 from src.platform.logging.loguru_io import Logger
+from src.service.seat_reservation.app.dto import (
+    FinalizeSeatPaymentRequest,
+    FinalizeSeatPaymentResult,
+)
 from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
-
-
-@dataclass
-class FinalizeSeatPaymentRequest:
-    seat_id: str
-    event_id: int
-    timestamp: str
-
-
-@dataclass
-class FinalizeSeatPaymentResult:
-    success: bool
-    seat_id: str
-    error_message: str = ''
 
 
 class FinalizeSeatPaymentUseCase:
@@ -35,7 +23,6 @@ class FinalizeSeatPaymentUseCase:
             success = await self.seat_state_handler.finalize_payment(
                 seat_id=request.seat_id,
                 event_id=request.event_id,
-                timestamp=request.timestamp,
             )
 
             if success:

@@ -14,7 +14,9 @@ import pytest
 from uuid_utils import UUID
 
 from src.platform.exception.exceptions import DomainError
+from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
+from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 @pytest.fixture
@@ -96,7 +98,12 @@ class TestCreateBookingUseCase:
     ):
         """Test successful booking creation generates UUID7"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = True
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=True,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
 
         # Act
         with patch(
@@ -135,7 +142,12 @@ class TestCreateBookingUseCase:
     ):
         """Test booking creation fails when insufficient seats available"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = False
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=False,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
 
         # Act & Assert
         with pytest.raises(DomainError) as exc_info:
@@ -158,7 +170,12 @@ class TestCreateBookingUseCase:
     ):
         """Test that BookingCreated event is published"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = True
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=True,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
 
         # Act
         await create_booking_use_case.create_booking(**valid_booking_params)
@@ -182,7 +199,12 @@ class TestCreateBookingUseCase:
     ):
         """Test booking creation fails when Kvrocks save fails"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = True
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=True,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
         mock_booking_metadata_handler.save_booking_metadata.side_effect = Exception(
             'Kvrocks connection error'
         )
@@ -210,7 +232,12 @@ class TestCreateBookingUseCase:
         valid_booking_params['seat_selection_mode'] = 'manual'
         valid_booking_params['seat_positions'] = ['1-1', '1-2']
 
-        mock_seat_availability_handler.check_subsection_availability.return_value = True
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=True,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
 
         # Act
         await create_booking_use_case.create_booking(**valid_booking_params)
@@ -229,7 +256,12 @@ class TestCreateBookingUseCase:
     ):
         """Test that booking entity receives custom UUID7 id"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = True
+        mock_seat_availability_handler.check_subsection_availability.return_value = (
+            AvailabilityCheckResult(
+                has_enough_seats=True,
+                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+            )
+        )
 
         # Act
         with patch(

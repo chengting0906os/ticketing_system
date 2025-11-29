@@ -5,13 +5,13 @@ Seat Command DTOs - Defines domain contracts for seat state change operations
 Includes: Request/Result for seat release, payment completion, and other command operations
 """
 
-from dataclasses import dataclass
+import attrs
 
 
 # ========== Release Seat ==========
 
 
-@dataclass
+@attrs.define
 class ReleaseSeatRequest:
     """Seat release request"""
 
@@ -19,7 +19,7 @@ class ReleaseSeatRequest:
     event_id: int
 
 
-@dataclass
+@attrs.define
 class ReleaseSeatResult:
     """Seat release result"""
 
@@ -38,7 +38,7 @@ class ReleaseSeatResult:
         return cls(success=False, seat_id=seat_id, error_message=error)
 
 
-@dataclass
+@attrs.define
 class ReleaseSeatsBatchRequest:
     """Batch seat release request - Performance optimization for releasing multiple seats"""
 
@@ -46,7 +46,7 @@ class ReleaseSeatsBatchRequest:
     event_id: int
 
 
-@dataclass
+@attrs.define
 class ReleaseSeatsBatchResult:
     """Batch seat release result"""
 

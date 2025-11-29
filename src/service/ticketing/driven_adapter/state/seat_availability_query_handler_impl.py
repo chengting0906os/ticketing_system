@@ -9,6 +9,8 @@ import orjson
 
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.shared_kernel.domain.value_object import SubsectionConfig
+from src.service.ticketing.app.dto import AvailabilityCheckResult
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
 )
@@ -34,7 +36,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     - TTL: 1s
     """
 
-    def __init__(self, *, ttl_seconds: float = 3.0):
+    def __init__(self, *, ttl_seconds: float = 5.0):
         self.tracer = trace.get_tracer(__name__)
         self._cache: Dict[int, CacheEntry] = {}
         self._ttl_seconds = ttl_seconds
@@ -73,49 +75,41 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
     async def check_subsection_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
-    ) -> bool:
+    ) -> AvailabilityCheckResult:
         """Check if subsection has sufficient seats (event-driven cache with TTL)"""
         with self.tracer.start_as_current_span('use_case.cache.check_availability') as span:
-            section_id = f'{section}-{subsection}'
-
             # Check cache validity (must exist and not expired)
             cache_entry = self._cache.get(event_id)
-            if cache_entry and not self._is_expired(entry=cache_entry):
-                # Cache hit and valid
+            if not cache_entry or self._is_expired(entry=cache_entry):
+                # Cache miss or expired: fetch from Kvrocks
+                span.set_attribute('cache_hit', False)
+                await self._fetch_and_cache_event_state(event_id=event_id)
+                cache_entry = self._cache.get(event_id)
+            else:
                 span.set_attribute('cache_hit', True)
-                event_state = cache_entry['data']
-                subsection_data = (
-                    event_state.get('sections', {})
-                    .get(section, {})
-                    .get('subsections', {})
-                    .get(str(subsection))
-                )
 
-                if subsection_data:
-                    stats = subsection_data.get('stats', {})
-                    available_count = stats.get('available', 0)
-                    return available_count >= required_quantity
-
-            # Cache miss or expired: re-fetch entire event_state
-            span.set_attribute('cache_hit', False)
-            await self._fetch_and_cache_event_state(event_id=event_id)
-
-            # Now get data from cache (same logic as cache hit)
-            cache_entry = self._cache.get(event_id)
+            # If still no data after fetch, event doesn't exist
             if not cache_entry:
                 raise NotFoundError(f'Event {event_id} not found')
 
             event_state = cache_entry['data']
-            subsection_data = (
-                event_state.get('sections', {})
-                .get(section, {})
-                .get('subsections', {})
-                .get(str(subsection))
+            section_data = event_state.get('sections', {}).get(section, {})
+            subsection_data = section_data.get('subsections', {}).get(str(subsection))
+
+            if subsection_data:
+                stats = subsection_data.get('stats', {})
+                available_count = stats.get('available', 0)
+                return AvailabilityCheckResult(
+                    has_enough_seats=available_count >= required_quantity,
+                    config=SubsectionConfig(
+                        rows=subsection_data.get('rows', 0),
+                        seats_per_row=subsection_data.get('seats_per_row', 0),
+                        price=section_data.get('price', 0),
+                    ),
+                )
+
+            # subsection_data is None: section/subsection doesn't exist → no seats available
+            return AvailabilityCheckResult(
+                has_enough_seats=False,  # Non-existent section has 0 seats
+                config=None,
             )
-
-            if not subsection_data:
-                raise NotFoundError(f'Section {section_id} not found')
-
-            stats = subsection_data.get('stats', {})
-            available_count = stats.get('available', 0)
-            return available_count >= required_quantity

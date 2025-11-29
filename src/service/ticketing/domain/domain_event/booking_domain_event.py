@@ -5,13 +5,17 @@ These events are published when booking operations occur and should
 be handled by other bounded contexts (like event_ticketing).
 """
 
-from datetime import datetime
-from typing import List
-from uuid_utils import UUID
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, List, Optional
 
 import attrs
+from uuid_utils import UUID
 
+from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+
+if TYPE_CHECKING:
+    from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 @attrs.define
@@ -29,6 +33,8 @@ class BookingCreatedDomainEvent:
     seat_positions: List[str]
     status: BookingStatus
     occurred_at: datetime  # Required by DomainEvent protocol
+    # Config for downstream services (avoids redundant Kvrocks lookups)
+    config: Optional[SubsectionConfig] = None
 
     @property
     def aggregate_id(self) -> UUID:
@@ -50,6 +56,27 @@ class BookingCreatedDomainEvent:
             seat_positions=booking.seat_positions or [],
             status=booking.status,
             occurred_at=datetime.now(timezone.utc),
+        )
+
+    @classmethod
+    def from_booking_with_config(
+        cls, booking: 'Booking', config: 'AvailabilityCheckResult'
+    ) -> 'BookingCreatedDomainEvent':
+        """Create event with subsection config for downstream services"""
+
+        return cls(
+            booking_id=booking.id,
+            buyer_id=booking.buyer_id,
+            event_id=booking.event_id,
+            total_price=booking.total_price,
+            section=booking.section,
+            subsection=booking.subsection,
+            quantity=booking.quantity,
+            seat_selection_mode=booking.seat_selection_mode,
+            seat_positions=booking.seat_positions or [],
+            status=booking.status,
+            occurred_at=datetime.now(timezone.utc),
+            config=config.config,
         )
 
 

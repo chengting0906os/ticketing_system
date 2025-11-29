@@ -58,8 +58,9 @@ class SeatFinder:
                 Logger.base.warning(f'❌ [SEAT-FINDER-LUA] No {quantity} consecutive seats found')
                 return None
 
-            # Parse JSON result from Lua: [[row, seat_num, seat_index], ...]
-            found_seats = orjson.loads(result)
+            # Parse JSON result from Lua: {"seats": [[row, seat_num, seat_index], ...], ...}
+            lua_data = orjson.loads(result)
+            found_seats = lua_data['seats']
             found_seats_tuples = [tuple(seat) for seat in found_seats]
 
             return found_seats_tuples

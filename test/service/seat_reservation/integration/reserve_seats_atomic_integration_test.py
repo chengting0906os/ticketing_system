@@ -429,6 +429,10 @@ class TestReserveSeatsAtomicBestAvailableMode:
             section='A',
             subsection=1,
             quantity=3,
+            # Config from upstream (avoids redundant Kvrocks lookups)
+            rows=1,
+            seats_per_row=5,
+            price=1000,
         )
 
         # Then: Should successfully reserve 3 consecutive seats
@@ -486,6 +490,10 @@ class TestReserveSeatsAtomicBestAvailableMode:
             section='A',
             subsection=1,
             quantity=2,
+            # Config from upstream (avoids redundant Kvrocks lookups)
+            rows=2,
+            seats_per_row=3,
+            price=1000,
         )
 
         # Then: Should find consecutive seats in second row
@@ -534,6 +542,10 @@ class TestReserveSeatsAtomicBestAvailableMode:
             section='A',
             subsection=1,
             quantity=2,
+            # Config from upstream (avoids redundant Kvrocks lookups)
+            rows=1,
+            seats_per_row=3,
+            price=1000,
         )
 
         # Then: Should succeed by returning 2 scattered single seats
@@ -582,6 +594,10 @@ class TestReserveSeatsAtomicBestAvailableMode:
             section='A',
             subsection=1,
             quantity=2,
+            # Config from upstream (avoids redundant Kvrocks lookups)
+            rows=3,
+            seats_per_row=4,
+            price=1000,
         )
 
         # Then: Should choose row 1 seats 3-4 (earliest available consecutive pair)

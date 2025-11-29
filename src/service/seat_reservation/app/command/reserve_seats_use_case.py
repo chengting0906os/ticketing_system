@@ -2,13 +2,11 @@
 Reserve Seats Use Case - Atomic operations based on Lua scripts
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
-
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
+from src.service.seat_reservation.app.dto import ReservationRequest, ReservationResult
 from src.service.seat_reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
 )
@@ -16,32 +14,6 @@ from src.service.seat_reservation.app.interface.i_seat_reservation_event_publish
     ISeatReservationEventPublisher,
 )
 from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
-
-
-@dataclass
-class ReservationRequest:
-    """Seat reservation request"""
-
-    booking_id: str  # Changed to str for UUID7
-    buyer_id: int
-    event_id: int
-    selection_mode: str  # 'manual' or 'best_available'
-    section_filter: str  # Required, not Optional
-    subsection_filter: int  # Required, not Optional
-    quantity: int  # Required, not Optional
-    seat_positions: Optional[List[str]] = None  # Manually selected seat IDs
-
-
-@dataclass
-class ReservationResult:
-    """Seat reservation result"""
-
-    success: bool
-    booking_id: str  # Changed to str for UUID7
-    reserved_seats: Optional[List[str]] = None
-    total_price: int = 0
-    error_message: Optional[str] = None
-    event_id: Optional[int] = None
 
 
 class ReserveSeatsUseCase:
@@ -123,6 +95,7 @@ class ReserveSeatsUseCase:
                 self._validate_request(request)
 
                 # Step 2: Reserve seats in Kvrocks (Pipeline, returns prices)
+                # Pass config from upstream to avoid redundant Kvrocks lookups in Lua scripts
                 result = await self.seat_state_handler.reserve_seats_atomic(
                     event_id=request.event_id,
                     booking_id=request.booking_id,
@@ -132,6 +105,9 @@ class ReserveSeatsUseCase:
                     subsection=request.subsection_filter,
                     quantity=request.quantity,
                     seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
+                    rows=request.config.rows if request.config else None,
+                    seats_per_row=request.config.seats_per_row if request.config else None,
+                    price=request.config.price if request.config else None,
                 )
 
                 # Step 3: Handle result

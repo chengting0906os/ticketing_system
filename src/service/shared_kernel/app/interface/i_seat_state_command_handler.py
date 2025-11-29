@@ -28,6 +28,10 @@ class ISeatStateCommandHandler(ABC):
         subsection: int,  # Required, not Optional
         quantity: int,  # Required, not Optional
         seat_ids: Optional[List[str]] = None,  # for manual mode
+        # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
+        rows: Optional[int] = None,
+        seats_per_row: Optional[int] = None,
+        price: Optional[int] = None,
     ) -> Dict:
         """
         Atomically reserve seats - Unified interface, Lua script routes based on mode
@@ -41,6 +45,9 @@ class ISeatStateCommandHandler(ABC):
             subsection: Subsection number (e.g., 1) - Required
             quantity: Number of seats - Required
             seat_ids: List of seat IDs for manual mode (Optional, only for manual mode)
+            rows: Number of rows in subsection (Optional, from upstream cache)
+            seats_per_row: Seats per row (Optional, from upstream cache)
+            price: Section price per seat (Optional, from upstream cache)
 
         Returns:
             Dict with keys:
@@ -65,31 +72,15 @@ class ISeatStateCommandHandler(ABC):
         pass
 
     @abstractmethod
-    async def finalize_payment(self, seat_id: str, event_id: int) -> bool:
+    async def finalize_payment(self, *, seat_id: str, event_id: int) -> bool:
         """
         Complete payment, change seat from RESERVED to SOLD
 
-        Args:
-            seat_id: Seat ID
-            event_id: Event ID
-
-        Returns:
-            Success status
-        """
-        pass
-
-    @abstractmethod
-    async def initialize_seat(
-        self, seat_id: str, event_id: int, price: int, timestamp: Optional[str] = None
-    ) -> bool:
-        """
-        Initialize seat state
+        Config (seats_per_row) is fetched from Kvrocks internally.
 
         Args:
-            seat_id: Seat ID
+            seat_id: Seat ID (format: section-subsection-row-seat)
             event_id: Event ID
-            price: Seat price
-            timestamp: Optional timestamp
 
         Returns:
             Success status
