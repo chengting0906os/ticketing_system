@@ -300,3 +300,58 @@ class BookingCancelledEvent(_message.Message):
         traceparent: _Optional[str] = ...,
         tracestate: _Optional[str] = ...,
     ) -> None: ...
+
+class ReservationRequestEvent(_message.Message):
+    __slots__ = (
+        'booking_id',
+        'buyer_id',
+        'event_id',
+        'section',
+        'subsection',
+        'quantity',
+        'seat_selection_mode',
+        'seat_positions',
+        'occurred_at',
+        'config',
+        'traceparent',
+        'tracestate',
+    )
+    BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
+    BUYER_ID_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
+    QUANTITY_FIELD_NUMBER: _ClassVar[int]
+    SEAT_SELECTION_MODE_FIELD_NUMBER: _ClassVar[int]
+    SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
+    OCCURRED_AT_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
+    booking_id: str
+    buyer_id: int
+    event_id: int
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: _containers.RepeatedScalarFieldContainer[str]
+    occurred_at: int
+    config: SubsectionConfig
+    traceparent: str
+    tracestate: str
+    def __init__(
+        self,
+        booking_id: _Optional[str] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
+        quantity: _Optional[int] = ...,
+        seat_selection_mode: _Optional[str] = ...,
+        seat_positions: _Optional[_Iterable[str]] = ...,
+        occurred_at: _Optional[int] = ...,
+        config: _Optional[_Union[SubsectionConfig, _Mapping]] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
+    ) -> None: ...

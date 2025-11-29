@@ -39,8 +39,6 @@ from src.service.ticketing.app.command import (
     create_event_and_tickets_use_case,
     mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case,
     update_booking_status_to_cancelled_use_case,
-    update_booking_status_to_failed_use_case,
-    update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case,
 )
 from src.service.ticketing.app.query import (
     get_booking_use_case,
@@ -92,8 +90,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     wire_modules = [
         create_booking_use_case,
         update_booking_status_to_cancelled_use_case,
-        update_booking_status_to_pending_payment_and_ticket_to_reserved_use_case,
-        update_booking_status_to_failed_use_case,
         mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case,
         list_bookings_use_case,
         get_booking_use_case,

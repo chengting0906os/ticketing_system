@@ -8,10 +8,6 @@ import uuid_utils
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
-    IBookingMetadataHandler,
-)
-from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
@@ -22,33 +18,29 @@ from src.service.ticketing.domain.entity.booking_entity import Booking
 
 class CreateBookingUseCase:
     """
-    Create booking use case - Optimized flow with Kvrocks metadata
+    Create booking use case - Simplified flow (Ticketing → Booking → Reservation)
 
-    New Flow (Optimized):
+    Flow (Simplified):
     1. Generate UUID7 booking_id
     2. Validate seat availability (Fail Fast)
-    3. Save booking metadata to Kvrocks (fast, temporary storage)
-    4. Publish event to Kafka (with section-subsection partition key)
-    5. Return booking_id immediately to frontend (can start SSE subscription)
-    6. Seat Reservation Service consumes event → reserves seats in Kvrocks → publishes SeatsReserved
-    7. Ticketing Service consumes SeatsReserved → upserts booking to PostgreSQL
+    3. Publish event to Booking Service (Kafka)
+    4. Return booking_id immediately to frontend (can start SSE subscription)
+
+    Downstream Services:
+    - Booking Service: Receives event → saves metadata to Kvrocks → publishes to Reservation
+    - Reservation Service: Reserves seats in Kvrocks → writes to PostgreSQL → SSE broadcast
 
     Dependencies:
-    - booking_metadata_handler: For Kvrocks metadata operations
-    - event_publisher: For publishing domain events
-    - seat_availability_handler: For checking seat availability
+    - event_publisher: For publishing domain events to Booking Service
+    - seat_availability_handler: For checking seat availability (Fail Fast)
     """
 
     def __init__(
         self,
         *,
-        booking_metadata_handler: IBookingMetadataHandler,
-        booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
     ) -> None:
-        self.booking_metadata_handler = booking_metadata_handler
-        self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
         self.seat_availability_handler = seat_availability_handler
         self.tracer = trace.get_tracer(__name__)
@@ -57,12 +49,6 @@ class CreateBookingUseCase:
     @inject
     def depends(
         cls,
-        booking_metadata_handler: IBookingMetadataHandler = Depends(
-            Provide[Container.booking_metadata_handler]
-        ),
-        booking_command_repo: IBookingCommandRepo = Depends(
-            Provide[Container.booking_command_repo]
-        ),
         event_publisher: IBookingEventPublisher = Depends(
             Provide[Container.booking_event_publisher]
         ),
@@ -71,8 +57,6 @@ class CreateBookingUseCase:
         ),
     ) -> Self:
         return cls(
-            booking_metadata_handler=booking_metadata_handler,
-            booking_command_repo=booking_command_repo,
             event_publisher=event_publisher,
             seat_availability_handler=seat_availability_handler,
         )
@@ -90,14 +74,17 @@ class CreateBookingUseCase:
         quantity: int,
     ) -> Booking:
         """
-        Create booking with optimized flow - Kvrocks + Kafka (PostgreSQL upsert by Reservation Service)
+        Create booking - Simplified flow (Ticketing → Booking → Reservation)
 
         Flow:
         1. Generate UUID7 as booking_id
         2. Validate seat availability (Fail Fast)
-        3. Save booking metadata to Kvrocks (temporary, for Seat Reservation Service)
-        4. Publish BookingCreated event to Kafka
-        5. Return booking with UUID7 id (PostgreSQL insertion happens later via event consumer)
+        3. Publish BookingCreated event to Booking Service
+        4. Return booking with UUID7 id (frontend can start SSE subscription)
+
+        Downstream processing:
+        - Booking Service: saves metadata → publishes to Reservation Service
+        - Reservation Service: reserves seats → writes to PostgreSQL → SSE broadcast
 
         Args:
             buyer_id: ID of the buyer
@@ -112,7 +99,7 @@ class CreateBookingUseCase:
             Created booking entity with UUID7 id
 
         Raises:
-            DomainError: If seat availability check fails or metadata save fails
+            DomainError: If seat availability check fails
         """
         # Step 1: Generate UUID7 booking ID
         booking_id_uuid = uuid_utils.uuid7()  # Generate UUID7
@@ -154,34 +141,17 @@ class CreateBookingUseCase:
             if not availability_result.has_enough_seats:
                 raise DomainError(f'Insufficient seats available in section {section}-{subsection}')
 
-            # Step 3: Save booking metadata to Kvrocks (fast, temporary storage)
-            # This will be used by Seat Reservation Service during processing
-            try:
-                await self.booking_metadata_handler.save_booking_metadata(
-                    booking_id=booking_id_str,
-                    buyer_id=buyer_id,
-                    event_id=event_id,
-                    section=section,
-                    subsection=subsection,
-                    quantity=quantity,
-                    seat_selection_mode=seat_selection_mode,
-                    seat_positions=seat_positions,
-                )
-            except Exception as e:
-                Logger.base.error(f'❌ [CREATE-BOOKING] Failed to save Kvrocks metadata: {e}')
-                raise Exception(f'Failed to save booking metadata: {e}')
-
-            # Step 4: Publish domain event to Kafka
-            # The event will use section-subsection as partition key for ordering
-            # Include config (rows, cols, price) to avoid redundant Kvrocks lookups
+            # Step 3: Publish event to Booking Service
+            # Uses section-subsection as partition key for ordering
+            # Includes config (rows, cols, price) to pass to downstream services
             booking_created_event = BookingCreatedDomainEvent.from_booking_with_config(
                 booking, availability_result
             )
 
-            # Publish event (with minimal latency - Kafka producer is buffered)
             await self.event_publisher.publish_booking_created(event=booking_created_event)
             Logger.base.info(
-                f'🚀 [CREATE-BOOKING] Published BookingCreated event for {booking_id_str}'
+                f'🚀 [TICKETING→BOOKING] Published BookingCreated event for {booking_id_str}'
             )
 
+            # Step 4: Return booking (downstream services handle metadata + reservation + PostgreSQL)
             return booking

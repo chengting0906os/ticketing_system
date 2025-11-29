@@ -341,7 +341,7 @@ class AtomicReservationExecutor:
 
             # ========== STEP 2: Convert to reservation format ==========
             seats_to_reserve = [
-                (row, seat_num, seat_index, f'{section}-{subsection}-{row}-{seat_num}')
+                (row, seat_num, seat_index, f'{row}-{seat_num}')
                 for row, seat_num, seat_index in found_seats
             ]
 

@@ -21,8 +21,8 @@ from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer
 from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
     ReleaseExecutor,
 )
-from src.service.reservation.driven_adapter.reservation_mq_publisher import (
-    SeatReservationEventPublisher,
+from src.service.reservation.driven_adapter.executor.atomic_reservation.repo import (
+    BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
 from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
@@ -105,8 +105,10 @@ class Container(containers.DeclarativeContainer):
     booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
 
     # Message Queue Publishers
-    reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
+
+    # Reservation Service - Booking Command Repo (PostgreSQL writes)
+    reservation_booking_command_repo = providers.Factory(ReservationBookingCommandRepoImpl)
 
     # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
     event_state_broadcaster = providers.Factory(EventStateBroadcasterImpl)
@@ -151,8 +153,9 @@ class Container(containers.DeclarativeContainer):
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
-        mq_publisher=reservation_mq_publisher,
+        booking_command_repo=reservation_booking_command_repo,
         event_state_broadcaster=event_state_broadcaster,
+        sse_broadcaster=booking_event_broadcaster,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

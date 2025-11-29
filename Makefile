@@ -28,7 +28,7 @@ SEATS ?= 500
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
 
-.PHONY: c-d-build c-start c-stop c-restart c-tail c-status
+.PHONY: c-d-build c-start c-stop c-restart rs c-tail c-status
 c-d-build:  ## 🔨 Build consumer images
 	@docker-compose -f docker-compose.consumers.yml build
 
@@ -43,6 +43,14 @@ c-restart:  ## 🔄 Restart consumer containers (hot reload code changes)
 	@echo "🔄 Restarting consumers to reload code changes..."
 	@docker-compose -f docker-compose.consumers.yml restart
 	@echo "✅ Consumers restarted"
+
+rs:  ## 🔄 Restart app services only (keep Kafka/Postgres/Kvrocks running)
+	@echo "🔄 Restarting application services..."
+	@echo "   📊 Ticketing: $(SCALE_TICKETING) instances"
+	@echo "   📊 Reservation: $(SCALE_RESERVATION) instances"
+	@echo "   📊 Booking: $(SCALE_BOOKING) instances"
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --force-recreate --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
+	@echo "✅ Application services restarted (Kafka/Postgres/Kvrocks untouched)"
 
 
 # ==============================================================================
@@ -286,6 +294,7 @@ help:
 	@echo ""
 	@echo "🐳 DOCKER"
 	@echo "  c-start / c-stop / c-restart  - Service lifecycle"
+	@echo "  rs                            - Restart all services with scaling"
 	@echo "  c-d-build                     - Build images"
 	@echo "  d-migrate / d-seed / d-reset-kafka"
 	@echo ""

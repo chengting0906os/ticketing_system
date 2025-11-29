@@ -20,6 +20,7 @@ _EVENT_TYPE_TO_PROTO: dict[str, type] = {
     'SeatReservationFailedEvent': pb.SeatReservationFailedEvent,
     'BookingPaidEvent': pb.BookingPaidEvent,
     'BookingCancelledEvent': pb.BookingCancelledEvent,
+    'ReservationRequestEvent': pb.ReservationRequestEvent,
 }
 
 

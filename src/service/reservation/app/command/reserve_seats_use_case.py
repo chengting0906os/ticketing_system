@@ -1,79 +1,82 @@
 """
-Reserve Seats Use Case - Atomic operations based on Lua scripts
+Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL writes
 """
 
 from opentelemetry import trace
+from uuid_utils import UUID
+
+from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
+from src.service.reservation.app.interface.i_booking_command_repo import (
+    IBookingCommandRepo,
+)
 from src.service.reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
 )
-from src.service.reservation.app.interface.i_reservation_event_publisher import (
-    ISeatReservationEventPublisher,
-)
-
-from src.platform.exception.exceptions import DomainError
-from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 
 
 class ReserveSeatsUseCase:
     """
-    Reserve Seats Use Case - Event-Driven Flow
+    Reserve Seats Use Case - Kvrocks + PostgreSQL
 
-    Responsibility: Seat Reservation Service (Kvrocks only)
+    Responsibility: Manage seat state AND write to PostgreSQL
 
     Flow:
     1. Reserve seats in Kvrocks (atomic operation, returns prices)
-    2. Publish event to Ticketing Service (Kafka producer is buffered)
-       → Ticketing Service handles PostgreSQL persistence
-    3. Return result
+    2. Write to PostgreSQL directly (booking + tickets)
+    3. Broadcast via SSE for real-time updates
+    4. Return result
 
     Design Principles:
-    - Single Responsibility: Only manages Kvrocks state
-    - Separation of Concerns: Each service manages its own storage
-    - Minimal latency: Kafka producer is buffered/batched
-    - Event-driven: Communication via Kafka events
+    - Unified writes: Kvrocks + PostgreSQL in one service
+    - Single Responsibility: Handles complete reservation flow
+    - Minimal latency: No Kafka hop for PostgreSQL writes
 
     Dependencies:
     - seat_state_handler: For Kvrocks seat reservation
-    - mq_publisher: For Kafka event publishing
+    - booking_command_repo: For PostgreSQL writes
     - event_state_broadcaster: For Redis Pub/Sub cache updates
+    - sse_broadcaster: For SSE real-time notifications
     """
 
     def __init__(
         self,
         seat_state_handler: ISeatStateCommandHandler,
-        mq_publisher: ISeatReservationEventPublisher,
+        booking_command_repo: IBookingCommandRepo,
         event_state_broadcaster: IEventStateBroadcaster,
+        sse_broadcaster: IInMemoryEventBroadcaster,
     ) -> None:
         self.seat_state_handler = seat_state_handler
-        self.mq_publisher = mq_publisher
+        self.booking_command_repo = booking_command_repo
         self.event_state_broadcaster = event_state_broadcaster
+        self.sse_broadcaster = sse_broadcaster
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
     async def reserve_seats(self, request: ReservationRequest) -> ReservationResult:
         """
-        Execute seat reservation - Event-Driven Flow
+        Execute seat reservation - Kvrocks + PostgreSQL
 
         Flow:
         1. Validate request
         2. Reserve seats in Kvrocks (atomic operation, returns prices)
-        3. Publish event to Ticketing Service (Kafka producer is buffered)
-           → Ticketing Service handles PostgreSQL write (Booking + Tickets)
-        4. Return result
+        3. Write to PostgreSQL directly (booking + tickets)
+        4. Broadcast via SSE for real-time updates
+        5. Return result
 
         Design Rationale:
-        - Seat Reservation Service: Only manages Kvrocks state (fast)
-        - Ticketing Service: Handles PostgreSQL persistence (via event)
-        - Separation of concerns: Each service manages its own storage
-        - Minimal latency: Kafka producer batches messages
+        - Unified writes: Kvrocks + PostgreSQL in one service
+        - No Kafka hop: Faster end-to-end latency
+        - SSE broadcast: Real-time UI updates
 
         Args:
             request: Reservation request
 
         Returns:
-            Reservation result (from Kvrocks only)
+            Reservation result with booking and ticket info
         """
         with self.tracer.start_as_current_span(
             'use_case.reserve_seats',
@@ -126,9 +129,8 @@ class ReserveSeatsUseCase:
                         f'📤 [RESERVE] Broadcasted event_state to Redis Pub/Sub for event {request.event_id}'
                     )
 
-                    # Step 4b: Publish event to Ticketing Service (Kafka - business logic)
-                    # Ticketing Service will handle PostgreSQL write (Booking + Tickets)
-                    await self.mq_publisher.publish_seats_reserved(
+                    # Step 4b: Write to PostgreSQL directly (booking + tickets)
+                    pg_result = await self.booking_command_repo.create_booking_and_update_tickets_to_reserved(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
                         event_id=request.event_id,
@@ -137,8 +139,24 @@ class ReserveSeatsUseCase:
                         seat_selection_mode=request.selection_mode,
                         reserved_seats=reserved_seats,
                         total_price=total_price,
-                        subsection_stats=subsection_stats,
-                        event_stats=event_stats,
+                    )
+
+                    Logger.base.info(
+                        f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
+                    )
+
+                    # Step 4c: Broadcast SSE for real-time UI updates
+                    await self.sse_broadcaster.broadcast(
+                        booking_id=UUID(request.booking_id),
+                        event_data={
+                            'event_type': 'booking_updated',
+                            'event_id': request.event_id,
+                            'booking_id': request.booking_id,
+                            'status': 'PENDING_PAYMENT',
+                            'tickets': pg_result.get('tickets', []),
+                            'subsection_stats': subsection_stats,
+                            'event_stats': event_stats,
+                        },
                     )
 
                     return ReservationResult(
@@ -160,17 +178,29 @@ class ReserveSeatsUseCase:
                     span.set_attribute('error.type', 'reservation_failed')
                     span.set_attribute('error.message', error_msg)
 
-                    # Send failure notification with full booking info
-                    await self.mq_publisher.publish_reservation_failed(
+                    # Write FAILED booking directly to PostgreSQL
+                    await self.booking_command_repo.create_failed_booking_directly(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
                         event_id=request.event_id,
                         section=request.section_filter or '',
                         subsection=request.subsection_filter or 0,
-                        quantity=request.quantity or len(request.seat_positions or []),
                         seat_selection_mode=request.selection_mode,
                         seat_positions=request.seat_positions or [],
-                        error_message=error_msg,
+                        quantity=request.quantity or len(request.seat_positions or []),
+                    )
+
+                    # Broadcast SSE failure notification
+                    await self.sse_broadcaster.broadcast(
+                        booking_id=UUID(request.booking_id),
+                        event_data={
+                            'event_type': 'booking_updated',
+                            'event_id': request.event_id,
+                            'booking_id': request.booking_id,
+                            'status': 'FAILED',
+                            'tickets': [],
+                            'error_message': error_msg,
+                        },
                     )
 
                     return ReservationResult(
@@ -191,17 +221,29 @@ class ReserveSeatsUseCase:
                 span.set_attribute('error', True)
                 span.set_attribute('error.type', 'domain_error')
 
-                # Send error notification with full booking info
-                await self.mq_publisher.publish_reservation_failed(
+                # Write FAILED booking directly to PostgreSQL
+                await self.booking_command_repo.create_failed_booking_directly(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
                     event_id=request.event_id,
                     section=request.section_filter or '',
                     subsection=request.subsection_filter or 0,
-                    quantity=request.quantity or len(request.seat_positions or []),
                     seat_selection_mode=request.selection_mode,
                     seat_positions=request.seat_positions or [],
-                    error_message=error_msg,
+                    quantity=request.quantity or len(request.seat_positions or []),
+                )
+
+                # Broadcast SSE failure notification
+                await self.sse_broadcaster.broadcast(
+                    booking_id=UUID(request.booking_id),
+                    event_data={
+                        'event_type': 'booking_updated',
+                        'event_id': request.event_id,
+                        'booking_id': request.booking_id,
+                        'status': 'FAILED',
+                        'tickets': [],
+                        'error_message': error_msg,
+                    },
                 )
 
                 return ReservationResult(
@@ -221,17 +263,29 @@ class ReserveSeatsUseCase:
                 span.set_attribute('error', True)
                 span.set_attribute('error.type', 'unexpected_error')
 
-                # Send error notification with full booking info
-                await self.mq_publisher.publish_reservation_failed(
+                # Write FAILED booking directly to PostgreSQL
+                await self.booking_command_repo.create_failed_booking_directly(
                     booking_id=request.booking_id,
                     buyer_id=request.buyer_id,
                     event_id=request.event_id,
                     section=request.section_filter or '',
                     subsection=request.subsection_filter or 0,
-                    quantity=request.quantity or len(request.seat_positions or []),
                     seat_selection_mode=request.selection_mode,
                     seat_positions=request.seat_positions or [],
-                    error_message=error_msg,
+                    quantity=request.quantity or len(request.seat_positions or []),
+                )
+
+                # Broadcast SSE failure notification
+                await self.sse_broadcaster.broadcast(
+                    booking_id=UUID(request.booking_id),
+                    event_data={
+                        'event_type': 'booking_updated',
+                        'event_id': request.event_id,
+                        'booking_id': request.booking_id,
+                        'status': 'FAILED',
+                        'tickets': [],
+                        'error_message': error_msg,
+                    },
                 )
 
                 return ReservationResult(

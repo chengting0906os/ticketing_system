@@ -82,7 +82,7 @@ for _, seat_id in ipairs(seat_ids) do
     end
 
     local seat_index = calculate_seat_index(row, seat_num, cols)
-    local full_seat_id = section .. '-' .. subsection .. '-' .. row .. '-' .. seat_num
+    local full_seat_id = row .. '-' .. seat_num
 
     table.insert(seats_to_reserve, {row, seat_num, seat_index, full_seat_id})
 end

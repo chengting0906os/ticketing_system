@@ -149,6 +149,29 @@ class TestBookingCreatedEventSerialization:
 
         assert result['config'] == {'rows': 10, 'cols': 20, 'price': 2500}
 
+    def test_config_with_zero_price(self) -> None:
+        """Config with price=0 (free tickets) should serialize correctly"""
+        event = BookingCreatedDomainEvent(
+            booking_id=uuid_utils.uuid7(),
+            buyer_id=42,
+            event_id=1,
+            total_price=0,
+            section='A',
+            subsection=1,
+            quantity=2,
+            seat_selection_mode='auto',
+            seat_positions=[],
+            status=BookingStatus.PROCESSING,
+            occurred_at=datetime.now(timezone.utc),
+            config=SubsectionConfig(rows=10, cols=20, price=0),
+        )
+
+        data = convert_domain_event_to_proto(event).SerializeToString()
+        result = deserialize_domain_event(data=data, event_type='BookingCreatedDomainEvent')
+
+        # With proto3 `optional` keyword, price=0 is now preserved (not omitted)
+        assert result['config'] == {'rows': 10, 'cols': 20, 'price': 0}
+
     def test_config_none_omitted_from_proto(self) -> None:
         """config=None should be omitted entirely (not included in proto)"""
         event = BookingCreatedDomainEvent(

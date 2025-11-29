@@ -129,7 +129,7 @@ class TestReserveSeatsAtomicManualMode:
 
         # Then: Should succeed
         assert result['success'] is True
-        assert result['reserved_seats'] == ['A-1-1-1']
+        assert result['reserved_seats'] == ['1-1']
 
         # Verify seat status is RESERVED (u2 encoding)
         # Status encoding: 0=AVAILABLE, 1=RESERVED, 2=SOLD
@@ -179,8 +179,8 @@ class TestReserveSeatsAtomicManualMode:
         # Then: Should succeed
         assert result['success'] is True
         assert len(result['reserved_seats']) == 3
-        # All reserved seats should be in full format
-        expected_seats = ['A-1-1-1', 'A-1-1-2', 'A-1-2-1']
+        # All reserved seats in row-seat format
+        expected_seats = ['1-1', '1-2', '2-1']
         assert sorted(result['reserved_seats']) == sorted(expected_seats)
 
         # Verify stats
@@ -439,7 +439,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
 
         # Verify they are consecutive in same row
         seat_ids = result['reserved_seats']
-        assert seat_ids == ['A-1-1-1', 'A-1-1-2', 'A-1-1-3']
+        assert seat_ids == ['1-1', '1-2', '1-3']
 
         # Verify stats updated
         stats = _get_section_stats_from_json(client, event_id, 'A-1')
@@ -496,7 +496,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Then: Should find consecutive seats in second row
         assert result['success'] is True
         seat_ids = result['reserved_seats']
-        assert seat_ids == ['A-1-2-1', 'A-1-2-2']  # Row 2, seats 1-2
+        assert seat_ids == ['2-1', '2-2']  # Row 2, seats 1-2
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -547,7 +547,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Then: Should succeed by returning 2 scattered single seats
         assert result['success'] is True
         assert len(result['reserved_seats']) == 2
-        assert set(result['reserved_seats']) == {'A-1-1-1', 'A-1-1-3'}  # Seats 1 and 3
+        assert set(result['reserved_seats']) == {'1-1', '1-3'}  # Seats 1 and 3
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -597,7 +597,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
 
         # Then: Should choose row 1 seats 3-4 (earliest available consecutive pair)
         assert result['success'] is True
-        assert result['reserved_seats'] == ['A-1-1-3', 'A-1-1-4']
+        assert result['reserved_seats'] == ['1-3', '1-4']
 
     @pytest.mark.integration
     @pytest.mark.asyncio

@@ -239,7 +239,7 @@ services:
       - "8000"
     cap_add:
       - SYS_PTRACE # Required for py-spy profiling
-    command: [ "uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload", "--reload-paths", "src" ]
+    command: [ "uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "1" ]
     environment:
       # Database
       POSTGRES_SERVER: postgres
@@ -266,7 +266,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./src:/app/src:ro # Hot-reload: mount source code
+      # Hot-reload disabled for production stability
       - ./script:/app/script:ro # Scripts for seeding and utilities
       - ./test:/app/test # Tests need write access for test logs
       - ./logs:/app/logs # Share logs with promtail

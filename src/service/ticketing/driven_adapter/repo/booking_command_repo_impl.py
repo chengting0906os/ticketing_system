@@ -309,6 +309,25 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
         Raises:
             ValueError: If booking already exists or transaction fails
         """
+        # Defensive validation: Ensure seat IDs are in correct format "row-seat" (e.g., "1-1")
+        # NOT "section-subsection-row-seat" (e.g., "A-6-1-1")
+        for seat_id in reserved_seats:
+            parts = seat_id.split('-')
+            if len(parts) != 2:
+                raise ValueError(
+                    f'Invalid seat_id format: "{seat_id}". '
+                    f'Expected format "row-seat" (e.g., "1-1"), got {len(parts)} parts. '
+                    f'This usually means Reservation Service sent wrong format.'
+                )
+            try:
+                int(parts[0])  # row must be integer
+                int(parts[1])  # seat must be integer
+            except ValueError:
+                raise ValueError(
+                    f'Invalid seat_id format: "{seat_id}". '
+                    f'Row and seat must be integers. Expected format "row-seat" (e.g., "1-1").'
+                )
+
         with self.tracer.start_as_current_span(
             'repo.create_booking_with_tickets',
             attributes={

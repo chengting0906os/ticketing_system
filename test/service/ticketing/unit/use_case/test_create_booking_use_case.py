@@ -1,11 +1,13 @@
 """
 Unit tests for CreateBookingUseCase
 
-Tests the optimized booking creation flow:
+Tests the simplified booking creation flow:
 1. UUID7 generation
-2. Kvrocks metadata storage
-3. PostgreSQL persistence
-4. Kafka event publishing
+2. Seat availability validation (Fail Fast)
+3. Publish to Booking Service (Kafka)
+4. Return booking immediately
+
+Note: Downstream services (Booking, Reservation) handle metadata + PostgreSQL.
 """
 
 from typing import Any
@@ -18,23 +20,6 @@ from src.platform.exception.exceptions import DomainError
 from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.dto import AvailabilityCheckResult
-
-
-@pytest.fixture
-def mock_booking_metadata_handler() -> Mock:
-    """Mock booking metadata handler"""
-    handler = AsyncMock()
-    handler.save_booking_metadata = AsyncMock()
-    handler.delete_booking_metadata = AsyncMock()
-    return handler
-
-
-@pytest.fixture
-def mock_booking_command_repo() -> Mock:
-    """Mock booking command repository"""
-    repo = AsyncMock()
-    repo.create = AsyncMock()
-    return repo
 
 
 @pytest.fixture
@@ -55,15 +40,11 @@ def mock_seat_availability_handler() -> Mock:
 
 @pytest.fixture
 def create_booking_use_case(
-    mock_booking_metadata_handler: Mock,
-    mock_booking_command_repo: Mock,
     mock_event_publisher: Mock,
     mock_seat_availability_handler: Mock,
 ) -> CreateBookingUseCase:
     """Create instance of CreateBookingUseCase with mocked dependencies"""
     return CreateBookingUseCase(
-        booking_metadata_handler=mock_booking_metadata_handler,
-        booking_command_repo=mock_booking_command_repo,
         event_publisher=mock_event_publisher,
         seat_availability_handler=mock_seat_availability_handler,
     )
@@ -92,8 +73,6 @@ class TestCreateBookingUseCase:
         self,
         create_booking_use_case: CreateBookingUseCase,
         mock_seat_availability_handler: Mock,
-        mock_booking_metadata_handler: Mock,
-        mock_booking_command_repo: Mock,
         mock_event_publisher: Mock,
         valid_booking_params: dict[str, Any],
     ) -> None:
@@ -118,17 +97,8 @@ class TestCreateBookingUseCase:
         # Assert - UUID7 was generated
         mock_uuid7.assert_called_once()
 
-        # Assert - Booking metadata saved to Kvrocks with UUID7
-        mock_booking_metadata_handler.save_booking_metadata.assert_awaited_once()
-        call_kwargs = mock_booking_metadata_handler.save_booking_metadata.call_args.kwargs
-        assert call_kwargs['booking_id'] == str(test_uuid)
-        assert call_kwargs['buyer_id'] == valid_booking_params['buyer_id']
-        assert call_kwargs['event_id'] == valid_booking_params['event_id']
-        assert call_kwargs['section'] == valid_booking_params['section']
-        assert call_kwargs['subsection'] == valid_booking_params['subsection']
-
-        # Assert - PostgreSQL NOT called (deferred to event consumer)
-        mock_booking_command_repo.create.assert_not_awaited()
+        # Assert - Event published to Booking Service
+        mock_event_publisher.publish_booking_created.assert_awaited_once()
 
         # Assert - Returned booking has correct UUID7
         assert result.id == test_uuid
@@ -138,7 +108,7 @@ class TestCreateBookingUseCase:
         self,
         create_booking_use_case: CreateBookingUseCase,
         mock_seat_availability_handler: Mock,
-        mock_booking_metadata_handler: Mock,
+        mock_event_publisher: Mock,
         valid_booking_params: dict[str, Any],
     ) -> None:
         """Test booking creation fails when insufficient seats available"""
@@ -157,19 +127,18 @@ class TestCreateBookingUseCase:
         assert 'Insufficient seats available' in str(exc_info.value)
         assert exc_info.value.status_code == 400
 
-        # Assert - No metadata saved (fail fast)
-        mock_booking_metadata_handler.save_booking_metadata.assert_not_awaited()
+        # Assert - No event published (fail fast)
+        mock_event_publisher.publish_booking_created.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_create_booking_success__event_published(
         self,
         create_booking_use_case: CreateBookingUseCase,
         mock_seat_availability_handler: Mock,
-        mock_booking_metadata_handler: Mock,
         mock_event_publisher: Mock,
         valid_booking_params: dict[str, Any],
     ) -> None:
-        """Test that BookingCreated event is published"""
+        """Test that BookingCreated event is published to Booking Service"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
@@ -190,41 +159,11 @@ class TestCreateBookingUseCase:
         assert 'event' in call_args.kwargs
 
     @pytest.mark.asyncio
-    async def test_create_booking_fail__kvrocks_save_error(
-        self,
-        create_booking_use_case: CreateBookingUseCase,
-        mock_seat_availability_handler: Mock,
-        mock_booking_metadata_handler: Mock,
-        mock_booking_command_repo: Mock,
-        valid_booking_params: dict[str, Any],
-    ) -> None:
-        """Test booking creation fails when Kvrocks save fails"""
-        # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=True,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
-        )
-        mock_booking_metadata_handler.save_booking_metadata.side_effect = Exception(
-            'Kvrocks connection error'
-        )
-
-        # Act & Assert
-        with pytest.raises(Exception) as exc_info:
-            await create_booking_use_case.create_booking(**valid_booking_params)
-
-        assert 'Failed to save booking metadata' in str(exc_info.value)
-
-        # Assert - PostgreSQL was not called (fail fast)
-        mock_booking_command_repo.create.assert_not_awaited()
-
-    @pytest.mark.asyncio
     async def test_create_booking__manual_mode_with_seat_positions(
         self,
         create_booking_use_case: CreateBookingUseCase,
         mock_seat_availability_handler: Mock,
-        mock_booking_metadata_handler: Mock,
+        mock_event_publisher: Mock,
         valid_booking_params: dict[str, Any],
     ) -> None:
         """Test booking creation with manual seat selection mode"""
@@ -240,12 +179,18 @@ class TestCreateBookingUseCase:
         )
 
         # Act
-        await create_booking_use_case.create_booking(**valid_booking_params)
+        result = await create_booking_use_case.create_booking(**valid_booking_params)
 
-        # Assert - Seat positions saved to metadata
-        call_kwargs = mock_booking_metadata_handler.save_booking_metadata.call_args.kwargs
-        assert call_kwargs['seat_selection_mode'] == 'manual'
-        assert call_kwargs['seat_positions'] == ['1-1', '1-2']
+        # Assert - Event published with seat positions
+        mock_event_publisher.publish_booking_created.assert_awaited_once()
+        call_args = mock_event_publisher.publish_booking_created.call_args
+        event = call_args.kwargs['event']
+        assert event.seat_selection_mode == 'manual'
+        assert event.seat_positions == ['1-1', '1-2']
+
+        # Assert - Booking entity has correct values
+        assert result.seat_selection_mode == 'manual'
+        assert result.seat_positions == ['1-1', '1-2']
 
     @pytest.mark.asyncio
     async def test_create_booking__sets_custom_uuid_on_booking_entity(

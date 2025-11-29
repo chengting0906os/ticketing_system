@@ -127,14 +127,12 @@ class SeatReservationConsumer:
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
-        # === Topic 1: Reservation (Protobuf - domain event from ticketing service) ===
+        # === Topic 1: Reservation (Protobuf - domain event from Booking service) ===
         reservation_topic = self.kafka_app.topic(
-            name=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
-                event_id=self.event_id
-            ),
+            name=KafkaTopicBuilder.booking_to_reservation_reserve_seats(event_id=self.event_id),
             key_serializer='str',
             value_deserializer=ProtobufDeserializer(
-                msg_type=pb.BookingCreatedDomainEvent, preserving_proto_field_name=True
+                msg_type=pb.ReservationRequestEvent, preserving_proto_field_name=True
             ),
         )
         self.kafka_app.dataframe(topic=reservation_topic).apply(
@@ -449,10 +447,11 @@ class SeatReservationConsumer:
             'quantity': event_data['quantity'],
             'seat_selection_mode': event_data['seat_selection_mode'],
             'seat_positions': event_data.get('seat_positions', []),
-            # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
-            'rows': config['rows'],
-            'cols': config['cols'],
-            'price': config['price'],
+            # Config from upstream - use .get() for safe access
+            # MessageToDict omits fields with default values (0 for int)
+            'rows': config.get('rows', 0),
+            'cols': config.get('cols', 0),
+            'price': config.get('price', 0),
         }
 
     async def _execute_reservation(self, command: Dict) -> bool:
