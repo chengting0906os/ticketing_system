@@ -78,7 +78,7 @@ re-seed-50k:  ## 🔄 Reset and seed with 50000 seats (production)
 	@$(MAKE) re-seed DEPLOY_ENV=production
 
 psql:  ## 🐘 Connect to PostgreSQL
-	@docker exec -it ticketing_system_db psql -U py_arch_lab -d ticketing_system_db
+	@docker exec -it ticketing_system_db psql -U postgres -d ticketing_system_db
 
 # ==============================================================================
 # 🧪 TESTING
@@ -86,23 +86,23 @@ psql:  ## 🐘 Connect to PostgreSQL
 
 .PHONY: test t-smoke t-quick t-unit t-e2e t-bdd test-cdk
 pytest:  ## 🧪 Run unit tests (excludes CDK and E2E)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest  -m "smoke" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest  -m "smoke" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
 
 t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/ticketing/integration/features test/service/seat_reservation/integration/features -m "smoke or quick" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
 
 t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
 
 t-e2e:  ## 🧪 Run E2E tests
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
 
 test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
 	@echo "⚠️  Warning: CDK tests are CPU intensive and may take 1-2 minutes"
-	@POSTGRES_SERVER=localhost POSTGRES_USER=py_arch_lab POSTGRES_PASSWORD=py_arch_lab POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
 
 %:
 	@:

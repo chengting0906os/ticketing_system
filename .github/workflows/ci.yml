@@ -50,8 +50,8 @@ jobs:
         env:
           # NOTE: This is a lab/learning project, so we use plaintext passwords
           # For production, use environment variables or secrets management
-          POSTGRES_USER: py_arch_lab
-          POSTGRES_PASSWORD: py_arch_lab
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ticketing_system_db
         options: >-
           --health-cmd pg_isready
@@ -98,8 +98,8 @@ jobs:
         run: |
           cat <<EOF > .env
           POSTGRES_SERVER=localhost
-          POSTGRES_USER=py_arch_lab
-          POSTGRES_PASSWORD=py_arch_lab
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=postgres
           POSTGRES_DB=ticketing_system_db
           POSTGRES_PORT=5432
           KVROCKS_HOST=localhost

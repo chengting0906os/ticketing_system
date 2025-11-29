@@ -134,8 +134,8 @@ services:
       POSTGRES_SERVER: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:-ticketing_system_db}"
-      POSTGRES_USER: "${POSTGRES_USER:-py_arch_lab}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-py_arch_lab}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
 
       # Kvrocks (for SSE broadcasting state)
       KVROCKS_HOST: kvrocks

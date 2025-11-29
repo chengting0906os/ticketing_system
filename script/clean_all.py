@@ -249,7 +249,7 @@ class SystemCleaner:
             # 從環境變數讀取資料庫設定
             postgres_container = os.getenv('POSTGRES_CONTAINER', 'ticketing_system_db')
             db_name = os.getenv('POSTGRES_DB', 'ticketing_system_db')
-            db_user = os.getenv('POSTGRES_USER', 'py_arch_lab')
+            db_user = os.getenv('POSTGRES_USER', 'postgres')
 
             # 使用 docker exec 執行 TRUNCATE 清空所有資料表（保留結構）
             truncate_cmd = [
