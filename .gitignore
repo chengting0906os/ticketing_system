@@ -68,3 +68,7 @@ deployment/cdk/cdk.out/
 deployment/cdk/cdk.out.*/
 deployment/cdk/cdk-outputs.json
 deployment/cdk/cdk.context.json
+
+# Profiling
+observability/profiling/*
+!observability/profiling/.gitkeep

@@ -46,6 +46,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.51b0",
     "opentelemetry-exporter-otlp>=1.30.0",
     "uuid-utils>=0.11.1",
+    "py-spy>=0.4.1",
 ]
 
 [dependency-groups]

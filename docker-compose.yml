@@ -237,6 +237,8 @@ services:
     # No ports mapping - access via nginx load balancer on port 80
     expose:
       - "8000"
+    cap_add:
+      - SYS_PTRACE  # Required for py-spy profiling
     command: [ "uv", "run", "granian", "src.main:app", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload", "--reload-paths", "src" ]
     environment:
       # Database

@@ -35,7 +35,8 @@ RUN apt-get update && apt-get install -y \
 # Install all dependencies (including dev/test dependencies)
 # --frozen: Lock versions, don't update lock file (speeds up builds)
 ENV UV_HTTP_TIMEOUT=120
-RUN uv sync --all-groups --frozen
+RUN uv sync --all-groups --frozen && \
+    pip install py-spy
 
 # Only copy necessary directories to preserve Docker cache
 # Note: docker-compose.yml will volume mount and override these files
