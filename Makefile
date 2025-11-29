@@ -11,6 +11,11 @@ API_HOST ?= http://localhost:8100
 # Deployment environment for seeding (can be overridden via environment variables)
 DEPLOY_ENV ?= local_dev
 
+# Service scaling defaults (can be overridden via .env or environment variables)
+SCALE_TICKETING ?= 10
+SCALE_RESERVATION ?= 10
+SCALE_BOOKING ?= 10
+
 # ==============================================================================
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
@@ -20,7 +25,7 @@ c-d-build:  ## 🔨 Build consumer images
 	@docker-compose -f docker-compose.consumers.yml build
 
 c-start:  ## 🚀 Start all services (API + reservation-service + booking-service)
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=2 --scale reservation-service=4 --scale booking-service=2
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
 
 c-stop:  ## 🛑 Stop consumer containers
 	@docker-compose -f docker-compose.consumers.yml stop
@@ -31,11 +36,6 @@ c-restart:  ## 🔄 Restart consumer containers (hot reload code changes)
 	@docker-compose -f docker-compose.consumers.yml restart
 	@echo "✅ Consumers restarted"
 
-c-tail:  ## 📝 Tail consumer logs
-	@docker-compose -f docker-compose.consumers.yml logs -f
-
-c-status:  ## 📊 Consumer status
-	@docker-compose -f docker-compose.consumers.yml ps
 
 # ==============================================================================
 # 🗄️ DATABASE
@@ -126,101 +126,14 @@ clean:  ## 🧹 Remove cache files
 	@find . -type f -name "*.pyc" -delete
 	@find . -type f -name ".DS_Store" -delete
 
-# ==============================================================================
-# 🔄 QUICK RESET (Local Development)
-# ==============================================================================
 
-.PHONY: reset
-reset:  ## 🔄 Quick reset (clean DB + Kafka + Kvrocks + seed, no container restart)
-	@echo "🔄 ==================== QUICK RESET ===================="
-	@echo "📋 This will:"
-	@echo "   1. Clean Kafka + Kvrocks + RocksDB"
-	@echo "   2. Run database migrations"
-	@echo "   3. Seed initial data"
-	@echo ""
-	@echo "⚠️  Containers will stay running (faster than 'make dra')"
-	@echo ""
-	@$(MAKE) ka
-	@echo ""
-	@$(MAKE) dm
-	@echo ""
-	@$(MAKE) ds
-	@echo ""
-	@echo "✅ ==================== RESET COMPLETE ===================="
-	@echo "💡 Full restart needed? Use 'make dra' instead"
-	@echo ""
 
 # ==============================================================================
-# 🐳 DOCKER - PRIMARY WORKFLOW
+# 🐳 DOCKER RESET
 # ==============================================================================
 
-.PHONY: d-s-rs s-d-build
-
-d-s-rs:  ## 🔄 Restart services
-	@docker-compose restart ticketing-service
-
-s-d-build:  ## 🔨 Rebuild services
-	@docker-compose build ticketing-service
-
-# ==============================================================================
-# 📈 SERVICE SCALING (Nginx Load Balancer)
-# ==============================================================================
-
-.PHONY: scale-up scale-down scale-ticketing scale-reservation scale-booking scale-status dra
-scale-up:  ## 🚀 Scale services (usage: make scale-up A=2 R=4 B=2)
-	@if [ -z "$(A)" ] || [ -z "$(R)" ] || [ -z "$(B)" ]; then \
-		echo "Usage: make scale-up A=<api_count> R=<reservation_count> B=<booking_count>"; \
-		echo "Example: make scale-up A=2 R=4 B=2"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling services: API=$(A), reservation=$(R), booking=$(B)"
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(A) --scale reservation-service=$(R) --scale booking-service=$(B) --no-recreate
-	@echo "✅ Scaled successfully!"
-	@docker-compose ps ticketing-service reservation-service booking-service
-
-scale-down:  ## 📉 Scale down to 1 instance each
-	@echo "📉 Scaling down to 1 instance each..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=1 --scale reservation-service=1 --scale booking-service=1 --no-recreate
-	@echo "✅ Scaled down successfully!"
-
-scale-ticketing:  ## 🎫 Scale only ticketing service (usage: make scale-ticketing N=3)
-	@if [ -z "$(N)" ]; then \
-		echo "Usage: make scale-ticketing N=<count>"; \
-		echo "Example: make scale-ticketing N=5"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling ticketing-service to $(N) instances..."
-	@docker-compose up -d --scale ticketing-service=$(N) --no-recreate
-	@echo "✅ Done!"
-	@docker-compose ps ticketing-service
-
-scale-reservation:  ## 🪑 Scale only reservation service (usage: make scale-reservation N=2)
-	@if [ -z "$(N)" ]; then \
-		echo "Usage: make scale-reservation N=<count>"; \
-		echo "Example: make scale-reservation N=3"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling reservation-service to $(N) instances..."
-	@docker-compose -f docker-compose.consumers.yml up -d --scale reservation-service=$(N) --no-recreate
-	@echo "✅ Done!"
-	@docker-compose ps reservation-service
-
-scale-booking:  ## 📝 Scale only booking service (usage: make scale-booking N=2)
-	@if [ -z "$(N)" ]; then \
-		echo "Usage: make scale-booking N=<count>"; \
-		echo "Example: make scale-booking N=2"; \
-		exit 1; \
-	fi
-	@echo "📈 Scaling booking-service to $(N) instances..."
-	@docker-compose -f docker-compose.consumers.yml up -d --scale booking-service=$(N) --no-recreate
-	@echo "✅ Done!"
-	@docker-compose ps booking-service
-
-scale-status:  ## 📊 Show current scaling status
-	@echo "📊 Current service instances:"
-	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | grep -E "(ticketing-service|reservation-service|booking-service|nginx)"
-
-dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
+.PHONY: d-reset-all dra
+d-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
 	@echo "⚠️  This will stop all containers and remove volumes"
 	@echo "Continue? (y/N)"
@@ -228,7 +141,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=10 --scale reservation-service=10 --scale booking-service=10
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -242,9 +155,9 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 		echo "❌ Services failed to become healthy"; \
 		exit 1; \
 	fi
-	@$(MAKE) dm
-	@$(MAKE) drk
-	@$(MAKE) ds
+	@$(MAKE) d-migrate
+	@$(MAKE) d-reset-kafka
+	@$(MAKE) d-seed
 	@echo ""
 	@echo "✅ ==================== SETUP COMPLETE ===================="
 	@echo "   🌐 API :  http://localhost:8100/docs#
@@ -253,16 +166,16 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "   🔍 Jaeger:       http://localhost:16686"
 	@echo ""
 
-.PHONY: dm ds drk tdt tdinfra tdci
-dm:  ## 🗄️ Run migrations in Docker
+.PHONY: d-migrate d-seed d-reset-kafka tdt
+d-migrate:  ## 🗄️ Run migrations in Docker
 	@echo "🗄️  Running database migrations..."
 	@docker-compose exec ticketing-service uv run alembic upgrade head
 	@echo "✅ Migrations completed"
 
-ds:  ## 🌱 Seed data in Docker
+d-seed:  ## 🌱 Seed data in Docker
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/seed_data.py"
 
-drk:  ## 🌊 Reset Kafka in Docker
+d-reset-kafka:  ## 🌊 Reset Kafka in Docker
 	@echo "🌊 Resetting Kafka..."
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
@@ -373,97 +286,33 @@ help:
 	@echo "╚═══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "🚀 QUICK START"
-	@echo "  reset       - Quick reset (Kafka + Kvrocks + DB + seed, no restart)"
-	@echo "  dra         - Complete Docker reset (down → up → migrate → seed)"
+	@echo "  d-reset-all (dra)  - Complete Docker reset (down → up → migrate → seed)"
+	@echo "  reset              - Quick reset (Kafka + Kvrocks + DB, no restart)"
 	@echo ""
-	@echo "📨 SERVICES"
-	@echo "  c-d-build   - Build service images"
-	@echo "  c-start     - Start all services (API + reservation + booking)"
-	@echo "  c-stop      - Stop consumer containers"
-	@echo "  c-restart   - Restart consumers (hot reload)"
-	@echo "  c-tail      - Tail consumer logs"
-	@echo "  c-status    - Show consumer status"
+	@echo "🐳 DOCKER"
+	@echo "  c-start / c-stop / c-restart  - Service lifecycle"
+	@echo "  c-d-build                     - Build images"
+	@echo "  d-migrate / d-seed / d-reset-kafka"
 	@echo ""
 	@echo "🗄️  DATABASE"
-	@echo "  migrate-up  - Run migrations"
-	@echo "  migrate-down - Rollback one migration"
-	@echo "  migrate-new - Create new migration (usage: make migrate-new MSG='message')"
-	@echo "  migrate-history - Show migration history"
-	@echo "  re-seed     - Reset and re-seed database (usage: DEPLOY_ENV=local_dev_1000 make re-seed)"
-	@echo "  re-seed-1k  - Reset and seed with 1000 seats"
-	@echo "  re-seed-2k  - Reset and seed with 2000 seats"
-	@echo "  re-seed-staging - Reset and seed with 5000 seats"
-	@echo "  re-seed-prod - Reset and seed with 50000 seats"
-	@echo "  psql        - Connect to PostgreSQL"
-	@echo "  dm          - Run migrations in Docker"
-	@echo "  ds          - Seed data in Docker (500/5K/50K seats)"
-	@echo "  drk         - Reset Kafka in Docker"
+	@echo "  migrate-up / down / new / history"
+	@echo "  re-seed-1k / 2k / 5k / 50k  - Seed with different sizes"
+	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
-	@echo "  test        - Run unit tests (excludes CDK and E2E)"
-	@echo "  t-smoke     - Run smoke tests only (integration features)"
-	@echo "  t-quick     - Run quick tests (smoke + quick tags)"
-	@echo "  t-unit      - Run unit tests only"
-	@echo "  t-e2e       - Run E2E tests"
-	@echo "  test-cdk    - Run CDK infrastructure tests"
+	@echo "  pytest      - Run all tests"
+	@echo "  t-smoke / t-quick / t-unit / t-e2e"
 	@echo "  tdt         - Run tests in Docker"
-	@echo "  tdinfra     - Run infrastructure tests in Docker"
-	@echo "  tdci        - Run CI tests in Docker"
 	@echo ""
 	@echo "🔧 CODE QUALITY"
-	@echo "  format      - Format code with ruff"
-	@echo "  lint        - Check code style"
-	@echo "  pyre        - Type checking"
-	@echo "  clean       - Remove cache files"
+	@echo "  format / lint / pyre / clean"
 	@echo ""
-	@echo "📈 SERVICE SCALING (Nginx Load Balancer)"
-	@echo "  scale-up    - Scale services (usage: make scale-up A=2 R=4 B=2)"
-	@echo "  scale-down  - Scale down to 1 instance each"
-	@echo "  scale-ticketing - Scale API service (usage: make scale-ticketing N=3)"
-	@echo "  scale-reservation - Scale reservation-service (usage: make scale-reservation N=2)"
-	@echo "  scale-booking - Scale booking-service (usage: make scale-booking N=2)"
-	@echo "  scale-status - Show current scaling status"
-	@echo "  d-s-rs      - Restart ticketing-service"
-	@echo "  s-d-build   - Rebuild ticketing-service"
+	@echo "⚡ LOAD TESTING"
+	@echo "  go-clt-t/s/m/l/f  - Concurrent load test (tiny → full)"
+	@echo "  go-rlt / go-frlt  - Reserved seat load test"
+	@echo "  k6-local / k6-stress"
 	@echo ""
-	@echo "⚡ LOAD TESTING (Go Clients)"
-	@echo "  go-clt-t    - Concurrent Load Test - Tiny (10 req, 5 concurrency)"
-	@echo "  go-clt-s    - Concurrent Load Test - Small (100 req, 10 concurrency)"
-	@echo "  go-clt-m    - Concurrent Load Test - Medium (5K req, 25 concurrency)"
-	@echo "  go-clt-l    - Concurrent Load Test - Large (10K req, 50 concurrency)"
-	@echo "  go-clt-f    - Concurrent Load Test - Full (50K req, 100 concurrency)"
-	@echo "  go-rlt      - Reserved Load Test - Buys all seats (DEPLOY_ENV: local_dev/development/production)"
-	@echo "  go-rlt-1k   - Reserved Load Test - 1,000 seats (local_dev_1000)"
-	@echo "  go-frlt     - Full Reserved Load Test - Configurable (WORKERS=100 BATCH=1)"
-	@echo "  go-frlt-1k  - Full Reserved Load Test - 1,000 seats"
-	@echo "  go-frlt-2k  - Full Reserved Load Test - 2,000 seats"
-	@echo "  go-frlt-5k  - Full Reserved Load Test - 5,000 seats (staging)"
-	@echo "  go-frlt-50k - Full Reserved Load Test - 50,000 seats (production)"
+	@echo "☁️  AWS (make -f deployment/Makefile help)"
+	@echo "  dev-deploy-full / prod-deploy-full"
 	@echo ""
-	@echo "☁️  AWS OPERATIONS (delegated to deployment/Makefile)"
-	@echo "  dev-deploy-full  - Build + Push + Deploy to development"
-	@echo "  dev-deploy-all   - Deploy CDK stacks only (images must exist)"
-	@echo "  prod-deploy-full - Build + Push + Deploy to production"
-	@echo "  prod-deploy-all  - Deploy to production (images must exist)"
-	@echo "  aws-*       - AWS ECS operations (aws-restart, aws-status, etc.)"
-	@echo "  cdk-*       - CDK operations (cdk-synth, cdk-diff, etc.)"
-	@echo "  ecr-*       - ECR operations"
-	@echo "  For full list: make -f deployment/Makefile help"
-	@echo ""
-	@echo "💡 EXAMPLES"
-	@echo "  make dra                                # Fresh start with Docker"
-	@echo "  make reset                              # Quick reset (no restart)"
-	@echo "  make re-seed-1k                         # Seed 1000 seats"
-	@echo "  DEPLOY_ENV=staging make re-seed         # Seed 5000 seats"
-	@echo "  make test test/service/ticketing/       # Test specific directory"
-	@echo "  make migrate-new MSG='add user table'   # Create migration"
-	@echo "  make scale-ticketing N=5                # Scale to 5 API instances"
-	@echo "  make go-rlt                             # Run sellout load test"
-	@echo ""
-	@echo "📚 ARCHITECTURE NOTES"
-	@echo "  • ticketing-service: API service with Redis Pub/Sub for real-time cache"
-	@echo "  • reservation-service: Standalone consumer for seat reservations"
-	@echo "  • booking-service: Standalone consumer for booking creation"
-	@echo "  • Nginx load balancer simulates AWS ALB locally"
-	@echo ""
-	@echo "📖 DOCS: spec/CONSTITUTION.md | spec/TICKETING_SERVICE_SPEC.md | spec/SEAT_RESERVATION_SPEC.md"
+	@echo "📖 DOCS: spec/CONSTITUTION.md"
