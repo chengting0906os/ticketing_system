@@ -76,3 +76,104 @@ resources:
 3. **Connection pool pressure** - More consumers = more concurrent connections to Kafka/Kvrocks/PostgreSQL
 
 **Trade-off:** We sacrifice per-request latency to gain faster overall completion. For spike tests with 1000 concurrent requests, reducing the **backend processing time** (first ticket → last ticket) matters more than individual request speed.
+
+---
+
+## CPU Profiling with py-spy
+
+Used **py-spy** to generate flame graphs and identify CPU bottlenecks in the API hot path.
+
+### Setup
+
+```dockerfile
+# Dockerfile (development stage)
+RUN uv sync --all-groups --frozen && \
+    pip install py-spy
+```
+
+```yaml
+# docker-compose.yml
+ticketing-service:
+  cap_add:
+    - SYS_PTRACE  # Required for py-spy profiling
+```
+
+### Profiling Commands
+
+```bash
+# Enter container
+docker exec -it <container> bash
+
+# Find Python process
+ps aux | grep python
+
+# Generate flame graph (30 seconds sampling)
+py-spy record -o /tmp/profile_$(date +%Y%m%d_%H%M%S).svg --pid <PID> --duration 30
+
+# Copy out
+docker cp <container>:/tmp/profile_*.svg ./observability/profiling/
+```
+
+### Bottlenecks Identified (from Flame Graph - Before Fix)
+
+![Flame Graph - Before Fix](.github/image/v0.0.2-py-spy/profile-before.svg)
+
+**Biggest bottleneck call stack:**
+
+```text
+publish_domain_event()                                    33.84%
+  └── app.topic()                                         33.70%  ← Called on every publish
+        └── TopicManager.topic()                          33.29%
+              └── _get_or_create_broker_topic()           33.29%
+                    └── _fetch_topic()                    33.01%
+                          └── inspect_topics()            27.12%
+                                └── list_topics()         27.12%  ← Queries Kafka metadata
+                                      └── AdminClient.list_topics()  20.68%
+                                            └── __init__()            15.75%
+```
+
+| Rank | Function | Samples | CPU % | Root Cause |
+|------|----------|---------|-------|------------|
+| 1 | `quixstreams/app.topic()` | 246 | **33.70%** | Calls `list_topics()` on every publish |
+| 2 | `list_topics()` (admin.py) | 198 | **27.12%** | Queries Kafka cluster metadata |
+| 3 | `confluent_kafka list_topics` | 151 | **20.68%** | Underlying Kafka client call |
+| 4 | `loguru/_handler.py:_queued_writer` | 115 | **15.75%** | Log queue processing |
+| 5 | `loguru/_file_sink.py:write` | 72 | **9.86%** | File I/O blocking |
+
+### Fixes Applied
+
+| Bottleneck | CPU % | Fix | Result |
+|------------|-------|-----|--------|
+| `app.topic()` | ~34% | Cache Topic objects in `_quix_topic_object_cache` | Eliminates repeated `list_topics()` calls |
+| File logging | ~25% | Disable file sink in production (`DEBUG=false`) | Use stdout only, collected by CloudWatch/Docker logs |
+
+### Implementation
+
+```python
+# event_publisher.py - Topic caching
+_quix_topic_object_cache: dict[str, Any] = {}
+
+def _get_or_create_quix_topic_with_cache(topic_name: str):
+    """Cache Topic objects to avoid repeated list_topics() calls (~34% CPU)"""
+    if topic_name not in _quix_topic_object_cache:
+        app = _get_quix_app()
+        _quix_topic_object_cache[topic_name] = app.topic(
+            name=topic_name,
+            key_serializer='str',
+            value_serializer='json',
+        )
+    return _quix_topic_object_cache[topic_name]
+```
+
+```python
+# loguru_io_config.py - Conditional file logging
+if settings.DEBUG or os.environ.get('ENABLE_FILE_LOGGING'):
+    custom_logger.add(file_sink, ...)  # Only in development
+```
+
+### Architecture Decision
+
+- **Development**: `DEBUG=true` enables file logging for convenience
+- **Production**: `DEBUG=false` uses stdout only, collected by CloudWatch/Docker logs
+
+This separation ensures production performance while maintaining development convenience.
