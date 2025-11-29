@@ -341,7 +341,7 @@ class EC2KvrocksStack(Stack):
                         volume_type=self._get_volume_type(ebs_volume_type),
                         iops=ebs_iops,  # None = use default
                         throughput=ebs_throughput,  # None = use default
-                        delete_on_termination=False,  # Preserve data
+                        delete_on_termination=True,  # Clean up on termination
                         encrypted=True,
                     ),
                 )

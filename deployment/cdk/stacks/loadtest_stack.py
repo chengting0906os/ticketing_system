@@ -1,26 +1,23 @@
 """
-Load Test Stack for Ticketing System
-Runs load testing using loadtest-service image (Go binaries) on Fargate
+EC2 Load Test Stack for Ticketing System
+Runs load testing using Docker on a single EC2 instance
 
 Architecture:
-- ECS Fargate task (on-demand, not always running)
-- Uses loadtest-service ECR image (Alpine + Go binaries: reserved_loadtest, concurrent_loadtest, full_reserved_loadtest)
-- ECS Exec enabled for interactive shell access
+- EC2 instance with Docker installed
+- SSH/SSM access for direct shell operations
+- Uses loadtest-service ECR image (Alpine + Go binaries)
 - Stores results in S3
 - Runs inside VPC to access ALB/Aurora/Kvrocks/Kafka
-- Configurable CPU/RAM from config.yml (up to 16 vCPU + 120 GB)
 
 Usage:
-1. Deploy stack: `uv run cdk deploy TicketingLoadTestStack`
-2. Run task: `make aws-loadtest-run` (starts task with sleep infinity)
-3. Exec into task: `make aws-loadtest-exec` (interactive shell)
-4. Run loadtest: Inside task, cd script/go_client && make frlt WORKERS=500 BATCH=1
-5. Stop task: `make aws-loadtest-stop`
+1. Deploy stack: `DEPLOY_ENV=development uv run cdk deploy TicketingLoadTestStack`
+2. SSH into instance: `aws ssm start-session --target <instance-id>`
+3. Run loadtest: `cd /home/ec2-user && docker exec -it loadtest sh`
+4. Inside container: `cd script/go_client && make frlt WORKERS=500 BATCH=1`
 
 Cost:
-- 16 vCPU + 32 GB: ~$0.60/hour (only when running)
-- Run for 10 min: ~$0.10
-- Much cheaper than running EC2 24/7
+- c7i.xlarge (4 vCPU, 8GB): ~$0.17/hour (~$122/month if running 24/7)
+- Stop instance when not in use to save cost
 """
 
 from aws_cdk import (
@@ -29,7 +26,6 @@ from aws_cdk import (
     Stack,
     aws_ec2 as ec2,
     aws_ecr as ecr,
-    aws_ecs as ecs,
     aws_iam as iam,
     aws_logs as logs,
     aws_s3 as s3,
@@ -45,25 +41,23 @@ class LoadTestStack(Stack):
         construct_id: str,
         *,
         vpc: ec2.IVpc,
-        ecs_cluster: ecs.ICluster,  # Use shared cluster
-        alb_dns: str,  # ALB endpoint to test against (internal DNS)
-        aurora_cluster_endpoint: str,  # Aurora endpoint for seed operations
-        aurora_cluster_secret: secretsmanager.ISecret,  # Aurora credentials
-        app_secrets: secretsmanager.ISecret,  # JWT secrets
-        kafka_bootstrap_servers: str,  # Kafka endpoints
-        kvrocks_endpoint: str,  # Kvrocks endpoint (host:port)
-        config: dict,  # Configuration from config.yml
+        alb_dns: str,
+        aurora_cluster_endpoint: str,
+        aurora_cluster_secret: secretsmanager.ISecret,
+        app_secrets: secretsmanager.ISecret,
+        kafka_bootstrap_servers: str,
+        kvrocks_endpoint: str,
+        config: dict,
         **kwargs,
     ) -> None:
         """
-        Initialize Load Test Stack
+        Initialize EC2 Load Test Stack
 
         Args:
             scope: CDK app scope
             construct_id: Stack identifier
             vpc: VPC (must be same as ECS services for internal testing)
-            ecs_cluster: Shared ECS cluster from Aurora Stack
-            alb_dns: ALB internal DNS name (saves data transfer cost)
+            alb_dns: ALB internal DNS name
             aurora_cluster_endpoint: Aurora endpoint for seed operations
             aurora_cluster_secret: Aurora credentials
             app_secrets: Shared JWT secrets
@@ -76,65 +70,58 @@ class LoadTestStack(Stack):
 
         # Extract loadtest configuration
         loadtest_config = config.get('loadtest', {})
-        task_cpu = loadtest_config.get('task_cpu', 2048)  # Default: 2 vCPU
-        task_memory = loadtest_config.get('task_memory', 4096)  # Default: 4GB
+        instance_type_str = loadtest_config.get('instance_type', 'c7i.xlarge')
+        storage_gb = loadtest_config.get('storage_gb', 50)
+        environment = config.get('environment', 'development')
 
         # Parse Kvrocks endpoint
         kvrocks_host, kvrocks_port = kvrocks_endpoint.split(':')
+
+        # Determine CPU architecture based on instance type
+        is_arm = any(
+            instance_type_str.startswith(prefix)
+            for prefix in ['t4g', 'm6g', 'm7g', 'c6g', 'c7g', 'r6g', 'r7g']
+        )
+        cpu_type = ec2.AmazonLinuxCpuType.ARM_64 if is_arm else ec2.AmazonLinuxCpuType.X86_64
 
         # ============= S3 Bucket for Test Results =============
         results_bucket = s3.Bucket(
             self,
             'LoadTestResults',
             bucket_name=f'ticketing-loadtest-results-{self.account}',
-            removal_policy=RemovalPolicy.RETAIN,  # Keep results after stack deletion
+            removal_policy=RemovalPolicy.RETAIN,
             auto_delete_objects=False,
-            versioned=True,  # Keep history of test runs
+            versioned=True,
         )
 
-        # Use shared cluster (no need to create new one)
-        cluster = ecs_cluster
-
-        # ============= ECR Repository (use loadtest image) =============
-        # Use dedicated loadtest image with Go binaries and Python tools
+        # ============= ECR Repository =============
         loadtest_repo = ecr.Repository.from_repository_name(
             self, 'LoadTestServiceRepo', repository_name='loadtest-service'
         )
 
-        # ============= IAM Roles =============
-        execution_role = iam.Role(
+        # ============= IAM Role for EC2 Instance =============
+        instance_role = iam.Role(
             self,
-            'LoadTestExecutionRole',
-            assumed_by=iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+            'LoadTestInstanceRole',
+            assumed_by=iam.ServicePrincipal('ec2.amazonaws.com'),
+            description='IAM role for LoadTest EC2 instance',
             managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name('AmazonSSMManagedInstanceCore'),
                 iam.ManagedPolicy.from_aws_managed_policy_name(
-                    'service-role/AmazonECSTaskExecutionRolePolicy'
-                )
+                    'AmazonEC2ContainerRegistryReadOnly'
+                ),
             ],
         )
 
-        # Grant access to Aurora and App secrets
-        aurora_cluster_secret.grant_read(execution_role)
-        app_secrets.grant_read(execution_role)
-
-        task_role = iam.Role(
-            self,
-            'LoadTestTaskRole',
-            assumed_by=iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
-            description='Role for load test ECS tasks',
-        )
-
         # Grant S3 write permission for uploading results
-        results_bucket.grant_write(task_role)
+        results_bucket.grant_write(instance_role)
 
-        # Grant SSM permissions for ECS Exec
-        task_role.add_managed_policy(
-            iam.ManagedPolicy.from_aws_managed_policy_name('AmazonSSMManagedInstanceCore')
-        )
+        # Grant access to Aurora and App secrets
+        aurora_cluster_secret.grant_read(instance_role)
+        app_secrets.grant_read(instance_role)
 
-        # Grant permissions for running AWS operations inside LoadTest container
-        # (needed for make aws-seed, make aws-migrate, make aws-kvrocks-keys, etc.)
-        task_role.add_to_policy(
+        # Grant permissions for running AWS operations inside container
+        instance_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
                     'ec2:DescribeSubnets',
@@ -144,19 +131,18 @@ class LoadTestStack(Stack):
                     'ecs:RunTask',
                     'ecs:ListTasks',
                     'ecs:DescribeTasks',
-                    # Auto Scaling permissions for finding Kvrocks/Kafka instances
                     'autoscaling:DescribeAutoScalingGroups',
-                    # SSM permissions for remote command execution
                     'ssm:SendCommand',
                     'ssm:GetCommandInvocation',
+                    'ssm:GetParameter',
                 ],
                 resources=['*'],
                 effect=iam.Effect.ALLOW,
             )
         )
 
-        # Grant permission to pass ECS task execution role (required for ecs:RunTask)
-        task_role.add_to_policy(
+        # Grant permission to pass ECS task execution role
+        instance_role.add_to_policy(
             iam.PolicyStatement(
                 actions=['iam:PassRole'],
                 resources=[f'arn:aws:iam::{self.account}:role/*'],
@@ -165,99 +151,97 @@ class LoadTestStack(Stack):
             )
         )
 
-        # ============= Task Definition (from config.yml) =============
-        task_definition = ecs.FargateTaskDefinition(
-            self,
-            'LoadTestTask',
-            family='loadtest-runner',
-            cpu=task_cpu,  # From config.yml (dev: 8 vCPU, prod: 16 vCPU)
-            memory_limit_mib=task_memory,  # From config.yml (dev: 16GB, prod: 32GB)
-            task_role=task_role,
-            execution_role=execution_role,
-        )
-
-        # CloudWatch Log Group
-        log_group = logs.LogGroup(
-            self,
-            'LoadTestLogs',
-            log_group_name='/ecs/loadtest-runner',
-            removal_policy=RemovalPolicy.DESTROY,
-        )
-
-        # Container Definition
-        _ = task_definition.add_container(
-            'LoadTestContainer',
-            container_name='loadtest',
-            image=ecs.ContainerImage.from_ecr_repository(loadtest_repo, tag='latest'),
-            logging=ecs.LogDriver.aws_logs(stream_prefix='loadtest', log_group=log_group),
-            environment={
-                'ALB_HOST': f'http://{alb_dns}',
-                'API_HOST': f'http://{alb_dns}',  # For Go loadtest binaries
-                'S3_BUCKET': results_bucket.bucket_name,
-                'AWS_REGION': self.region,
-                # Database configuration (split format for Settings class)
-                'POSTGRES_SERVER': aurora_cluster_endpoint,
-                'POSTGRES_DB': 'ticketing_system_db',
-                'POSTGRES_PORT': '5432',
-                # Kafka configuration
-                'KAFKA_BOOTSTRAP_SERVERS': kafka_bootstrap_servers,
-                # Kvrocks configuration
-                'KVROCKS_HOST': kvrocks_host,
-                'KVROCKS_PORT': kvrocks_port,
-                # Application configuration
-                'DEBUG': str(config.get('debug', False)).lower(),
-                'DEPLOY_ENV': config.get('environment', 'development'),
-                # JWT configuration (required by core_setting.py)
-                'ACCESS_TOKEN_EXPIRE_MINUTES': '30',
-                'REFRESH_TOKEN_EXPIRE_DAYS': '7',
-                # Disable AWS CLI pager (less is not installed in container)
-                'AWS_PAGER': '',
-            },
-            secrets={
-                # Aurora credentials (must match Settings field names)
-                'POSTGRES_USER': ecs.Secret.from_secrets_manager(aurora_cluster_secret, 'username'),
-                'POSTGRES_PASSWORD': ecs.Secret.from_secrets_manager(
-                    aurora_cluster_secret, 'password'
-                ),
-                # App secrets (matching API service configuration)
-                'SECRET_KEY': ecs.Secret.from_secrets_manager(app_secrets, 'SECRET_KEY'),
-                'RESET_PASSWORD_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
-                    app_secrets, 'RESET_PASSWORD_TOKEN_SECRET'
-                ),
-                'VERIFICATION_TOKEN_SECRET': ecs.Secret.from_secrets_manager(
-                    app_secrets, 'VERIFICATION_TOKEN_SECRET'
-                ),
-                'ALGORITHM': ecs.Secret.from_secrets_manager(app_secrets, 'ALGORITHM'),
-            },
-            # Command will be overridden at runtime
-            # Default: sleep infinity (for ECS Exec)
-            command=['sleep', 'infinity'],
-        )
-
         # ============= Security Group =============
         loadtest_sg = ec2.SecurityGroup(
             self,
             'LoadTestSG',
             vpc=vpc,
-            description='Security group for load test tasks',
-            allow_all_outbound=True,  # Need to call ALB and S3
+            description='Security group for load test EC2 instance',
+            allow_all_outbound=True,
+        )
+
+        # SSH access from VPC (for debugging)
+        loadtest_sg.add_ingress_rule(
+            peer=ec2.Peer.ipv4(vpc.vpc_cidr_block),
+            connection=ec2.Port.tcp(22),
+            description='SSH access from VPC',
+        )
+
+        # ============= CloudWatch Log Group =============
+        log_group = logs.LogGroup(
+            self,
+            'LoadTestLogs',
+            log_group_name=f'/ec2/loadtest-{environment}',
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        # ============= User Data Script =============
+        user_data = self._create_user_data(
+            alb_dns=alb_dns,
+            aurora_endpoint=aurora_cluster_endpoint,
+            aurora_secret_arn=aurora_cluster_secret.secret_arn,
+            app_secrets_arn=app_secrets.secret_arn,
+            kafka_bootstrap_servers=kafka_bootstrap_servers,
+            kvrocks_host=kvrocks_host,
+            kvrocks_port=kvrocks_port,
+            s3_bucket=results_bucket.bucket_name,
+            ecr_repo_uri=loadtest_repo.repository_uri,
+            environment=environment,
+            debug=str(config.get('debug', False)).lower(),
+        )
+
+        # ============= Block Device (EBS) =============
+        block_devices = [
+            ec2.BlockDevice(
+                device_name='/dev/xvda',
+                volume=ec2.BlockDeviceVolume.ebs(
+                    volume_size=storage_gb,
+                    volume_type=ec2.EbsDeviceVolumeType.GP3,
+                    delete_on_termination=True,
+                    encrypted=True,
+                ),
+            ),
+        ]
+
+        # ============= EC2 Instance =============
+        private_subnets = vpc.select_subnets(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS).subnets
+
+        instance = ec2.Instance(
+            self,
+            'LoadTestInstance',
+            instance_name=f'loadtest-{environment}',
+            instance_type=ec2.InstanceType(instance_type_str),
+            machine_image=ec2.MachineImage.latest_amazon_linux2023(cpu_type=cpu_type),
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(subnets=[private_subnets[0]]),
+            security_group=loadtest_sg,
+            user_data=user_data,
+            block_devices=block_devices,
+            role=instance_role,
         )
 
         # ============= Outputs =============
         CfnOutput(
             self,
-            'TaskDefinitionArn',
-            value=task_definition.task_definition_arn,
-            description='Task definition ARN for running load tests',
-            export_name='LoadTestTaskDefinitionArn',
+            'InstanceId',
+            value=instance.instance_id,
+            description='EC2 Instance ID for SSM session',
+            export_name='LoadTestInstanceId',
         )
 
         CfnOutput(
             self,
-            'ClusterName',
-            value=cluster.cluster_name,
-            description='ECS cluster name',
-            export_name='LoadTestClusterName',
+            'InstancePrivateIP',
+            value=instance.instance_private_ip,
+            description='EC2 Instance Private IP',
+            export_name='LoadTestInstancePrivateIP',
+        )
+
+        CfnOutput(
+            self,
+            'SSMCommand',
+            value=f'aws ssm start-session --target {instance.instance_id}',
+            description='Command to SSH into the instance via SSM',
         )
 
         CfnOutput(
@@ -272,7 +256,7 @@ class LoadTestStack(Stack):
             self,
             'ECRRepository',
             value=loadtest_repo.repository_uri,
-            description='ECR repository (ticketing-service)',
+            description='ECR repository for loadtest image',
             export_name='LoadTestECRRepository',
         )
 
@@ -280,13 +264,149 @@ class LoadTestStack(Stack):
             self,
             'SecurityGroupId',
             value=loadtest_sg.security_group_id,
-            description='Security Group ID for loadtest tasks',
+            description='Security Group ID for loadtest instance',
             export_name='LoadTestSecurityGroupId',
         )
 
+        CfnOutput(
+            self,
+            'LogGroupName',
+            value=log_group.log_group_name,
+            description='CloudWatch Log Group for loadtest',
+        )
+
         # Store references
-        self.cluster = cluster
-        self.task_definition = task_definition
+        self.instance = instance
         self.security_group = loadtest_sg
         self.results_bucket = results_bucket
         self.ecr_repository = loadtest_repo
+
+    def _create_user_data(
+        self,
+        *,
+        alb_dns: str,
+        aurora_endpoint: str,
+        aurora_secret_arn: str,
+        app_secrets_arn: str,
+        kafka_bootstrap_servers: str,
+        kvrocks_host: str,
+        kvrocks_port: str,
+        s3_bucket: str,
+        ecr_repo_uri: str,
+        environment: str,
+        debug: str,
+    ) -> ec2.UserData:
+        """Create user data script to install Docker and run loadtest container"""
+        user_data = ec2.UserData.for_linux()
+
+        user_data.add_commands(
+            '#!/bin/bash',
+            'set -ex',
+            '',
+            '# ============= System Setup =============',
+            'dnf update -y',
+            'dnf install -y docker jq aws-cli',
+            '',
+            '# Start Docker',
+            'systemctl enable docker',
+            'systemctl start docker',
+            'usermod -aG docker ec2-user',
+            '',
+            '# ============= Get Instance Metadata (IMDSv2) =============',
+            'TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")',
+            'REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)',
+            'echo "Region: $REGION"',
+            '',
+            '# ============= ECR Login =============',
+            'aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $(echo '
+            + ecr_repo_uri
+            + ' | cut -d/ -f1)',
+            '',
+            '# ============= Get Secrets from Secrets Manager =============',
+            f'AURORA_SECRET=$(aws secretsmanager get-secret-value --secret-id {aurora_secret_arn} --region $REGION --query SecretString --output text)',
+            'POSTGRES_USER=$(echo $AURORA_SECRET | jq -r .username)',
+            'POSTGRES_PASSWORD=$(echo $AURORA_SECRET | jq -r .password)',
+            '',
+            f'APP_SECRET=$(aws secretsmanager get-secret-value --secret-id {app_secrets_arn} --region $REGION --query SecretString --output text)',
+            'SECRET_KEY=$(echo $APP_SECRET | jq -r .SECRET_KEY)',
+            'RESET_PASSWORD_TOKEN_SECRET=$(echo $APP_SECRET | jq -r .RESET_PASSWORD_TOKEN_SECRET)',
+            'VERIFICATION_TOKEN_SECRET=$(echo $APP_SECRET | jq -r .VERIFICATION_TOKEN_SECRET)',
+            'ALGORITHM=$(echo $APP_SECRET | jq -r .ALGORITHM)',
+            '',
+            '# ============= Create Environment File =============',
+            'cat > /home/ec2-user/.env << EOF',
+            f'ALB_HOST=http://{alb_dns}',
+            f'API_HOST=http://{alb_dns}',
+            f'S3_BUCKET={s3_bucket}',
+            'AWS_REGION=$REGION',
+            f'POSTGRES_SERVER={aurora_endpoint}',
+            'POSTGRES_DB=ticketing_system_db',
+            'POSTGRES_PORT=5432',
+            'POSTGRES_USER=$POSTGRES_USER',
+            'POSTGRES_PASSWORD=$POSTGRES_PASSWORD',
+            f'KAFKA_BOOTSTRAP_SERVERS={kafka_bootstrap_servers}',
+            f'KVROCKS_HOST={kvrocks_host}',
+            f'KVROCKS_PORT={kvrocks_port}',
+            f'DEBUG={debug}',
+            f'DEPLOY_ENV={environment}',
+            'ACCESS_TOKEN_EXPIRE_MINUTES=30',
+            'REFRESH_TOKEN_EXPIRE_DAYS=7',
+            'SECRET_KEY=$SECRET_KEY',
+            'RESET_PASSWORD_TOKEN_SECRET=$RESET_PASSWORD_TOKEN_SECRET',
+            'VERIFICATION_TOKEN_SECRET=$VERIFICATION_TOKEN_SECRET',
+            'ALGORITHM=$ALGORITHM',
+            'AWS_PAGER=',
+            'EOF',
+            '',
+            '# Fix ownership',
+            'chown ec2-user:ec2-user /home/ec2-user/.env',
+            '',
+            '# ============= Pull and Run LoadTest Container =============',
+            f'docker pull {ecr_repo_uri}:latest',
+            '',
+            '# Run container with sleep infinity (interactive mode)',
+            'docker run -d --name loadtest \\',
+            '  --env-file /home/ec2-user/.env \\',
+            '  --restart unless-stopped \\',
+            f'  {ecr_repo_uri}:latest \\',
+            '  sleep infinity',
+            '',
+            '# ============= Create Helper Scripts =============',
+            '# Script to exec into container',
+            "cat > /home/ec2-user/loadtest-shell.sh << 'SCRIPT'",
+            '#!/bin/bash',
+            'docker exec -it loadtest sh',
+            'SCRIPT',
+            'chmod +x /home/ec2-user/loadtest-shell.sh',
+            '',
+            '# Script to restart container with fresh image',
+            "cat > /home/ec2-user/loadtest-refresh.sh << 'SCRIPT'",
+            '#!/bin/bash',
+            'set -e',
+            'REGION=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" | xargs -I {} curl -s -H "X-aws-ec2-metadata-token: {}" http://169.254.169.254/latest/meta-data/placement/region)',
+            f'ECR_URI="{ecr_repo_uri}"',
+            'aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $(echo $ECR_URI | cut -d/ -f1)',
+            'docker pull $ECR_URI:latest',
+            'docker stop loadtest || true',
+            'docker rm loadtest || true',
+            'docker run -d --name loadtest --env-file /home/ec2-user/.env --restart unless-stopped $ECR_URI:latest sleep infinity',
+            'echo "LoadTest container refreshed!"',
+            'SCRIPT',
+            'chmod +x /home/ec2-user/loadtest-refresh.sh',
+            '',
+            '# Script to view container logs',
+            "cat > /home/ec2-user/loadtest-logs.sh << 'SCRIPT'",
+            '#!/bin/bash',
+            'docker logs -f loadtest',
+            'SCRIPT',
+            'chmod +x /home/ec2-user/loadtest-logs.sh',
+            '',
+            'chown ec2-user:ec2-user /home/ec2-user/*.sh',
+            '',
+            'echo "============================================"',
+            'echo "LoadTest EC2 instance ready!"',
+            'echo "Run: ./loadtest-shell.sh to enter container"',
+            'echo "============================================"',
+        )
+
+        return user_data

@@ -135,8 +135,8 @@ class TicketingServiceStack(Stack):
         task_def = ecs.FargateTaskDefinition(
             self,
             'TaskDef',
-            memory_limit_mib=config['ecs']['api']['task_memory'],
-            cpu=config['ecs']['api']['task_cpu'],
+            memory_limit_mib=config['services']['ticketing']['task_memory'],
+            cpu=config['services']['ticketing']['task_cpu'],
             execution_role=execution_role,
             task_role=task_role,
         )
@@ -157,7 +157,7 @@ class TicketingServiceStack(Stack):
                 'SERVICE_NAME': 'api-service',
                 'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
-                'WORKERS': str(config['ecs']['api']['workers']),
+                'WORKERS': str(config['services']['ticketing']['workers']),
                 'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://localhost:4317',
                 'OTEL_EXPORTER_OTLP_PROTOCOL': 'grpc',
                 'POSTGRES_SERVER': aurora_cluster_endpoint,
@@ -242,8 +242,8 @@ service:
             service_name=service_name,
             cluster=ecs_cluster,
             task_definition=task_def,
-            desired_count=config['ecs']['min_tasks'],
-            min_healthy_percent=0 if config['ecs']['min_tasks'] == 1 else 50,
+            desired_count=config['services']['ticketing']['min_tasks'],
+            min_healthy_percent=0 if config['services']['ticketing']['min_tasks'] == 1 else 50,
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             enable_execute_command=True,  # Enable ECS Exec for debugging
@@ -257,13 +257,16 @@ service:
 
         # Auto-scaling
         scaling = service.auto_scale_task_count(
-            min_capacity=config['ecs']['min_tasks'], max_capacity=config['ecs']['max_tasks']
+            min_capacity=config['services']['ticketing']['min_tasks'],
+            max_capacity=config['services']['ticketing']['max_tasks'],
         )
         scaling.scale_on_cpu_utilization(
-            'CPUScaling', target_utilization_percent=config['ecs']['cpu_threshold']
+            'CPUScaling',
+            target_utilization_percent=config['services']['ticketing']['cpu_threshold'],
         )
         scaling.scale_on_memory_utilization(
-            'MemoryScaling', target_utilization_percent=config['ecs']['memory_threshold']
+            'MemoryScaling',
+            target_utilization_percent=config['services']['ticketing']['memory_threshold'],
         )
 
         # ALB Target Group - Handle all /api/* routes

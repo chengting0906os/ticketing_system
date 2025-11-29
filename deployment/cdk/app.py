@@ -33,7 +33,9 @@ config = all_config[deploy_env]
 
 print(f'📋 Loading configuration for environment: {deploy_env}')
 print(f'   Region: {config["region"]}')
-print(f'   ECS Tasks: {config["ecs"]["min_tasks"]}-{config["ecs"]["max_tasks"]}')
+print(
+    f'   Ticketing: {config["services"]["ticketing"]["min_tasks"]}-{config["services"]["ticketing"]["max_tasks"]} tasks'
+)
 print(f'   Aurora ACU: {config["aurora"]["min_acu"]}-{config["aurora"]["max_acu"]}')
 
 # Environment configuration
@@ -103,7 +105,7 @@ ticketing_service_stack = TicketingServiceStack(
     kvrocks_security_group=kvrocks_stack.security_group,
     config=config,
     env=env,
-    description=f'Ticketing API Service on ECS Fargate ({config["ecs"]["min_tasks"]}-{config["ecs"]["max_tasks"]} tasks)',
+    description=f'Ticketing API Service on ECS Fargate ({config["services"]["ticketing"]["min_tasks"]}-{config["services"]["ticketing"]["max_tasks"]} tasks)',
 )
 ticketing_service_stack.add_dependency(aurora_stack)
 ticketing_service_stack.add_dependency(kvrocks_stack)
@@ -128,7 +130,7 @@ booking_service_stack = BookingServiceStack(
     kvrocks_security_group=kvrocks_stack.security_group,
     config=config,
     env=env,
-    description=f'Booking Consumer Service on ECS Fargate ({config.get("consumers", {}).get("booking", {}).get("min_tasks", 2)}-{config.get("consumers", {}).get("booking", {}).get("max_tasks", 4)} tasks)',
+    description=f'Booking Consumer Service on ECS Fargate ({config["services"]["booking"]["min_tasks"]}-{config["services"]["booking"]["max_tasks"]} tasks)',
 )
 booking_service_stack.add_dependency(aurora_stack)
 booking_service_stack.add_dependency(kafka_stack)
@@ -148,29 +150,29 @@ reservation_service_stack = ReservationServiceStack(
     kvrocks_security_group=kvrocks_stack.security_group,
     config=config,
     env=env,
-    description=f'Seat Reservation Service on ECS Fargate ({config.get("consumers", {}).get("reservation", {}).get("min_tasks", 50)}-{config.get("consumers", {}).get("reservation", {}).get("max_tasks", 100)} tasks)',
+    description=f'Reservation Service on ECS Fargate ({config["services"]["reservation"]["min_tasks"]}-{config["services"]["reservation"]["max_tasks"]} tasks)',
 )
 reservation_service_stack.add_dependency(aurora_stack)
 reservation_service_stack.add_dependency(kvrocks_stack)
 reservation_service_stack.add_dependency(kafka_stack)
 
 # 7. Load Test Stack (optional - for performance testing + interactive operations)
-loadtest_cpu = config.get('loadtest', {}).get('task_cpu', 2048)
-loadtest_mem = config.get('loadtest', {}).get('task_memory', 4096)
+# EC2 instance with Docker for direct SSH access and manual operations
+loadtest_config = config.get('loadtest', {})
+loadtest_instance = loadtest_config.get('instance_type', 'c7i.xlarge')
 loadtest_stack = LoadTestStack(
     app,
     'TicketingLoadTestStack',
     vpc=aurora_stack.vpc,
-    ecs_cluster=aurora_stack.ecs_cluster,  # Use shared cluster
     alb_dns=aurora_stack.alb.load_balancer_dns_name,  # Internal DNS (free traffic)
     aurora_cluster_endpoint=aurora_stack.cluster_endpoint,  # For seed operations
     aurora_cluster_secret=aurora_stack.cluster.secret,  # Aurora credentials
     app_secrets=aurora_stack.app_secrets,  # JWT secrets
     kafka_bootstrap_servers=kafka_stack.bootstrap_servers,  # Kafka endpoints
     kvrocks_endpoint=kvrocks_stack.kvrocks_endpoint,  # Kvrocks endpoint
-    config=config,  # Pass config for CPU/Memory settings
+    config=config,  # Pass config for instance settings
     env=env,
-    description=f'[Optional] Load test + interactive ops on Fargate ({loadtest_cpu} CPU + {loadtest_mem}MB RAM)',
+    description=f'[Optional] Load test EC2 instance ({loadtest_instance}) with Docker',
 )
 loadtest_stack.add_dependency(ticketing_service_stack)
 loadtest_stack.add_dependency(kafka_stack)

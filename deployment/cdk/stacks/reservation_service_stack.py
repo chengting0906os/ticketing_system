@@ -106,8 +106,8 @@ class ReservationServiceStack(Stack):
         task_def = ecs.FargateTaskDefinition(
             self,
             'TaskDef',
-            memory_limit_mib=512,  # 0.5 GB RAM for consumer
-            cpu=256,  # 0.25 vCPU for consumer
+            memory_limit_mib=config['services']['reservation']['task_memory'],
+            cpu=config['services']['reservation']['task_cpu'],
             execution_role=execution_role,
             task_role=task_role,
         )
@@ -217,7 +217,7 @@ service:
             service_name=service_name,
             cluster=ecs_cluster,
             task_definition=task_def,
-            desired_count=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 20),
+            desired_count=config['services']['reservation']['min_tasks'],
             min_healthy_percent=50,  # Keep 50% running during deployment
             max_healthy_percent=200,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
@@ -233,8 +233,8 @@ service:
         # Auto-scaling: 20-40 tasks (5 vCPU - 10 vCPU)
         # Total resource usage at max: 10 vCPU + 20GB RAM
         scaling = service.auto_scale_task_count(
-            min_capacity=config.get('consumers', {}).get('reservation', {}).get('min_tasks', 20),
-            max_capacity=config.get('consumers', {}).get('reservation', {}).get('max_tasks', 40),
+            min_capacity=config['services']['reservation']['min_tasks'],
+            max_capacity=config['services']['reservation']['max_tasks'],
         )
         scaling.scale_on_cpu_utilization('CPUScaling', target_utilization_percent=70)
         scaling.scale_on_memory_utilization('MemoryScaling', target_utilization_percent=80)

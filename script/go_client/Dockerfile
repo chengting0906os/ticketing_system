@@ -13,18 +13,18 @@ RUN go mod download || true
 # Copy all Go source files
 COPY script/go_client/*.go ./
 
-# Build all load test binaries (explicitly for linux/amd64)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# Build all load test binaries for ARM64 (Graviton/t4g)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -ldflags="-w -s" \
     -o reserved_loadtest \
     reserved_loadtest.go types.go
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -ldflags="-w -s" \
     -o concurrent_loadtest \
     concurrent_loadtest.go types.go
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -ldflags="-w -s" \
     -tags full_reserved \
     -o full_reserved_loadtest \
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gcc \
     g++ \
+    git \
     librdkafka-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -49,11 +50,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Install k6
-RUN wget -q https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz \
-    && tar -xzf k6-v0.54.0-linux-amd64.tar.gz \
-    && mv k6-v0.54.0-linux-amd64/k6 /usr/local/bin/ \
-    && rm -rf k6-v0.54.0-linux-amd64*
+# ============= Install Go Runtime (ARM64) =============
+ENV GO_VERSION=1.23.4
+RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-arm64.tar.gz \
+    && rm go${GO_VERSION}.linux-arm64.tar.gz
+ENV PATH="/usr/local/go/bin:$PATH"
+ENV GOPATH="/root/go"
+ENV PATH="${GOPATH}/bin:$PATH"
+
+# ============= Install k6 (ARM64) =============
+ENV K6_VERSION=v0.54.0
+RUN wget -q https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-arm64.tar.gz \
+    && tar -xzf k6-${K6_VERSION}-linux-arm64.tar.gz \
+    && mv k6-${K6_VERSION}-linux-arm64/k6 /usr/local/bin/ \
+    && rm -rf k6-${K6_VERSION}-linux-arm64*
+
+# ============= Install AWS CLI (ARM64) =============
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" \
+    && apt-get update && apt-get install -y unzip \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -67,7 +86,11 @@ RUN uv sync --frozen --no-dev
 COPY src/ /app/src/
 COPY script/*.py /app/script/
 
-# Copy Go binaries from builder
+# Copy Go source files (for on-the-fly compilation)
+COPY script/go_client/*.go /app/script/go_client/
+COPY script/go_client/go.mod script/go_client/go.sum* /app/script/go_client/
+
+# Copy Go binaries from builder (pre-built for convenience)
 COPY --from=builder /build/reserved_loadtest /app/script/go_client/reserved_loadtest
 COPY --from=builder /build/concurrent_loadtest /app/script/go_client/concurrent_loadtest
 COPY --from=builder /build/full_reserved_loadtest /app/script/go_client/full_reserved_loadtest
@@ -97,5 +120,5 @@ RUN mkdir -p /app/report
 # Set working directory to go_client for convenience
 WORKDIR /app/script/go_client
 
-# Default: sleep infinity (for ECS Exec interactive usage)
+# Default: sleep infinity (for interactive usage)
 CMD ["sleep", "infinity"]
