@@ -6,10 +6,9 @@ from inspect import (
 import types
 from typing import Any, Callable, Optional, TypeVar, cast, overload, ParamSpec
 
+from src.platform.config.core_setting import settings
 from src.platform.logging.generator_wrapper import GeneratorWrapper
 from src.platform.logging.loguru_io_config import (
-    ENTRY_ARROW,
-    EXIT_ARROW,
     ExtraField,
     GeneratorMethod,
     call_depth_var,
@@ -17,7 +16,6 @@ from src.platform.logging.loguru_io_config import (
 )
 from src.platform.logging.loguru_io_utils import (
     build_call_target_func_path,
-    fetch_layer_depth,
     get_chain_start_time,
     handle_yield,
     mask_sensitive,
@@ -28,11 +26,8 @@ from src.platform.logging.loguru_io_utils import (
 )
 
 
-T = TypeVar('T', bound=Callable[..., Any])
-
-
 class LoguruIO:
-    def __init__(self, custom_logger, reraise: bool = True, truncate_content: bool = False):
+    def __init__(self, custom_logger, *, reraise: bool = True, truncate_content: bool = False):
         self._custom_logger = custom_logger
         self.reraise = reraise
         self.truncate_content = truncate_content
@@ -45,20 +40,17 @@ class LoguruIO:
         call_depth_var.set(call_depth_var.get() + 1)
         self.extra |= {
             ExtraField.CHAIN_START_TIME: get_chain_start_time(),
-            ExtraField.LAYER_MARKER: fetch_layer_depth(),
-            ExtraField.ENTRY_MARKER: ENTRY_ARROW,
-            ExtraField.EXIT_MARKER: '',
         }
-        self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
-            f'{handle_yield(yield_method)}args: {self.mask_sensitive(args)}, kwargs: {self.mask_sensitive(kwargs)}'
-        )
+        if settings.DEBUG:  # Skip expensive mask_sensitive when not logging
+            self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
+                f'{handle_yield(yield_method)}args: {self.mask_sensitive(args)}, kwargs: {self.mask_sensitive(kwargs)}'
+            )
 
     def log_return_content(self, return_value, yield_method: Optional[GeneratorMethod] = None):
-        self.extra[ExtraField.ENTRY_MARKER] = ''
-        self.extra[ExtraField.EXIT_MARKER] = EXIT_ARROW
-        self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
-            f'{handle_yield(yield_method)}return: {self.mask_sensitive(return_value)}'
-        )
+        if settings.DEBUG:  # Skip expensive mask_sensitive when not logging
+            self._custom_logger.bind(**self.extra).opt(depth=self.depth).debug(
+                f'{handle_yield(yield_method)}return: {self.mask_sensitive(return_value)}'
+            )
 
     def _hide_from_traceback(self, func):
         func.__code__ = func.__code__.replace(
@@ -94,8 +86,13 @@ class LoguruIO:
                     return_value = await func(*args, **kwargs)
                     self.log_return_content(return_value)
                     return return_value
-                except Exception:
-                    raise
+                except Exception as e:
+                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                        f'Exception: {type(e).__name__}: {e}'
+                    )
+                    if self.reraise:
+                        raise
+                    return None
                 finally:
                     reset_call_depth()
 
@@ -110,8 +107,13 @@ class LoguruIO:
                     gen_obj = func(*args, **kwargs)
                     self.log_return_content(gen_obj)
                     return GeneratorWrapper(gen_obj, self)
-                except Exception:
-                    raise
+                except Exception as e:
+                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                        f'Exception: {type(e).__name__}: {e}'
+                    )
+                    if self.reraise:
+                        raise
+                    return None
                 finally:
                     reset_call_depth()
 
@@ -127,8 +129,13 @@ class LoguruIO:
                     return_value = func(*args, **kwargs)
                     self.log_return_content(return_value)
                     return return_value
-                except Exception:
-                    raise
+                except Exception as e:
+                    self._custom_logger.bind(**self.extra).opt(depth=self.depth).exception(
+                        f'Exception: {type(e).__name__}: {e}'
+                    )
+                    if self.reraise:
+                        raise
+                    return None
                 finally:
                     reset_call_depth()
 

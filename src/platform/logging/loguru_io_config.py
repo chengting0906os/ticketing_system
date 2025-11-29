@@ -8,9 +8,10 @@ import zoneinfo
 
 from loguru import logger as loguru_logger
 
-from src.platform.constant.path import LOG_DIR
 from src.platform.config.core_setting import settings
+from src.platform.constant.path import LOG_DIR
 from src.platform.logging.service_context import get_service_context
+
 
 # Use test log directory if in test environment
 LOG_DIR = os.environ.get('TEST_LOG_DIR', LOG_DIR)
@@ -21,11 +22,6 @@ SENSITIVE_KEYWORDS = {
     'password',
 }
 
-# Visual markers for logging
-DEPTH_LINE = '│'
-ENTRY_ARROW = '┌'
-EXIT_ARROW = '└'
-
 chain_start_time_var: ContextVar[float] = ContextVar('first_time_var', default=0)
 call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 
@@ -33,9 +29,6 @@ call_depth_var: ContextVar[int] = ContextVar('call_depth_var', default=0)
 class ExtraField(StrEnum):
     SERVICE_CONTEXT = 'service_context'
     CHAIN_START_TIME = 'chain_start_time'
-    LAYER_MARKER = 'layer_marker'
-    ENTRY_MARKER = 'entry_marker'
-    EXIT_MARKER = 'exit_marker'
     CALL_TARGET = 'call_target'
 
 
@@ -85,6 +78,23 @@ def _parse_http_status_level(message: str) -> str | None:
         return None
 
 
+_intercept_bound_logger = None  # Cached bound logger for InterceptHandler
+
+
+def _get_intercept_bound_logger():
+    """Get or create bound logger with default extra fields (cached)."""
+    global _intercept_bound_logger
+    if _intercept_bound_logger is None:
+        _intercept_bound_logger = loguru_logger.bind(
+            **{
+                ExtraField.SERVICE_CONTEXT: get_service_context(),
+                ExtraField.CHAIN_START_TIME: '',
+                ExtraField.CALL_TARGET: '',
+            }
+        )
+    return _intercept_bound_logger
+
+
 class InterceptHandler(logging.Handler):
     def emit(self, record):
         message = record.getMessage()
@@ -99,7 +109,7 @@ class InterceptHandler(logging.Handler):
                 return  # Ignore asyncio selector messages
 
         # Also block logs from Kafka loggers regardless of level
-        if record.name.startswith(('kafka', 'aiokafka')):
+        if record.name.startswith(('kafka')):
             if record.levelno <= logging.DEBUG:  # Block DEBUG, INFO for Kafka loggers
                 return
 
@@ -118,19 +128,10 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back  # type: ignore
             depth += 1
 
-        # Bind empty extra fields to avoid KeyError
-        logger_with_extra = loguru_logger.bind(
-            **{
-                ExtraField.SERVICE_CONTEXT: get_service_context(),
-                ExtraField.CHAIN_START_TIME: '',
-                ExtraField.LAYER_MARKER: '',
-                ExtraField.ENTRY_MARKER: '',
-                ExtraField.EXIT_MARKER: '',
-                ExtraField.CALL_TARGET: '',
-            }
+        # Use cached bound logger
+        _get_intercept_bound_logger().opt(depth=depth, exception=record.exc_info).log(
+            level, message
         )
-
-        logger_with_extra.opt(depth=depth, exception=record.exc_info).log(level, message)
 
 
 # Log format for LoguruIO decorated functions
@@ -138,7 +139,6 @@ io_log_format = ' | '.join(
     (
         f'<c>{{extra[{ExtraField.SERVICE_CONTEXT}]}}</>',
         '<lvl>{level:<8}</>',
-        f'<lg>{{extra[{ExtraField.LAYER_MARKER}]}}{{extra[{ExtraField.ENTRY_MARKER}]}}{{extra[{ExtraField.EXIT_MARKER}]}}</> '
         f'<c>{{file}}::{{function}}:{{line}}</>=><y>{{extra[{ExtraField.CALL_TARGET}]}}</>',
         '{message}',
         '<lk>{elapsed}</>',
@@ -153,9 +153,6 @@ custom_logger = loguru_logger.bind(
     **{
         ExtraField.SERVICE_CONTEXT: get_service_context(),
         ExtraField.CHAIN_START_TIME: '',
-        ExtraField.LAYER_MARKER: '',
-        ExtraField.ENTRY_MARKER: '',
-        ExtraField.EXIT_MARKER: '',
         ExtraField.CALL_TARGET: '',
     }
 )
@@ -180,42 +177,11 @@ custom_logger.add(
     f'{LOG_DIR}/{log_filename}',
     format=io_log_format,
     rotation='1 hour',  # Rotate every hour to match filename pattern
-    retention='14 days',
+    retention='7 days',
     compression='gz',
     enqueue=True,
     level=min_log_level,
 )
 
-# Intercept standard logging
+# Intercept standard logging → loguru
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-
-for logger_name in [
-    'fastapi',
-    'sqlalchemy.engine',
-    'sqlalchemy.pool',
-]:
-    logging_logger = logging.getLogger(logger_name)
-    logging_logger.handlers = [InterceptHandler()]
-    logging_logger.propagate = False
-
-# Aggressively suppress Kafka loggers to prevent debug spam
-kafka_loggers = [
-    'kafka',
-    'kafka.client',
-    'kafka.consumer',
-    'kafka.producer',
-    'kafka.coordinator',
-    'kafka.coordinator.assignor',
-    'kafka.coordinator.consumer',
-    'kafka.consumer.fetcher',
-    'kafka.consumer.coordinator',
-    'kafka.conn',
-]
-
-for logger_name in kafka_loggers:
-    kafka_logger = logging.getLogger(logger_name)
-    kafka_logger.setLevel(logging.INFO)
-    kafka_logger.disabled = False
-    kafka_logger.propagate = False
-
-custom_logger = custom_logger

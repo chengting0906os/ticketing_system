@@ -6,8 +6,10 @@ for better log traceability in distributed systems.
 """
 
 import os
+from functools import lru_cache
 
 
+@lru_cache(maxsize=1)
 def get_service_context() -> str:
     service_name = os.getenv('SERVICE_NAME', 'unknown')
     deploy_env = os.getenv('DEPLOY_ENV', 'local_dev')

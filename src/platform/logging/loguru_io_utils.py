@@ -1,11 +1,11 @@
+from functools import lru_cache
 from inspect import FullArgSpec, getfile, getfullargspec, getsourcelines
 from os.path import basename
-from re import sub
+from re import IGNORECASE, sub
 from time import time
 from typing import Any, Callable, Optional
 
 from src.platform.logging.loguru_io_config import (
-    DEPTH_LINE,
     SENSITIVE_KEYWORDS,
     GeneratorMethod,
     call_depth_var,
@@ -13,24 +13,37 @@ from src.platform.logging.loguru_io_config import (
 )
 
 
+@lru_cache(maxsize=256)
+def _cached_getsourcelines(func: Callable[..., Any]) -> int:
+    return getsourcelines(func)[1]
+
+
+@lru_cache(maxsize=256)
+def _cached_getfullargspec(func: Callable[..., Any]) -> FullArgSpec:
+    return getfullargspec(func)
+
+
+@lru_cache(maxsize=256)
+def _cached_getfile(func: Callable[..., Any]) -> str:
+    return basename(getfile(func))
+
+
 def handle_yield(yield_method: Optional[GeneratorMethod] = None) -> str:
     return f'yield: {yield_method} | ' if yield_method else ''
 
 
 def get_chain_start_time() -> float:
-    if not (start_time := chain_start_time_var.get()):
+    start_time = chain_start_time_var.get()
+    if not start_time:
         start_time = time()
         chain_start_time_var.set(start_time)
     return start_time
 
 
-def fetch_layer_depth() -> str:
-    return DEPTH_LINE * (call_depth_var.get() - 1)
-
-
 def build_call_target_func_path(func: Callable[..., Any]) -> str:
-    lineno = getsourcelines(func)[1]
-    return f'{basename(getfile(getattr(func, "__func__", func)))}::{func.__qualname__}:{lineno}'
+    actual_func = getattr(func, '__func__', func)
+    lineno = _cached_getsourcelines(actual_func)
+    return f'{_cached_getfile(actual_func)}::{func.__qualname__}:{lineno}'
 
 
 def reset_call_depth():
@@ -45,7 +58,7 @@ def normalize_args_kwargs(
 ) -> tuple[tuple[Any, ...], dict[Any, Any]]:
     if hasattr(func, '__wrapped__'):
         func = func.__wrapped__  # type: ignore
-    full_arg_spec: FullArgSpec = getfullargspec(func)
+    full_arg_spec: FullArgSpec = _cached_getfullargspec(func)
     spec_args: list[str] = full_arg_spec.args
 
     if not full_arg_spec.varkw:
@@ -75,11 +88,14 @@ def normalize_args_kwargs(
 def mask_sensitive(data_str: Any) -> Any:
     try:
         data_str_ = str(data_str)
-        new_data_str = sub(  # type: ignore
-            r"\1\2='********'\3",
+        # Pattern: password='value' or password="value" -> password='********'
+        new_data_str = sub(
+            r"(password\s*[=:]\s*)['\"]?[^'\"\\s,)}\]]*['\"]?",
+            r"\1'********'",
             data_str_,
+            flags=IGNORECASE,
         )
-        return data_str if data_str_ == new_data_str else new_data_str
+        return new_data_str if data_str_ != new_data_str else data_str
     except Exception:
         return data_str
 
@@ -89,10 +105,7 @@ def should_mask_keyword(keyword: Any, value: Any) -> Any:
 
 
 def truncate_content(data: Any, max_words: int = 100) -> Any:
-    if not isinstance(data, (str, dict, list, tuple)):
-        data_str = str(data)
-    else:
-        data_str = str(data)
+    data_str = str(data)
 
     # Split into words and check if truncation is needed
     words = data_str.split()
