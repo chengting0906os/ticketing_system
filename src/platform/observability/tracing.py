@@ -75,7 +75,7 @@ class TracingConfig:
         # Set global tracer provider
         trace.set_tracer_provider(self._provider)
 
-    def instrument_fastapi(self, *, app: Any, excluded_urls: str = 'health') -> None:
+    def instrument_fastapi(self, *, app: Any, excluded_urls: str = 'health,metrics,ping') -> None:
         FastAPIInstrumentor.instrument_app(app, excluded_urls=excluded_urls)
 
     def instrument_sqlalchemy(self, *, engine: Any) -> None:
