@@ -228,7 +228,7 @@ dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka →
 	@echo "🛑 Stopping everything..."
 	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
 	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=20 --scale reservation-service=20 --scale booking-service=20
+	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=10 --scale reservation-service=10 --scale booking-service=10
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \
@@ -267,14 +267,15 @@ drk:  ## 🌊 Reset Kafka in Docker
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
 
-tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, infra, skipped features)
+tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, SSE slow tests)
 	@docker-compose exec ticketing-service uv run pytest test/ \
 		-n 4\
 		--ignore=test/service/e2e \
 		--ignore=test/deployment \
-		--ignore=test/infrastructure \
-		--ignore=test/service/ticketing/integration/features/booking_insufficient_seats.feature \
+		--ignore=test/service/seat_reservation/integration/features/seat_status_sse_stream.feature \
 		-v
+
+
 
 
 
