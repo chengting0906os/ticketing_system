@@ -397,12 +397,13 @@ def create_bookings(step, booking_state, execute_sql_statement):
             else:
                 seat_positions = []
         else:
-            # Determine section/subsection from event_id (backward compatibility)
+            # Determine section/subsection from event_id
+            # With compact format, all events have subsection 1
             # Event A (id=1) -> section A, subsection 1
-            # Event B (id=2) -> section B, subsection 2
-            # Event C (id=3) -> section C, subsection 3
-            # Event D (id=4) -> section D, subsection 4
-            section_map = {1: ('A', 1), 2: ('B', 2), 3: ('C', 3), 4: ('D', 4)}
+            # Event B (id=2) -> section B, subsection 1
+            # Event C (id=3) -> section C, subsection 1
+            # Event D (id=4) -> section D, subsection 1
+            section_map = {1: ('A', 1), 2: ('B', 1), 3: ('C', 1), 4: ('D', 1)}
             section, subsection = section_map.get(event_id, ('A', 1))
             quantity = 1
             seat_selection_mode = 'best_available'

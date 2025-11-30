@@ -180,28 +180,28 @@ class EventTicketingAggregate:
         return ticket_tuples
 
     def _generate_tickets_from_seating_config(self) -> List[Ticket]:
+        """Generate tickets from seating config (compact format only)."""
         if not self.event.id:
             raise ValueError('Event must have an ID before generating tickets')
 
         tickets = []
-        sections = self.event.seating_config.get('sections', [])
+        config = self.event.seating_config
 
-        for section in sections:
+        rows = config.get('rows', 1)
+        cols = config.get('cols', 10)
+
+        for section in config.get('sections', []):
             section_name = section['name']
             section_price = int(section['price'])
-            subsections = section['subsections']
+            subsection_count = section['subsections']
 
-            for subsection in subsections:
-                subsection_number = subsection['number']
-                rows = subsection['rows']
-                seats_per_row = subsection['seats_per_row']
-
+            for subsection_num in range(1, subsection_count + 1):
                 for row in range(1, rows + 1):
-                    for seat in range(1, seats_per_row + 1):
+                    for seat in range(1, cols + 1):
                         ticket = Ticket(
                             event_id=self.event.id,
                             section=section_name,
-                            subsection=subsection_number,
+                            subsection=subsection_num,
                             row=row,
                             seat=seat,
                             price=section_price,
@@ -213,6 +213,7 @@ class EventTicketingAggregate:
 
     @staticmethod
     def _validate_seating_config(seating_config: Dict) -> None:
+        """Validate seating config (compact format only)."""
         if not isinstance(seating_config, dict) or 'sections' not in seating_config:
             raise ValueError('Invalid seating configuration: must contain sections')
 
@@ -237,33 +238,12 @@ class EventTicketingAggregate:
             if not isinstance(price, (int, float)) or price < 0:
                 raise ValueError('Ticket price must over 0')
 
-            # Validate subsections
-            subsections = section.get('subsections', [])
-            if not isinstance(subsections, list) or len(subsections) == 0:
+            # Validate subsections (compact format: must be positive int)
+            subsections = section.get('subsections')
+            if not isinstance(subsections, int) or subsections <= 0:
                 raise ValueError(
-                    'Invalid seating configuration: each section must have subsections'
+                    'Invalid seating configuration: subsections must be a positive integer'
                 )
-
-            for subsection in subsections:
-                if not isinstance(subsection, dict):
-                    raise ValueError(
-                        'Invalid seating configuration: each subsection must be a dictionary'
-                    )
-
-                required_subsection_fields = ['number', 'rows', 'seats_per_row']
-                for field in required_subsection_fields:
-                    if field not in subsection:
-                        raise ValueError(
-                            f'Invalid seating configuration: subsection missing required field "{field}"'
-                        )
-
-                # Validate numeric fields
-                for field in ['number', 'rows', 'seats_per_row']:
-                    value = subsection.get(field)
-                    if not isinstance(value, int) or value <= 0:
-                        raise ValueError(
-                            f'Invalid seating configuration: {field} must be a positive integer'
-                        )
 
     @Logger.io
     def reserve_tickets(self, *, ticket_ids: List[int], buyer_id: int) -> List[Ticket]:

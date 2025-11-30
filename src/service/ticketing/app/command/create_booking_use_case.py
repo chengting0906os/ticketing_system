@@ -141,7 +141,7 @@ class CreateBookingUseCase:
             )
 
             # Step 2: Fail Fast - Check seat availability before any writes
-            # Also retrieves config (rows, seats_per_row, price) to pass to downstream services
+            # Also retrieves config (rows, cols, price) to pass to downstream services
             availability_result = (
                 await self.seat_availability_handler.check_subsection_availability(
                     event_id=event_id,
@@ -173,7 +173,7 @@ class CreateBookingUseCase:
 
             # Step 4: Publish domain event to Kafka
             # The event will use section-subsection as partition key for ordering
-            # Include config (rows, seats_per_row, price) to avoid redundant Kvrocks lookups
+            # Include config (rows, cols, price) to avoid redundant Kvrocks lookups
             booking_created_event = BookingCreatedDomainEvent.from_booking_with_config(
                 booking, availability_result
             )

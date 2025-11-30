@@ -34,7 +34,7 @@ class ISeatAvailabilityQueryHandler(ABC):
         Returns:
             AvailabilityCheckResult with:
             - has_enough_seats: True if enough seats available
-            - config: SubsectionConfig (rows, seats_per_row, price)
+            - config: SubsectionConfig (rows, cols, price)
 
         Note:
             This checks 'available' seats only, not 'reserved' or 'sold'

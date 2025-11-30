@@ -179,22 +179,22 @@ def event_exists(step, execute_sql_statement):
                 'name': 'A',
                 'price': 3000,  # Default price for compatibility with test
                 'subsections': [
-                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
-                    {'number': 2, 'rows': 5, 'seats_per_row': 10},
+                    {'number': 1, 'rows': 5, 'cols': 10},
+                    {'number': 2, 'rows': 5, 'cols': 10},
                 ],
             },
             {
                 'name': 'B',
                 'price': 2000,
                 'subsections': [
-                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
+                    {'number': 1, 'rows': 5, 'cols': 10},
                 ],
             },
             {
                 'name': 'C',
                 'price': 1500,
                 'subsections': [
-                    {'number': 1, 'rows': 5, 'seats_per_row': 10},
+                    {'number': 1, 'rows': 5, 'cols': 10},
                 ],
             },
         ]
@@ -237,11 +237,11 @@ def event_exists(step, execute_sql_statement):
         for subsection in subsections:
             subsection_number: int = subsection['number']
             rows: int = subsection['rows']
-            seats_per_row: int = subsection['seats_per_row']
+            cols: int = subsection['cols']
 
             # Generate tickets for each seat
             for row in range(1, rows + 1):
-                for seat in range(1, seats_per_row + 1):
+                for seat in range(1, cols + 1):
                     execute_sql_statement(
                         """
                         INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
@@ -320,16 +320,16 @@ def event_exists(step, execute_sql_statement):
         for subsection in subsections_list:
             subsection_number: int = subsection['number']
             rows: int = subsection['rows']
-            seats_per_row: int = subsection['seats_per_row']
+            cols: int = subsection['cols']
             subsection_num_str = str(subsection_number)
 
             # ✨ REMOVED: event_sections index (can query from event_state JSON)
 
             # Build event_state JSON structure (hierarchical - stats at subsection level)
-            total_seats = rows * seats_per_row
+            total_seats = rows * cols
             event_state['sections'][section_name]['subsections'][subsection_num_str] = {
                 'rows': rows,
-                'seats_per_row': seats_per_row,
+                'cols': cols,
                 'stats': {  # ✨ Stats at subsection level (replaces section_stats Hash)
                     'available': total_seats,
                     'reserved': 0,

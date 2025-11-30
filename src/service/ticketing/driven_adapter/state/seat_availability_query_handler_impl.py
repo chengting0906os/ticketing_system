@@ -103,7 +103,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
                     has_enough_seats=available_count >= required_quantity,
                     config=SubsectionConfig(
                         rows=subsection_data.get('rows', 0),
-                        seats_per_row=subsection_data.get('seats_per_row', 0),
+                        cols=subsection_data.get('cols', 0),
                         price=section_data.get('price', 0),
                     ),
                 )

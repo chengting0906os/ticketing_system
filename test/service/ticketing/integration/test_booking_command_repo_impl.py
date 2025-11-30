@@ -33,14 +33,17 @@ class TestCreateBookingWithTicketsDirectly:
 
         # Create event with seating config (automatically creates tickets)
         # Section A, 1 subsection, 3 rows × 10 seats = 30 tickets @ 1500 each
+        # Compact format: rows/cols at top level, subsections as integer count
         seating_config = {
+            'rows': 3,
+            'cols': 10,
             'sections': [
                 {
                     'name': 'A',
                     'price': 1500,
-                    'subsections': [{'number': 1, 'rows': 3, 'seats_per_row': 10}],
+                    'subsections': 1,
                 }
-            ]
+            ],
         }
         response = client.post(
             EVENT_BASE,

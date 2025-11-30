@@ -44,11 +44,11 @@ class TestSeatFinder:
 
         # 1 row, 5 seats, all available (bitfield defaults to 0)
         rows = 1
-        seats_per_row = 5
+        cols = 5
 
         # When: Find 3 consecutive seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=3
+            bf_key=bf_key, rows=rows, cols=cols, quantity=3
         )
 
         # Then: Should find seats 1-3 in row 1
@@ -71,9 +71,7 @@ class TestSeatFinder:
         # Seats 3-5 remain AVAILABLE (00)
 
         # When: Find 2 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=1, seats_per_row=5, quantity=2
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=5, quantity=2)
 
         # Then: Should find seats 3-4
         assert result is not None
@@ -97,9 +95,7 @@ class TestSeatFinder:
         # Row 2: All available
 
         # When: Find 2 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=2, seats_per_row=3, quantity=2
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=2, cols=3, quantity=2)
 
         # Then: Should find seats in row 2
         assert result is not None
@@ -122,9 +118,7 @@ class TestSeatFinder:
         await _set_seat_state(client, bf_key, 3, 1)  # seat 4 → RESERVED
 
         # When: Try to find 2 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=1, seats_per_row=5, quantity=2
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=5, quantity=2)
 
         # Then: Should return 2 scattered singles (seats 1 and 3)
         assert result is not None
@@ -141,9 +135,7 @@ class TestSeatFinder:
         # 1 row, 3 seats, all available
 
         # When: Find exactly 3 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=1, seats_per_row=3, quantity=3
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=3, quantity=3)
 
         # Then: Should find all seats
         assert result is not None
@@ -163,9 +155,7 @@ class TestSeatFinder:
         await _set_seat_state(client, bf_key, 1, 2)  # seat 2 → SOLD
 
         # When: Find 3 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=1, seats_per_row=5, quantity=3
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=5, quantity=3)
 
         # Then: Should find seats 3-5 (skipping sold seat 2)
         assert result is not None
@@ -187,9 +177,7 @@ class TestSeatFinder:
         await _set_seat_state(client, bf_key, 1, 1)  # seat 2 → RESERVED
 
         # When: Find 2 consecutive seats
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=2, seats_per_row=4, quantity=2
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=2, cols=4, quantity=2)
 
         # Then: Should find row 1, seats 3-4 (earliest)
         assert result is not None
@@ -209,9 +197,7 @@ class TestSeatFinder:
         await _set_seat_state(client, bf_key, 0, 1)  # seat 1 → RESERVED
 
         # When: Find 1 seat
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=1, seats_per_row=3, quantity=1
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=3, quantity=1)
 
         # Then: Should find seat 2
         assert result is not None
@@ -226,9 +212,7 @@ class TestSeatFinder:
         bf_key = _make_key('test_seats_bf:9:A-1')
 
         # When: Find 4 consecutive seats (max allowed)
-        result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=3, seats_per_row=10, quantity=4
-        )
+        result = await finder.find_consecutive_seats(bf_key=bf_key, rows=3, cols=10, quantity=4)
 
         # Then: Should find first 4 seats in row 1
         assert result is not None
@@ -245,8 +229,8 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 2
-        seats_per_row = 3
-        total_seats = rows * seats_per_row
+        cols = 3
+        total_seats = rows * cols
 
         # Mark all seats as RESERVED
         for seat_idx in range(total_seats):
@@ -254,7 +238,7 @@ class TestSeatFinder:
 
         # When: Try to find consecutive seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=2
+            bf_key=bf_key, rows=rows, cols=cols, quantity=2
         )
 
         # Then: Should return None
@@ -279,7 +263,7 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 3
-        seats_per_row = 5
+        cols = 5
 
         # Row 1: Reserve seats 1, 4, 5 → leaves seats 2-3 available
         await _set_seat_state(client, bf_key, 0, 1)  # seat 1 → RESERVED
@@ -288,17 +272,17 @@ class TestSeatFinder:
 
         # Row 2: Reserve seats 3-5 → leaves seats 1-2 available
         for seat_num in [3, 4, 5]:
-            seat_idx = (2 - 1) * seats_per_row + (seat_num - 1)  # row 2
+            seat_idx = (2 - 1) * cols + (seat_num - 1)  # row 2
             await _set_seat_state(client, bf_key, seat_idx, 1)  # RESERVED
 
         # Row 3: Reserve all seats
         for seat_num in range(1, 6):
-            seat_idx = (3 - 1) * seats_per_row + (seat_num - 1)  # row 3
+            seat_idx = (3 - 1) * cols + (seat_num - 1)  # row 3
             await _set_seat_state(client, bf_key, seat_idx, 1)  # RESERVED
 
         # When: Find 4 consecutive seats (won't find perfect consecutive)
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Should return largest blocks first (both are size 2)
@@ -330,7 +314,7 @@ class TestSeatFinder:
         # Row 1: AVAILABLE RESERVED SOLD AVAILABLE RESERVED SOLD AVAILABLE AVAILABLE SOLD RESERVED
         # Row 2: All AVAILABLE
         rows = 2
-        seats_per_row = 10
+        cols = 10
 
         # Set various seat states in Row 1 using BITFIELD
         # Note: Must use BITFIELD SET instead of SETBIT for compatibility with BITFIELD GET in Kvrocks
@@ -348,13 +332,13 @@ class TestSeatFinder:
         ]
 
         for seat_num, status in enumerate(seat_states, start=1):
-            seat_idx = (1 - 1) * seats_per_row + (seat_num - 1)  # Row 1
+            seat_idx = (1 - 1) * cols + (seat_num - 1)  # Row 1
             offset = seat_idx * 2
             await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, status)
 
         # When: Find 2 consecutive seats (should find seats 7-8 in Row 1)
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=2
+            bf_key=bf_key, rows=rows, cols=cols, quantity=2
         )
 
         # Then: Should find seats 7-8 (the only 2 consecutive available seats in Row 1)
@@ -386,13 +370,13 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 2
-        seats_per_row = 10
+        cols = 10
 
         # Row 1: Create pattern with 4 scattered single seats
         # Pattern: A R R A R R A R R A
         # Singles at positions: 1, 4, 7, 10
         for seat_num in range(1, 11):
-            seat_idx = (1 - 1) * seats_per_row + (seat_num - 1)  # Row 1
+            seat_idx = (1 - 1) * cols + (seat_num - 1)  # Row 1
             if seat_num in [1, 4, 7, 10]:
                 # Keep as AVAILABLE (00) - default state
                 continue
@@ -402,13 +386,13 @@ class TestSeatFinder:
 
         # Row 2: Reserve all seats
         for seat_num in range(1, 11):
-            seat_idx = (2 - 1) * seats_per_row + (seat_num - 1)  # Row 2
+            seat_idx = (2 - 1) * cols + (seat_num - 1)  # Row 2
             await _set_seat_state(client, bf_key, seat_idx, 1)  # RESERVED
 
         # When: Try to find 4 consecutive seats
         # Reality: 4 singles exist (largest block = 1)
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Lua script should return the 4 scattered singles
@@ -437,7 +421,7 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 1
-        seats_per_row = 10
+        cols = 10
 
         # Create pattern: A A A R A R R R R R
         # Reserve seats 4, 6, 7, 8, 9, 10
@@ -447,7 +431,7 @@ class TestSeatFinder:
 
         # When: Try to find 4 seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Should return 3+1 combination
@@ -473,7 +457,7 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 1
-        seats_per_row = 10
+        cols = 10
 
         # Create pattern: A A R R A A R R R R
         # Reserve seats 3, 4, 7, 8, 9, 10
@@ -483,7 +467,7 @@ class TestSeatFinder:
 
         # When: Try to find 4 seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Should return 2+2 combination
@@ -509,7 +493,7 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 1
-        seats_per_row = 10
+        cols = 10
 
         # Create pattern: A A R A R A R R R R
         # Reserve seats 3, 5, 7, 8, 9, 10
@@ -519,7 +503,7 @@ class TestSeatFinder:
 
         # When: Try to find 4 seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Should return 2+1+1 combination
@@ -547,7 +531,7 @@ class TestSeatFinder:
         client = kvrocks_client.get_client()
 
         rows = 1
-        seats_per_row = 10
+        cols = 10
 
         # Create pattern: A R A R A R A R R R
         # Reserve seats 2, 4, 6, 8, 9, 10
@@ -557,7 +541,7 @@ class TestSeatFinder:
 
         # When: Try to find 4 seats
         result = await finder.find_consecutive_seats(
-            bf_key=bf_key, rows=rows, seats_per_row=seats_per_row, quantity=4
+            bf_key=bf_key, rows=rows, cols=cols, quantity=4
         )
 
         # Then: Should return 4 scattered singles

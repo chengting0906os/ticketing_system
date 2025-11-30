@@ -36,7 +36,7 @@ class SubsectionConfig(TypedDict):
     """Subsection configuration structure (nested under section)"""
 
     rows: int
-    seats_per_row: int
+    cols: int
     stats: SectionStats
 
 
@@ -77,44 +77,31 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     @Logger.io
     def _generate_all_seats_from_config(self, seating_config: dict, event_id: int) -> list[dict]:
         """
-        Generate all seat data from seating_config
+        Generate all seat data from seating_config (compact format only).
 
-        Args:
-            seating_config: Seat configuration, format:
-                {
-                    "sections": [
-                        {
-                            "name": "A",
-                            "price": 3000,
-                            "subsections": [
-                                {"number": 1, "rows": 10, "seats_per_row": 10},
-                                ...
-                            ]
-                        },
-                        ...
-                    ]
-                }
-            event_id: Event ID
-
-        Returns:
-            List of seat data dictionaries
+        Format:
+            {
+                "rows": 1,
+                "cols": 5,
+                "sections": [
+                    {"name": "A", "price": 3000, "subsections": 10}
+                ]
+            }
         """
         all_seats = []
+
+        rows = seating_config.get('rows', 1)
+        cols = seating_config.get('cols', 10)
 
         for section_config in seating_config['sections']:
             section_name = section_config['name']
             section_price = section_config['price']
+            subsection_count = section_config['subsections']
 
-            for subsection in section_config['subsections']:
-                subsection_num = subsection['number']
-                rows = subsection['rows']
-                seats_per_row = subsection['seats_per_row']
-
-                # Generate all seats for this subsection
+            for subsection_num in range(1, subsection_count + 1):
                 for row in range(1, rows + 1):
-                    for seat_num in range(1, seats_per_row + 1):
-                        seat_index = (row - 1) * seats_per_row + (seat_num - 1)
-
+                    for seat_num in range(1, cols + 1):
+                        seat_index = (row - 1) * cols + (seat_num - 1)
                         all_seats.append(
                             {
                                 'section': section_name,
@@ -124,7 +111,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                                 'seat_index': seat_index,
                                 'price': section_price,
                                 'rows': rows,
-                                'seats_per_row': seats_per_row,
+                                'cols': cols,
                             }
                         )
 
@@ -181,7 +168,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                 ):  # first time
                     event_state['sections'][section_name]['subsections'][subsection_num] = {
                         'rows': seat['rows'],
-                        'seats_per_row': seat['seats_per_row'],
+                        'cols': seat['cols'],
                         'stats': {
                             'available': 0,
                             'reserved': 0,

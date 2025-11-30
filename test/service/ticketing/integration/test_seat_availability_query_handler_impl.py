@@ -37,7 +37,7 @@ async def _setup_event_state_json(client, event_id: int, section_id: str, stats:
                 'subsections': {
                     subsection_num: {
                         'rows': 10,
-                        'seats_per_row': 10,
+                        'cols': 10,
                         'stats': {
                             'available': stats.get('available', 0),
                             'reserved': stats.get('reserved', 0),

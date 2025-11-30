@@ -270,13 +270,13 @@ class AtomicReservationExecutor:
         quantity: int,
         # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
         rows: int,
-        seats_per_row: int,
+        cols: int,
         price: int,
     ) -> Dict:
         """
         Find and reserve seats in one method (best_available mode).
 
-        Config (rows, seats_per_row, price) is passed from upstream through the event chain,
+        Config (rows, cols, price) is passed from upstream through the event chain,
         avoiding redundant Kvrocks lookups in Lua script.
 
         If config is 0 (cache miss upstream), fetches from Kvrocks here.
@@ -297,7 +297,7 @@ class AtomicReservationExecutor:
 
             # ========== STEP 0: Fetch config if missing (cache miss upstream) ==========
             # Query PostgreSQL to distribute load (instead of Kvrocks)
-            if rows == 0 or seats_per_row == 0:
+            if rows == 0 or cols == 0:
                 pool = await get_asyncpg_pool()
                 async with pool.acquire() as conn:
                     row_result = await conn.fetchrow(
@@ -312,7 +312,7 @@ class AtomicReservationExecutor:
                                 for subsec in sec.get('subsections', []):
                                     if subsec.get('id') == subsection:
                                         rows = subsec.get('rows', 0)
-                                        seats_per_row = subsec.get('seats_per_row', 0)
+                                        cols = subsec.get('cols', 0)
                                         break
                                 break
 
@@ -321,7 +321,7 @@ class AtomicReservationExecutor:
             lua_result = await lua_script_executor.find_consecutive_seats(
                 client=client,
                 keys=[bf_key],
-                args=[str(rows), str(seats_per_row), str(quantity)],
+                args=[str(rows), str(cols), str(quantity)],
             )
 
             if lua_result is None:
@@ -335,7 +335,7 @@ class AtomicReservationExecutor:
                     'error_message': f'No {quantity} consecutive seats available',
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "seats_per_row": 20, "price": 0}
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
             lua_data = orjson.loads(lua_result)
             found_seats = lua_data['seats']
 
@@ -405,7 +405,7 @@ class AtomicReservationExecutor:
                     'error_message': error_msg,
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "seats_per_row": 20, "price": 1800}
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
             lua_data = orjson.loads(lua_result)
             verified_seats = lua_data['seats']
             section_price = lua_data['price']

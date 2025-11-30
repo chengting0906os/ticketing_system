@@ -113,11 +113,20 @@ async def get_event(
 
 
 def _merge_seat_stats_into_config(seating_config: Dict, seat_stats: Dict[str, Dict]) -> Dict:
-    """Merge seat availability statistics into seating configuration."""
+    """Merge seat availability statistics into seating configuration.
+
+    Handles both compact and full format:
+    - Compact: {"rows": 5, "cols": 10, "sections": [{"name": "A", "subsections": 2}]}
+    - Full: {"sections": [{"name": "A", "subsections": [{"number": 1, "rows": 5, "cols": 10}]}]}
+    """
     enhanced_config = seating_config.copy()
 
     if 'sections' not in enhanced_config:
         return enhanced_config
+
+    # Get global rows/cols for compact format
+    global_rows = enhanced_config.get('rows', 1)
+    global_cols = enhanced_config.get('cols', 10)
 
     for section in enhanced_config['sections']:
         section_name = section['name']
@@ -125,23 +134,51 @@ def _merge_seat_stats_into_config(seating_config: Dict, seat_stats: Dict[str, Di
         if 'subsections' not in section:
             continue
 
-        for subsection in section['subsections']:
-            subsection_number = subsection['number']
-            section_id = f'{section_name}-{subsection_number}'
+        subsections = section['subsections']
 
-            # Get stats for this subsection from Kvrocks
-            if section_id in seat_stats:
-                stats = seat_stats[section_id]
-                subsection['available'] = stats['available']
-                subsection['reserved'] = stats['reserved']
-                subsection['sold'] = stats['sold']
-                subsection['total'] = stats['total']
-            else:
-                # Default values if stats not found
-                subsection['available'] = 0
-                subsection['reserved'] = 0
-                subsection['sold'] = 0
-                subsection['total'] = 0
+        # Handle compact format: subsections is an int count
+        if isinstance(subsections, int):
+            expanded_subsections = []
+            for num in range(1, subsections + 1):
+                section_id = f'{section_name}-{num}'
+                subsection_data = {
+                    'number': num,
+                    'rows': global_rows,
+                    'cols': global_cols,
+                }
+                # Merge stats if available
+                if section_id in seat_stats:
+                    stats = seat_stats[section_id]
+                    subsection_data['available'] = stats['available']
+                    subsection_data['reserved'] = stats['reserved']
+                    subsection_data['sold'] = stats['sold']
+                    subsection_data['total'] = stats['total']
+                else:
+                    subsection_data['available'] = 0
+                    subsection_data['reserved'] = 0
+                    subsection_data['sold'] = 0
+                    subsection_data['total'] = 0
+                expanded_subsections.append(subsection_data)
+            section['subsections'] = expanded_subsections
+        else:
+            # Full format: subsections is a list
+            for subsection in subsections:
+                subsection_number = subsection['number']
+                section_id = f'{section_name}-{subsection_number}'
+
+                # Get stats for this subsection from Kvrocks
+                if section_id in seat_stats:
+                    stats = seat_stats[section_id]
+                    subsection['available'] = stats['available']
+                    subsection['reserved'] = stats['reserved']
+                    subsection['sold'] = stats['sold']
+                    subsection['total'] = stats['total']
+                else:
+                    # Default values if stats not found
+                    subsection['available'] = 0
+                    subsection['reserved'] = 0
+                    subsection['sold'] = 0
+                    subsection['total'] = 0
 
     return enhanced_config
 

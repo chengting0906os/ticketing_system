@@ -17,13 +17,9 @@ async def test_pipeline_batch_operations():
     """Test that Pipeline is used for batch operations and JSON config is written"""
     handler = InitEventAndTicketsStateHandlerImpl()
     config = {
-        'sections': [
-            {
-                'name': 'A',
-                'price': 100,
-                'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 3}],
-            }
-        ]
+        'rows': 2,
+        'cols': 3,
+        'sections': [{'name': 'A', 'price': 100, 'subsections': 1}],
     }
 
     mock_client = MagicMock()
@@ -53,13 +49,9 @@ async def test_error_handling():
     """Test error handling when pipeline execution fails"""
     handler = InitEventAndTicketsStateHandlerImpl()
     config = {
-        'sections': [
-            {
-                'name': 'A',
-                'price': 100,
-                'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 3}],
-            }
-        ]
+        'rows': 2,
+        'cols': 3,
+        'sections': [{'name': 'A', 'price': 100, 'subsections': 1}],
     }
 
     mock_client = MagicMock()

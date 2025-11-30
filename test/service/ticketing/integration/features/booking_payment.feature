@@ -15,8 +15,8 @@ Feature: Booking Payment
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
     And an event exists:
-      | name         | description | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
-      | Test Concert | Test event  | true      | available | 1         | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name         | description | is_active | status    | seller_id | venue_name   | seating_config                                                               |
+      | Test Concert | Test event  | true      | available | 1         | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |

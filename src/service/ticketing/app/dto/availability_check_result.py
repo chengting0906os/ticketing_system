@@ -12,7 +12,7 @@ class AvailabilityCheckResult:
     """
     Result of seat availability check with subsection config.
 
-    This allows passing config (rows, seats_per_row, price) to downstream services,
+    This allows passing config (rows, cols, price) to downstream services,
     avoiding redundant Kvrocks lookups in Lua scripts.
 
     config is None when cache miss occurs (fail-open mode).

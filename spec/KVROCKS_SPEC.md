@@ -34,7 +34,7 @@
   "sections": {
     "A-1": {
       "rows": 25,
-      "seats_per_row": 20,
+      "cols": 20,
       "price": 1000,
       "stats": {
         "available": 500,
@@ -46,7 +46,7 @@
     },
     "B-1": {
       "rows": 20,
-      "seats_per_row": 15,
+      "cols": 15,
       "price": 2000,
       "stats": {
         "available": 300,

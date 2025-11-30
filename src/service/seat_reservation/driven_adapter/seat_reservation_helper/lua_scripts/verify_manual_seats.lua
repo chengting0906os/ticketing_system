@@ -14,7 +14,7 @@ ARGV[3]: subsection (e.g., '1')
 ARGV[4+]: seat_ids in "row-seat" format (e.g., '1-5', '1-6', '1-7')
 
 Returns:
-- Success: JSON {"seats": [[row, seat_num, seat_index, seat_id], ...], "seats_per_row": 20, "price": 1800}
+- Success: JSON {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
 - Failure: Error string with reason
 --]]
 
@@ -50,7 +50,7 @@ end
 
 local subsection_array = cjson.decode(subsection_result)
 local subsection_config = subsection_array[1]
-local seats_per_row = subsection_config.seats_per_row
+local cols = subsection_config.cols
 
 -- Fetch section price
 local price_path = '$.sections.' .. section .. '.price'
@@ -81,7 +81,7 @@ for _, seat_id in ipairs(seat_ids) do
         return redis.error_reply('INVALID_FORMAT: Cannot parse seat_id: ' .. seat_id)
     end
 
-    local seat_index = calculate_seat_index(row, seat_num, seats_per_row)
+    local seat_index = calculate_seat_index(row, seat_num, cols)
     local full_seat_id = section .. '-' .. subsection .. '-' .. row .. '-' .. seat_num
 
     table.insert(seats_to_reserve, {row, seat_num, seat_index, full_seat_id})
@@ -113,6 +113,6 @@ end
 -- ========== SUCCESS: Return validated seats with config ==========
 return cjson.encode({
     seats = seats_to_reserve,
-    seats_per_row = seats_per_row,
+    cols = cols,
     price = price
 })

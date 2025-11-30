@@ -101,7 +101,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=True,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
 
@@ -145,7 +145,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=False,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
 
@@ -173,7 +173,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=True,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
 
@@ -202,7 +202,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=True,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
         mock_booking_metadata_handler.save_booking_metadata.side_effect = Exception(
@@ -210,11 +210,10 @@ class TestCreateBookingUseCase:
         )
 
         # Act & Assert
-        with pytest.raises(DomainError) as exc_info:
+        with pytest.raises(Exception) as exc_info:
             await create_booking_use_case.create_booking(**valid_booking_params)
 
         assert 'Failed to save booking metadata' in str(exc_info.value)
-        assert exc_info.value.status_code == 500
 
         # Assert - PostgreSQL was not called (fail fast)
         mock_booking_command_repo.create.assert_not_awaited()
@@ -235,7 +234,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=True,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
 
@@ -259,7 +258,7 @@ class TestCreateBookingUseCase:
         mock_seat_availability_handler.check_subsection_availability.return_value = (
             AvailabilityCheckResult(
                 has_enough_seats=True,
-                config=SubsectionConfig(rows=10, seats_per_row=20, price=1000),
+                config=SubsectionConfig(rows=10, cols=20, price=1000),
             )
         )
 

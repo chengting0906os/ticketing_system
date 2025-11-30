@@ -53,6 +53,7 @@ aws-go-clt-f:  ## 💪 AWS Concurrent Load Test - Full (50000 requests, 100 conc
 .PHONY: aws-go-rlt aws-go-rlt-500 aws-go-rlt-5k aws-go-rlt-25k aws-go-rlt-50k
 
 aws-go-rlt:  ## 🔥 AWS Reserved Load Test - Buys all seats (auto-detects DEPLOY_ENV)
+	@$(MAKE) -C script/go_client build-reserved
 	@echo "🔥 Running AWS reserved load test (Go)..."
 	@ALB_DNS=$$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`ticketing-alb`].DNSName' --output text); \
 	echo "🎯 Target: http://$$ALB_DNS"; \
@@ -83,6 +84,7 @@ aws-go-rlt-50k:  ## 🔥 AWS Reserved Load Test - 50,000 seats (production: 100 
 .PHONY: aws-go-frlt aws-go-frlt-1k aws-go-frlt-2k aws-go-frlt-5k aws-go-frlt-50k
 
 aws-go-frlt:  ## 🚀 AWS Full Reserved Load Test - Buys all seats (1 ticket per worker, configurable WORKERS/BATCH)
+	@$(MAKE) -C script/go_client build-full-reserved
 	@echo "🚀 Running AWS FULL reserved load test (Go)..."
 	@ALB_DNS=$$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`ticketing-alb`].DNSName' --output text); \
 	WORKERS=$${WORKERS:-100}; \

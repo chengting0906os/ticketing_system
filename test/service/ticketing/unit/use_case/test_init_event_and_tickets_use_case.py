@@ -65,13 +65,15 @@ class TestCreateEventKafkaSetup:
             'seller_id': 1,
             'venue_name': 'Test Venue',
             'seating_config': {
+                'rows': 10,
+                'cols': 10,
                 'sections': [
                     {
                         'name': 'A',
                         'price': 1000,
-                        'subsections': [{'number': 1, 'rows': 10, 'seats_per_row': 10}],
+                        'subsections': 1,
                     }
-                ]
+                ],
             },
             'is_active': True,
         }

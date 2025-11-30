@@ -25,15 +25,27 @@ import (
 )
 
 // JSON config structure (matches script/seating_config.json)
-type JSONConfig struct {
-	LocalDev     EnvironmentConfig `json:"local_dev"`
-	LocalDev1000 EnvironmentConfig `json:"local_dev_1000"`
-	LocalDev2k   EnvironmentConfig `json:"local_dev_2k"`
-	Development  EnvironmentConfig `json:"development"`
-	Staging      EnvironmentConfig `json:"staging"`
-	Production   EnvironmentConfig `json:"production"`
+// Compact format: subsections is an int count
+
+// RawJSONConfig reads raw JSON with any environment
+type RawJSONConfig map[string]json.RawMessage
+
+// CompactEnvironmentConfig is the JSON format in seating_config.json
+type CompactEnvironmentConfig struct {
+	TotalSeats int              `json:"total_seats"`
+	Rows       int              `json:"rows"`
+	Cols       int              `json:"cols"`
+	Sections   []CompactSection `json:"sections"`
 }
 
+// CompactSection uses int for subsections count
+type CompactSection struct {
+	Name        string `json:"name"`
+	Price       int    `json:"price"`
+	Subsections int    `json:"subsections"`
+}
+
+// EnvironmentConfig is the expanded format used internally
 type EnvironmentConfig struct {
 	TotalSeats int       `json:"total_seats"`
 	Sections   []Section `json:"sections"`
@@ -46,9 +58,9 @@ type Section struct {
 }
 
 type Subsection struct {
-	Number      int `json:"number"`
-	Rows        int `json:"rows"`
-	SeatsPerRow int `json:"seats_per_row"`
+	Number int `json:"number"`
+	Rows   int `json:"rows"`
+	Cols   int `json:"cols"`
 }
 
 // SubsectionTask represents a task to exhaust a subsection
@@ -68,6 +80,7 @@ type SubsectionResult struct {
 }
 
 // loadSeatingConfig loads seating configuration from JSON file
+// Parses compact format and expands to internal format
 func loadSeatingConfig(env string) (EnvironmentConfig, error) {
 	configPath := "seating_config.json"
 	data, err := os.ReadFile(configPath)
@@ -75,28 +88,64 @@ func loadSeatingConfig(env string) (EnvironmentConfig, error) {
 		return EnvironmentConfig{}, fmt.Errorf("failed to read config file: %v", err)
 	}
 
-	var jsonConfig JSONConfig
-	if err := json.Unmarshal(data, &jsonConfig); err != nil {
+	// Parse as raw JSON map
+	var rawConfig RawJSONConfig
+	if err := json.Unmarshal(data, &rawConfig); err != nil {
 		return EnvironmentConfig{}, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
-	var config EnvironmentConfig
-	switch env {
-	case "production":
-		config = jsonConfig.Production
-	case "staging":
-		config = jsonConfig.Staging
-	case "local_dev_2k":
-		config = jsonConfig.LocalDev2k
-	case "local_dev_1000":
-		config = jsonConfig.LocalDev1000
-	case "development":
-		config = jsonConfig.Development
-	default: // local_dev
-		config = jsonConfig.LocalDev
+	// Get environment config
+	envData, ok := rawConfig[env]
+	if !ok {
+		envData, ok = rawConfig["local_dev"]
+		if !ok {
+			return EnvironmentConfig{}, fmt.Errorf("environment %s not found", env)
+		}
 	}
 
-	return config, nil
+	// Parse compact format
+	var compact CompactEnvironmentConfig
+	if err := json.Unmarshal(envData, &compact); err != nil {
+		return EnvironmentConfig{}, fmt.Errorf("failed to parse environment config: %v", err)
+	}
+
+	// Expand to internal format
+	return expandConfig(compact), nil
+}
+
+// expandConfig expands compact format to internal format
+func expandConfig(compact CompactEnvironmentConfig) EnvironmentConfig {
+	config := EnvironmentConfig{
+		TotalSeats: compact.TotalSeats,
+		Sections:   make([]Section, 0, len(compact.Sections)),
+	}
+
+	rows := compact.Rows
+	if rows == 0 {
+		rows = 1
+	}
+	cols := compact.Cols
+	if cols == 0 {
+		cols = 10
+	}
+
+	for _, cs := range compact.Sections {
+		section := Section{
+			Name:        cs.Name,
+			Price:       cs.Price,
+			Subsections: make([]Subsection, cs.Subsections),
+		}
+		for i := 0; i < cs.Subsections; i++ {
+			section.Subsections[i] = Subsection{
+				Number: i + 1,
+				Rows:   rows,
+				Cols:   cols,
+			}
+		}
+		config.Sections = append(config.Sections, section)
+	}
+
+	return config
 }
 
 // login performs user login and returns cookie jar with session
@@ -270,11 +319,11 @@ func worker(
 		subsectionErrors := 0
 		var latencies []time.Duration
 
-		// Calculate max tickets based on subsection capacity (rows × seats_per_row)
+		// Calculate max tickets based on subsection capacity (rows × cols)
 		// - local_dev: 1 × 5 = 5 tickets
 		// - development: 5 × 10 = 50 tickets
 		// - production: 25 × 20 = 500 tickets
-		maxTicketsPerSubsection := task.Subsection.Rows * task.Subsection.SeatsPerRow
+		maxTicketsPerSubsection := task.Subsection.Rows * task.Subsection.Cols
 
 		// Purchase Loop: Keep buying until subsection is exhausted
 		for subsectionTickets < maxTicketsPerSubsection {
@@ -385,12 +434,12 @@ func main() {
 	totalSeats := 0
 	for _, section := range config.Sections {
 		for _, subsection := range section.Subsections {
-			totalSeats += subsection.Rows * subsection.SeatsPerRow
+			totalSeats += subsection.Rows * subsection.Cols
 		}
 	}
 
 	// Calculate subsection capacity from first subsection as example
-	subsectionCapacity := config.Sections[0].Subsections[0].Rows * config.Sections[0].Subsections[0].SeatsPerRow
+	subsectionCapacity := config.Sections[0].Subsections[0].Rows * config.Sections[0].Subsections[0].Cols
 
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
 	fmt.Println("║      Reserved Load Test - Sequential Exhaustion             ║")
@@ -456,9 +505,9 @@ func main() {
 	results := make(chan SubsectionResult, 100)
 
 	// Request timing tracking
-	var firstRequestTime atomic.Value  // When first request was sent
-	var lastRequestTime atomic.Value   // When last request was sent
-	var requestCount atomic.Int64      // Total number of requests sent
+	var firstRequestTime atomic.Value // When first request was sent
+	var lastRequestTime atomic.Value  // When last request was sent
+	var requestCount atomic.Int64     // Total number of requests sent
 
 	// Start workers (Worker Pool Pattern)
 	fmt.Printf("\n   👷 Starting %d workers...\n", numWorkers)
@@ -728,7 +777,7 @@ func generateMarkdownReport(
 
 ### Purchase Strategy
 - **Random Quantity**: 1-4 tickets per booking
-- **Max per Subsection**: %d tickets (rows × seats_per_row)
+- **Max per Subsection**: %d tickets (rows × cols)
 - **Retry Logic**: 20 attempts with 20ms linear backoff
 - **Environment-Adaptive**: Capacity scales with environment
 

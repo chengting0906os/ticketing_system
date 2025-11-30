@@ -42,9 +42,9 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
     @staticmethod
-    def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
+    def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
         """Calculate the seat index in the Bitfield"""
-        return (row - 1) * seats_per_row + (seat_num - 1)
+        return (row - 1) * cols + (seat_num - 1)
 
     @Logger.io
     async def _get_section_config(self, event_id: int, section_id: str) -> Dict:
@@ -102,7 +102,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         return {
             'rows': int(subsection_config['rows']),
-            'seats_per_row': int(subsection_config['seats_per_row']),
+            'cols': int(subsection_config['cols']),
             'price': int(section_config['price']),  # Price from section level
         }
 
@@ -126,9 +126,9 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
             try:
                 # Get section config (includes price)
                 config = await self._get_section_config(event_id, section_id)
-                seats_per_row = config['seats_per_row']
+                cols = config['cols']
                 section_price = config['price']  # Price from JSON
-                seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
+                seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
 
                 bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
                 offset = seat_index * 2
@@ -232,9 +232,9 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         section_id = f'{section}-{subsection}'
         config = await self._get_section_config(event_id, section_id)
         total_rows = config['rows']
-        seats_per_row = config['seats_per_row']
+        cols = config['cols']
         section_price = config['price']  # Single price for entire section
-        total_seats = total_rows * seats_per_row
+        total_seats = total_rows * cols
 
         # Get client from initialized pool (no await needed)
         client = kvrocks_client.get_client()
@@ -254,8 +254,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         # Build seat list from bitfield bytes
         all_seats = []
         for row in range(1, total_rows + 1):
-            for seat_num in range(1, seats_per_row + 1):
-                seat_index = self._calculate_seat_index(row, seat_num, seats_per_row)
+            for seat_num in range(1, cols + 1):
+                seat_index = self._calculate_seat_index(row, seat_num, cols)
                 bit_offset = seat_index * 2
 
                 # Extract 2 bits from bitfield_bytes

@@ -22,24 +22,24 @@ class EventCreateWithTicketConfigRequest(BaseModel):
                             'name': 'A',
                             'price': 2000,
                             'subsections': [
-                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
-                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 1, 'rows': 25, 'cols': 20},
+                                {'number': 2, 'rows': 25, 'cols': 20},
                             ],
                         },
                         {
                             'name': 'B',
                             'price': 1500,
                             'subsections': [
-                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
-                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 1, 'rows': 25, 'cols': 20},
+                                {'number': 2, 'rows': 25, 'cols': 20},
                             ],
                         },
                         {
                             'name': 'C',
                             'price': 1000,
                             'subsections': [
-                                {'number': 1, 'rows': 25, 'seats_per_row': 20},
-                                {'number': 2, 'rows': 25, 'seats_per_row': 20},
+                                {'number': 1, 'rows': 25, 'cols': 20},
+                                {'number': 2, 'rows': 25, 'cols': 20},
                             ],
                         },
                     ]
@@ -101,7 +101,7 @@ class EventResponse(BaseModel):
                     'sections': [
                         {
                             'name': 'A',
-                            'subsections': [{'number': 1, 'rows': 25, 'seats_per_row': 20}],
+                            'subsections': [{'number': 1, 'rows': 25, 'cols': 20}],
                         }
                     ]
                 },

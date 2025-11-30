@@ -91,7 +91,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         seat_ids: Optional[List[str]] = None,
         # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
         rows: Optional[int] = None,
-        seats_per_row: Optional[int] = None,
+        cols: Optional[int] = None,
         price: Optional[int] = None,
     ) -> Dict:
         with self.tracer.start_as_current_span(
@@ -121,7 +121,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     subsection=subsection,
                     quantity=quantity,
                     rows=rows,
-                    seats_per_row=seats_per_row,
+                    cols=cols,
                     price=price,
                 )
             else:
@@ -185,7 +185,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         quantity: int,
         # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
         rows: Optional[int] = None,
-        seats_per_row: Optional[int] = None,
+        cols: Optional[int] = None,
         price: Optional[int] = None,
     ) -> Dict:
         """Automatically find and reserve consecutive seats - Best Available Mode"""
@@ -196,8 +196,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             },
         ):
             # Validate config is present (should always be passed from upstream)
-            if rows is None or seats_per_row is None or price is None:
-                return self._error_result('Missing config: rows, seats_per_row, price required')
+            if rows is None or cols is None or price is None:
+                return self._error_result('Missing config: rows, cols, price required')
 
             # Check idempotency first
             existing = await self.status_manager.check_booking_status(booking_id=booking_id)
@@ -213,7 +213,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     booking_id=booking_id,
                     quantity=quantity,
                     rows=rows,
-                    seats_per_row=seats_per_row,
+                    cols=cols,
                     price=price,
                 )
 

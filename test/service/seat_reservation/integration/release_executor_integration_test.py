@@ -75,15 +75,11 @@ class TestReleaseExecutorIntegration:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats with 20 seats per row
+        # Given: Initialize seats with 20 seats per row (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 2, 'rows': 3, 'seats_per_row': 20}],
-                }
-            ]
+            'rows': 3,
+            'cols': 20,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 2}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -104,7 +100,7 @@ class TestReleaseExecutorIntegration:
 
         # Verify seat is RESERVED (status=1)
         bf_key = _make_key(f'seats_bf:{event_id}:A-2')
-        # offset = ((row-1) * seats_per_row + (seat-1)) * 2 = ((2-1)*20 + (11-1)) * 2 = 60
+        # offset = ((row-1) * cols + (seat-1)) * 2 = ((2-1)*20 + (11-1)) * 2 = 60
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 60)
         assert status_before == [1], f'Seat should be RESERVED before release, got {status_before}'
 
@@ -131,15 +127,11 @@ class TestReleaseExecutorIntegration:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats with 20 seats per row
+        # Given: Initialize seats with 20 seats per row (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 20}],
-                }
-            ]
+            'rows': 2,
+            'cols': 20,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -159,7 +151,7 @@ class TestReleaseExecutorIntegration:
 
         # Verify seat is RESERVED (status=1)
         bf_key = _make_key(f'seats_bf:{event_id}:A-1')
-        # offset = ((row-1) * seats_per_row + (seat-1)) * 2 = ((1-1)*20 + (5-1)) * 2 = 8
+        # offset = ((row-1) * cols + (seat-1)) * 2 = ((1-1)*20 + (5-1)) * 2 = 8
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 8)
         assert status_before == [1], f'Seat should be RESERVED before release, got {status_before}'
 

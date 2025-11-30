@@ -75,18 +75,20 @@ def mock_kafka_infrastructure(request):
             return f'{_KEY_PREFIX}{key}'
 
         # Generate seat data (same logic as real handler)
+        # Compact format: rows/cols at top level, subsections as integer count
         all_seats = []
+        rows = seating_config.get('rows', 10)
+        cols = seating_config.get('cols', 10)
+
         for section in seating_config.get('sections', []):
             section_name = section['name']
             price = section['price']
-            for subsection in section.get('subsections', []):
-                subsection_num = subsection['number']
-                rows = subsection['rows']
-                seats_per_row = subsection['seats_per_row']
+            subsections_count = section.get('subsections', 1)
 
+            for subsection_num in range(1, subsections_count + 1):
                 for row in range(1, rows + 1):
-                    for seat_num in range(1, seats_per_row + 1):
-                        seat_index = (row - 1) * seats_per_row + (seat_num - 1)
+                    for seat_num in range(1, cols + 1):
+                        seat_index = (row - 1) * cols + (seat_num - 1)
                         all_seats.append(
                             {
                                 'section': section_name,
@@ -96,7 +98,7 @@ def mock_kafka_infrastructure(request):
                                 'seat_index': seat_index,
                                 'price': price,
                                 'rows': rows,
-                                'seats_per_row': seats_per_row,
+                                'cols': cols,
                             }
                         )
 
@@ -123,7 +125,7 @@ def mock_kafka_infrastructure(request):
             if subsection_num not in event_state['sections'][section_name]['subsections']:
                 event_state['sections'][section_name]['subsections'][subsection_num] = {
                     'rows': seat['rows'],
-                    'seats_per_row': seat['seats_per_row'],
+                    'cols': seat['cols'],
                     'stats': {  # ✨ Stats at subsection level
                         'available': 0,  # Will be set below
                         'reserved': 0,

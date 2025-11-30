@@ -106,13 +106,14 @@ class SectionBasedPartitionStrategy:
         Used for monitoring and debugging
 
         Note: Now returns subsection-level mapping (e.g., "A-1" → 0)
+        Compact format: subsections is an integer count
         """
         mapping = {}
         for section in sections:
             section_name = section.get('name', str(section))
-            # Iterate through each subsection
-            for subsection_data in section.get('subsections', []):
-                subsection_num = subsection_data.get('number', 1)
+            # Compact format: subsections is an integer count
+            subsections_count = section.get('subsections', 1)
+            for subsection_num in range(1, subsections_count + 1):
                 subsection_id = f'{section_name}-{subsection_num}'
                 mapping[subsection_id] = self.get_partition_for_subsection(
                     section_name, subsection_num, event_id
@@ -126,16 +127,22 @@ class SectionBasedPartitionStrategy:
         Returns: {partition_id: {"subsections": [subsection_ids], "estimated_seats": count}}
 
         Note: Now calculates load at subsection level
+        Compact format: rows/cols at top level, subsections as integer count
         """
         partition_loads = {}
         sections = seating_config.get('sections', [])
 
+        # Compact format: rows/cols at top level
+        rows = seating_config.get('rows', 10)
+        cols = seating_config.get('cols', 10)
+        seat_count_per_subsection = rows * cols
+
         for section in sections:
             section_name = section['name']
 
-            # Iterate through each subsection
-            for subsection_data in section.get('subsections', []):
-                subsection_num = subsection_data.get('number', 1)
+            # Compact format: subsections is an integer count
+            subsections_count = section.get('subsections', 1)
+            for subsection_num in range(1, subsections_count + 1):
                 subsection_id = f'{section_name}-{subsection_num}'
 
                 # Get the partition for this subsection
@@ -143,15 +150,10 @@ class SectionBasedPartitionStrategy:
                     section_name, subsection_num, event_id
                 )
 
-                # Calculate the number of seats in this subsection
-                rows = subsection_data.get('rows', 0)
-                seats_per_row = subsection_data.get('seats_per_row', 0)
-                seat_count = rows * seats_per_row
-
                 if partition not in partition_loads:
                     partition_loads[partition] = {'subsections': [], 'estimated_seats': 0}
 
                 partition_loads[partition]['subsections'].append(subsection_id)
-                partition_loads[partition]['estimated_seats'] += seat_count
+                partition_loads[partition]['estimated_seats'] += seat_count_per_subsection
 
         return partition_loads

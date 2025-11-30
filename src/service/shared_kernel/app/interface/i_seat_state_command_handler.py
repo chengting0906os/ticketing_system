@@ -30,7 +30,7 @@ class ISeatStateCommandHandler(ABC):
         seat_ids: Optional[List[str]] = None,  # for manual mode
         # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
         rows: Optional[int] = None,
-        seats_per_row: Optional[int] = None,
+        cols: Optional[int] = None,
         price: Optional[int] = None,
     ) -> Dict:
         """
@@ -46,7 +46,7 @@ class ISeatStateCommandHandler(ABC):
             quantity: Number of seats - Required
             seat_ids: List of seat IDs for manual mode (Optional, only for manual mode)
             rows: Number of rows in subsection (Optional, from upstream cache)
-            seats_per_row: Seats per row (Optional, from upstream cache)
+            cols: Seats per row (Optional, from upstream cache)
             price: Section price per seat (Optional, from upstream cache)
 
         Returns:
@@ -76,7 +76,7 @@ class ISeatStateCommandHandler(ABC):
         """
         Complete payment, change seat from RESERVED to SOLD
 
-        Config (seats_per_row) is fetched from Kvrocks internally.
+        Config (cols) is fetched from Kvrocks internally.
 
         Args:
             seat_id: Seat ID (format: section-subsection-row-seat)

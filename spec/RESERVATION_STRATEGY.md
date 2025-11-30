@@ -30,7 +30,7 @@ Kvrocks-based seat reservation system with:
 **Index Calculation:**
 
 ```python
-seat_index = (row - 1) * seats_per_row + (seat_num - 1)
+seat_index = (row - 1) * cols + (seat_num - 1)
 bit_offset = seat_index * 2
 ```
 
@@ -51,7 +51,7 @@ BITFIELD seats_bf:123:A-1 SET u2 <offset> 1  # Reserve
     "A": {
       "price": 3000,
       "subsections": {
-        "1": {"rows": 25, "seats_per_row": 20, "stats": {...}}
+        "1": {"rows": 25, "cols": 20, "stats": {...}}
       }
     }
   }

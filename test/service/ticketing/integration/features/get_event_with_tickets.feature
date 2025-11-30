@@ -15,8 +15,8 @@ Feature: Get Event with Seat Availability
   @smoke
   Scenario: Get event with seat availability for all subsections
     Given an event exists with seating config:
-      | name         | description | venue_name   | seating_config                                                                                                                                                                                              |
-      | Rock Concert | Great music | Taipei Arena | {"sections": [{"name": "A", "price": 3000, "subsections": [{"number": 1, "rows": 10, "seats_per_row": 10}, {"number": 2, "rows": 10, "seats_per_row": 10}]}, {"name": "B", "price": 2000, "subsections": [{"number": 1, "rows": 5, "seats_per_row": 8}]}]} |
+      | name         | description | venue_name   | seating_config                                                                                                     |
+      | Rock Concert | Great music | Taipei Arena | {"rows": 10, "cols": 10, "sections": [{"name": "A", "price": 3000, "subsections": 2}, {"name": "B", "price": 2000, "subsections": 1}]} |
     When I get the event details
     Then the response status code should be:
       | 200 |
@@ -27,13 +27,13 @@ Feature: Get Event with Seat Availability
       | section_name | subsection_number | available | total |
       | A            | 1                 | 100       | 100   |
       | A            | 2                 | 100       | 100   |
-      | B            | 1                 | 40        | 40    |
-    And the response should contain 240 tickets
+      | B            | 1                 | 100       | 100   |
+    And the response should contain 300 tickets
 
   Scenario: Get event shows seat availability from Kvrocks
     Given an event exists with seating config:
-      | name         | description | venue_name   | seating_config                                                                                               |
-      | Rock Concert | Great music | Taipei Arena | {"sections": [{"name": "A", "price": 2000, "subsections": [{"number": 1, "rows": 10, "seats_per_row": 10}]}]} |
+      | name         | description | venue_name   | seating_config                                                              |
+      | Rock Concert | Great music | Taipei Arena | {"rows": 10, "cols": 10, "sections": [{"name": "A", "price": 2000, "subsections": 1}]} |
     When I get the event details
     Then the response status code should be:
       | 200 |
@@ -43,8 +43,8 @@ Feature: Get Event with Seat Availability
 
   Scenario: Get event with detailed ticket information
     Given an event exists with seating config:
-      | name         | description | venue_name   | seating_config                                                                                               |
-      | Rock Concert | Great music | Taipei Arena | {"sections": [{"name": "A", "price": 2000, "subsections": [{"number": 1, "rows": 2, "seats_per_row": 3}]}]} |
+      | name         | description | venue_name   | seating_config                                                             |
+      | Rock Concert | Great music | Taipei Arena | {"rows": 2, "cols": 3, "sections": [{"name": "A", "price": 2000, "subsections": 1}]} |
     When I get the event details
     Then the response status code should be:
       | 200 |

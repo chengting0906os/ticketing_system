@@ -21,16 +21,16 @@ class SeatFinder:
     """
 
     @staticmethod
-    def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
+    def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
         """Calculate seat index in Bitfield"""
-        return (row - 1) * seats_per_row + (seat_num - 1)
+        return (row - 1) * cols + (seat_num - 1)
 
     async def find_consecutive_seats(
         self,
         *,
         bf_key: str,
         rows: int,
-        seats_per_row: int,
+        cols: int,
         quantity: int,
     ) -> Optional[List[tuple]]:
         """
@@ -39,7 +39,7 @@ class SeatFinder:
         Args:
             bf_key: Bitfield key
             rows: Total number of rows
-            seats_per_row: Seats per row
+            cols: Seats per row
             quantity: Number of consecutive seats needed
 
         Returns:
@@ -51,7 +51,7 @@ class SeatFinder:
             result = await lua_script_executor.find_consecutive_seats(
                 client=client,
                 keys=[bf_key],
-                args=[str(rows), str(seats_per_row), str(quantity)],
+                args=[str(rows), str(cols), str(quantity)],
             )
 
             if result is None:

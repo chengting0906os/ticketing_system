@@ -15,8 +15,8 @@ Feature: Booking with Seat Selection
       | email          | password |
       | buyer@test.com | P@ssw0rd |
     And an event exists with seating configuration:
-      | name         | venue_name   | seating_config                                                                                               |
-      | Test Concert | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 5, "seats_per_row": 10}]}]} |
+      | name         | venue_name   | seating_config                                                              |
+      | Test Concert | Taipei Arena | {"rows": 5, "cols": 10, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
 
   @smoke
   Scenario: Manual seat selection - happy path

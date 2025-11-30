@@ -15,8 +15,8 @@ Feature: Booking Cancellation
   @smoke
   Scenario: Successfully cancel unpaid booking
     Given an event exists:
-      | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                                                                |
-      | Rock Concert | For cancel test | true      | available | 1         | Taipei Arena | {"sections": [{"name": "A", "price": 1000, "subsections": [{"number": 1, "rows": 25, "seats_per_row": 20}]}]} |
+      | name         | description     | is_active | status    | seller_id | venue_name   | seating_config                                                               |
+      | Rock Concert | For cancel test | true      | available | 1         | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
     And a booking exists with status "pending_payment":
       | buyer_id | event_id | total_price |
       | 2        | 1        | 2000        |
@@ -31,8 +31,8 @@ Feature: Booking Cancellation
 
   Scenario: Cannot cancel completed booking
     Given an event exists:
-      | name          | description  | is_active | status   | seller_id | venue_name  | seating_config                                                                                                |
-      | Jazz Festival | Already paid | true      | sold_out | 1         | Taipei Dome | {"sections": [{"name": "B", "price": 1200, "subsections": [{"number": 2, "rows": 30, "seats_per_row": 25}]}]} |
+      | name          | description  | is_active | status   | seller_id | venue_name  | seating_config                                                               |
+      | Jazz Festival | Already paid | true      | sold_out | 1         | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "B", "price": 1200, "subsections": 1}]} |
     And a booking exists with status "completed":
       | buyer_id | event_id | total_price | paid_at  |
       | 2        | 1        | 3000        | not_null |
@@ -49,8 +49,8 @@ Feature: Booking Cancellation
 
   Scenario: Cannot cancel already cancelled booking
     Given an event exists:
-      | name        | description       | is_active | status    | seller_id | venue_name   | seating_config                                                                                             |
-      | Opera Night | Already cancelled | true      | available | 1         | Taipei Arena | {"sections": [{"name": "A", "price": 800, "subsections": [{"number": 1, "rows": 1, "seats_per_row": 1}]}]} |
+      | name        | description       | is_active | status    | seller_id | venue_name   | seating_config                                                           |
+      | Opera Night | Already cancelled | true      | available | 1         | Taipei Arena | {"rows": 1, "cols": 1, "sections": [{"name": "A", "price": 800, "subsections": 1}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |
@@ -65,8 +65,8 @@ Feature: Booking Cancellation
 
   Scenario: Only buyer can cancel their own booking
     Given an event exists:
-      | name        | description         | is_active | status    | seller_id | venue_name  | seating_config                                                                                                |
-      | Pop Concert | Not buyer's booking | true      | available | 1         | Taipei Dome | {"sections": [{"name": "D", "price": 1500, "subsections": [{"number": 4, "rows": 30, "seats_per_row": 25}]}]} |
+      | name        | description         | is_active | status    | seller_id | venue_name  | seating_config                                                               |
+      | Pop Concert | Not buyer's booking | true      | available | 1         | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "D", "price": 1500, "subsections": 1}]} |
     And another buyer exists:
       | email            | password | name          | role  |
       | another@test.com | P@ssw0rd | Another Buyer | buyer |
@@ -86,8 +86,8 @@ Feature: Booking Cancellation
 
   Scenario: Seller cannot cancel buyer's booking
     Given an event exists:
-      | name        | description    | is_active | status    | seller_id | venue_name   | seating_config                                                                                               |
-      | Comedy Show | Seller's event | true      | available | 1         | Taipei Arena | {"sections": [{"name": "E", "price": 900, "subsections": [{"number": 5, "rows": 25, "seats_per_row": 20}]}]} |
+      | name        | description    | is_active | status    | seller_id | venue_name   | seating_config                                                              |
+      | Comedy Show | Seller's event | true      | available | 1         | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "E", "price": 900, "subsections": 1}]} |
     And a booking exists with status "pending_payment":
       | buyer_id | event_id | total_price |
       | 2        | 1        | 4000        |
@@ -104,8 +104,8 @@ Feature: Booking Cancellation
 
   Scenario: Cannot cancel non-existent booking for available event
     Given an event exists:
-      | name          | description     | is_active | status    | seller_id | venue_name  | seating_config                                                                                                |
-      | Dance Concert | Available event | true      | available | 1         | Taipei Dome | {"sections": [{"name": "F", "price": 1100, "subsections": [{"number": 6, "rows": 30, "seats_per_row": 25}]}]} |
+      | name          | description     | is_active | status    | seller_id | venue_name  | seating_config                                                               |
+      | Dance Concert | Available event | true      | available | 1         | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "F", "price": 1100, "subsections": 1}]} |
     And I am logged in as:
       | email          | password |
       | buyer@test.com | P@ssw0rd |

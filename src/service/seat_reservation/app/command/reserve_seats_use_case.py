@@ -106,7 +106,7 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity,
                     seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
                     rows=request.config.rows if request.config else None,
-                    seats_per_row=request.config.seats_per_row if request.config else None,
+                    cols=request.config.cols if request.config else None,
                     price=request.config.price if request.config else None,
                 )
 

@@ -19,9 +19,9 @@ class ReleaseExecutor:
     """Executes seat release operations (RESERVED -> AVAILABLE)"""
 
     @staticmethod
-    def _calculate_seat_index(row: int, seat_num: int, seats_per_row: int) -> int:
+    def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
         """Calculate seat index in Bitfield"""
-        return (row - 1) * seats_per_row + (seat_num - 1)
+        return (row - 1) * cols + (seat_num - 1)
 
     async def release_seats(self, *, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
         """Release seats (RESERVED -> AVAILABLE). Fetches config from Kvrocks."""
@@ -29,7 +29,7 @@ class ReleaseExecutor:
         results: Dict[str, bool] = {}
 
         # Cache config per section to avoid repeated fetches
-        config_cache: Dict[str, int] = {}  # section_id -> seats_per_row
+        config_cache: Dict[str, int] = {}  # section_id -> cols
 
         for seat_id in seat_ids:
             parts = seat_id.split('-')
@@ -43,7 +43,7 @@ class ReleaseExecutor:
             # Fetch config if not cached
             if section_id not in config_cache:
                 event_state_key = make_event_state_key(event_id=event_id)
-                json_path = f"$.sections['{section}'].subsections['{subsection}'].seats_per_row"
+                json_path = f"$.sections['{section}'].subsections['{subsection}'].cols"
                 result = await client.execute_command('JSON.GET', event_state_key, json_path)
                 if result:
                     config_cache[section_id] = orjson.loads(result)[0]
@@ -51,8 +51,8 @@ class ReleaseExecutor:
                     results[seat_id] = False
                     continue
 
-            seats_per_row = config_cache[section_id]
-            seat_index = self._calculate_seat_index(int(row), int(seat_num), seats_per_row)
+            cols = config_cache[section_id]
+            seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
             bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
             offset = seat_index * 2
 

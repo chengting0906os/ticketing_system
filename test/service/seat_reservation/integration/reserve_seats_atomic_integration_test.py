@@ -95,15 +95,11 @@ class TestReserveSeatsAtomicManualMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats
+        # Given: Initialize seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 3}],
-                }
-            ]
+            'rows': 1,
+            'cols': 3,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         result = await init_handler.initialize_seats_from_config(
@@ -147,15 +143,11 @@ class TestReserveSeatsAtomicManualMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats
+        # Given: Initialize seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 3}],
-                }
-            ]
+            'rows': 2,
+            'cols': 3,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -193,15 +185,11 @@ class TestReserveSeatsAtomicManualMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize and reserve a seat
+        # Given: Initialize and reserve a seat (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 2}],
-                }
-            ]
+            'rows': 1,
+            'cols': 2,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -243,15 +231,11 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_partial_reservation_failure(self, seat_handler, init_handler, unique_event_id):
-        # Given: Initialize seats and reserve one
+        # Given: Initialize seats and reserve one (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 3}],
-                }
-            ]
+            'rows': 1,
+            'cols': 3,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -293,15 +277,11 @@ class TestReserveSeatsAtomicManualMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats
+        # Given: Initialize seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 1}],
-                }
-            ]
+            'rows': 1,
+            'cols': 1,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -337,20 +317,14 @@ class TestReserveSeatsAtomicManualMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize multiple sections
+        # Given: Initialize multiple sections (compact format)
         config = {
+            'rows': 1,
+            'cols': 2,
             'sections': [
-                {
-                    'name': 'A',
-                    'price': 3000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 2}],
-                },
-                {
-                    'name': 'B',
-                    'price': 2000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 2}],
-                },
-            ]
+                {'name': 'A', 'price': 3000, 'subsections': 1},
+                {'name': 'B', 'price': 2000, 'subsections': 1},
+            ],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -406,15 +380,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats with 1 row, 5 seats
+        # Given: Initialize seats with 1 row, 5 seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 5}],
-                }
-            ]
+            'rows': 1,
+            'cols': 5,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -431,7 +401,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             quantity=3,
             # Config from upstream (avoids redundant Kvrocks lookups)
             rows=1,
-            seats_per_row=5,
+            cols=5,
             price=1000,
         )
 
@@ -453,16 +423,12 @@ class TestReserveSeatsAtomicBestAvailableMode:
     async def test_find_consecutive_seats_across_multiple_rows(
         self, seat_handler, init_handler, unique_event_id
     ):
-        # Given: Initialize seats with 2 rows, 3 seats per row
+        # Given: Initialize seats with 2 rows, 3 seats per row (compact format)
         # Reserve 2 seats in first row, leaving only 1 available
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 3}],
-                }
-            ]
+            'rows': 2,
+            'cols': 3,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -492,7 +458,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             quantity=2,
             # Config from upstream (avoids redundant Kvrocks lookups)
             rows=2,
-            seats_per_row=3,
+            cols=3,
             price=1000,
         )
 
@@ -506,15 +472,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     async def test_no_consecutive_seats_available(
         self, seat_handler, init_handler, unique_event_id
     ):
-        # Given: Initialize 1 row with 3 seats, reserve middle seat
+        # Given: Initialize 1 row with 3 seats, reserve middle seat (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 1, 'seats_per_row': 3}],
-                }
-            ]
+            'rows': 1,
+            'cols': 3,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -544,7 +506,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             quantity=2,
             # Config from upstream (avoids redundant Kvrocks lookups)
             rows=1,
-            seats_per_row=3,
+            cols=3,
             price=1000,
         )
 
@@ -558,15 +520,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     async def test_find_best_position_for_consecutive_seats(
         self, seat_handler, init_handler, unique_event_id
     ):
-        # Given: Multiple rows with available seats
+        # Given: Multiple rows with available seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 1000,
-                    'subsections': [{'number': 1, 'rows': 3, 'seats_per_row': 4}],
-                }
-            ]
+            'rows': 3,
+            'cols': 4,
+            'sections': [{'name': 'A', 'price': 1000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
@@ -596,7 +554,7 @@ class TestReserveSeatsAtomicBestAvailableMode:
             quantity=2,
             # Config from upstream (avoids redundant Kvrocks lookups)
             rows=3,
-            seats_per_row=4,
+            cols=4,
             price=1000,
         )
 
@@ -620,15 +578,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
-        # Given: Initialize seats
+        # Given: Initialize seats (compact format)
         config = {
-            'sections': [
-                {
-                    'name': 'A',
-                    'price': 3000,
-                    'subsections': [{'number': 1, 'rows': 2, 'seats_per_row': 5}],
-                }
-            ]
+            'rows': 2,
+            'cols': 5,
+            'sections': [{'name': 'A', 'price': 3000, 'subsections': 1}],
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)

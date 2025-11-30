@@ -34,12 +34,12 @@ EVENT_CONFIG = {
             {
                 'name': 'A',
                 'price': 2000,
-                'subsections': [{'number': 1, 'rows': 10, 'seats_per_row': 10}],
+                'subsections': [{'number': 1, 'rows': 10, 'cols': 10}],
             },
             {
                 'name': 'B',
                 'price': 1500,
-                'subsections': [{'number': 1, 'rows': 10, 'seats_per_row': 10}],
+                'subsections': [{'number': 1, 'rows': 10, 'cols': 10}],
             },
         ]
     },

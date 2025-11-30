@@ -8,24 +8,24 @@ Strategy:
 3. Fail: If not enough available seats at all
 
 Performance Optimization:
-- BITFIELD batch read: Read entire row in 1 command (1 BITFIELD vs. seats_per_row × 2 GETBIT)
+- BITFIELD batch read: Read entire row in 1 command (1 BITFIELD vs. cols × 2 GETBIT)
 - For 500-seat subsection (25 rows × 20 seats): 25 BITFIELD commands vs 500+ GETBIT calls
 
 Interface:
   KEYS[1]: Bitfield key (e.g., 'seats_bf:123:A-1')
   ARGV[1]: rows (number of rows)
-  ARGV[2]: seats_per_row (seats per row)
+  ARGV[2]: cols (seats per row)
   ARGV[3]: quantity (number of seats needed)
 
 Returns:
-- Success: JSON object with seats: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "seats_per_row": 20, "price": 0}
+- Success: JSON object with seats: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
 - Failure: nil (not enough available seats)
 --]]
 
 -- Redis-provided globals: redis, cjson, KEYS, ARGV
 local bf_key = KEYS[1]
 local rows = tonumber(ARGV[1])
-local seats_per_row = tonumber(ARGV[2])
+local cols = tonumber(ARGV[2])
 local quantity = tonumber(ARGV[3])
 
 -- Validate: Maximum 4 tickets per booking
@@ -49,22 +49,22 @@ for row = 1, rows do
     local consecutive_seats = {}
 
     -- 🚀 Performance optimization: Batch read entire row using BITFIELD
-    -- Instead of seats_per_row × 2 GETBIT calls, use 1 BITFIELD call
+    -- Instead of cols × 2 GETBIT calls, use 1 BITFIELD call
     local bitfield_args = { 'BITFIELD', bf_key }
-    for seat_num = 1, seats_per_row do
-        local seat_index = calculate_seat_index(row, seat_num, seats_per_row)
+    for seat_num = 1, cols do
+        local seat_index = calculate_seat_index(row, seat_num, cols)
         local bit_offset = seat_index * 2
         table.insert(bitfield_args, 'GET')      -- Append
         table.insert(bitfield_args, 'u2')       -- Append GET u2 (unsigned 2-bit integer) command
         table.insert(bitfield_args, bit_offset) -- Append
     end
 
-    -- Execute BITFIELD: 1 command instead of seats_per_row × 2 GETBIT
+    -- Execute BITFIELD: 1 command instead of cols × 2 GETBIT
     local seat_statuses = redis.call(unpack(bitfield_args))
 
     -- Process each seat status
-    for seat_num = 1, seats_per_row do
-        local seat_index = calculate_seat_index(row, seat_num, seats_per_row)
+    for seat_num = 1, cols do
+        local seat_index = calculate_seat_index(row, seat_num, cols)
         local status = seat_statuses[seat_num] -- 0=AVAILABLE, 1=RESERVED, 2=SOLD
 
         local is_available = (status == 0)
@@ -75,7 +75,7 @@ for row = 1, rows do
                 return cjson.encode({
                     seats = consecutive_seats,
                     rows = rows,
-                    seats_per_row = seats_per_row,
+                    cols = cols,
                     price = 0
                 })
             end
@@ -118,7 +118,7 @@ if #consecutive_blocks > 0 then
                 return cjson.encode({
                     seats = result_seats,
                     rows = rows,
-                    seats_per_row = seats_per_row,
+                    cols = cols,
                     price = 0
                 })
             end

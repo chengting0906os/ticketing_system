@@ -15,8 +15,8 @@ Feature: Booking with Insufficient Seats
       | email          | password |
       | buyer@test.com | P@ssw0rd |
     And an event exists with seating configuration:
-      | name         | venue_name | seating_config                                                                                            |
-      | Small Event  | Small Hall | {"sections": [{"name": "B", "price": 500, "subsections": [{"number": 1, "rows": 1, "seats_per_row": 2}]}]} |
+      | name         | venue_name | seating_config                                                          |
+      | Small Event  | Small Hall | {"rows": 1, "cols": 2, "sections": [{"name": "B", "price": 500, "subsections": 1}]} |
 
   Scenario: Fail fast when requesting more seats than available
     When buyer creates booking with best available in section:

@@ -39,7 +39,7 @@ def get_seating_config() -> dict:
     Get seating configuration based on DEPLOY_ENV environment variable.
 
     Returns:
-        dict: Seating configuration for the current environment
+        dict: Seating configuration for the current environment (expanded to full format)
 
     Environment mapping (all have 10 sections × 10 subsections):
         - local_dev: 500 seats (1 row × 5 seats per subsection)
@@ -61,12 +61,19 @@ def get_seating_config() -> dict:
 
     config = all_configs[env]
 
-    # Calculate total seats for logging
-    total_seats = sum(
-        subsection['rows'] * subsection['seats_per_row']
-        for section in config['sections']
-        for subsection in section['subsections']
-    )
+    # Calculate total seats for logging (supports compact format)
+    total_seats = 0
+    rows = config.get('rows', 1)
+    cols = config.get('cols', 10)
+    for section in config['sections']:
+        subsections = section['subsections']
+        if isinstance(subsections, int):
+            # Compact format: subsections is count
+            total_seats += subsections * rows * cols
+        else:
+            # Full format: subsections is array
+            for subsection in subsections:
+                total_seats += subsection['rows'] * subsection['cols']
 
     print(f'📊 Using seating config for environment: {env} ({total_seats:,} seats)')
 
@@ -185,18 +192,15 @@ async def create_init_event_in_session(session, seller_id: int):
         # 座位配置選擇（根據 DEPLOY_ENV 環境變數）
         seating_config = get_seating_config()
 
-        # Calculate total seats
+        # Calculate total seats (compact format: rows/cols at top level, subsections as int)
+        rows = seating_config.get('rows', 10)
+        cols = seating_config.get('cols', 10)
         total_seats = 0
         for section in seating_config['sections']:
-            subsections = section.get('subsections', [])
-            if not isinstance(subsections, (list, tuple)):
-                print(f'   ⚠️  Warning: subsections is not iterable: {type(subsections)}')
-                continue
-            for subsection in subsections:
-                if isinstance(subsection, dict):
-                    total_seats += subsection['rows'] * subsection['seats_per_row']
+            subsections_count = section.get('subsections', 1)
+            total_seats += rows * cols * subsections_count
 
-        # 使用 UseCase 創建活動和票券
+        # Use UseCase to create event and tickets
         event_aggregate = await create_event_use_case.create_event_and_tickets(
             name='Concert Event',
             description='Amazing live music performance',

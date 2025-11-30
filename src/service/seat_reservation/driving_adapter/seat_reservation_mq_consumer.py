@@ -432,7 +432,7 @@ class SeatReservationConsumer:
             'seat_positions': event_data.get('seat_positions', []),
             # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
             'rows': config['rows'],
-            'seats_per_row': config['seats_per_row'],
+            'cols': config['cols'],
             'price': config['price'],
         }
 
@@ -442,7 +442,7 @@ class SeatReservationConsumer:
             # Build config from upstream (required - fail fast if missing)
             config = SubsectionConfig(
                 rows=command['rows'],
-                seats_per_row=command['seats_per_row'],
+                cols=command['cols'],
                 price=command['price'],
             )
 
