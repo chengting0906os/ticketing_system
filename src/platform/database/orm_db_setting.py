@@ -51,7 +51,7 @@ class AsyncEngineManager:
     "Task got Future attached to a different loop" errors.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._write_engine: Optional[AsyncEngine] = None
         self._read_engine: Optional[AsyncEngine] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -210,7 +210,7 @@ class Base(DeclarativeBase):
 # =============================================================================
 
 
-async def create_db_and_tables():
+async def create_db_and_tables() -> None:
     """Create database tables if they don't exist"""
     try:
         current_engine = get_engine()

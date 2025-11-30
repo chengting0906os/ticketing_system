@@ -31,7 +31,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
 
     def __init__(
         self, session_factory: Callable[..., AsyncContextManager[AsyncSession]] | None = None
-    ):
+    ) -> None:
         self.session_factory = session_factory
         self.session: AsyncSession | None = None
 

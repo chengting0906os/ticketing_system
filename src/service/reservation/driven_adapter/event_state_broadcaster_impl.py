@@ -14,7 +14,7 @@ from src.platform.state.kvrocks_client import kvrocks_client
 class EventStateBroadcasterImpl(IEventStateBroadcaster):
     """Broadcast event_state updates via Redis Pub/Sub for real-time cache synchronization"""
 
-    def __init__(self, *, throttle_interval: float = 0.5):
+    def __init__(self, *, throttle_interval: float = 0.5) -> None:
         """
         Initialize broadcaster with throttling
 

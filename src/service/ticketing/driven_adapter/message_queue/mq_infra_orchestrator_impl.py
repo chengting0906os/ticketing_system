@@ -28,7 +28,7 @@ class MqInfraOrchestrator(IMqInfraOrchestrator):
     def __init__(
         self,
         kafka_service: IKafkaConfigService,
-    ):
+    ) -> None:
         self.kafka_service = kafka_service
 
     @Logger.io

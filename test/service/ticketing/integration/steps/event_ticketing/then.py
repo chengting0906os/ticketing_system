@@ -1,12 +1,15 @@
+from typing import Any, Callable
+
 import orjson
 from pytest_bdd import then
+from pytest_bdd.model import Step
 
 from test.shared.then import get_state_with_response
 from test.shared.utils import extract_single_value, extract_table_data
 
 
 @then('the event should be created with:')
-def verify_event_created(step, event_state=None, context=None):
+def verify_event_created(step: Step, event_state: dict[str, Any], context: dict[str, Any]) -> None:
     expected_data = extract_table_data(step)
     state = get_state_with_response(event_state=event_state, context=context)
     response = state['response']
@@ -33,7 +36,7 @@ def verify_event_created(step, event_state=None, context=None):
             assert response_json[field] == expected_value
 
 
-def _verify_event_count(event_state, count):
+def _verify_event_count(event_state: dict[str, Any], count: int) -> list[dict[str, Any]]:
     response = event_state['response']
     assert response.status_code == 200, (
         f'Expected status 200, got {response.status_code}: {response.text}'
@@ -44,12 +47,12 @@ def _verify_event_count(event_state, count):
 
 
 @then('the seller should see 5 events')
-def verify_seller_sees_5_events(event_state):
+def verify_seller_sees_5_events(event_state: dict[str, Any]) -> None:
     _verify_event_count(event_state, 5)
 
 
 @then('the buyer should see 2 events')
-def verify_buyer_sees_2_events(event_state):
+def verify_buyer_sees_2_events(event_state: dict[str, Any]) -> None:
     events = _verify_event_count(event_state, 2)
     for p in events:
         assert p['is_active'] is True
@@ -57,12 +60,12 @@ def verify_buyer_sees_2_events(event_state):
 
 
 @then('the buyer should see 0 events')
-def verify_buyer_sees_0_events(event_state):
+def verify_buyer_sees_0_events(event_state: dict[str, Any]) -> None:
     _verify_event_count(event_state, 0)
 
 
 @then('the events should include all statuses')
-def verify_events_include_all_statuses(event_state):
+def verify_events_include_all_statuses(event_state: dict[str, Any]) -> None:
     response = event_state['response']
     events = response.json()
     statuses = {event['status'] for event in events}
@@ -73,7 +76,7 @@ def verify_events_include_all_statuses(event_state):
 
 
 @then('the events should be:')
-def verify_specific_events(step, event_state):
+def verify_specific_events(step: Step, event_state: dict[str, Any]) -> None:
     response = event_state['response']
     events = response.json()
     data_table = step.data_table
@@ -100,7 +103,9 @@ def verify_specific_events(step, event_state):
 
 
 @then('tickets should be auto-created with:')
-def verify_tickets_auto_created(step, context, execute_sql_statement):
+def verify_tickets_auto_created(
+    step: Step, context: dict[str, Any], execute_sql_statement: Callable[..., list[dict[str, Any]]]
+) -> None:
     """Verify that tickets were automatically created in PostgreSQL after event creation."""
     expected_data = extract_table_data(step)
 
@@ -139,7 +144,7 @@ def verify_tickets_auto_created(step, context, execute_sql_statement):
 
 
 @then('tickets should be returned with count:')
-def tickets_returned_with_count(step, context):
+def tickets_returned_with_count(step: Step, context: dict[str, Any]) -> None:
     """Verify tickets are returned with correct count."""
     expected_count = int(extract_single_value(step))
 
@@ -152,7 +157,7 @@ def tickets_returned_with_count(step, context):
 
 
 @then('section tickets should be returned with count:')
-def section_tickets_returned_with_count(step, context):
+def section_tickets_returned_with_count(step: Step, context: dict[str, Any]) -> None:
     """Verify section tickets are returned with correct count."""
     expected_count = int(extract_single_value(step))
 
@@ -165,7 +170,7 @@ def section_tickets_returned_with_count(step, context):
 
 
 @then('available tickets should be returned with count:')
-def available_tickets_returned_with_count(step, context):
+def available_tickets_returned_with_count(step: Step, context: dict[str, Any]) -> None:
     """Verify available tickets are returned with correct count."""
     expected_count = int(extract_single_value(step))
 
@@ -182,7 +187,7 @@ def available_tickets_returned_with_count(step, context):
 
 
 @then('tickets should include detailed information:')
-def verify_ticket_details(step, context):
+def verify_ticket_details(step: Step, context: dict[str, Any]) -> None:
     """Verify that returned tickets include detailed information."""
     data = extract_table_data(step)
 
@@ -207,7 +212,9 @@ def verify_ticket_details(step, context):
 
 
 @then('reservation status should be:')
-def reservation_status_should_be(step, context, execute_sql_statement):
+def reservation_status_should_be(
+    step: Step, context: dict[str, Any], execute_sql_statement: Callable[..., list[dict[str, Any]]]
+) -> None:
     """Verify reservation status in response or database."""
     data_dict = extract_table_data(step)
     expected_status = data_dict['status']
@@ -232,7 +239,9 @@ def reservation_status_should_be(step, context, execute_sql_statement):
 
 
 @then('tickets should return to available:')
-def tickets_return_to_available(step, execute_sql_statement):
+def tickets_return_to_available(
+    step: Step, execute_sql_statement: Callable[..., list[dict[str, Any]]]
+) -> None:
     """Verify tickets returned to available status."""
     data_dict = extract_table_data(step)
     expected_status = data_dict['status']
@@ -252,7 +261,7 @@ def tickets_return_to_available(step, execute_sql_statement):
 
 
 @then('the availability response should contain:')
-def verify_availability_response(step, context):
+def verify_availability_response(step: Step, context: dict[str, Any]) -> None:
     """Verify availability response contains expected statistics."""
     expected_data = extract_table_data(step)
 
@@ -269,7 +278,7 @@ def verify_availability_response(step, context):
 
 
 @then('sections availability should include:')
-def verify_sections_availability(step, context):
+def verify_sections_availability(step: Step, context: dict[str, Any]) -> None:
     """Verify sections availability data in response."""
     response = context['response']
     assert response.status_code == 200
@@ -318,7 +327,7 @@ def verify_sections_availability(step, context):
 
 
 @then('the section availability should contain:')
-def verify_section_availability_response(step, context):
+def verify_section_availability_response(step: Step, context: dict[str, Any]) -> None:
     """Verify section-specific availability response."""
     expected_data = extract_table_data(step)
 
@@ -336,7 +345,7 @@ def verify_section_availability_response(step, context):
 
 
 @then('subsections availability should include:')
-def verify_subsections_availability(step, context):
+def verify_subsections_availability(step: Step, context: dict[str, Any]) -> None:
     """Verify subsections availability data in response."""
     response = context['response']
     assert response.status_code == 200
@@ -370,7 +379,7 @@ def verify_subsections_availability(step, context):
 
 
 @then('sections availability should be empty')
-def verify_sections_availability_empty(context):
+def verify_sections_availability_empty(context: dict[str, Any]) -> None:
     """Verify sections availability is empty."""
     response = context['response']
     assert response.status_code == 200
@@ -381,7 +390,7 @@ def verify_sections_availability_empty(context):
 
 
 @then('subsection availability should include:')
-def verify_subsection_availability(step, context):
+def verify_subsection_availability(step: Step, context: dict[str, Any]) -> None:
     """Verify detailed subsection availability data."""
     response = context['response']
     assert response.status_code == 200
@@ -431,7 +440,7 @@ def verify_subsection_availability(step, context):
 
 
 @then('some subsections should have reservations:')
-def verify_subsections_have_reservations(step, context):
+def verify_subsections_have_reservations(step: Step, context: dict[str, Any]) -> None:
     """Verify that subsections have the expected total reservations."""
     expected_data = extract_table_data(step)
     expected_total_reserved = int(expected_data['total_reserved'])
@@ -453,7 +462,7 @@ def verify_subsections_have_reservations(step, context):
 
 
 @then('subsection statuses should be mixed:')
-def verify_mixed_subsection_statuses(step, context):
+def verify_mixed_subsection_statuses(step: Step, context: dict[str, Any]) -> None:
     """Verify that subsections have mixed statuses (reserved and sold)."""
     expected_data = extract_table_data(step)
     expected_total_reserved = int(expected_data['total_reserved'])
@@ -481,7 +490,9 @@ def verify_mixed_subsection_statuses(step, context):
 
 
 @then('the event should not exist in database:')
-def verify_event_not_exists(step, execute_sql_statement):
+def verify_event_not_exists(
+    step: Step, execute_sql_statement: Callable[..., list[dict[str, Any]]]
+) -> None:
     """
     Verify that event does not exist in database (compensating transaction worked).
 
@@ -506,7 +517,7 @@ def verify_event_not_exists(step, execute_sql_statement):
 
 
 @then('no tickets should exist for this event')
-def verify_no_tickets_exist(execute_sql_statement):
+def verify_no_tickets_exist(execute_sql_statement: Callable[..., list[dict[str, Any]]]) -> None:
     """
     Verify that no tickets exist for the failed event.
 
@@ -527,7 +538,7 @@ def verify_no_tickets_exist(execute_sql_statement):
 
 
 @then('the database should be in consistent state')
-def verify_database_consistency(execute_sql_statement):
+def verify_database_consistency(execute_sql_statement: Callable[..., list[dict[str, Any]]]) -> None:
     """
     Verify overall database consistency after compensating transaction.
 
@@ -549,7 +560,7 @@ def verify_database_consistency(execute_sql_statement):
 
 
 @then('the event response should include:')
-def verify_event_response_includes(step, event_state):
+def verify_event_response_includes(step: Step, event_state: dict[str, Any]) -> None:
     """Verify the event response includes specific fields."""
     expected_data = extract_table_data(step)
     response = event_state['response']
@@ -563,7 +574,7 @@ def verify_event_response_includes(step, event_state):
 
 
 @then('the seating config should include sections with availability:')
-def verify_seating_config_with_availability(step, event_state):
+def verify_seating_config_with_availability(step: Step, event_state: dict[str, Any]) -> None:
     """Verify the seating config includes seat availability information."""
     response = event_state['response']
     response_json = response.json()
@@ -619,7 +630,7 @@ def verify_seating_config_with_availability(step, event_state):
 
 
 @then('the seating config should show reserved seats:')
-def verify_seating_config_shows_reserved_seats(step, event_state):
+def verify_seating_config_shows_reserved_seats(step: Step, event_state: dict[str, Any]) -> None:
     """Verify the seating config shows reserved and sold seat counts."""
     response = event_state['response']
     response_json = response.json()
@@ -674,7 +685,7 @@ def verify_seating_config_shows_reserved_seats(step, event_state):
 
 
 @then('the response should contain {count:d} tickets')
-def verify_ticket_count(count, event_state):
+def verify_ticket_count(count: int, event_state: dict[str, Any]) -> None:
     """Verify the response contains the expected number of tickets."""
     response = event_state['response']
     response_json = response.json()
@@ -686,7 +697,7 @@ def verify_ticket_count(count, event_state):
 
 
 @then('the tickets should include seat identifiers:')
-def verify_tickets_include_seat_identifiers(step, event_state):
+def verify_tickets_include_seat_identifiers(step: Step, event_state: dict[str, Any]) -> None:
     """Verify the tickets include specific seat identifiers."""
     response = event_state['response']
     response_json = response.json()
@@ -707,7 +718,7 @@ def verify_tickets_include_seat_identifiers(step, event_state):
 
 
 @then('all tickets should have status "{expected_status}"')
-def verify_all_tickets_have_status(expected_status, event_state):
+def verify_all_tickets_have_status(expected_status: str, event_state: dict[str, Any]) -> None:
     """Verify all tickets have the expected status."""
     response = event_state['response']
     response_json = response.json()

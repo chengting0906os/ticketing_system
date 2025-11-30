@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Self
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -12,7 +12,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Eve
 
 
 class GetEventUseCase:
-    def __init__(self, event_ticketing_query_repo: IEventTicketingQueryRepo):
+    def __init__(self, event_ticketing_query_repo: IEventTicketingQueryRepo) -> None:
         self.event_ticketing_query_repo = event_ticketing_query_repo
 
     @classmethod
@@ -22,7 +22,7 @@ class GetEventUseCase:
         event_ticketing_query_repo: IEventTicketingQueryRepo = Depends(
             Provide[Container.event_ticketing_query_repo]
         ),
-    ):
+    ) -> Self:
         return cls(event_ticketing_query_repo=event_ticketing_query_repo)
 
     @Logger.io

@@ -25,7 +25,7 @@ class KafkaConfigService(IKafkaConfigService):
     Note: Consumer management is handled by Docker Compose
     """
 
-    def __init__(self, total_partitions: int = 100):
+    def __init__(self, total_partitions: int = 100) -> None:
         self.total_partitions = total_partitions
         self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
 

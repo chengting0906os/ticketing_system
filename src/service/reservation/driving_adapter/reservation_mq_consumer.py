@@ -49,7 +49,7 @@ class SeatReservationConsumer:
 
     PROCESSING_GUARANTEE: Literal['at-least-once', 'exactly-once'] = 'at-least-once'
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Use consumer instance_id for consumer group identification
         self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
@@ -79,7 +79,7 @@ class SeatReservationConsumer:
         """Set BlockingPortal for calling async functions from sync code"""
         self.portal = portal
 
-    def _on_processing_error(self, exc: Exception, row: Any, _logger: Any) -> bool:
+    def _on_processing_error(self, exc: Exception, row: object, _logger: object) -> bool:
         """
         Quix Streams error handling callback
 
@@ -122,7 +122,7 @@ class SeatReservationConsumer:
         return app
 
     @Logger.io
-    def _setup_topics(self):
+    def _setup_topics(self) -> None:
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
@@ -163,7 +163,9 @@ class SeatReservationConsumer:
     # ========== Retry and DLQ Helpers ==========
 
     @Logger.io
-    def _send_to_dlq(self, *, message: Dict, original_topic: str, error: str, retry_count: int):
+    def _send_to_dlq(
+        self, *, message: Dict, original_topic: str, error: str, retry_count: int
+    ) -> None:
         if not self.kafka_app:
             Logger.base.error('❌ [DLQ] Kafka app not initialized')
             return
@@ -201,7 +203,7 @@ class SeatReservationConsumer:
     # ========== Message Handlers ==========
 
     def _process_reservation_request(
-        self, message: Dict, key: Any = None, context: Any = None
+        self, message: Dict, key: object = None, context: object = None
     ) -> Dict:
         """
         Process reservation request - Simplified version, errors handled by on_processing_error callback
@@ -243,7 +245,9 @@ class SeatReservationConsumer:
             return {'success': True, 'result': result}
 
     @Logger.io
-    def _process_release_seat(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
+    def _process_release_seat(
+        self, message: Dict, key: object = None, context: object = None
+    ) -> Dict:
         """Process seat release - Support DLQ (release operations usually don't need retry)"""
         # Extract trace context from message for distributed tracing
         trace_headers = message.get('_trace_headers', {})
@@ -316,7 +320,7 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _process_finalize_payment(
-        self, message: Dict, key: Any = None, context: Any = None
+        self, message: Dict, key: object = None, context: object = None
     ) -> Dict:
         """Process payment finalization - Support DLQ (payment finalization operations usually don't need retry)"""
         # Extract partition info
@@ -370,7 +374,7 @@ class SeatReservationConsumer:
 
     # ========== Reservation Logic ==========
 
-    async def _handle_reservation_async(self, event_data: Any) -> bool:
+    async def _handle_reservation_async(self, event_data: object) -> bool:
         """
         Process seat reservation event - Only responsible for routing to use case
 
@@ -388,7 +392,7 @@ class SeatReservationConsumer:
         await self._execute_reservation(command)
         return True
 
-    def _parse_event_data(self, event_data: Any) -> Optional[Dict]:
+    def _parse_event_data(self, event_data: object) -> Optional[Dict]:
         """Parse event data"""
         try:
             if isinstance(event_data, dict):
@@ -469,7 +473,7 @@ class SeatReservationConsumer:
 
     # ========== Lifecycle ==========
 
-    def start(self):
+    def start(self) -> None:
         """Start service - Support topic metadata sync retry"""
         max_retries = 5
         retry_delay = 2  # seconds
@@ -523,7 +527,7 @@ class SeatReservationConsumer:
                     )
                     raise
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop service"""
         if not self.running:
             return

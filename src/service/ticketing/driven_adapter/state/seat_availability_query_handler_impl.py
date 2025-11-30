@@ -36,7 +36,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     - TTL: 1s
     """
 
-    def __init__(self, *, ttl_seconds: float = 5.0):
+    def __init__(self, *, ttl_seconds: float = 5.0) -> None:
         self.tracer = trace.get_tracer(__name__)
         self._cache: Dict[int, CacheEntry] = {}
         self._ttl_seconds = ttl_seconds

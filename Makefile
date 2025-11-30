@@ -1,4 +1,9 @@
 # Ticketing System - Simplified Makefile
+
+# Load .env file if exists (- prefix ignores error if file missing)
+-include .env
+export
+
 ALEMBIC_CONFIG = alembic.ini
 
 # AWS Configuration (can be overridden via environment variables)
@@ -85,8 +90,9 @@ psql:  ## 🐘 Connect to PostgreSQL
 # ==============================================================================
 
 .PHONY: test t-smoke t-quick t-unit t-e2e t-bdd test-cdk
-pytest:  ## 🧪 Run unit tests (excludes CDK and E2E)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/ --ignore=test/service/e2e -m "not cdk" -v $(filter-out $@,$(MAKECMDGOALS))
+# Usage: make pytest [path] or make pytest ARGS="-k test_name"
+pytest:  ## 🧪 Run pytest (usage: make pytest test/path/ or make pytest ARGS="-k test_name")
+	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest --ignore=test/service/e2e -m "not cdk" -v $(ARGS) $(filter-out $@,$(MAKECMDGOALS))
 
 t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
 	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest  -m "smoke" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))

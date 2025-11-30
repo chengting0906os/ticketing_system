@@ -1,7 +1,8 @@
-from uuid_utils import UUID
 from datetime import datetime, timezone
+from typing import Self
 
 from dependency_injector.wiring import Provide, inject
+from uuid_utils import UUID
 from fastapi import Depends
 
 from src.platform.config.di import Container
@@ -33,7 +34,7 @@ class UpdateBookingToCancelledUseCase:
         *,
         booking_command_repo: IBookingCommandRepo,
         event_ticketing_query_repo: IEventTicketingQueryRepo,
-    ):
+    ) -> None:
         self.booking_command_repo = booking_command_repo
         self.event_ticketing_query_repo = event_ticketing_query_repo
 
@@ -47,7 +48,7 @@ class UpdateBookingToCancelledUseCase:
         event_ticketing_query_repo: IEventTicketingQueryRepo = Depends(
             Provide[Container.event_ticketing_query_repo]
         ),
-    ):
+    ) -> Self:
         """For FastAPI endpoint compatibility"""
         return cls(
             booking_command_repo=booking_command_repo,

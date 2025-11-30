@@ -7,6 +7,7 @@ Usage:
 
 import os
 import signal
+from types import FrameType
 
 import anyio
 from anyio.from_thread import start_blocking_portal
@@ -64,9 +65,9 @@ def main() -> None:
 
             # Initialize asyncpg pool for consumer event loop
             try:
-                portal.call(get_asyncpg_pool)  # type: ignore[arg-type]
+                portal.call(get_asyncpg_pool)  # pyrefly: ignore[no-matching-overload]
                 Logger.base.info('🏊 [Booking Service] Asyncpg pool initialized')
-                portal.call(warmup_asyncpg_pool)  # type: ignore[arg-type]
+                portal.call(warmup_asyncpg_pool)  # pyrefly: ignore[no-matching-overload]
                 Logger.base.info('🔥 [Booking Service] Asyncpg pool warmed up')
             except Exception as e:
                 Logger.base.error(f'❌ [Booking Service] Failed to initialize asyncpg: {e}')
@@ -74,7 +75,7 @@ def main() -> None:
 
             # Create and inject task group for fire-and-forget event publishing
             # We need to keep the task group alive during consumer execution
-            async def run_with_task_group():
+            async def run_with_task_group() -> None:
                 async with anyio.create_task_group() as tg:
                     # Inject task group into DI container
                     container.task_group.override(tg)
@@ -93,7 +94,7 @@ def main() -> None:
             Logger.base.info('🔄 [Booking Service] Background task group started')
 
             # Setup signal handlers
-            def shutdown_handler(signum, frame):
+            def shutdown_handler(signum: int, frame: FrameType | None) -> None:
                 Logger.base.info(f'🛑 [Booking Service] Received signal {signum}')
                 consumer.running = False
 

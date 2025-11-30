@@ -45,7 +45,7 @@ class ReserveSeatsUseCase:
         seat_state_handler: ISeatStateCommandHandler,
         mq_publisher: ISeatReservationEventPublisher,
         event_state_broadcaster: IEventStateBroadcaster,
-    ):
+    ) -> None:
         self.seat_state_handler = seat_state_handler
         self.mq_publisher = mq_publisher
         self.event_state_broadcaster = event_state_broadcaster

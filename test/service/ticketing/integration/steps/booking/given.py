@@ -1,10 +1,13 @@
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 import bcrypt
 import orjson
 import uuid_utils as uuid
 from fastapi.testclient import TestClient
 from pytest_bdd import given
+from pytest_bdd.model import Step
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import DEFAULT_PASSWORD, TEST_BUYER_EMAIL, TEST_SELLER_EMAIL
@@ -13,7 +16,12 @@ from src.platform.constant.route_constant import EVENT_BASE, EVENT_TICKETS_BY_SU
 
 
 @given('a booking exists with status "pending_payment":')
-def create_pending_booking(step, client: TestClient, booking_state, execute_sql_statement):
+def create_pending_booking(
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create a pending booking using existing event from Background"""
     booking_data = extract_table_data(step)
 
@@ -90,7 +98,12 @@ def create_pending_booking(step, client: TestClient, booking_state, execute_sql_
 
 
 @given('a booking exists with status "completed":')
-def create_completed_booking(step, client: TestClient, booking_state, execute_sql_statement):
+def create_completed_booking(
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     booking_data = extract_table_data(step)
     create_pending_booking(step, client, booking_state, execute_sql_statement)
     if 'paid_at' in booking_data and booking_data['paid_at'] == 'not_null':
@@ -103,7 +116,12 @@ def create_completed_booking(step, client: TestClient, booking_state, execute_sq
 
 
 @given('a booking exists with status "cancelled":')
-def create_cancelled_booking(step, client: TestClient, booking_state, execute_sql_statement):
+def create_cancelled_booking(
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     create_pending_booking(step, client, booking_state, execute_sql_statement)
     execute_sql_statement(
         'UPDATE "booking" SET status = \'cancelled\' WHERE id = :id',
@@ -117,8 +135,11 @@ def create_cancelled_booking(step, client: TestClient, booking_state, execute_sq
 
 @given('an event exists with seating configuration:')
 def create_event_with_seating_config(
-    step, client: TestClient, booking_state, execute_sql_statement
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     event_data = extract_table_data(step)
 
     # Ensure seller is logged in to create event
@@ -162,7 +183,11 @@ def create_event_with_seating_config(
 
 
 @given('users exist:')
-def create_users(step, booking_state, execute_sql_statement):
+def create_users(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create users for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows
@@ -200,7 +225,11 @@ def create_users(step, booking_state, execute_sql_statement):
 
 
 @given('events exist:')
-def create_events(step, booking_state, execute_sql_statement):
+def create_events(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create events for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows
@@ -240,7 +269,11 @@ def create_events(step, booking_state, execute_sql_statement):
 
 
 @given('bookings with tickets exist:')
-def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
+def create_bookings_with_tickets(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create bookings with associated tickets for detailed testing."""
     data_table = step.data_table
     rows = data_table.rows
@@ -362,7 +395,11 @@ def create_bookings_with_tickets(step, booking_state, execute_sql_statement):
 
 
 @given('bookings exist:')
-def create_bookings(step, booking_state, execute_sql_statement):
+def create_bookings(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create bookings for booking_list test."""
     data_table = step.data_table
     rows = data_table.rows

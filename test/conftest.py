@@ -13,8 +13,14 @@ instead of this file to maintain a clean separation of concerns.
 """
 
 import asyncio
+import contextlib
 import os
+from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
+from typing import Any
+from unittest.mock import Mock
+
+from redis import Redis as SyncRedis
 
 from alembic import command
 from alembic.config import Config
@@ -114,7 +120,7 @@ _cached_tables = None
 # =============================================================================
 # Database Setup and Cleanup
 # =============================================================================
-async def setup_test_database():
+async def setup_test_database() -> None:
     """Create test database and run migrations"""
     # Create database if not exists
     postgres_url = TEST_DATABASE_URL.replace(f'/{DB_CONFIG["test_db"]}', '/postgres')
@@ -136,7 +142,7 @@ async def setup_test_database():
     await verify_migration_completed()
 
 
-async def execute_sql(url: str, statements: list, **engine_kwargs):
+async def execute_sql(url: str, statements: list, **engine_kwargs: object) -> None:
     """Execute SQL statements"""
     engine = create_async_engine(url, **engine_kwargs)
     async with engine.begin() as conn:
@@ -145,7 +151,7 @@ async def execute_sql(url: str, statements: list, **engine_kwargs):
     await engine.dispose()
 
 
-async def verify_migration_completed():
+async def verify_migration_completed() -> None:
     """Verify all required tables exist after migration"""
     required_tables = ['user', 'event', 'booking', 'ticket']
     max_retries = 10
@@ -183,7 +189,7 @@ async def verify_migration_completed():
                 raise RuntimeError(f'Migration verification failed: {e}')
 
 
-async def clean_all_tables():
+async def clean_all_tables() -> None:
     """Truncate all tables for test isolation"""
     global _cached_tables
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -220,13 +226,13 @@ async def clean_all_tables():
 # =============================================================================
 # Pytest Hooks for Parallel Testing
 # =============================================================================
-def pytest_sessionstart(session):
+def pytest_sessionstart(session: pytest.Session) -> None:
     """Setup database in master process (runs once before workers spawn)"""
     if os.environ.get('PYTEST_XDIST_WORKER', 'master') == 'master':
         asyncio.run(setup_test_database())
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     """Setup database in each worker process"""
     if os.environ.get('PYTEST_XDIST_WORKER', 'master') != 'master':
         asyncio.run(setup_test_database())
@@ -236,7 +242,7 @@ def pytest_configure(config):
 # Auto-use Fixtures for Test Isolation
 # =============================================================================
 @pytest.fixture(autouse=True, scope='function')
-async def clean_kvrocks():
+async def clean_kvrocks() -> AsyncGenerator[None, None]:
     """
     Clean Kvrocks before and after each test
 
@@ -263,7 +269,7 @@ async def clean_kvrocks():
 
 
 @pytest.fixture(autouse=True, scope='function')
-async def clean_database():
+async def clean_database() -> AsyncGenerator[None, None]:
     """
     Clean all database tables and dispose DB engines after each test
 
@@ -306,17 +312,15 @@ async def clean_database():
         _engine_manager._loop = None
 
     # Close asyncpg pool for current loop only
-    try:
+    with contextlib.suppress(Exception):
         await close_asyncpg_pool()
-    except Exception:
-        pass  # Ignore if no pool exists
 
 
 # =============================================================================
 # Session-scoped Fixtures
 # =============================================================================
 @pytest.fixture(scope='session')
-def client():
+def client() -> Generator[TestClient, None, None]:
     """
     FastAPI TestClient for making HTTP requests.
 
@@ -328,7 +332,7 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def clear_client_cookies(client):
+def clear_client_cookies(client: TestClient) -> Generator[None, None, None]:
     """Clear client cookies before/after each test to avoid auth state leakage"""
     client.cookies.clear()
     yield
@@ -336,7 +340,7 @@ def clear_client_cookies(client):
 
 
 @pytest.fixture(scope='session')
-def seller_user(client):
+def seller_user(client: TestClient) -> dict[str, Any]:
     """Create test seller user"""
     created = create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
     return created or {
@@ -348,7 +352,7 @@ def seller_user(client):
 
 
 @pytest.fixture(scope='session')
-def buyer_user(client):
+def buyer_user(client: TestClient) -> dict[str, Any]:
     """Create test buyer user"""
     created = create_user(client, TEST_BUYER_EMAIL, DEFAULT_PASSWORD, TEST_BUYER_NAME, 'buyer')
     return created or {
@@ -360,7 +364,7 @@ def buyer_user(client):
 
 
 @pytest.fixture(scope='session')
-def another_buyer_user(client):
+def another_buyer_user(client: TestClient) -> dict[str, Any]:
     """Create another test buyer user"""
     created = create_user(
         client, ANOTHER_BUYER_EMAIL, DEFAULT_PASSWORD, ANOTHER_BUYER_NAME, 'buyer'
@@ -377,15 +381,13 @@ def another_buyer_user(client):
 # Unit Test Fixtures
 # =============================================================================
 @pytest.fixture
-def sample_event():
+def sample_event() -> Mock:
     """Sample event for unit testing"""
-    from unittest.mock import Mock
-
     return Mock(id=1, seller_id=1, name='Test Event')
 
 
 @pytest.fixture
-def available_tickets():
+def available_tickets() -> list[Any]:
     """Sample available tickets for unit testing"""
     from datetime import datetime
 
@@ -412,11 +414,13 @@ def available_tickets():
 
 
 @pytest.fixture
-def execute_sql_statement():
+def execute_sql_statement() -> Callable[..., list[dict[str, Any]] | None]:
     """Execute SQL statement with optional parameter binding and result fetching"""
 
-    def _execute(statement: str, params: dict | None = None, fetch: bool = False):
-        async def _run():
+    def _execute(
+        statement: str, params: dict[str, Any] | None = None, fetch: bool = False
+    ) -> list[dict[str, Any]] | None:
+        async def _run() -> list[dict[str, Any]] | None:
             engine = create_async_engine(TEST_DATABASE_URL)
             async with engine.begin() as conn:
                 result = await conn.execute(text(statement), params or {})
@@ -434,7 +438,7 @@ def execute_sql_statement():
 # Kvrocks Fixtures for Lua Script Tests
 # =============================================================================
 @pytest.fixture
-def kvrocks_client_sync_for_test():
+def kvrocks_client_sync_for_test() -> Generator[SyncRedis, None, None]:
     """
     Sync Kvrocks client for async tests to avoid event loop conflicts
 

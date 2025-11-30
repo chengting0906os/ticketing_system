@@ -16,11 +16,13 @@ class TestSubsectionBasedPartitioning:
     """Tests for subsection-level partition strategy"""
 
     @pytest.fixture
-    def strategy(self):
+    def strategy(self) -> SectionBasedPartitionStrategy:
         """Create a strategy instance with 100 partitions"""
         return SectionBasedPartitionStrategy(total_partitions=100)
 
-    def test_different_subsections_get_different_partitions(self, strategy):
+    def test_different_subsections_get_different_partitions(
+        self, strategy: SectionBasedPartitionStrategy
+    ) -> None:
         """
         Test: Different subsections within same section should get different partitions
 
@@ -43,7 +45,9 @@ class TestSubsectionBasedPartitioning:
         for partition in partitions:
             assert 0 <= partition < 100, f'Partition {partition} out of range [0, 100)'
 
-    def test_partition_key_includes_subsection_info(self, strategy):
+    def test_partition_key_includes_subsection_info(
+        self, strategy: SectionBasedPartitionStrategy
+    ) -> None:
         """
         Test: Generated partition key should include subsection information
 

@@ -7,7 +7,7 @@ from src.platform.constant.route_constant import USER_CREATE, USER_LOGIN
 
 @pytest.mark.integration
 class TestUserAPI:
-    def test_create_user(self, client: TestClient):
+    def test_create_user(self, client: TestClient) -> None:
         email = TEST_EMAIL
         user_data = {
             'email': email,
@@ -24,7 +24,7 @@ class TestUserAPI:
         assert 'id' in data
         assert 'password' not in data
 
-    def test_create_another_user(self, client: TestClient):
+    def test_create_another_user(self, client: TestClient) -> None:
         user_data = {
             'email': TEST_EMAIL,
             'password': DEFAULT_PASSWORD,
@@ -37,7 +37,7 @@ class TestUserAPI:
         assert data['email'] == TEST_EMAIL
         assert data['role'] == 'seller'
 
-    def test_login_success_with_cookie_auth(self, client: TestClient):
+    def test_login_success_with_cookie_auth(self, client: TestClient) -> None:
         """Test that login returns user data and sets cookie for authentication"""
         # First create a user
         user_data = {
@@ -76,7 +76,7 @@ class TestUserAPI:
         # JWT tokens typically start with 'eyJ' (base64 encoded header)
         assert cookie_value.startswith('eyJ')
 
-    def test_login_invalid_password(self, client: TestClient):
+    def test_login_invalid_password(self, client: TestClient) -> None:
         """Test login with invalid password returns 401"""
         # First create a user
         user_data = {
@@ -97,7 +97,7 @@ class TestUserAPI:
         # Should return 400 Bad Request (domain error for bad credentials)
         assert login_response.status_code == 400
 
-    def test_login_nonexistent_user(self, client: TestClient):
+    def test_login_nonexistent_user(self, client: TestClient) -> None:
         """Test login with non-existent user returns 401"""
         login_data = {
             'email': 'nonexistent@example.com',
@@ -108,7 +108,7 @@ class TestUserAPI:
         # Should return 400 Bad Request (domain error for bad credentials)
         assert login_response.status_code == 400
 
-    def test_cookie_authentication_works(self, client: TestClient):
+    def test_cookie_authentication_works(self, client: TestClient) -> None:
         """Test that cookie-based authentication works for subsequent requests"""
         # First create a user
         user_data = {

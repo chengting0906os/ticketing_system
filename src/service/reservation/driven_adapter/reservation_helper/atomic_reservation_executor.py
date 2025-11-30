@@ -405,6 +405,17 @@ class AtomicReservationExecutor:
                     'error_message': error_msg,
                 }
 
+            if lua_result is None:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'total_price': 0,
+                    'subsection_stats': {},
+                    'event_stats': {},
+                    'event_state': {},
+                    'error_message': 'Lua verification returned no data',
+                }
+
             # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
             lua_data = orjson.loads(lua_result)
             verified_seats = lua_data['seats']

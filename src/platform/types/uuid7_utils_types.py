@@ -31,8 +31,6 @@ class BookingRequest(BaseModel):
 2. **OpenAPI Compatible**: Returns JSON schema directly without relying on handler(schema)
 """
 
-from typing import Any
-
 from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema
@@ -60,7 +58,7 @@ class UtilsUUID7(UUID):
 
     @classmethod
     def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
+        cls, source_type: type, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         """
         Define how Pydantic validates and serializes this type
@@ -134,13 +132,13 @@ class UtilsUUID7(UUID):
             core_schema.CoreSchema: Pydantic validation schema
         """
 
-        def _to_uuid(value: Any) -> UUID:
+        def _to_uuid(value: object) -> UUID:
             try:
                 return UUID(str(value))
             except Exception as e:
                 raise ValueError(f'Invalid UUID: {value}') from e
 
-        def validate_uuid_python(value: Any) -> UUID:
+        def validate_uuid_python(value: object) -> UUID:
             """
             Python mode validator: Accepts UUID objects or strings
 

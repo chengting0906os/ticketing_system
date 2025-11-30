@@ -1,4 +1,6 @@
-from unittest.mock import patch
+from collections.abc import Generator
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import orjson
 import pytest
@@ -14,27 +16,27 @@ PATCH_QUIX_APP = 'src.platform.message_queue.event_publisher._get_quix_app'
 
 
 @pytest.fixture
-def user_state():
+def user_state() -> dict[str, Any]:
     return {'request_data': {}, 'response': None}
 
 
 @pytest.fixture
-def event_state():
+def event_state() -> dict[str, Any]:
     return {}
 
 
 @pytest.fixture
-def booking_state():
+def booking_state() -> dict[str, Any]:
     return {}
 
 
 @pytest.fixture
-def context():
+def context() -> dict[str, Any]:
     return {}
 
 
 @pytest.fixture
-def reservation_state():
+def reservation_state() -> object:
     class ReservationState:
         pass
 
@@ -42,7 +44,9 @@ def reservation_state():
 
 
 @pytest.fixture(autouse=True, scope='function')
-def mock_kafka_infrastructure(request):
+def mock_kafka_infrastructure(
+    request: pytest.FixtureRequest,
+) -> Generator[dict[str, Any], None, None]:
     """
     Auto-mock MQ infrastructure to avoid starting real Kafka consumers in tests.
 
@@ -54,10 +58,12 @@ def mock_kafka_infrastructure(request):
     """
     # Skip for unit tests - they should test implementation directly
     if '/unit/' in str(request.fspath):
-        yield
+        yield {}
         return
 
-    async def mock_initialize_seats(self, *, event_id: int, seating_config: dict) -> dict:
+    async def mock_initialize_seats(
+        self: object, *, event_id: int, seating_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Test implementation: Direct Kvrocks writes via Pipeline.
         Bypasses async Kafka processing for faster, deterministic tests.
@@ -196,14 +202,12 @@ def mock_kafka_infrastructure(request):
             'sections_count': len(seating_config.get('sections', [])),
         }
 
-    async def mock_publish_domain_event(event, topic: str, partition_key: str):
+    async def mock_publish_domain_event(event: object, topic: str, partition_key: str) -> bool:
         """Mock publishing domain events - bypasses Kafka completely"""
         return True
 
-    def mock_get_quix_app():
+    def mock_get_quix_app() -> MagicMock:
         """Mock Quix Application - returns a mock app that doesn't connect to Kafka"""
-        from unittest.mock import MagicMock
-
         mock_app = MagicMock()
         mock_topic = MagicMock()
         mock_topic.name = 'mock_topic'

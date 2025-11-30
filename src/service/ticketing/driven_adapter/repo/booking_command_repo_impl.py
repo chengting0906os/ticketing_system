@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List
 
+import asyncpg
 from opentelemetry import trace
 from uuid_utils import UUID
 
@@ -27,11 +28,11 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
     Performance: Using raw SQL with asyncpg for 2-3x faster operations
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tracer = trace.get_tracer(__name__)
 
     @staticmethod
-    def _row_to_entity(row) -> Booking:
+    def _row_to_entity(row: asyncpg.Record) -> Booking:
         """
         Convert asyncpg Record to Booking entity
 

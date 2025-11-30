@@ -14,7 +14,7 @@ from src.service.ticketing.domain.entity.user_entity import UserEntity, UserRole
 
 
 class JwtAuth:
-    def __init__(self):
+    def __init__(self) -> None:
         self.secret = settings.SECRET_KEY.get_secret_value()
         self.algorithm = settings.ALGORITHM
         self.token_expire_days = 7

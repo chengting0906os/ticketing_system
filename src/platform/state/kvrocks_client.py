@@ -52,7 +52,7 @@ class KvrocksClient:
         """Legacy compatibility"""
         return await self.initialize()
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Close connection pool"""
         if self._client is not None:
             await self._client.aclose()

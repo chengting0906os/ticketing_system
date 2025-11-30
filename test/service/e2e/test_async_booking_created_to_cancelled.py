@@ -9,7 +9,7 @@ Tests the full async booking workflow from creation to cancellation:
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Self
 import uuid
 
 import httpx
@@ -46,7 +46,7 @@ EVENT_CONFIG = {
 }
 
 
-def create_manual_booking_config(event_id: int, seat_positions: list[str]) -> Dict[str, Any]:
+def create_manual_booking_config(event_id: int, seat_positions: list[str]) -> dict[str, Any]:
     """Create booking configuration for manual seat selection"""
     return {
         'event_id': event_id,
@@ -58,7 +58,7 @@ def create_manual_booking_config(event_id: int, seat_positions: list[str]) -> Di
     }
 
 
-def create_best_available_booking_config(event_id: int, quantity: int) -> Dict[str, Any]:
+def create_best_available_booking_config(event_id: int, quantity: int) -> dict[str, Any]:
     """Create booking configuration for best available seat selection"""
     return {
         'event_id': event_id,
@@ -72,31 +72,31 @@ def create_best_available_booking_config(event_id: int, quantity: int) -> Dict[s
 class BookingFlow:
     """Fluent interface for booking flow operations"""
 
-    def __init__(self, client: httpx.AsyncClient, event_id: int):
+    def __init__(self, client: httpx.AsyncClient, event_id: int) -> None:
         self.client = client
         self.event_id = event_id
-        self.booking: Optional[Dict[str, Any]] = None
+        self.booking: dict[str, Any] | None = None
 
-    async def create_best_available(self, *, quantity: int):
+    async def create_best_available(self, *, quantity: int) -> Self:
         """Create booking with best available seat selection"""
         config = create_best_available_booking_config(self.event_id, quantity)
         self.booking = await self._create_booking(config)
         return self
 
-    async def create_manual(self, *, seat_positions: list[str]):
+    async def create_manual(self, *, seat_positions: list[str]) -> Self:
         """Create booking with manual seat selection"""
         config = create_manual_booking_config(self.event_id, seat_positions)
         self.booking = await self._create_booking(config)
         return self
 
-    async def wait_for_processing(self, *, expected_status: str = 'pending_payment'):
+    async def wait_for_processing(self, *, expected_status: str = 'pending_payment') -> Self:
         """Wait for MQ processing and verify expected status"""
         assert self.booking is not None, 'Booking must be created before waiting for processing'
         await self._wait_for_mq_processing()
         self.booking = await self._verify_booking_status(self.booking['id'], expected_status)
         return self
 
-    async def verify_seat_count(self, *, expected_count: int):
+    async def verify_seat_count(self, *, expected_count: int) -> Self:
         """Verify the booking has expected number of seats"""
         assert self.booking is not None, 'Booking must exist to verify seat count'
         assert len(self.booking['seat_positions']) == expected_count, (
@@ -104,7 +104,7 @@ class BookingFlow:
         )
         return self
 
-    async def cancel(self):
+    async def cancel(self) -> Self:
         """Cancel booking and wait for completion"""
         assert self.booking is not None, 'Booking must exist to cancel'
         await self._cancel_booking(self.booking['id'])
@@ -112,7 +112,7 @@ class BookingFlow:
         self.booking = await self._verify_booking_status(self.booking['id'], 'cancelled')
         return self
 
-    async def _create_booking(self, booking_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _create_booking(self, booking_config: dict[str, Any]) -> dict[str, Any]:
         """Create booking and verify initial status"""
         response = await self.client.post(f'{BASE_URL}/api/booking', json=booking_config)
         assert response.status_code == 201, f'Booking creation failed: {response.text}'
@@ -122,11 +122,11 @@ class BookingFlow:
         )
         return booking_data
 
-    async def _wait_for_mq_processing(self):
+    async def _wait_for_mq_processing(self) -> None:
         """Wait for MQ consumer to process the operation"""
         time.sleep(MQ_PROCESSING_WAIT_TIME)
 
-    async def _verify_booking_status(self, booking_id: int, expected_status: str) -> Dict[str, Any]:
+    async def _verify_booking_status(self, booking_id: int, expected_status: str) -> dict[str, Any]:
         """Get booking and verify it has expected status"""
         response = await self.client.get(f'{BASE_URL}/api/booking/{booking_id}')
         assert response.status_code == 200, f'Get booking failed: {response.text}'
@@ -136,7 +136,7 @@ class BookingFlow:
         )
         return booking_data
 
-    async def _cancel_booking(self, booking_id: int):
+    async def _cancel_booking(self, booking_id: int) -> None:
         """Cancel booking and verify cancellation"""
         response = await self.client.patch(f'{BASE_URL}/api/booking/{booking_id}')
         assert response.status_code == 200, f'Booking cancellation failed: {response.text}'
@@ -147,13 +147,13 @@ class TestAsyncBookingFlow:
     """E2E tests for async booking flow requiring real HTTP server"""
 
     @pytest_asyncio.fixture(autouse=True)
-    async def setup_test_data(self):
+    async def setup_test_data(self) -> None:
         """Setup unique users and event for each test run"""
         await self._create_unique_test_users()
         await self._authenticate_users()
         await self._ensure_test_event_exists()
 
-    async def _create_unique_test_users(self):
+    async def _create_unique_test_users(self) -> None:
         """Create unique test users to avoid conflicts between test runs"""
         test_id = str(uuid.uuid4())[:8]
         timestamp = int(time.time())
@@ -169,7 +169,7 @@ class TestAsyncBookingFlow:
                 client=client, email=self.buyer_email, name='Test Buyer', role='buyer'
             )
 
-    async def _authenticate_users(self):
+    async def _authenticate_users(self) -> None:
         """Login both users and store their authentication tokens"""
         # Authenticate seller
         seller_data = await self._login_user(self.seller_email, 'seller')
@@ -180,13 +180,13 @@ class TestAsyncBookingFlow:
         buyer_data = await self._login_user(self.buyer_email, 'buyer')
         self.buyer_token = buyer_data['token']
 
-    async def _ensure_test_event_exists(self):
+    async def _ensure_test_event_exists(self) -> None:
         """Get existing event_id=1 or create it for testing"""
         async with httpx.AsyncClient() as client:
             client.cookies.set('fastapiusersauth', self.seller_token)
             self.event_id = await self._get_or_create_event(client)
 
-    async def _login_user(self, email: str, expected_role: str) -> Dict[str, Any]:
+    async def _login_user(self, email: str, expected_role: str) -> dict[str, Any]:
         """Login user and return user data with token"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -249,7 +249,7 @@ class TestAsyncBookingFlow:
             )
 
     @pytest.mark.asyncio
-    async def test_booking_async_flow_with_manual_selection(self):
+    async def test_booking_async_flow_with_manual_selection(self) -> None:
         """
         Test async booking flow with manual seat selection:
         1. Create booking → status='processing'
@@ -276,7 +276,7 @@ class TestAsyncBookingFlow:
             assert booking.booking['status'] == 'cancelled'
 
     @pytest.mark.asyncio
-    async def test_booking_async_flow_with_best_available(self):
+    async def test_booking_async_flow_with_best_available(self) -> None:
         """
         Test async booking flow with best available seat selection:
         1. Create booking → status='processing'

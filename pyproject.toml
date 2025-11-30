@@ -86,31 +86,41 @@ exclude = ["src/platform/alembic/", "script/"]
 
 [tool.ruff.lint]
 select = [
-    "E", # pycodestyle errors
-    "F", # pyflakes
-    "B", # flake8-bugbear
-    "I", # isort import sorting
-    "W", # pycodestyle warnings
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "I",   # isort import sorting
+    "W",   # pycodestyle warnings
+    "ANN",
+    "SIM",
+    "W",
+
 ]
+
 # If warning hints are annoying while coding, check their type and disable them
 # They'll still be fixed when you save or run 'ruff check --fix .'
 ignore = [
-    "I001", # unsorted-imports 
-    "E201", # ignore whitespace after '(' warning
-    "E202", # ignore whitespace before ')' warning
-    "E241", # allow multiple spaces for alignment
-    "E272", # allow multiple spaces before keyword
-    "E231", # missing whitespace after comma
-    "W291", # trailing whitespace
-    "W293", # line contains whitespace
-    "E501", # ignore line too long warning
-    "D107", # ignore missing docstring in __init__
-    "C901", # too complex
-    "B904", # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    "B008", # Do not perform function call in argument defaults (needed for FastAPI Depends)
+    "I001",   # unsorted-imports
+    "E201",   # ignore whitespace after '(' warning
+    "E202",   # ignore whitespace before ')' warning
+    "E241",   # allow multiple spaces for alignment
+    "E272",   # allow multiple spaces before keyword
+    "E231",   # missing whitespace after comma
+    "W291",   # trailing whitespace
+    "W293",   # line contains whitespace
+    "E501",   # ignore line too long warning
+    "D107",   # ignore missing docstring in __init__
+    "C901",   # too complex
+    "B904",   # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
+    "B008",   # Do not perform function call in argument defaults (needed for FastAPI Depends)
     "E722",
+    "ANN003", # Missing type annotation for **kwargs (passed to parent class, can't be typed precisely)
+    "ANN401", # Dynamically typed Any is disallowed - too strict for kwargs and generic containers
 ]
-unfixable = ["F401", "F841"] # unused-import, unused-variable 
+unfixable = ["F401", "F841"] # unused-import, unused-variable
+
+[tool.ruff.lint.per-file-ignores]
+"deployment/**/*.py" = ["ANN"] # CDK stacks don't need strict type annotations
 
 [tool.ruff.lint.isort]
 order-by-type = true

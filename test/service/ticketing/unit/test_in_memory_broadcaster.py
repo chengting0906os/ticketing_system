@@ -5,6 +5,8 @@ Tests the in-memory pub/sub mechanism used to distribute
 booking status events from Kafka consumers to SSE endpoints.
 """
 
+from typing import Any
+
 from anyio import create_memory_object_stream, fail_after, move_on_after
 from anyio.streams.memory import ClosedResourceError, MemoryObjectReceiveStream
 import pytest
@@ -16,7 +18,7 @@ from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImp
 
 class TestInMemoryBroadcaster:
     @pytest.fixture
-    def broadcaster(self):
+    def broadcaster(self) -> InMemoryEventBroadcasterImpl:
         return InMemoryEventBroadcasterImpl()
 
     @pytest.fixture
@@ -24,7 +26,7 @@ class TestInMemoryBroadcaster:
         return uuid.uuid7()
 
     @pytest.fixture
-    def event_data(self, booking_id):
+    def event_data(self, booking_id: UUID) -> dict[str, Any]:
         return {
             'event_type': 'status_update',
             'booking_id': booking_id,
@@ -45,13 +47,20 @@ class TestInMemoryBroadcaster:
         }
 
     @pytest.mark.asyncio
-    async def test_subscribe_returns_stream(self, broadcaster, booking_id):
+    async def test_subscribe_returns_stream(
+        self, broadcaster: InMemoryEventBroadcasterImpl, booking_id: UUID
+    ) -> None:
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
         assert isinstance(stream, MemoryObjectReceiveStream)
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_single_subscriber(self, broadcaster, booking_id, event_data):
+    async def test_broadcast_to_single_subscriber(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         # Subscribe
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
@@ -64,7 +73,12 @@ class TestInMemoryBroadcaster:
         assert received == event_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_multiple_subscribers(self, broadcaster, booking_id, event_data):
+    async def test_broadcast_to_multiple_subscribers(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         # Subscribe multiple times
         stream1 = await broadcaster.subscribe(booking_id=booking_id)
         stream2 = await broadcaster.subscribe(booking_id=booking_id)
@@ -84,7 +98,12 @@ class TestInMemoryBroadcaster:
         assert received3 == event_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_to_wrong_booking_id(self, broadcaster, booking_id, event_data):
+    async def test_broadcast_to_wrong_booking_id(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         other_booking_id = UUID(str(uuid.uuid7()))
 
         # Subscribe to booking_id
@@ -100,12 +119,22 @@ class TestInMemoryBroadcaster:
         assert received is None
 
     @pytest.mark.asyncio
-    async def test_broadcast_with_no_subscribers(self, broadcaster, booking_id, event_data):
+    async def test_broadcast_with_no_subscribers(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         # Should not raise any exception
         await broadcaster.broadcast(booking_id=booking_id, event_data=event_data)
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_removes_stream(self, broadcaster, booking_id, event_data):
+    async def test_unsubscribe_removes_stream(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         # Subscribe
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
@@ -121,7 +150,12 @@ class TestInMemoryBroadcaster:
             await stream.receive()
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_one_of_multiple(self, broadcaster, booking_id, event_data):
+    async def test_unsubscribe_one_of_multiple(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         stream1 = await broadcaster.subscribe(booking_id=booking_id)
         stream2 = await broadcaster.subscribe(booking_id=booking_id)
 
@@ -142,7 +176,9 @@ class TestInMemoryBroadcaster:
             await stream1.receive()
 
     @pytest.mark.asyncio
-    async def test_stream_full_drops_event(self, broadcaster, booking_id):
+    async def test_stream_full_drops_event(
+        self, broadcaster: InMemoryEventBroadcasterImpl, booking_id: UUID
+    ) -> None:
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
         # Fill the stream buffer (max_buffer_size=10)
@@ -170,7 +206,9 @@ class TestInMemoryBroadcaster:
         assert received is None
 
     @pytest.mark.asyncio
-    async def test_multiple_bookings_isolated(self, broadcaster, event_data):
+    async def test_multiple_bookings_isolated(
+        self, broadcaster: InMemoryEventBroadcasterImpl, event_data: dict[str, Any]
+    ) -> None:
         booking_a = UUID(str(uuid.uuid7()))
         booking_b = UUID(str(uuid.uuid7()))
 
@@ -192,7 +230,9 @@ class TestInMemoryBroadcaster:
         assert received_b is None
 
     @pytest.mark.asyncio
-    async def test_auto_cleanup_empty_subscriber_list(self, broadcaster, booking_id):
+    async def test_auto_cleanup_empty_subscriber_list(
+        self, broadcaster: InMemoryEventBroadcasterImpl, booking_id: UUID
+    ) -> None:
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
         # Verify booking_id in subscribers
@@ -205,7 +245,12 @@ class TestInMemoryBroadcaster:
         assert booking_id not in broadcaster._subscribers
 
     @pytest.mark.asyncio
-    async def test_concurrent_subscribe_and_broadcast(self, broadcaster, booking_id, event_data):
+    async def test_concurrent_subscribe_and_broadcast(
+        self,
+        broadcaster: InMemoryEventBroadcasterImpl,
+        booking_id: UUID,
+        event_data: dict[str, Any],
+    ) -> None:
         import anyio
 
         # Subscribe first
@@ -228,7 +273,9 @@ class TestInMemoryBroadcaster:
         assert received3 == event_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_multiple_events_fifo(self, broadcaster, booking_id):
+    async def test_broadcast_multiple_events_fifo(
+        self, broadcaster: InMemoryEventBroadcasterImpl, booking_id: UUID
+    ) -> None:
         stream = await broadcaster.subscribe(booking_id=booking_id)
 
         # Broadcast multiple events
@@ -242,14 +289,18 @@ class TestInMemoryBroadcaster:
             assert received['seq'] == i
 
     @pytest.mark.asyncio
-    async def test_unsubscribe_nonexistent_stream(self, broadcaster, booking_id):
+    async def test_unsubscribe_nonexistent_stream(
+        self, broadcaster: InMemoryEventBroadcasterImpl, booking_id: UUID
+    ) -> None:
         _, fake_stream = create_memory_object_stream[dict](max_buffer_size=10)
 
         # Should not raise any exception
         await broadcaster.unsubscribe(booking_id=booking_id, stream=fake_stream)
 
     @pytest.mark.asyncio
-    async def test_memory_cleanup_after_many_subscribe_unsubscribe(self, broadcaster):
+    async def test_memory_cleanup_after_many_subscribe_unsubscribe(
+        self, broadcaster: InMemoryEventBroadcasterImpl
+    ) -> None:
         initial_size = len(broadcaster._subscribers)
 
         # Subscribe and unsubscribe 100 times

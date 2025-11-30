@@ -4,9 +4,13 @@ from enum import StrEnum
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 import zoneinfo
 
 from loguru import logger as loguru_logger
+
+if TYPE_CHECKING:
+    from loguru import Logger as LoguruLogger
 
 from src.platform.config.core_setting import settings
 from src.platform.constant.path import LOG_DIR
@@ -81,7 +85,7 @@ def _parse_http_status_level(message: str) -> str | None:
 _intercept_bound_logger = None  # Cached bound logger for InterceptHandler
 
 
-def _get_intercept_bound_logger():
+def _get_intercept_bound_logger() -> 'LoguruLogger':
     """Get or create bound logger with default extra fields (cached)."""
     global _intercept_bound_logger
     if _intercept_bound_logger is None:
@@ -96,7 +100,7 @@ def _get_intercept_bound_logger():
 
 
 class InterceptHandler(logging.Handler):
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
 
         # Filter out formatting debug logs
@@ -109,9 +113,8 @@ class InterceptHandler(logging.Handler):
                 return  # Ignore asyncio selector messages
 
         # Also block logs from Kafka loggers regardless of level
-        if record.name.startswith(('kafka')):
-            if record.levelno <= logging.DEBUG:  # Block DEBUG, INFO for Kafka loggers
-                return
+        if record.name.startswith('kafka') and record.levelno <= logging.DEBUG:
+            return
 
         # Parse HTTP status code from granian access logs
         level = _parse_http_status_level(message)

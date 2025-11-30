@@ -23,7 +23,9 @@ class KafkaTopicInitializer:
     Kafka brokers via network, making it container-friendly.
     """
 
-    def __init__(self, *, bootstrap_servers: str | None = None, total_partitions: int = 100):
+    def __init__(
+        self, *, bootstrap_servers: str | None = None, total_partitions: int = 100
+    ) -> None:
         self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
         self.total_partitions = total_partitions
         self.admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})

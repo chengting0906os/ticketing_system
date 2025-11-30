@@ -30,7 +30,7 @@ class BookingStatusManager:
     Note: No PROCESSING state needed - MULTI/EXEC guarantees atomicity
     """
 
-    def __init__(self, *, booking_metadata_handler: IBookingMetadataHandler):
+    def __init__(self, *, booking_metadata_handler: IBookingMetadataHandler) -> None:
         self.booking_metadata_handler = booking_metadata_handler
 
     @staticmethod

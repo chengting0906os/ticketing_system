@@ -9,6 +9,7 @@ This module provides a FastAPI app specifically for testing that:
 - Minimal lifespan for faster test startup
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -64,7 +65,7 @@ from src.service.ticketing.driving_adapter.http_controller.user_controller impor
 
 
 @asynccontextmanager
-async def lifespan_for_tests(app: FastAPI):
+async def lifespan_for_tests(app: FastAPI) -> AsyncIterator[None]:
     """
     Minimal lifespan for testing - no Kafka consumers, no polling tasks.
 
@@ -183,18 +184,18 @@ app.include_router(reservation_router)  # Already has /api/reservation prefix
 
 
 @app.get('/')
-async def root():
+async def root() -> RedirectResponse:
     """Root endpoint - redirect to static index"""
     return RedirectResponse(url='/static/index.html')
 
 
 @app.get('/health')
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Health check endpoint for container orchestration"""
     return {'status': 'healthy', 'service': 'Test Ticketing System'}
 
 
 @app.get('/metrics')
-async def get_metrics():
+async def get_metrics() -> PlainTextResponse:
     """Prometheus metrics endpoint"""
     return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

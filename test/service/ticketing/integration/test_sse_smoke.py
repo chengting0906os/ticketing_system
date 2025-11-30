@@ -11,7 +11,7 @@ from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImp
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_sse_realtime_broadcast_smoke():
+async def test_sse_realtime_broadcast_smoke() -> None:
     """
     Smoke test: Verify broadcaster delivers events to subscribers
 
@@ -82,7 +82,7 @@ async def test_sse_realtime_broadcast_smoke():
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_multiple_subscribers_isolation_smoke():
+async def test_multiple_subscribers_isolation_smoke() -> None:
     """
     Smoke test: Verify multiple SSE connections receive events independently
 
@@ -130,7 +130,7 @@ async def test_multiple_subscribers_isolation_smoke():
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_broadcaster_memory_cleanup_smoke():
+async def test_broadcaster_memory_cleanup_smoke() -> None:
     # Arrange
     broadcaster = InMemoryEventBroadcasterImpl()
     booking_id = UUID(str(uuid.uuid7()))
@@ -149,7 +149,7 @@ async def test_broadcaster_memory_cleanup_smoke():
 @pytest.mark.smoke
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_stream_full_handling_smoke():
+async def test_stream_full_handling_smoke() -> None:
     # Arrange: Create broadcaster (stream buffer size is 10)
     broadcaster = InMemoryEventBroadcasterImpl()
     booking_id = UUID(str(uuid.uuid7()))

@@ -14,7 +14,7 @@ class ListAllSubSectionStatusUseCase:
     Get statistics for all sections from Kvrocks
     """
 
-    def __init__(self, seat_state_handler: ISeatStateQueryHandler):
+    def __init__(self, seat_state_handler: ISeatStateQueryHandler) -> None:
         self.seat_state_handler = seat_state_handler
 
     @Logger.io

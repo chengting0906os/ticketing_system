@@ -7,7 +7,7 @@ Clean architecture use case for event creation:
 - Delegates infrastructure setup to orchestrator
 """
 
-from typing import Dict
+from typing import Dict, Self
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -33,7 +33,7 @@ class CreateEventAndTicketsUseCase:
         event_ticketing_command_repo: IEventTicketingCommandRepo,
         mq_infra_orchestrator: IMqInfraOrchestrator,
         init_state_handler: IInitEventAndTicketsStateHandler,
-    ):
+    ) -> None:
         self.event_ticketing_command_repo = event_ticketing_command_repo
         self.mq_infra_orchestrator = mq_infra_orchestrator
         self.init_state_handler = init_state_handler
@@ -51,7 +51,7 @@ class CreateEventAndTicketsUseCase:
         init_state_handler: IInitEventAndTicketsStateHandler = Depends(
             Provide[Container.init_event_and_tickets_state_handler]
         ),
-    ):
+    ) -> Self:
         return cls(
             event_ticketing_command_repo=event_ticketing_command_repo,
             mq_infra_orchestrator=mq_infra_orchestrator,

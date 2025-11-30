@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 import asyncpg
 from uuid_utils import UUID
@@ -30,7 +31,7 @@ async def get_asyncpg_pool() -> asyncpg.Pool:
     # Convert SQLAlchemy URL to asyncpg format
     dsn = settings.DATABASE_URL_ASYNC.replace('postgresql+asyncpg://', 'postgresql://')
 
-    async def init_connection(conn):
+    async def init_connection(conn: asyncpg.Connection) -> None:
         """Initialize each connection with UUID codec"""
 
         def _uuid_decoder(value: bytes) -> UUID:
@@ -110,14 +111,12 @@ async def warmup_asyncpg_pool() -> int:
         Logger.base.error(f'❌ [Pool Warmup] Failed: {e}')
         # Release any acquired connections on error
         for conn in connections:
-            try:
+            with contextlib.suppress(Exception):
                 await pool.release(conn)
-            except Exception:
-                pass
         raise
 
 
-async def close_asyncpg_pool():
+async def close_asyncpg_pool() -> None:
     """
     Close the asyncpg connection pool for the current event loop
 
@@ -133,7 +132,7 @@ async def close_asyncpg_pool():
         del asyncpg_pools[loop_id]
 
 
-async def close_all_asyncpg_pools():
+async def close_all_asyncpg_pools() -> None:
     """
     Close all asyncpg connection pools across all event loops
 
@@ -141,8 +140,6 @@ async def close_all_asyncpg_pools():
     Do not call from within an active event loop that has connections.
     """
     for _, pool in list(asyncpg_pools.items()):
-        try:
+        with contextlib.suppress(Exception):
             await pool.close()
-        except Exception:
-            pass  # Ignore errors during shutdown
     asyncpg_pools.clear()

@@ -10,6 +10,8 @@ from typing import Any, Literal
 import attrs
 from opentelemetry import trace
 from quixstreams import Application
+from quixstreams.kafka import Producer
+from quixstreams.models import Topic
 from uuid_utils import UUID
 
 from src.platform.config.core_setting import settings
@@ -25,7 +27,7 @@ _quix_topic_object_cache: dict[str, Any] = {}  # Topic cache to avoid repeated l
 PROCESSING_GUARANTEE: Literal['at-least-once', 'exactly-once'] = 'at-least-once'
 
 
-def _get_global_producer():
+def _get_global_producer() -> Producer:
     """Get global producer instance - avoid creating new producer on every publish"""
     global _global_producer
     if _global_producer is None:
@@ -34,7 +36,7 @@ def _get_global_producer():
     return _global_producer
 
 
-def _serialize_value(inst: type, field: attrs.Attribute, value: Any) -> Any:
+def _serialize_value(inst: type, field: attrs.Attribute, value: object) -> object:
     """
     Custom serializer - convert datetime and UUID to JSON-serializable types
 
@@ -83,7 +85,7 @@ def _get_quix_app() -> Application:
     return _quix_app
 
 
-def _get_or_create_quix_topic_with_cache(topic_name: str):
+def _get_or_create_quix_topic_with_cache(topic_name: str) -> Topic:
     """
     Get cached topic object to avoid repeated list_topics calls.
 

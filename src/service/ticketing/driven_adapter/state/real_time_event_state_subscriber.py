@@ -1,6 +1,5 @@
-from collections.abc import Awaitable, Callable
+import contextlib
 import time
-from typing import Any
 
 import anyio
 from anyio.abc import TaskGroup
@@ -24,7 +23,7 @@ class RealTimeEventStateSubscriber:
         cache_handler: ISeatAvailabilityQueryHandler,
         throttle_interval: float = 0.5,  # 500ms minimum interval between cache updates
         reconnect_delay: float = 5.0,  # Delay before reconnecting after error
-    ):
+    ) -> None:
         self.event_id = event_id
         self.cache_handler = cache_handler
         self.channel = f'event_state_updates:{event_id}'
@@ -33,10 +32,9 @@ class RealTimeEventStateSubscriber:
         self._last_update_time: float = 0.0
         self._pubsub_client: AsyncRedis | None = None
 
-    async def start(self, *, task_group: TaskGroup):
+    async def start(self, *, task_group: TaskGroup) -> None:
         """Start Redis Pub/Sub subscription"""
-        callback: Callable[[], Awaitable[Any]] = self._subscribe_loop
-        task_group.start_soon(callback)  # type: ignore[arg-type]
+        task_group.start_soon(self._subscribe_loop)  # pyrefly: ignore[bad-argument-type]
         Logger.base.info(f'🔔 [Cache Subscriber] Started for event {self.event_id}')
 
     async def _create_pubsub_client(self) -> AsyncRedis:
@@ -58,7 +56,7 @@ class RealTimeEventStateSubscriber:
         )
         return AsyncRedis.from_pool(pool)
 
-    async def _subscribe_loop(self):
+    async def _subscribe_loop(self) -> None:
         """Main subscription loop with automatic reconnection"""
         while True:
             try:
@@ -84,10 +82,8 @@ class RealTimeEventStateSubscriber:
 
                 # Clean up client on error
                 if self._pubsub_client:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._pubsub_client.aclose()
-                    except Exception:
-                        pass
                     self._pubsub_client = None
 
                 # Wait before reconnecting
@@ -96,7 +92,7 @@ class RealTimeEventStateSubscriber:
                 )
                 await anyio.sleep(self._reconnect_delay)
 
-    async def _handle_update(self, data: bytes):
+    async def _handle_update(self, data: bytes) -> None:
         """Handle incoming event_state update with throttling"""
         try:
             payload = orjson.loads(data)

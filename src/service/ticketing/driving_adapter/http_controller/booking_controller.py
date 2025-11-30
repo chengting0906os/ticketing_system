@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 import anyio
 from dependency_injector.wiring import Provide
@@ -50,7 +51,8 @@ async def list_my_bookings(
     booking_status: str = '',
     current_user: UserEntity = Depends(get_current_user),
     use_case: ListBookingsUseCase = Depends(ListBookingsUseCase.depends),
-):
+) -> list[dict[str, Any]]:
+    """List bookings for current user (buyer sees own, seller sees events' bookings)."""
     if RoleAuthStrategy.is_buyer(current_user):
         return await use_case.list_buyer_bookings(current_user.id or 0, booking_status)
     elif RoleAuthStrategy.is_seller(current_user):
@@ -115,7 +117,7 @@ async def cancel_booking(
     booking_id: UtilsUUID7,
     current_user: UserEntity = Depends(require_buyer),
     use_case: UpdateBookingToCancelledUseCase = Depends(UpdateBookingToCancelledUseCase.depends),
-):
+) -> CancelReservationResponse:
     # Use case will raise exceptions for validation errors (Fail Fast)
     booking = await use_case.execute(
         booking_id=booking_id,
@@ -161,7 +163,7 @@ async def stream_booking_status(
     event_broadcaster: IInMemoryEventBroadcaster = Depends(
         Provide[Container.booking_event_broadcaster]
     ),
-):
+) -> EventSourceResponse:
     """
     SSE real-time booking status updates (event-driven via Kafka → Broadcaster)
 
@@ -195,7 +197,7 @@ async def stream_booking_status(
     queue = await event_broadcaster.subscribe(booking_id=booking_id_uuid)
     Logger.base.info(f'📡 [SSE] Client subscribed to booking {booking_id}')
 
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[dict[str, str]]:
         """Generate SSE event stream for booking status updates (event-driven)"""
         final_states = {'completed', 'failed', 'cancelled'}
 

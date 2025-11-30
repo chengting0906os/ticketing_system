@@ -28,7 +28,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     - Event serialization (delegated to publish_domain_event)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io

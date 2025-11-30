@@ -14,17 +14,17 @@ from src.platform.logging.loguru_io_config import (
 
 
 @lru_cache(maxsize=256)
-def _cached_getsourcelines(func: Callable[..., Any]) -> int:
+def _cached_getsourcelines(func: Callable[..., object]) -> int:
     return getsourcelines(func)[1]
 
 
 @lru_cache(maxsize=256)
-def _cached_getfullargspec(func: Callable[..., Any]) -> FullArgSpec:
+def _cached_getfullargspec(func: Callable[..., object]) -> FullArgSpec:
     return getfullargspec(func)
 
 
 @lru_cache(maxsize=256)
-def _cached_getfile(func: Callable[..., Any]) -> str:
+def _cached_getfile(func: Callable[..., object]) -> str:
     return basename(getfile(func))
 
 
@@ -40,13 +40,13 @@ def get_chain_start_time() -> float:
     return start_time
 
 
-def build_call_target_func_path(func: Callable[..., Any]) -> str:
+def build_call_target_func_path(func: Callable[..., object]) -> str:
     actual_func = getattr(func, '__func__', func)
     lineno = _cached_getsourcelines(actual_func)
     return f'{_cached_getfile(actual_func)}::{func.__qualname__}:{lineno}'
 
 
-def reset_call_depth():
+def reset_call_depth() -> None:
     layer = call_depth_var.get() - 1
     call_depth_var.set(layer)
     if not layer:
@@ -55,7 +55,7 @@ def reset_call_depth():
 
 def normalize_args_kwargs(
     func: Callable[..., Any], *args: Any, **kwargs: Any
-) -> tuple[tuple[Any, ...], dict[Any, Any]]:
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
     if hasattr(func, '__wrapped__'):
         func = func.__wrapped__  # type: ignore
     full_arg_spec: FullArgSpec = _cached_getfullargspec(func)
@@ -66,7 +66,7 @@ def normalize_args_kwargs(
         kwargs = {k: v for k, v in kwargs.items() if k in kw_list}
 
     if not full_arg_spec.varargs:
-        spec_default: list[Any] = list(full_arg_spec.defaults) if full_arg_spec.defaults else []
+        spec_default: list[object] = list(full_arg_spec.defaults) if full_arg_spec.defaults else []
         args_dict = dict(
             zip(
                 spec_args,

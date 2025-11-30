@@ -12,6 +12,7 @@ Usage:
 
 import os
 import signal
+import types
 
 import anyio
 from anyio.from_thread import start_blocking_portal
@@ -64,7 +65,7 @@ def main() -> None:
                 raise
 
             # Create and inject task group for fire-and-forget event publishing
-            async def run_with_task_group():
+            async def run_with_task_group() -> None:
                 async with anyio.create_task_group() as tg:
                     # Inject task group into DI container
                     container.task_group.override(tg)
@@ -85,7 +86,7 @@ def main() -> None:
             Logger.base.info('🔄 [Standalone Booking Consumer] Background task group started')
 
             # Setup signal handlers
-            def shutdown_handler(signum, frame):
+            def shutdown_handler(signum: int, frame: types.FrameType | None) -> None:
                 Logger.base.info(f'🛑 [Standalone Booking Consumer] Received signal {signum}')
                 consumer.running = False
 

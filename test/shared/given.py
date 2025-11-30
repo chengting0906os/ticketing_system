@@ -1,5 +1,10 @@
+from collections.abc import Callable
+from typing import Any
+
 from fastapi.testclient import TestClient
+from httpx import Response
 from pytest_bdd import given
+from pytest_bdd.model import Step
 from test.event_test_constants import (
     DEFAULT_SEATING_CONFIG_JSON,
     DEFAULT_VENUE_NAME,
@@ -11,15 +16,19 @@ from src.platform.constant.route_constant import EVENT_CREATE, USER_CREATE
 
 
 @given('I am logged in as:')
-def login_user_with_table(step, client):
+def login_user_with_table(step: Step, client: TestClient) -> Response:
     login_data = extract_table_data(step)
     return login_user(client, login_data['email'], login_data['password'])
 
 
 @given('a buyer exists:')
 def create_buyer_shared(
-    step, client: TestClient, booking_state=None, event_state=None, user_state=None
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    event_state: dict[str, Any],
+    user_state: dict[str, Any],
+) -> dict[str, Any]:
     buyer_data = extract_table_data(step)
     created = create_user(
         client, buyer_data['email'], buyer_data['password'], buyer_data['name'], buyer_data['role']
@@ -27,21 +36,22 @@ def create_buyer_shared(
 
     buyer = created if created else {'id': 2, 'email': buyer_data['email']}
 
-    # Store in appropriate state based on what's available
-    if booking_state is not None:
-        booking_state['buyer'] = buyer
-    if event_state is not None:
-        event_state['buyer'] = buyer
-    if user_state is not None:
-        user_state['buyer'] = buyer
+    # Store in all state fixtures
+    booking_state['buyer'] = buyer
+    event_state['buyer'] = buyer
+    user_state['buyer'] = buyer
 
     return buyer
 
 
 @given('a seller exists:')
 def create_seller_shared(
-    step, client: TestClient, booking_state=None, event_state=None, user_state=None
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    event_state: dict[str, Any],
+    user_state: dict[str, Any],
+) -> dict[str, Any]:
     """Shared step for creating a seller user."""
     seller_data = extract_table_data(step)
     created = create_user(
@@ -54,21 +64,22 @@ def create_seller_shared(
 
     seller = created if created else {'id': 1, 'email': seller_data['email']}
 
-    # Store in appropriate state based on what's available
-    if booking_state is not None:
-        booking_state['seller'] = seller
-    if event_state is not None:
-        event_state['seller'] = seller
-    if user_state is not None:
-        user_state['seller'] = seller
+    # Store in all state fixtures
+    booking_state['seller'] = seller
+    event_state['seller'] = seller
+    user_state['seller'] = seller
 
     return seller
 
 
 @given('another buyer exists:')
 def create_another_buyer_shared(
-    step, client: TestClient, booking_state=None, event_state=None, user_state=None
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    event_state: dict[str, Any],
+    user_state: dict[str, Any],
+) -> dict[str, Any]:
     """Shared step for creating another buyer user."""
     buyer_data = extract_table_data(step)
     created = create_user(
@@ -77,21 +88,22 @@ def create_another_buyer_shared(
 
     another_buyer = created if created else {'id': 3, 'email': buyer_data['email']}
 
-    # Store in appropriate state based on what's available
-    if booking_state is not None:
-        booking_state['another_buyer'] = another_buyer
-    if event_state is not None:
-        event_state['another_buyer'] = another_buyer
-    if user_state is not None:
-        user_state['another_buyer'] = another_buyer
+    # Store in all state fixtures
+    booking_state['another_buyer'] = another_buyer
+    event_state['another_buyer'] = another_buyer
+    user_state['another_buyer'] = another_buyer
 
     return another_buyer
 
 
 @given('a buyer user exists')
 def create_buyer_user_simple(
-    step, client: TestClient, user_state=None, booking_state=None, event_state=None
-):
+    step: Step,
+    client: TestClient,
+    user_state: dict[str, Any],
+    booking_state: dict[str, Any],
+    event_state: dict[str, Any],
+) -> dict[str, Any]:
     """Simple buyer creation without table data."""
     buyer_data = extract_table_data(step)
     response = client.post(USER_CREATE, json=buyer_data)
@@ -99,21 +111,22 @@ def create_buyer_user_simple(
 
     buyer = response.json()
 
-    # Store in appropriate state
-    if user_state is not None:
-        user_state['buyer'] = buyer
-    if booking_state is not None:
-        booking_state['buyer'] = buyer
-    if event_state is not None:
-        event_state['buyer'] = buyer
+    # Store in all state fixtures
+    user_state['buyer'] = buyer
+    booking_state['buyer'] = buyer
+    event_state['buyer'] = buyer
 
     return buyer
 
 
 @given('a seller user exists')
 def create_seller_user_simple(
-    step, client: TestClient, event_state=None, booking_state=None, user_state=None
-):
+    step: Step,
+    client: TestClient,
+    event_state: dict[str, Any],
+    booking_state: dict[str, Any],
+    user_state: dict[str, Any],
+) -> dict[str, Any] | None:
     """Simple seller creation without table data."""
     user_data = extract_table_data(step)
     created = create_user(
@@ -121,35 +134,34 @@ def create_seller_user_simple(
     )
 
     if created:
-        # Store in appropriate state
-        if event_state is not None:
-            event_state['seller_id'] = created['id']
-            event_state['seller_user'] = created
-        if booking_state is not None:
-            booking_state['seller_id'] = created['id']
-            booking_state['seller_user'] = created
-        if user_state is not None:
-            user_state['seller_id'] = created['id']
-            user_state['seller_user'] = created
+        # Store in all state fixtures
+        event_state['seller_id'] = created['id']
+        event_state['seller_user'] = created
+        booking_state['seller_id'] = created['id']
+        booking_state['seller_user'] = created
+        user_state['seller_id'] = created['id']
+        user_state['seller_user'] = created
     else:
         # User already exists, use default ID
-        if event_state is not None:
-            event_state['seller_id'] = 1
-            event_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
-        if booking_state is not None:
-            booking_state['seller_id'] = 1
-            booking_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
-        if user_state is not None:
-            user_state['seller_id'] = 1
-            user_state['seller_user'] = {'email': user_data['email'], 'role': user_data['role']}
+        default_seller = {'email': user_data['email'], 'role': user_data['role']}
+        event_state['seller_id'] = 1
+        event_state['seller_user'] = default_seller
+        booking_state['seller_id'] = 1
+        booking_state['seller_user'] = default_seller
+        user_state['seller_id'] = 1
+        user_state['seller_user'] = default_seller
 
     return created
 
 
 @given('an event exists:')
 def create_event_shared(
-    step, client: TestClient, booking_state=None, event_state=None, execute_sql_statement=None
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    event_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> dict[str, Any]:
     event_data = extract_table_data(step)
     login_user(client, TEST_SELLER_EMAIL, 'P@ssw0rd')
     request_data = {
@@ -169,7 +181,7 @@ def create_event_shared(
 
     # If test specifies sold_out status, directly update the event status in database
     desired_status = event_data.get('status', 'available')
-    if desired_status == 'sold_out' and execute_sql_statement:
+    if desired_status == 'sold_out':
         execute_sql_statement(
             'UPDATE event SET status = :status WHERE id = :id',
             {'status': 'sold_out', 'id': event_id},
@@ -181,13 +193,11 @@ def create_event_shared(
         'status': event_data.get('status', 'available'),
     }
 
-    # Store event in appropriate state
-    if booking_state is not None:
-        booking_state['event'] = event
-        booking_state['event_id'] = event_id
-    if event_state is not None:
-        event_state['event'] = event
-        event_state['event_id'] = event_id
-        event_state['original_event'] = event
+    # Store event in all state fixtures
+    booking_state['event'] = event
+    booking_state['event_id'] = event_id
+    event_state['event'] = event
+    event_state['event_id'] = event_id
+    event_state['original_event'] = event
 
     return event

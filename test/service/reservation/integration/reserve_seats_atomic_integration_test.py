@@ -11,6 +11,7 @@ from typing import cast
 
 import orjson
 import pytest
+from redis import Redis as SyncRedis
 from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
@@ -33,7 +34,9 @@ def _make_key(key: str) -> str:
     return f'{_KEY_PREFIX}{key}'
 
 
-def _get_section_stats_from_json(client, event_id: int, section_id: str) -> dict:
+def _get_section_stats_from_json(
+    client: SyncRedis, event_id: int, section_id: str
+) -> dict[str, str]:
     """
     Helper function to fetch section stats from event_state JSON
     """
@@ -75,7 +78,7 @@ async def init_handler() -> InitEventAndTicketsStateHandlerImpl:
 
 
 @pytest.fixture(scope='function')
-def unique_event_id():
+def unique_event_id() -> int:
     """Generate unique event_id for each test to avoid conflicts in parallel execution"""
     import random
     import time
@@ -91,7 +94,12 @@ class TestReserveSeatsAtomicManualMode:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_reserve_single_seat_success(self, seat_handler, init_handler, unique_event_id):
+    async def test_reserve_single_seat_success(
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -138,8 +146,11 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_multiple_seats_atomically(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -180,8 +191,11 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_already_reserved_seat_fails(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -230,7 +244,12 @@ class TestReserveSeatsAtomicManualMode:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_partial_reservation_failure(self, seat_handler, init_handler, unique_event_id):
+    async def test_partial_reservation_failure(
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Given: Initialize seats and reserve one (compact format)
         config = {
             'rows': 1,
@@ -272,8 +291,11 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_seats_updates_timestamp(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -311,8 +333,11 @@ class TestReserveSeatsAtomicManualMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_seats_across_multiple_sections(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         """Test reserving seats from different sections atomically"""
         # Get sync client for verification
         client = kvrocks_test_client.connect()
@@ -375,8 +400,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_and_reserve_consecutive_seats_in_single_row(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -421,8 +449,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_consecutive_seats_across_multiple_rows(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Given: Initialize seats with 2 rows, 3 seats per row (compact format)
         # Reserve 2 seats in first row, leaving only 1 available
         config = {
@@ -470,8 +501,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_no_consecutive_seats_available(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Given: Initialize 1 row with 3 seats, reserve middle seat (compact format)
         config = {
             'rows': 1,
@@ -518,8 +552,11 @@ class TestReserveSeatsAtomicBestAvailableMode:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_find_best_position_for_consecutive_seats(
-        self, seat_handler, init_handler, unique_event_id
-    ):
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         # Given: Multiple rows with available seats (compact format)
         config = {
             'rows': 3,
@@ -564,7 +601,12 @@ class TestReserveSeatsAtomicBestAvailableMode:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_reserved_status_not_sold(self, seat_handler, init_handler, unique_event_id):
+    async def test_reserved_status_not_sold(
+        self,
+        seat_handler: SeatStateCommandHandlerImpl,
+        init_handler: InitEventAndTicketsStateHandlerImpl,
+        unique_event_id: int,
+    ) -> None:
         """
         Test that reserved seats have correct status (RESERVED not SOLD)
 

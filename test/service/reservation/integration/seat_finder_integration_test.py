@@ -7,6 +7,7 @@ Tests consecutive seat finding logic using bitfield operations.
 import os
 
 import pytest
+from redis.asyncio import Redis as AsyncRedis
 from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
     SeatFinder,
 )
@@ -22,7 +23,7 @@ def _make_key(key: str) -> str:
     return f'{_KEY_PREFIX}{key}'
 
 
-async def _set_seat_state(client, bf_key: str, seat_index: int, state: int):
+async def _set_seat_state(client: AsyncRedis, bf_key: str, seat_index: int, state: int) -> None:
     offset = seat_index * 2
     await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, state)
 
@@ -32,12 +33,12 @@ async def _set_seat_state(client, bf_key: str, seat_index: int, state: int):
 # =============================================================================
 class TestSeatFinder:
     @pytest.fixture(autouse=True)
-    async def setup_kvrocks(self):
+    async def setup_kvrocks(self) -> None:
         await kvrocks_client.initialize()
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_single_row_success(self):
+    async def test_find_consecutive_seats_single_row_success(self) -> None:
         # Given: Setup bitfield with all seats available (00)
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:1:A-1')
@@ -58,7 +59,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_with_reserved_seats(self):
+    async def test_find_consecutive_seats_with_reserved_seats(self) -> None:
         # Given: Setup bitfield with some seats reserved
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:2:A-1')
@@ -80,7 +81,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_multiple_rows(self):
+    async def test_find_consecutive_seats_multiple_rows(self) -> None:
         """Test finding consecutive seats across multiple rows"""
         # Given: Setup 2 rows, first row mostly reserved
         finder: SeatFinder = SeatFinder()
@@ -105,7 +106,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_but_scatterd_seats_exsit(self):
+    async def test_find_consecutive_seats_but_scatterd_seats_exsit(self) -> None:
         """Test when no consecutive seats available but scattered seats exist"""
         # Given: Setup seats with gaps (no consecutive pairs)
         finder: SeatFinder = SeatFinder()
@@ -127,7 +128,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_exact_match(self):
+    async def test_find_consecutive_seats_exact_match(self) -> None:
         # Given: Setup with exactly N consecutive available seats
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:5:A-1')
@@ -144,7 +145,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_skip_sold_seats(self):
+    async def test_find_consecutive_seats_skip_sold_seats(self) -> None:
         # Given: Setup with SOLD seats
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:6:A-1')
@@ -164,7 +165,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_finds_earliest_available(self):
+    async def test_find_consecutive_seats_finds_earliest_available(self) -> None:
         # Given: Multiple consecutive groups available
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:7:A-1')
@@ -186,7 +187,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_quantity_one(self):
+    async def test_find_consecutive_seats_quantity_one(self) -> None:
         # Given: Setup with some reserved seats
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:8:A-1')
@@ -206,7 +207,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_empty_venue(self):
+    async def test_find_consecutive_seats_empty_venue(self) -> None:
         # Given: Empty bitfield (all seats available)
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:9:A-1')
@@ -222,7 +223,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_full_venue(self):
+    async def test_find_consecutive_seats_full_venue(self) -> None:
         # Given: All seats reserved
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:10:A-1')
@@ -246,7 +247,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_smart_fallback(self):
+    async def test_find_consecutive_seats_smart_fallback(self) -> None:
         """
         Test smart fallback: Return largest consecutive blocks when perfect consecutive not found.
 
@@ -300,7 +301,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_bitfield_optimization_works_correctly(self):
+    async def test_bitfield_optimization_works_correctly(self) -> None:
         """
         Test that BITFIELD batch read works correctly (performance optimization)
 
@@ -348,7 +349,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_scattered_singles_accepted(self):
+    async def test_find_consecutive_seats_scattered_singles_accepted(self) -> None:
         """
         Test Lua script acceptance of scattered single seats when consecutive not found.
 
@@ -408,7 +409,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_smart_fallback_3_plus_1(self):
+    async def test_smart_fallback_3_plus_1(self) -> None:
         """
         Test smart fallback: 3 consecutive + 1 single (need 4 seats).
 
@@ -444,7 +445,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_smart_fallback_2_plus_2(self):
+    async def test_smart_fallback_2_plus_2(self) -> None:
         """
         Test smart fallback: 2 pairs (need 4 seats).
 
@@ -480,7 +481,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_smart_fallback_2_plus_1_plus_1(self):
+    async def test_smart_fallback_2_plus_1_plus_1(self) -> None:
         """
         Test smart fallback: 1 pair + 2 singles (need 4 seats).
 
@@ -518,7 +519,7 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_smart_fallback_1_plus_1_plus_1_plus_1(self):
+    async def test_smart_fallback_1_plus_1_plus_1_plus_1(self) -> None:
         """
         Test smart fallback: 4 scattered singles (need 4 seats).
 
