@@ -42,7 +42,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         reservation_executor: AtomicReservationExecutor,
         release_executor: ReleaseExecutor,
         payment_finalizer: PaymentFinalizer,
-    ):
+    ) -> None:
         """
         Initialize Seat State Command Handler.
 

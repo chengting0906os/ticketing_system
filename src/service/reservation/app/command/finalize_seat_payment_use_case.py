@@ -13,7 +13,7 @@ from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
 
 
 class FinalizeSeatPaymentUseCase:
-    def __init__(self, seat_state_handler: ISeatStateCommandHandler):
+    def __init__(self, seat_state_handler: ISeatStateCommandHandler) -> None:
         self.seat_state_handler = seat_state_handler
 
     @Logger.io

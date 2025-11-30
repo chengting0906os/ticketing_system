@@ -9,9 +9,12 @@ Provides:
 """
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING
 
 from opentelemetry import context as otel_context, trace
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -82,10 +85,12 @@ class TracingConfig:
         # Set global tracer provider
         trace.set_tracer_provider(self._provider)
 
-    def instrument_fastapi(self, *, app: Any, excluded_urls: str = 'health,metrics,ping') -> None:
+    def instrument_fastapi(
+        self, *, app: 'FastAPI', excluded_urls: str = 'health,metrics,ping'
+    ) -> None:
         FastAPIInstrumentor.instrument_app(app, excluded_urls=excluded_urls)
 
-    def instrument_sqlalchemy(self, *, engine: Any) -> None:
+    def instrument_sqlalchemy(self, *, engine: object) -> None:
         if hasattr(engine, 'sync_engine'):  # Handle AsyncEngine by instrumenting its sync_engine
             SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
         else:

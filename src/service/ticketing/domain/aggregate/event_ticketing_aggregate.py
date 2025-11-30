@@ -79,7 +79,7 @@ class Ticket:
         self.release()
 
 
-def _validate_non_empty_string(instance, attribute, value):
+def _validate_non_empty_string(instance: object, attribute: attrs.Attribute, value: str) -> None:
     if not value or not value.strip():
         raise ValueError(f'Event {attribute.name} cannot be empty')
 

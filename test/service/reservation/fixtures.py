@@ -4,13 +4,15 @@ import multiprocessing
 import os
 import socket
 import time
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
 
 import httpx
 import pytest
 import uvicorn
 
 
-def get_free_port():
+def get_free_port() -> int:
     """Get a free port number."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
@@ -19,7 +21,7 @@ def get_free_port():
     return port
 
 
-def run_server(port: int, env_vars: dict):
+def run_server(port: int, env_vars: dict[str, str]) -> None:
     """Run uvicorn server in separate process with environment variables."""
     # Set environment variables in the spawned process
     for key, value in env_vars.items():
@@ -31,7 +33,7 @@ def run_server(port: int, env_vars: dict):
 
 
 @pytest.fixture(scope='function')
-def http_server():
+def http_server() -> Generator[str, None, None]:
     """Start a real HTTP server for SSE testing with dynamic port."""
     # Get a free port
     port = get_free_port()
@@ -78,13 +80,13 @@ def http_server():
 
 
 @pytest.fixture
-async def async_client(http_server):
+async def async_client(http_server: str) -> AsyncGenerator[httpx.AsyncClient, None]:
     """Async HTTP client for SSE testing."""
     async with httpx.AsyncClient(base_url=http_server, timeout=10.0) as client:
         yield client
 
 
 @pytest.fixture
-def context():
+def context() -> dict[str, Any]:
     """Shared context for BDD scenarios."""
     return {}

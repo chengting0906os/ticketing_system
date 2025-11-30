@@ -6,6 +6,7 @@ and updates the cache with throttling and automatic reconnection.
 """
 
 import time
+from typing import Any
 from unittest.mock import Mock
 
 import orjson
@@ -22,14 +23,14 @@ class TestRealTimeEventStateSubscriber:
         return 123
 
     @pytest.fixture
-    def mock_cache_handler(self):
+    def mock_cache_handler(self) -> Mock:
         """Mock ISeatAvailabilityQueryHandler"""
         handler = Mock()
         handler._cache = {}
         return handler
 
     @pytest.fixture
-    def subscriber(self, event_id, mock_cache_handler):
+    def subscriber(self, event_id: int, mock_cache_handler: Mock) -> RealTimeEventStateSubscriber:
         """Create subscriber instance with default settings"""
         return RealTimeEventStateSubscriber(
             event_id=event_id,
@@ -39,7 +40,7 @@ class TestRealTimeEventStateSubscriber:
         )
 
     @pytest.fixture
-    def event_state_payload(self, event_id):
+    def event_state_payload(self, event_id: int) -> dict[str, Any]:
         """Sample event_state update payload"""
         return {
             'event_id': event_id,
@@ -60,7 +61,12 @@ class TestRealTimeEventStateSubscriber:
     # =========================================================================
 
     @pytest.mark.asyncio
-    async def test_handle_update_success(self, subscriber, event_state_payload, event_id):
+    async def test_handle_update_success(
+        self,
+        subscriber: RealTimeEventStateSubscriber,
+        event_state_payload: dict[str, Any],
+        event_id: int,
+    ) -> None:
         """Test successful message handling updates cache"""
         data = orjson.dumps(event_state_payload)
 
@@ -74,7 +80,9 @@ class TestRealTimeEventStateSubscriber:
         assert subscriber._last_update_time > 0
 
     @pytest.mark.asyncio
-    async def test_handle_update_invalid_json(self, subscriber):
+    async def test_handle_update_invalid_json(
+        self, subscriber: RealTimeEventStateSubscriber
+    ) -> None:
         """Test handling of invalid JSON data"""
         invalid_data = b'not-valid-json'
 
@@ -85,7 +93,9 @@ class TestRealTimeEventStateSubscriber:
         assert len(subscriber.cache_handler._cache) == 0
 
     @pytest.mark.asyncio
-    async def test_handle_update_missing_fields(self, subscriber):
+    async def test_handle_update_missing_fields(
+        self, subscriber: RealTimeEventStateSubscriber
+    ) -> None:
         """Test handling of payload with missing required fields"""
         incomplete_payload = {'event_id': 123}  # Missing 'event_state'
         data = orjson.dumps(incomplete_payload)
@@ -101,7 +111,12 @@ class TestRealTimeEventStateSubscriber:
     # =========================================================================
 
     @pytest.mark.asyncio
-    async def test_handle_message_processing(self, subscriber, event_state_payload, event_id):
+    async def test_handle_message_processing(
+        self,
+        subscriber: RealTimeEventStateSubscriber,
+        event_state_payload: dict[str, Any],
+        event_id: int,
+    ) -> None:
         """Test that _handle_update correctly processes message data"""
         data = orjson.dumps(event_state_payload)
 
@@ -123,7 +138,12 @@ class TestRealTimeEventStateSubscriber:
     # =========================================================================
 
     @pytest.mark.asyncio
-    async def test_cache_timestamp_updates(self, subscriber, event_state_payload, event_id):
+    async def test_cache_timestamp_updates(
+        self,
+        subscriber: RealTimeEventStateSubscriber,
+        event_state_payload: dict[str, Any],
+        event_id: int,
+    ) -> None:
         """Test that cache timestamp is updated correctly"""
         data = orjson.dumps(event_state_payload)
 
@@ -142,12 +162,12 @@ class TestRealTimeEventStateSubscriber:
     # Channel Configuration Tests
     # =========================================================================
 
-    def test_channel_format(self, subscriber, event_id):
+    def test_channel_format(self, subscriber: RealTimeEventStateSubscriber, event_id: int) -> None:
         """Test that channel name follows expected format"""
         expected_channel = f'event_state_updates:{event_id}'
         assert subscriber.channel == expected_channel
 
-    def test_different_event_ids_have_different_channels(self, mock_cache_handler):
+    def test_different_event_ids_have_different_channels(self, mock_cache_handler: Mock) -> None:
         """Test that different event IDs get different channels"""
         subscriber1 = RealTimeEventStateSubscriber(event_id=100, cache_handler=mock_cache_handler)
         subscriber2 = RealTimeEventStateSubscriber(event_id=200, cache_handler=mock_cache_handler)
@@ -161,7 +181,9 @@ class TestRealTimeEventStateSubscriber:
     # =========================================================================
 
     @pytest.mark.asyncio
-    async def test_handle_update_with_malformed_data(self, subscriber):
+    async def test_handle_update_with_malformed_data(
+        self, subscriber: RealTimeEventStateSubscriber
+    ) -> None:
         """Test handling of malformed but valid JSON"""
         malformed_payload = {'unexpected': 'structure'}
         data = orjson.dumps(malformed_payload)
@@ -173,7 +195,9 @@ class TestRealTimeEventStateSubscriber:
         assert len(subscriber.cache_handler._cache) == 0
 
     @pytest.mark.asyncio
-    async def test_handle_update_with_wrong_event_id(self, subscriber, event_id):
+    async def test_handle_update_with_wrong_event_id(
+        self, subscriber: RealTimeEventStateSubscriber, event_id: int
+    ) -> None:
         """Test handling of update for different event ID"""
         wrong_id_payload = {
             'event_id': 999,  # Different from subscriber's event_id

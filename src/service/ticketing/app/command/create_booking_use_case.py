@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Self
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -46,7 +46,7 @@ class CreateBookingUseCase:
         booking_command_repo: IBookingCommandRepo,
         event_publisher: IBookingEventPublisher,
         seat_availability_handler: ISeatAvailabilityQueryHandler,
-    ):
+    ) -> None:
         self.booking_metadata_handler = booking_metadata_handler
         self.booking_command_repo = booking_command_repo
         self.event_publisher = event_publisher
@@ -69,7 +69,7 @@ class CreateBookingUseCase:
         seat_availability_handler: ISeatAvailabilityQueryHandler = Depends(
             Provide[Container.seat_availability_query_handler]
         ),
-    ):
+    ) -> Self:
         return cls(
             booking_metadata_handler=booking_metadata_handler,
             booking_command_repo=booking_command_repo,

@@ -13,7 +13,7 @@ from src.service.reservation.driven_adapter.reservation_helper.atomic_reservatio
 class TestExtractSubsectionStats:
     """Test subsection statistics extraction"""
 
-    def test_extract_valid_stats(self):
+    def test_extract_valid_stats(self) -> None:
         # Given: Valid event state with subsection stats
         event_state = {
             'sections': {
@@ -31,7 +31,7 @@ class TestExtractSubsectionStats:
         # Then: Should return correct stats
         assert result == {'available': 98, 'reserved': 2, 'sold': 0, 'total': 100}
 
-    def test_extract_different_section(self):
+    def test_extract_different_section(self) -> None:
         # Given: Event state with multiple sections
         event_state = {
             'sections': {
@@ -59,7 +59,7 @@ class TestExtractSubsectionStats:
 class TestExtractEventStats:
     """Test event-level statistics extraction"""
 
-    def test_extract_valid_event_stats(self):
+    def test_extract_valid_event_stats(self) -> None:
         # Given: Valid event state with event stats
         event_state = {'event_stats': {'available': 498, 'reserved': 2, 'sold': 0, 'total': 500}}
 
@@ -69,7 +69,7 @@ class TestExtractEventStats:
         # Then: Should return correct stats
         assert result == {'available': 498, 'reserved': 2, 'sold': 0, 'total': 500}
 
-    def test_extract_with_sold_seats(self):
+    def test_extract_with_sold_seats(self) -> None:
         # Given: Event state with some seats sold
         event_state = {'event_stats': {'available': 400, 'reserved': 50, 'sold': 50, 'total': 500}}
 

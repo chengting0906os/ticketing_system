@@ -63,6 +63,7 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
     SeatAvailabilityQueryHandlerImpl,
 )
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
+from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
 
 
 class Container(containers.DeclarativeContainer):
@@ -166,18 +167,18 @@ class Container(containers.DeclarativeContainer):
 container = Container()
 
 
-def setup():
+def setup() -> None:
     container.kafka_service()
     container.config_service()
 
 
-def cleanup():
+def cleanup() -> None:
     container.reset_singletons()
 
 
 # FastAPI Dependency Providers (deprecated - use Provide[Container.xxx] instead)
 # Keeping these for backward compatibility with existing code
-def get_booking_event_publisher():
+def get_booking_event_publisher() -> IBookingEventPublisher:
     """FastAPI dependency provider for booking event publisher."""
 
     return container.booking_event_publisher()

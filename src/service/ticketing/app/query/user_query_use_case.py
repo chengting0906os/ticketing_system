@@ -2,6 +2,8 @@
 User Management Use Cases (Use Case Layer)
 """
 
+from typing import Self
+
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 
@@ -20,7 +22,7 @@ class UserUseCase:
         self,
         user_command_repo: IUserCommandRepo | None = None,
         user_query_repo: IUserQueryRepo | None = None,
-    ):
+    ) -> None:
         self.user_command_repo = user_command_repo
         self.user_query_repo = user_query_repo
 
@@ -30,7 +32,7 @@ class UserUseCase:
         cls,
         user_command_repo: IUserCommandRepo = Depends(Provide['user_command_repo']),
         user_query_repo: IUserQueryRepo = Depends(Provide['user_query_repo']),
-    ):
+    ) -> Self:
         return cls(user_command_repo=user_command_repo, user_query_repo=user_query_repo)
 
     async def create_user(

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import TypeVar
 
 import anyio
@@ -75,7 +76,7 @@ def as_middleware(middleware_class: type[T]) -> type[T]:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage unified application lifespan: startup and shutdown"""
     # ============================================================================
     # STARTUP
@@ -231,7 +232,7 @@ app.include_router(reservation_router)  # Already has /api/reservation prefix
 
 
 @app.get('/')
-async def root():
+async def root() -> dict[str, str]:
     """Root endpoint with API navigation"""
     return {
         'service': 'Unified Ticketing System',
@@ -240,10 +241,10 @@ async def root():
 
 
 @app.get('/health')
-async def health_check():
+async def health_check() -> dict[str, str]:
     return {'status': 'healthy', 'service': 'Unified Ticketing System'}
 
 
 @app.get('/metrics')
-async def get_metrics():
+async def get_metrics() -> PlainTextResponse:
     return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

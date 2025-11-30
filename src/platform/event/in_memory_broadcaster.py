@@ -30,7 +30,7 @@ class InMemoryEventBroadcasterImpl:
     - Cleanup: Remove empty lists on unsubscribe and close streams
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # booking_id → list of (send_stream, receive_stream) tuples
         self._subscribers: Dict[
             UUID, List[tuple[MemoryObjectSendStream[dict], MemoryObjectReceiveStream[dict]]]

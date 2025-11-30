@@ -68,7 +68,7 @@ class BookingMqConsumer:
         self,
         *,
         event_broadcaster: IInMemoryEventBroadcaster,
-    ):
+    ) -> None:
         self.event_id = int(os.getenv('EVENT_ID', '1'))
         # Use consumer instance_id for consumer group identification
         self.consumer_instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
@@ -98,7 +98,7 @@ class BookingMqConsumer:
         """Set BlockingPortal for calling async functions from sync code"""
         self.portal = portal
 
-    def _on_processing_error(self, exc: Exception, row: Any, _logger: Any) -> bool:
+    def _on_processing_error(self, exc: Exception, row: object, _logger: object) -> bool:
         """
         Quix Streams error handling callback
 
@@ -142,7 +142,7 @@ class BookingMqConsumer:
         return app
 
     @Logger.io
-    def _setup_topics(self):
+    def _setup_topics(self) -> None:
         """Setup processing logic for 2 topics - Use Kafka transactions for Exactly Once"""
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
@@ -178,7 +178,9 @@ class BookingMqConsumer:
     # ========== DLQ Helper ==========
 
     @Logger.io
-    def _send_to_dlq(self, *, message: Dict, original_topic: str, error: str, retry_count: int):
+    def _send_to_dlq(
+        self, *, message: Dict, original_topic: str, error: str, retry_count: int
+    ) -> None:
         """Send failed message to DLQ"""
         if not self.kafka_app:
             Logger.base.error('❌ [TICKETING-DLQ] Kafka app not initialized')
@@ -217,7 +219,7 @@ class BookingMqConsumer:
 
     @Logger.io
     def _process_pending_payment_and_reserved(
-        self, message: Dict, key: Any = None, context: Any = None
+        self, message: Dict, key: object | None = None, context: object | None = None
     ) -> Dict:
         """Process Booking → PENDING_PAYMENT + Ticket → RESERVED (atomic operation)"""
         # Extract trace context from message for distributed tracing
@@ -260,7 +262,7 @@ class BookingMqConsumer:
             Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
             return {'success': False, 'error': str(e)}
 
-    async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]):
+    async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]) -> None:
         """
         Async handler for pending payment and reserved - Upsert booking with tickets
 
@@ -317,7 +319,9 @@ class BookingMqConsumer:
         )
 
     @Logger.io
-    def _process_failed(self, message: Dict, key: Any = None, context: Any = None) -> Dict:
+    def _process_failed(
+        self, message: Dict, key: object | None = None, context: object | None = None
+    ) -> Dict:
         """Process Booking → FAILED"""
         booking_id = message.get('booking_id')
 
@@ -342,7 +346,7 @@ class BookingMqConsumer:
             Logger.base.error(f'❌ [BOOKING-FAILED] Failed: booking_id={booking_id}, error={e}')
             return {'success': False, 'error': str(e)}
 
-    async def _handle_failed_async(self, message: Dict[str, Any]):
+    async def _handle_failed_async(self, message: Dict[str, Any]) -> None:
         """
         Async handler for failed booking
 
@@ -402,7 +406,7 @@ class BookingMqConsumer:
 
     # ========== Lifecycle ==========
 
-    def start(self):
+    def start(self) -> None:
         """Start service - Support topic metadata sync retry"""
         import time
 
@@ -455,7 +459,7 @@ class BookingMqConsumer:
                     Logger.base.error(f'❌ [TICKETING] Start failed after {attempt} attempts: {e}')
                     raise
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop service"""
         if not self.running:
             return

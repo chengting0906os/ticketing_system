@@ -178,7 +178,7 @@ settings = Settings()
 class KafkaConfig:
     """Kafka configuration for Exactly-Once processing"""
 
-    def __init__(self, *, event_id: int, service: str):
+    def __init__(self, *, event_id: int, service: str) -> None:
         """
         Args:
             event_id: Event ID

@@ -1,6 +1,6 @@
 import random
 import string
-from typing import Any, Dict
+from typing import Any, Dict, Self
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -21,7 +21,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         self,
         *,
         booking_command_repo: IBookingCommandRepo,
-    ):
+    ) -> None:
         self.booking_command_repo = booking_command_repo
 
     @classmethod
@@ -31,7 +31,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         booking_command_repo: IBookingCommandRepo = Depends(
             Provide[Container.booking_command_repo]
         ),
-    ):
+    ) -> Self:
         """For FastAPI endpoint compatibility"""
         return cls(booking_command_repo=booking_command_repo)
 

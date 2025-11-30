@@ -8,7 +8,8 @@ Tests the optimized booking creation flow:
 4. Kafka event publishing
 """
 
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from uuid_utils import UUID
@@ -20,7 +21,7 @@ from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 @pytest.fixture
-def mock_booking_metadata_handler():
+def mock_booking_metadata_handler() -> Mock:
     """Mock booking metadata handler"""
     handler = AsyncMock()
     handler.save_booking_metadata = AsyncMock()
@@ -29,7 +30,7 @@ def mock_booking_metadata_handler():
 
 
 @pytest.fixture
-def mock_booking_command_repo():
+def mock_booking_command_repo() -> Mock:
     """Mock booking command repository"""
     repo = AsyncMock()
     repo.create = AsyncMock()
@@ -37,7 +38,7 @@ def mock_booking_command_repo():
 
 
 @pytest.fixture
-def mock_event_publisher():
+def mock_event_publisher() -> Mock:
     """Mock event publisher"""
     publisher = AsyncMock()
     publisher.publish_booking_created = AsyncMock()
@@ -45,7 +46,7 @@ def mock_event_publisher():
 
 
 @pytest.fixture
-def mock_seat_availability_handler():
+def mock_seat_availability_handler() -> Mock:
     """Mock seat availability query handler"""
     handler = AsyncMock()
     handler.check_subsection_availability = AsyncMock()
@@ -54,11 +55,11 @@ def mock_seat_availability_handler():
 
 @pytest.fixture
 def create_booking_use_case(
-    mock_booking_metadata_handler,
-    mock_booking_command_repo,
-    mock_event_publisher,
-    mock_seat_availability_handler,
-):
+    mock_booking_metadata_handler: Mock,
+    mock_booking_command_repo: Mock,
+    mock_event_publisher: Mock,
+    mock_seat_availability_handler: Mock,
+) -> CreateBookingUseCase:
     """Create instance of CreateBookingUseCase with mocked dependencies"""
     return CreateBookingUseCase(
         booking_metadata_handler=mock_booking_metadata_handler,
@@ -69,7 +70,7 @@ def create_booking_use_case(
 
 
 @pytest.fixture
-def valid_booking_params():
+def valid_booking_params() -> dict[str, Any]:
     """Valid booking parameters"""
     return {
         'buyer_id': 123,
@@ -89,13 +90,13 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking_success__generates_uuid7(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        mock_booking_metadata_handler,
-        mock_booking_command_repo,
-        mock_event_publisher,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        mock_booking_metadata_handler: Mock,
+        mock_booking_command_repo: Mock,
+        mock_event_publisher: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test successful booking creation generates UUID7"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (
@@ -135,11 +136,11 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking_fail__insufficient_seats(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        mock_booking_metadata_handler,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        mock_booking_metadata_handler: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test booking creation fails when insufficient seats available"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (
@@ -162,12 +163,12 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking_success__event_published(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        mock_booking_metadata_handler,
-        mock_event_publisher,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        mock_booking_metadata_handler: Mock,
+        mock_event_publisher: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test that BookingCreated event is published"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (
@@ -191,12 +192,12 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking_fail__kvrocks_save_error(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        mock_booking_metadata_handler,
-        mock_booking_command_repo,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        mock_booking_metadata_handler: Mock,
+        mock_booking_command_repo: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test booking creation fails when Kvrocks save fails"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (
@@ -221,11 +222,11 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking__manual_mode_with_seat_positions(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        mock_booking_metadata_handler,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        mock_booking_metadata_handler: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test booking creation with manual seat selection mode"""
         # Arrange
         valid_booking_params['seat_selection_mode'] = 'manual'
@@ -249,10 +250,10 @@ class TestCreateBookingUseCase:
     @pytest.mark.asyncio
     async def test_create_booking__sets_custom_uuid_on_booking_entity(
         self,
-        create_booking_use_case,
-        mock_seat_availability_handler,
-        valid_booking_params,
-    ):
+        create_booking_use_case: CreateBookingUseCase,
+        mock_seat_availability_handler: Mock,
+        valid_booking_params: dict[str, Any],
+    ) -> None:
         """Test that booking entity receives custom UUID7 id"""
         # Arrange
         mock_seat_availability_handler.check_subsection_availability.return_value = (

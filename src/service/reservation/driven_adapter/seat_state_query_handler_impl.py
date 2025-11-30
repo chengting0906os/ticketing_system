@@ -38,7 +38,7 @@ BITFIELD_TO_STATUS = {
 
 
 class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache: Dict[int, Dict[str, Dict]] = {}  # {event_id: {section_id: stats}}
 
     @staticmethod

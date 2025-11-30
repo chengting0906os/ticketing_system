@@ -27,7 +27,7 @@ class UpdateBookingToFailedUseCase:
         *,
         booking_command_repo: IBookingCommandRepo,
         event_broadcaster: IInMemoryEventBroadcaster,
-    ):
+    ) -> None:
         self.booking_command_repo = booking_command_repo
         self.event_broadcaster = event_broadcaster
         self.tracer = trace.get_tracer(__name__)

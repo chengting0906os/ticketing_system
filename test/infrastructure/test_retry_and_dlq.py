@@ -28,12 +28,12 @@ from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
-def create_producer():
+def create_producer() -> Producer:
     """創建 Kafka producer"""
     return Producer({'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS})
 
 
-def create_dlq_consumer(event_id: int):
+def create_dlq_consumer(event_id: int) -> Consumer:
     """創建 DLQ consumer"""
     dlq_topic = KafkaTopicBuilder.reservation_dlq(event_id=event_id)
 
@@ -49,7 +49,7 @@ def create_dlq_consumer(event_id: int):
     return consumer
 
 
-def send_invalid_reservation_request(event_id: int):
+def send_invalid_reservation_request(event_id: int) -> None:
     """發送一個無效的預訂請求（缺少必要欄位，會觸發 validation 錯誤）"""
     producer = create_producer()
     topic = KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id)
@@ -78,7 +78,7 @@ def send_invalid_reservation_request(event_id: int):
     Logger.base.info('✅ Invalid message sent. Watch for error callback...')
 
 
-def monitor_dlq(event_id: int, timeout: int = 30):
+def monitor_dlq(event_id: int, timeout: int = 30) -> bool | None:
     """監控 DLQ，等待失敗訊息"""
     Logger.base.info(f'👀 Monitoring DLQ for {timeout} seconds...')
 
@@ -118,7 +118,7 @@ def monitor_dlq(event_id: int, timeout: int = 30):
         consumer.close()
 
 
-def main():
+def main() -> None:
     """主程序"""
     event_id = 1
 

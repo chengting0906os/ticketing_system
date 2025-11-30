@@ -42,7 +42,7 @@ async def get_current_user(
 async def create_user(
     request: CreateUserRequest,
     user_command_repo: IUserCommandRepo = Depends(Provide[Container.user_command_repo]),
-):
+) -> UserResponse:
     # Create UserUseCase with injected command repo
     use_case = UserUseCase(user_command_repo=user_command_repo)
     user_entity = await use_case.create_user(
@@ -69,7 +69,7 @@ async def login(
     request: LoginRequest,
     user_query_repo: IUserQueryRepo = Depends(Provide[Container.user_query_repo]),
     jwt_auth: JwtAuth = Depends(Provide[Container.jwt_auth]),
-):
+) -> UserResponse:
     user_entity = await jwt_auth.authenticate_user(
         user_query_repo=user_query_repo,
         email=request.email,
@@ -98,7 +98,7 @@ async def login(
 
 @router.get('', response_model=UserResponse)
 @Logger.io
-async def get_me(current_user: UserEntity = Depends(get_current_user)):
+async def get_me(current_user: UserEntity = Depends(get_current_user)) -> UserResponse:
     return UserResponse(
         id=current_user.id or 0,
         email=current_user.email,

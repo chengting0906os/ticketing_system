@@ -3,6 +3,8 @@ Seat Reservation Controller
 Handles seat reservation related API endpoints, including real-time status updates
 """
 
+from collections.abc import AsyncGenerator
+
 import anyio
 from fastapi import APIRouter, HTTPException, status
 import orjson
@@ -120,7 +122,7 @@ async def list_subsection_seats(
 
 @router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
 @Logger.io
-async def stream_all_section_stats(event_id: int):
+async def stream_all_section_stats(event_id: int) -> EventSourceResponse:
     """
     SSE real-time push of statistics for all sections (polling every 0.5 seconds)
 
@@ -163,7 +165,7 @@ async def stream_all_section_stats(event_id: int):
     if initial_result['total_sections'] == 0:
         raise HTTPException(status_code=404, detail='Event not found')
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[dict, None]:
         """Generate SSE event stream"""
         is_first_event = True
 
@@ -212,7 +214,7 @@ async def stream_subsection_seats(
     event_id: int,
     section: str,
     subsection: int,
-):
+) -> EventSourceResponse:
     """
     SSE real-time push of seat status updates (polling every 0.5 seconds)
 
@@ -246,7 +248,7 @@ async def stream_subsection_seats(
     3. Client automatic reconnection mechanism
     """
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[dict, None]:
         """Generate SSE event stream"""
         seat_state_handler = container.seat_state_query_handler()
         use_case = ListSectionSeatsDetailUseCase(seat_state_handler=seat_state_handler)

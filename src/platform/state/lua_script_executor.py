@@ -55,14 +55,16 @@ class LuaScripts:
 
     async def find_consecutive_seats(
         self, *, client: Redis, keys: list[str], args: list[str]
-    ) -> Any:
+    ) -> bytes | None:
         """Execute find_consecutive_seats Lua script"""
         if self._find_consecutive_seats_script is None:
             raise RuntimeError('Lua scripts not initialized')
 
         return await self._find_consecutive_seats_script(keys=keys, args=args, client=client)
 
-    async def verify_manual_seats(self, *, client: Redis, keys: list[str], args: list[str]) -> Any:
+    async def verify_manual_seats(
+        self, *, client: Redis, keys: list[str], args: list[str]
+    ) -> bytes | None:
         """Execute verify_manual_seats Lua script"""
         if self._verify_manual_seats_script is None:
             raise RuntimeError('Lua scripts not initialized')

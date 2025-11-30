@@ -1,7 +1,9 @@
-from typing import Any, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 from fastapi.testclient import TestClient
 from pytest_bdd import then
+from pytest_bdd.model import Step
 
 from src.platform.constant.route_constant import (
     BOOKING_GET,
@@ -19,8 +21,8 @@ from test.util_constant import DEFAULT_PASSWORD, TEST_SELLER_EMAIL
 
 
 def assert_nullable_field(
-    data: Dict[str, Any], field: str, expected: str, message: str | None = None
-):
+    data: dict[str, Any], field: str, expected: str, message: str | None = None
+) -> None:
     if expected == 'not_null':
         assert data.get(field) is not None, message or f'{field} should not be null'
     elif expected == 'null':
@@ -33,13 +35,13 @@ def get_event_status(client: TestClient, event_id: int) -> str:
     return response.json()['status']
 
 
-def get_booking_details(client: TestClient, booking_id: int) -> Dict[str, Any]:
+def get_booking_details(client: TestClient, booking_id: int) -> dict[str, Any]:
     response = client.get(BOOKING_GET.format(booking_id=booking_id))
     assert_response_status(response, 200)
     return response.json()
 
 
-def assert_booking_count(booking_state: Dict[str, Any], expected_count: int):
+def assert_booking_count(booking_state: dict[str, Any], expected_count: int) -> None:
     response = booking_state['response']
     assert_response_status(response, 200)
     bookings = response.json()
@@ -49,7 +51,7 @@ def assert_booking_count(booking_state: Dict[str, Any], expected_count: int):
     booking_state['bookings_response'] = bookings
 
 
-def verify_booking_fields(booking_data: Dict[str, Any], expected_data: Dict[str, str]):
+def verify_booking_fields(booking_data: dict[str, Any], expected_data: dict[str, str]) -> None:
     if 'price' in expected_data:
         assert booking_data['price'] == int(expected_data['price'])
     if 'status' in expected_data:
@@ -60,7 +62,7 @@ def verify_booking_fields(booking_data: Dict[str, Any], expected_data: Dict[str,
         assert_nullable_field(booking_data, 'paid_at', expected_data['paid_at'])
 
 
-def assert_all_bookings_have_status(bookings: List[Dict[str, Any]], expected_status: str):
+def assert_all_bookings_have_status(bookings: list[dict[str, Any]], expected_status: str) -> None:
     for booking in bookings:
         assert booking.get('status') == expected_status, (
             f'Booking {booking["id"]} has status {booking.get("status")}, expected {expected_status}'
@@ -68,7 +70,7 @@ def assert_all_bookings_have_status(bookings: List[Dict[str, Any]], expected_sta
 
 
 @then('the booking should be created with:')
-def verify_booking_created(step, booking_state):
+def verify_booking_created(step: Step, booking_state: dict[str, Any]) -> None:
     expected_data = extract_table_data(step)
     response = booking_state['response']
     assert_response_status(response, 201)
@@ -78,36 +80,40 @@ def verify_booking_created(step, booking_state):
 
 
 @then('the booking status should be:')
-def verify_booking_status(step, booking_state):
+def verify_booking_status(step: Step, booking_state: dict[str, Any]) -> None:
     expected_status = extract_single_value(step)
     # Check updated_booking first (from payment or cancellation), then fallback to booking or response
-    booking = booking_state.get('updated_booking')
+    booking: dict[str, Any] | None = booking_state.get('updated_booking')
     if not booking:
         booking = booking_state.get('booking')
     if not booking:
         response = booking_state.get('response')
         if response:
             booking = response.json()
+    assert booking is not None, 'No booking found in state'
     assert booking['status'] == expected_status, (
         f'Booking status should be {expected_status}, but got {booking["status"]}'
     )
 
 
 @then('the booking total_price should be:')
-def verify_booking_total_price(step, booking_state):
+def verify_booking_total_price(step: Step, booking_state: dict[str, Any]) -> None:
     expected_price = int(extract_single_value(step))
-    booking = booking_state.get('booking')
+    booking: dict[str, Any] | None = booking_state.get('booking')
     if not booking:
         response = booking_state.get('response')
         if response:
             booking = response.json()
+    assert booking is not None, 'No booking found in state'
     assert booking['total_price'] == expected_price, (
         f'Booking total_price should be {expected_price}, but got {booking["total_price"]}'
     )
 
 
 @then('the booking status should remain:')
-def verify_booking_status_remains(step, client: TestClient, booking_state):
+def verify_booking_status_remains(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     expected_status = extract_single_value(step)
     booking_data = get_booking_details(client, booking_state['booking']['id'])
     assert booking_data['status'] == expected_status, (
@@ -116,7 +122,9 @@ def verify_booking_status_remains(step, client: TestClient, booking_state):
 
 
 @then('the event status should remain:')
-def verify_event_status_remains(step, client: TestClient, booking_state):
+def verify_event_status_remains(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     expected_status = extract_single_value(step)
     event_id = booking_state.get('event', {}).get('id') or booking_state.get('event_id', 1)
     actual_status = get_event_status(client, event_id)
@@ -126,7 +134,7 @@ def verify_event_status_remains(step, client: TestClient, booking_state):
 
 
 @then('the booking should have:')
-def verify_booking_has_fields(step, booking_state):
+def verify_booking_has_fields(step: Step, booking_state: dict[str, Any]) -> None:
     expected_data = extract_table_data(step)
     booking_data = booking_state.get('updated_booking') or booking_state['response'].json()
     for field in ['created_at', 'paid_at']:
@@ -135,14 +143,13 @@ def verify_booking_has_fields(step, booking_state):
 
 
 @then('the payment should have:')
-def verify_payment_details(step, booking_state):
+def verify_payment_details(step: Step, booking_state: dict[str, Any]) -> None:
     expected_data = extract_table_data(step)
     response_data = booking_state['response'].json()
-    if 'payment_id' in expected_data:
-        if expected_data['payment_id'].startswith('PAY_MOCK_'):
-            assert response_data.get('payment_id', '').startswith('PAY_MOCK_'), (
-                'payment_id should start with PAY_MOCK_'
-            )
+    if 'payment_id' in expected_data and expected_data['payment_id'].startswith('PAY_MOCK_'):
+        assert response_data.get('payment_id', '').startswith('PAY_MOCK_'), (
+            'payment_id should start with PAY_MOCK_'
+        )
     if 'status' in expected_data:
         assert response_data.get('status') == expected_data['status'], (
             f'payment status should be {expected_data["status"]}'
@@ -150,7 +157,7 @@ def verify_payment_details(step, booking_state):
 
 
 @then('the event status should be:')
-def verify_event_status(step, client: TestClient, booking_state):
+def verify_event_status(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     expected_status = extract_single_value(step)
     event_id = booking_state.get('event_id') or booking_state['event']['id']
     status = get_event_status(client, event_id)
@@ -158,13 +165,15 @@ def verify_event_status(step, client: TestClient, booking_state):
 
 
 @then('the booking price should be 1000')
-def verify_booking_price_1000(step, booking_state):
+def verify_booking_price_1000(step: Step, booking_state: dict[str, Any]) -> None:
     booking = booking_state['booking']
     assert booking['price'] == 1000, f'Expected booking price 1000, got {booking["price"]}'
 
 
 @then('the existing booking price should remain 1000')
-def verify_existing_booking_price_remains_1000(step, client: TestClient, booking_state):
+def verify_existing_booking_price_remains_1000(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['price'] == 1000, (
@@ -173,7 +182,7 @@ def verify_existing_booking_price_remains_1000(step, client: TestClient, booking
 
 
 @then('the new booking should have price 2000')
-def verify_new_booking_has_price_2000(step, booking_state):
+def verify_new_booking_has_price_2000(step: Step, booking_state: dict[str, Any]) -> None:
     new_booking = booking_state['new_booking']
     assert new_booking['price'] == 2000, (
         f'Expected new booking price 2000, got {new_booking["price"]}'
@@ -181,7 +190,9 @@ def verify_new_booking_has_price_2000(step, booking_state):
 
 
 @then('the paid booking price should remain 1500')
-def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_state):
+def verify_paid_booking_price_remains_1500(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['price'] == 1500, (
@@ -190,7 +201,9 @@ def verify_paid_booking_price_remains_1500(step, client: TestClient, booking_sta
 
 
 @then('the booking status should remain "completed"')
-def verify_booking_status_remains_completed(step, client: TestClient, booking_state):
+def verify_booking_status_remains_completed(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     booking_id = booking_state['booking']['id']
     booking_data = get_booking_details(client, booking_id)
     assert booking_data['status'] == 'completed', (
@@ -200,10 +213,11 @@ def verify_booking_status_remains_completed(step, client: TestClient, booking_st
 
 @then('the tickets should have status:')
 def verify_tickets_have_status(
-    step, client: TestClient, booking_state=None, context=None, execute_sql_statement=None
-):
-    if execute_sql_statement is None:
-        raise ValueError('execute_sql_statement function is required but was not provided')
+    step: Step,
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+    booking_state: dict[str, Any],
+    context: dict[str, Any],
+) -> None:
     expected_data = extract_table_data(step)
     expected_status = expected_data['status']
 
@@ -233,7 +247,9 @@ def verify_tickets_have_status(
 
 
 @then('the event status should be "reserved"')
-def verify_event_status_is_reserved(step, client: TestClient, booking_state):
+def verify_event_status_is_reserved(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     event_id = booking_state['event']['id']
     response = client.get(EVENT_GET.format(event_id=event_id))
     assert response.status_code == 200, f'Failed to get event: {response.text}'
@@ -245,8 +261,11 @@ def verify_event_status_is_reserved(step, client: TestClient, booking_state):
 
 @then('tickets should be reserved for buyer:')
 def verify_tickets_reserved_for_buyer(
-    step, client: TestClient, booking_state, execute_sql_statement
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     ticket_data = extract_table_data(step)
     expected_status = ticket_data['status']
     expected_buyer_id = int(ticket_data['buyer_id'])
@@ -279,8 +298,11 @@ def verify_tickets_reserved_for_buyer(
 
 @then('the booking should contain tickets with seats:')
 def verify_booking_contains_tickets_with_seats(
-    step, client: TestClient, booking_state, execute_sql_statement
-):
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     # Extract expected seat numbers from table
     rows = step.data_table.rows
     expected_seat_numbers = []
@@ -357,7 +379,12 @@ def verify_booking_contains_tickets_with_seats(
 
 
 @then('the selected tickets should have status:')
-def verify_selected_tickets_status(step, client: TestClient, booking_state, execute_sql_statement):
+def verify_selected_tickets_status(
+    step: Step,
+    client: TestClient,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     expected_status = extract_single_value(step)
 
     # Get booking ID and status
@@ -410,7 +437,11 @@ def verify_selected_tickets_status(step, client: TestClient, booking_state, exec
 
 
 @then('the booking should contain consecutive available seats:')
-def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_statement):
+def verify_booking_contains_consecutive_seats(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -472,7 +503,9 @@ def verify_booking_contains_consecutive_seats(step, booking_state, execute_sql_s
 
 
 @then('the selected seats should be from the lowest available row')
-def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement):
+def verify_seats_from_lowest_available_row(
+    booking_state: dict[str, Any], execute_sql_statement: Callable[..., list[dict[str, Any]] | None]
+) -> None:
     booking_id = booking_state['booking']['id']
     event_id = booking_state['event_id']
 
@@ -533,7 +566,11 @@ def verify_seats_from_lowest_available_row(booking_state, execute_sql_statement)
 
 
 @then('the booking should contain available seat:')
-def verify_booking_contains_single_available_seat(step, booking_state, execute_sql_statement):
+def verify_booking_contains_single_available_seat(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -577,7 +614,11 @@ def verify_booking_contains_single_available_seat(step, booking_state, execute_s
 
 
 @then('the booking should contain tickets:')
-def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
+def verify_booking_contains_tickets(
+    step: Step,
+    booking_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     count_data = extract_table_data(step)
     count = int(count_data['count'])
     booking_id = booking_state['booking']['id']
@@ -621,7 +662,7 @@ def verify_booking_contains_tickets(step, booking_state, execute_sql_statement):
 
 
 @then('the response should contain bookings:')
-def verify_bookings_count(step, booking_state):
+def verify_bookings_count(step: Step, booking_state: dict[str, Any]) -> None:
     expected_count = int(extract_single_value(step))
     response = booking_state['response']
     bookings = response.json()
@@ -631,7 +672,7 @@ def verify_bookings_count(step, booking_state):
 
 
 @then('the bookings should include:')
-def verify_bookings_include(step, booking_state):
+def verify_bookings_include(step: Step, booking_state: dict[str, Any]) -> None:
     expected_bookings = []
     rows = step.data_table.rows
     headers = [cell.value for cell in rows[0].cells]
@@ -711,7 +752,7 @@ def verify_bookings_include(step, booking_state):
 
 
 @then('all bookings should have status:')
-def verify_all_bookings_have_status_single(step, booking_state):
+def verify_all_bookings_have_status_single(step: Step, booking_state: dict[str, Any]) -> None:
     expected_status = extract_single_value(step)
     response = booking_state['response']
     bookings = response.json()
@@ -723,7 +764,7 @@ def verify_all_bookings_have_status_single(step, booking_state):
 
 
 @then('the tickets should be returned to the available pool')
-def verify_tickets_returned_to_pool(client: TestClient, booking_state):
+def verify_tickets_returned_to_pool(client: TestClient, booking_state: dict[str, Any]) -> None:
     """Verify that tickets previously associated with a booking are now available."""
     event_id = booking_state['event_id']
     ticket_ids = booking_state.get('ticket_ids', [])
@@ -746,7 +787,7 @@ def verify_tickets_returned_to_pool(client: TestClient, booking_state):
 
 
 @then('the booking details should include:')
-def verify_booking_details_include(step, booking_state):
+def verify_booking_details_include(step: Step, booking_state: dict[str, Any]) -> None:
     """Verify booking details response includes all expected fields."""
     expected_data = {}
     rows = step.data_table.rows
@@ -788,7 +829,7 @@ def verify_booking_details_include(step, booking_state):
 
 
 @then('the booking should include tickets:')
-def verify_booking_includes_tickets(step, booking_state):
+def verify_booking_includes_tickets(step: Step, booking_state: dict[str, Any]) -> None:
     """Verify booking response includes expected tickets."""
     expected_tickets = []
     rows = step.data_table.rows
@@ -827,7 +868,9 @@ def verify_booking_includes_tickets(step, booking_state):
 
 
 @then('the booking with id {booking_id:d} should have seat_positions:')
-def verify_booking_seat_positions(step, booking_state, booking_id: int):
+def verify_booking_seat_positions(
+    step: Step, booking_state: dict[str, Any], booking_id: int
+) -> None:
     """Verify that a booking has the expected seat positions."""
     # Extract expected seat positions from table (no header row in this table)
     rows = step.data_table.rows

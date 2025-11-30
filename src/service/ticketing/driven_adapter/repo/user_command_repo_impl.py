@@ -9,7 +9,7 @@ from src.service.ticketing.driven_adapter.model.user_model import UserModel
 
 
 class UserCommandRepoImpl(IUserCommandRepo):
-    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]):
+    def __init__(self, session_factory: Callable[..., AsyncContextManager[AsyncSession]]) -> None:
         self.session_factory = session_factory
 
     @Logger.io

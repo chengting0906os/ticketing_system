@@ -13,7 +13,7 @@ from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_han
 
 
 @pytest.mark.asyncio
-async def test_pipeline_batch_operations():
+async def test_pipeline_batch_operations() -> None:
     """Test that Pipeline is used for batch operations and JSON config is written"""
     handler = InitEventAndTicketsStateHandlerImpl()
     config = {
@@ -45,7 +45,7 @@ async def test_pipeline_batch_operations():
 
 
 @pytest.mark.asyncio
-async def test_error_handling():
+async def test_error_handling() -> None:
     """Test error handling when pipeline execution fails"""
     handler = InitEventAndTicketsStateHandlerImpl()
     config = {
@@ -72,7 +72,7 @@ async def test_error_handling():
 
 
 @pytest.mark.asyncio
-async def test_empty_config_error():
+async def test_empty_config_error() -> None:
     """Test handling of empty seating configuration"""
     handler = InitEventAndTicketsStateHandlerImpl()
     empty_config = {'sections': []}

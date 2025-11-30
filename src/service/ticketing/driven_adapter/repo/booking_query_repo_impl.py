@@ -19,7 +19,7 @@ from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 class BookingQueryRepoImpl(IBookingQueryRepo):
     def __init__(
         self, session_factory: Callable[..., AsyncContextManager[AsyncSession]] | None = None
-    ):
+    ) -> None:
         self.session_factory = session_factory
         self.session: AsyncSession | None = None
 
@@ -202,7 +202,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
 
             return bookings_with_tickets
 
-    @Logger.io(truncate_content=True)  # type: ignore
+    @Logger.io(truncate_content=True)
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
         from src.service.ticketing.driven_adapter.model.event_model import EventModel
 
@@ -211,8 +211,8 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
                 select(BookingModel)
                 .join(EventModel, BookingModel.event_id == EventModel.id)
                 .options(
-                    selectinload(BookingModel.event).selectinload(EventModel.seller),  # pyright: ignore[reportAttributeAccessIssue]
-                    selectinload(BookingModel.buyer),  # pyright: ignore[reportAttributeAccessIssue]
+                    selectinload(BookingModel.event).selectinload(EventModel.seller),
+                    selectinload(BookingModel.buyer),
                 )
                 .where(EventModel.seller_id == seller_id)
             )

@@ -1,6 +1,9 @@
+from typing import Any
+
 from fastapi.testclient import TestClient
 import pytest
 import uuid_utils as uuid
+from uuid_utils import UUID
 
 from src.platform.constant.route_constant import EVENT_BASE
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
@@ -16,17 +19,17 @@ class TestCreateBookingWithTicketsDirectly:
     """Test create_booking_with_tickets_directly with real database"""
 
     @pytest.fixture
-    def repo(self):
+    def repo(self) -> BookingCommandRepoImpl:
         """Repository instance"""
         return BookingCommandRepoImpl()
 
     @pytest.fixture
-    def booking_id(self):
+    def booking_id(self) -> UUID:
         """Generate unique booking ID for each test"""
         return uuid.uuid7()
 
     @pytest.fixture
-    def test_event_with_tickets(self, client: TestClient):
+    def test_event_with_tickets(self, client: TestClient) -> dict[str, int]:
         # Create seller user
         create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
         login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
@@ -62,8 +65,11 @@ class TestCreateBookingWithTicketsDirectly:
 
     @pytest.mark.asyncio
     async def test_idempotency_returns_existing_booking_when_duplicate(
-        self, repo, booking_id, test_event_with_tickets
-    ):
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
+    ) -> None:
         # Given: Create initial booking
         first_result = await repo.create_booking_with_tickets_directly(
             booking_id=booking_id,
@@ -112,8 +118,11 @@ class TestCreateBookingWithTicketsDirectly:
 
     @pytest.mark.asyncio
     async def test_creates_booking_and_updates_tickets_atomically(
-        self, repo, booking_id, test_event_with_tickets
-    ):
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
+    ) -> None:
         # When: Create booking with tickets
         result = await repo.create_booking_with_tickets_directly(
             booking_id=booking_id,
@@ -155,8 +164,11 @@ class TestCreateBookingWithTicketsDirectly:
 
     @pytest.mark.asyncio
     async def test_returns_dict_with_booking_and_tickets(
-        self, repo, booking_id, test_event_with_tickets
-    ):
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
+    ) -> None:
         # When
         result = await repo.create_booking_with_tickets_directly(
             booking_id=booking_id,

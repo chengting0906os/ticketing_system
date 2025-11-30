@@ -32,7 +32,7 @@ class SectionBasedPartitionStrategy:
     5. Finer-grained partitioning improves concurrent processing capability
     """
 
-    def __init__(self, total_partitions: int = 100):
+    def __init__(self, total_partitions: int = 100) -> None:
         self.total_partitions = total_partitions
         self._subsection_partition_cache: Dict[str, int] = {}
 

@@ -28,7 +28,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
 class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
     """Event Ticketing Command Repository Implementation (Raw SQL with asyncpg)"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass  # No session needed for raw SQL approach
 
     @Logger.io
@@ -36,11 +36,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         self, *, event_aggregate: EventTicketingAggregate
     ) -> EventTicketingAggregate:
         """Create Event Aggregate (including Event and Tickets)"""
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            async with conn.transaction():
-                # 1. Save Event
-                event_row = await conn.fetchrow(
-                    """
+        async with (await get_asyncpg_pool()).acquire() as conn, conn.transaction():
+            # 1. Save Event
+            event_row = await conn.fetchrow(
+                """
                     INSERT INTO event (
                         name, description, seller_id, venue_name,
                         seating_config, is_active, status
@@ -49,68 +48,68 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     RETURNING id, name, description, seller_id, venue_name,
                               seating_config, is_active, status
                     """,
-                    event_aggregate.event.name,
-                    event_aggregate.event.description,
-                    event_aggregate.event.seller_id,
-                    event_aggregate.event.venue_name,
-                    orjson.dumps(event_aggregate.event.seating_config).decode(),
-                    event_aggregate.event.is_active,
-                    event_aggregate.event.status.value,
-                )
+                event_aggregate.event.name,
+                event_aggregate.event.description,
+                event_aggregate.event.seller_id,
+                event_aggregate.event.venue_name,
+                orjson.dumps(event_aggregate.event.seating_config).decode(),
+                event_aggregate.event.is_active,
+                event_aggregate.event.status.value,
+            )
 
-                # 2. Update Event entity ID
-                event_aggregate.event.id = event_row['id']
+            # 2. Update Event entity ID
+            event_aggregate.event.id = event_row['id']
 
-                # 3. Save Tickets (if any)
-                if event_aggregate.tickets:
-                    ticket_records = [
-                        (
-                            event_row['id'],
-                            ticket.section,
-                            ticket.subsection,
-                            ticket.row,
-                            ticket.seat,
-                            ticket.price,
-                            ticket.status.value,
-                            ticket.buyer_id,
-                            ticket.reserved_at,
-                        )
-                        for ticket in event_aggregate.tickets
-                    ]
+            # 3. Save Tickets (if any)
+            if event_aggregate.tickets:
+                ticket_records = [
+                    (
+                        event_row['id'],
+                        ticket.section,
+                        ticket.subsection,
+                        ticket.row,
+                        ticket.seat,
+                        ticket.price,
+                        ticket.status.value,
+                        ticket.buyer_id,
+                        ticket.reserved_at,
+                    )
+                    for ticket in event_aggregate.tickets
+                ]
 
-                    await conn.executemany(
-                        """
+                await conn.executemany(
+                    """
                         INSERT INTO ticket (
                             event_id, section, subsection, row_number, seat_number,
                             price, status, buyer_id, reserved_at
                         )
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         """,
-                        ticket_records,
-                    )
+                    ticket_records,
+                )
 
-                    # Get inserted ticket IDs
-                    ticket_rows = await conn.fetch(
-                        """
+                # Get inserted ticket IDs
+                ticket_rows = await conn.fetch(
+                    """
                         SELECT id, event_id, section, subsection, row_number, seat_number,
                                price, status, buyer_id, reserved_at, created_at, updated_at
                         FROM ticket
                         WHERE event_id = $1
                         ORDER BY id
                         """,
-                        event_row['id'],
-                    )
-
-                    # Update Ticket entity IDs
-                    for i, ticket_row in enumerate(ticket_rows):
-                        if i < len(event_aggregate.tickets):
-                            event_aggregate.tickets[i].id = ticket_row['id']
-
-                Logger.base.info(
-                    f'🗾 [CREATE_AGGREGATE] Created event {event_row["id"]} with {len(event_aggregate.tickets)} tickets'
+                    event_row['id'],
                 )
 
-                return event_aggregate
+                # Update Ticket entity IDs
+                for i, ticket_row in enumerate(ticket_rows):
+                    if i < len(event_aggregate.tickets):
+                        event_aggregate.tickets[i].id = ticket_row['id']
+
+            Logger.base.info(
+                f'🗾 [CREATE_AGGREGATE] Created event {event_row["id"]} with {len(event_aggregate.tickets)} tickets'
+            )
+
+            return event_aggregate
 
     @Logger.io
     async def create_event_aggregate_with_batch_tickets(
@@ -219,11 +218,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         if not event_aggregate.event.id:
             raise ValueError('Event must have an ID to be updated')
 
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            async with conn.transaction():
-                # 1. Update Event
-                await conn.execute(
-                    """
+        async with (await get_asyncpg_pool()).acquire() as conn, conn.transaction():
+            # 1. Update Event
+            await conn.execute(
+                """
                     UPDATE event
                     SET name = $1,
                         description = $2,
@@ -233,21 +231,21 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                         status = $6
                     WHERE id = $7
                     """,
-                    event_aggregate.event.name,
-                    event_aggregate.event.description,
-                    event_aggregate.event.venue_name,
-                    orjson.dumps(event_aggregate.event.seating_config).decode(),
-                    event_aggregate.event.is_active,
-                    event_aggregate.event.status.value,
-                    event_aggregate.event.id,
-                )
+                event_aggregate.event.name,
+                event_aggregate.event.description,
+                event_aggregate.event.venue_name,
+                orjson.dumps(event_aggregate.event.seating_config).decode(),
+                event_aggregate.event.is_active,
+                event_aggregate.event.status.value,
+                event_aggregate.event.id,
+            )
 
-                # 2. Update Tickets
-                for ticket in event_aggregate.tickets:
-                    if ticket.id:
-                        # Update existing ticket
-                        await conn.execute(
-                            """
+            # 2. Update Tickets
+            for ticket in event_aggregate.tickets:
+                if ticket.id:
+                    # Update existing ticket
+                    await conn.execute(
+                        """
                             UPDATE ticket
                             SET status = $1,
                                 buyer_id = $2,
@@ -255,16 +253,16 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                                 updated_at = $4
                             WHERE id = $5
                             """,
-                            ticket.status.value,
-                            ticket.buyer_id,
-                            ticket.reserved_at,
-                            datetime.now(timezone.utc),
-                            ticket.id,
-                        )
-                    else:
-                        # Insert new ticket
-                        ticket_row = await conn.fetchrow(
-                            """
+                        ticket.status.value,
+                        ticket.buyer_id,
+                        ticket.reserved_at,
+                        datetime.now(timezone.utc),
+                        ticket.id,
+                    )
+                else:
+                    # Insert new ticket
+                    ticket_row = await conn.fetchrow(
+                        """
                             INSERT INTO ticket (
                                 event_id, section, subsection, row_number, seat_number,
                                 price, status, buyer_id, reserved_at
@@ -272,23 +270,23 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                             RETURNING id
                             """,
-                            event_aggregate.event.id,
-                            ticket.section,
-                            ticket.subsection,
-                            ticket.row,
-                            ticket.seat,
-                            ticket.price,
-                            ticket.status.value,
-                            ticket.buyer_id,
-                            ticket.reserved_at,
-                        )
-                        ticket.id = ticket_row['id']
+                        event_aggregate.event.id,
+                        ticket.section,
+                        ticket.subsection,
+                        ticket.row,
+                        ticket.seat,
+                        ticket.price,
+                        ticket.status.value,
+                        ticket.buyer_id,
+                        ticket.reserved_at,
+                    )
+                    ticket.id = ticket_row['id']
 
-                Logger.base.info(
-                    f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
-                )
+            Logger.base.info(
+                f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
+            )
 
-                return event_aggregate
+            return event_aggregate
 
     @Logger.io
     async def update_tickets_status(

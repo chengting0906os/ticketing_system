@@ -8,7 +8,7 @@ Test Focus:
 """
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from uuid_utils import UUID
@@ -25,7 +25,7 @@ from test.service.ticketing.unit.helpers import RepositoryMocks
 @pytest.mark.unit
 class TestUpdateBookingToCancelled:
     @pytest.fixture
-    def pending_payment_booking(self):
+    def pending_payment_booking(self) -> Booking:
         return Booking(
             id=UUID('00000000-0000-0000-0000-00000000000a'),
             buyer_id=2,
@@ -41,7 +41,7 @@ class TestUpdateBookingToCancelled:
         )
 
     @pytest.fixture
-    def reserved_tickets(self):
+    def reserved_tickets(self) -> list[Ticket]:
         return [
             Ticket(
                 id=201,
@@ -72,8 +72,8 @@ class TestUpdateBookingToCancelled:
         'src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case.publish_domain_event'
     )
     async def test_successfully_cancel_pending_payment_booking(
-        self, mock_publish, pending_payment_booking, reserved_tickets
-    ):
+        self, mock_publish: Mock, pending_payment_booking: Booking, reserved_tickets: list[Ticket]
+    ) -> None:
         """
         Core test: Successfully cancel pending payment booking
 
@@ -123,7 +123,7 @@ class TestUpdateBookingToCancelled:
         assert len(event.seat_positions) == 2
 
     @pytest.mark.asyncio
-    async def test_fail_when_booking_not_found(self):
+    async def test_fail_when_booking_not_found(self) -> None:
         """
         Fail Fast: Booking does not exist
 
@@ -145,7 +145,7 @@ class TestUpdateBookingToCancelled:
             )
 
     @pytest.mark.asyncio
-    async def test_fail_when_not_booking_owner(self, pending_payment_booking):
+    async def test_fail_when_not_booking_owner(self, pending_payment_booking: Booking) -> None:
         """
         Fail Fast: Not the booking owner
 
@@ -167,7 +167,7 @@ class TestUpdateBookingToCancelled:
             )  # Different buyer_id
 
     @pytest.mark.asyncio
-    async def test_fail_when_booking_already_completed(self):
+    async def test_fail_when_booking_already_completed(self) -> None:
         """
         Domain validation: Completed bookings cannot be cancelled
 
@@ -203,7 +203,7 @@ class TestUpdateBookingToCancelled:
             )
 
     @pytest.mark.asyncio
-    async def test_fail_when_booking_already_cancelled(self):
+    async def test_fail_when_booking_already_cancelled(self) -> None:
         """
         Domain validation: Already cancelled bookings cannot be cancelled again
 
@@ -242,8 +242,8 @@ class TestUpdateBookingToCancelled:
         'src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case.publish_domain_event'
     )
     async def test_event_contains_correct_seat_positions(
-        self, mock_publish, pending_payment_booking
-    ):
+        self, mock_publish: Mock, pending_payment_booking: Booking
+    ) -> None:
         """
         Event content validation: seat_positions correctly extracted
 
@@ -310,7 +310,9 @@ class TestUpdateBookingToCancelled:
     @patch(
         'src.service.ticketing.app.command.update_booking_status_to_cancelled_use_case.publish_domain_event'
     )
-    async def test_no_event_published_when_no_tickets(self, mock_publish, pending_payment_booking):
+    async def test_no_event_published_when_no_tickets(
+        self, mock_publish: Mock, pending_payment_booking: Booking
+    ) -> None:
         """
         Edge case test: No event sent when there are no tickets
 

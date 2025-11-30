@@ -61,7 +61,7 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
     return 1
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tracer and register Lua scripts"""
         self.tracer = trace.get_tracer(__name__)
         self._hset_expire_script: Any = None  # Lazy registration on first use

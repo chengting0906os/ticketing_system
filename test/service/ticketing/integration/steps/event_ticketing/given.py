@@ -1,9 +1,13 @@
 import os
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 import orjson
+import pytest
 from pytest_bdd import given
+from pytest_bdd.model import Step
 
 from src.platform.constant.route_constant import (
     EVENT_BASE,
@@ -23,7 +27,12 @@ from test.util_constant import (
 
 
 @given('an event exists with seating config:')
-def event_exists_with_seating_config(step, client: TestClient, event_state, execute_sql_statement):
+def event_exists_with_seating_config(
+    step: Step,
+    client: TestClient,
+    event_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     """Create an event with specific seating configuration for get event tests."""
     row_data = extract_table_data(step)
     seller_email = TEST_SELLER_EMAIL
@@ -60,7 +69,7 @@ def event_exists_with_seating_config(step, client: TestClient, event_state, exec
 
 
 @given('a event exists')
-def _(step, client: TestClient, event_state):
+def _(step: Step, client: TestClient, event_state: dict[str, Any]) -> None:
     row_data = extract_table_data(step)
     seller_email = TEST_SELLER_EMAIL
     create_user(client, seller_email, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
@@ -89,7 +98,12 @@ def _(step, client: TestClient, event_state):
 
 
 @given('a seller with events:')
-def create_seller_with_events(step, client: TestClient, event_state, execute_sql_statement):
+def create_seller_with_events(
+    step: Step,
+    client: TestClient,
+    event_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     created_user = create_user(
         client, LIST_SELLER_EMAIL, DEFAULT_PASSWORD, LIST_TEST_SELLER_NAME, 'seller'
     )
@@ -126,7 +140,12 @@ def create_seller_with_events(step, client: TestClient, event_state, execute_sql
 
 
 @given('no available events exist')
-def create_no_available_events(step, client: TestClient, event_state, execute_sql_statement):
+def create_no_available_events(
+    step: Step,
+    client: TestClient,
+    event_state: dict[str, Any],
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     created_user = create_user(
         client, EMPTY_LIST_SELLER_EMAIL, DEFAULT_PASSWORD, EMPTY_LIST_SELLER_NAME, 'seller'
     )
@@ -162,7 +181,10 @@ def create_no_available_events(step, client: TestClient, event_state, execute_sq
 
 
 @given('an event exists with:')
-def event_exists(step, execute_sql_statement):
+def event_exists(
+    step: Step,
+    execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
+) -> None:
     event_data = extract_table_data(step)
     event_id = int(event_data['event_id'])
     expected_seller_id = int(event_data['seller_id'])
@@ -280,7 +302,7 @@ def event_exists(step, execute_sql_statement):
                 else str(config_json_raw)
             )
             existing_config = orjson.loads(config_json_str)
-            for section_id in existing_config.get('sections', {}).keys():
+            for section_id in existing_config.get('sections', {}):
                 bf_key = f'{key_prefix}seats_bf:{event_id}:{section_id}'
                 client.delete(bf_key)
     except Exception:
@@ -377,7 +399,7 @@ def event_exists(step, execute_sql_statement):
 
 
 @given('Kvrocks seat initialization will fail')
-def mock_kvrocks_failure(request):
+def mock_kvrocks_failure(request: pytest.FixtureRequest) -> None:
     """
     Mock Kvrocks initialization to fail, testing compensating transaction.
 
@@ -387,7 +409,7 @@ def mock_kvrocks_failure(request):
     3. Compensating transaction should delete PostgreSQL data
     """
 
-    async def failing_init(*args, **kwargs):
+    async def failing_init(*args: object, **kwargs: object) -> dict[str, object]:
         """Mock initialization that always fails"""
         return {
             'success': False,

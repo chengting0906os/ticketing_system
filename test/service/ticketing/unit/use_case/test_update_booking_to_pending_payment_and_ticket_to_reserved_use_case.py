@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from uuid_utils import UUID
@@ -17,12 +17,12 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
     """Test updating booking to PENDING_PAYMENT with RESERVED tickets"""
 
     @pytest.fixture
-    def booking_id(self):
+    def booking_id(self) -> UUID:
         """Test booking ID"""
         return UUID('00000000-0000-0000-0000-000000000001')
 
     @pytest.fixture
-    def created_booking(self, booking_id):
+    def created_booking(self, booking_id: UUID) -> Booking:
         """Newly created booking entity"""
         return Booking(
             id=booking_id,
@@ -40,7 +40,7 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
         )
 
     @pytest.fixture
-    def reserved_tickets(self):
+    def reserved_tickets(self) -> list[TicketRef]:
         """Two reserved tickets"""
         return [
             TicketRef(
@@ -73,10 +73,10 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
 
     @pytest.mark.asyncio
     async def test_success_creates_booking_and_tickets(
-        self, booking_id, created_booking, reserved_tickets
-    ):
+        self, booking_id: UUID, created_booking: Booking, reserved_tickets: list[TicketRef]
+    ) -> None:
         # Given: Mock repository returns dict with booking and tickets
-        booking_command_repo = AsyncMock()
+        booking_command_repo: Mock = AsyncMock()
         booking_command_repo.create_booking_with_tickets_directly = AsyncMock(
             return_value={
                 'booking': created_booking,
@@ -84,7 +84,7 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
             }
         )
 
-        event_broadcaster = AsyncMock()
+        event_broadcaster: Mock = AsyncMock()
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(
             booking_command_repo=booking_command_repo,
@@ -134,10 +134,10 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
 
     @pytest.mark.asyncio
     async def test_sse_broadcast_failure_does_not_fail_use_case(
-        self, booking_id, created_booking, reserved_tickets
-    ):
+        self, booking_id: UUID, created_booking: Booking, reserved_tickets: list[TicketRef]
+    ) -> None:
         # Given: Repository succeeds but broadcaster fails
-        booking_command_repo = AsyncMock()
+        booking_command_repo: Mock = AsyncMock()
         booking_command_repo.create_booking_with_tickets_directly = AsyncMock(
             return_value={
                 'booking': created_booking,
@@ -145,7 +145,7 @@ class TestUpdateBookingToPendingPaymentAndTicketToReserved:
             }
         )
 
-        event_broadcaster = AsyncMock()
+        event_broadcaster: Mock = AsyncMock()
         event_broadcaster.broadcast = AsyncMock(side_effect=Exception('SSE connection lost'))
 
         use_case = UpdateBookingToPendingPaymentAndTicketToReservedUseCase(

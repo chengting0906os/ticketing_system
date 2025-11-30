@@ -1,5 +1,9 @@
+from typing import Any
+
 from fastapi.testclient import TestClient
 from pytest_bdd import when
+from pytest_bdd.model import Step
+
 from test.shared.utils import extract_table_data, login_user
 from test.util_constant import BUYER1_EMAIL, DEFAULT_PASSWORD, SELLER1_EMAIL
 
@@ -12,7 +16,7 @@ from src.platform.constant.route_constant import (
 
 
 @when('I create a event with')
-def create_event(step, client: TestClient, event_state):
+def create_event(step: Step, client: TestClient, event_state: dict[str, Any]) -> None:
     import json
 
     row_data = extract_table_data(step)
@@ -31,7 +35,7 @@ def create_event(step, client: TestClient, event_state):
 
 
 @when('I update the event to')
-def update_event(step, client: TestClient, event_state):
+def update_event(step: Step, client: TestClient, event_state: dict[str, Any]) -> None:
     update_data = extract_table_data(step)
     if 'price' in update_data:
         update_data['price'] = int(update_data['price'])
@@ -43,18 +47,20 @@ def update_event(step, client: TestClient, event_state):
 
 
 @when('the seller requests their events')
-def seller_requests_events(client: TestClient, event_state):
+def seller_requests_events(client: TestClient, event_state: dict[str, Any]) -> None:
     seller_id = event_state['seller_id']
     event_state['response'] = client.get(f'{EVENT_LIST}?seller_id={seller_id}')
 
 
 @when('a buyer requests events')
-def buyer_requests_events(client: TestClient, event_state):
+def buyer_requests_events(client: TestClient, event_state: dict[str, Any]) -> None:
     event_state['response'] = client.get(EVENT_BASE)
 
 
 @when('seller creates event with seating config:')
-def seller_creates_event_with_seating_config(step, client: TestClient, context):
+def seller_creates_event_with_seating_config(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller creates event with seating config and ticket prices in sections."""
     import json
 
@@ -74,7 +80,9 @@ def seller_creates_event_with_seating_config(step, client: TestClient, context):
 
 
 @when('seller creates event with invalid seating config:')
-def seller_creates_event_with_invalid_seating_config(step, client: TestClient, context):
+def seller_creates_event_with_invalid_seating_config(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller tries to create event with invalid seating config."""
     row_data = extract_table_data(step)
     request_data = {
@@ -90,7 +98,9 @@ def seller_creates_event_with_invalid_seating_config(step, client: TestClient, c
 
 
 @when('seller creates event with complex seating config:')
-def seller_creates_event_with_complex_seating_config(step, client: TestClient, context):
+def seller_creates_event_with_complex_seating_config(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller creates event with complex seating config."""
     import json
 
@@ -110,7 +120,9 @@ def seller_creates_event_with_complex_seating_config(step, client: TestClient, c
 
 
 @when('buyer tries to create event with seating config:')
-def buyer_tries_to_create_event_with_seating_config(step, client: TestClient, context):
+def buyer_tries_to_create_event_with_seating_config(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Buyer tries to create event (should be forbidden)."""
     import json
 
@@ -128,7 +140,9 @@ def buyer_tries_to_create_event_with_seating_config(step, client: TestClient, co
 
 
 @when('seller creates event with negative ticket price:')
-def seller_creates_event_with_negative_ticket_price(step, client: TestClient, context):
+def seller_creates_event_with_negative_ticket_price(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller tries to create event with negative ticket price in seating config."""
     import json
 
@@ -146,7 +160,9 @@ def seller_creates_event_with_negative_ticket_price(step, client: TestClient, co
 
 
 @when('seller creates event with zero ticket price:')
-def seller_creates_event_with_zero_ticket_price(step, client: TestClient, context):
+def seller_creates_event_with_zero_ticket_price(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller tries to create event with zero ticket price in seating config."""
     import json
 
@@ -167,7 +183,7 @@ def seller_creates_event_with_zero_ticket_price(step, client: TestClient, contex
 
 
 @when('seller lists all tickets with:')
-def seller_lists_all_tickets(step, client, context):
+def seller_lists_all_tickets(step: Step, client: TestClient, context: dict[str, Any]) -> None:
     """Seller lists all tickets for an event."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
@@ -184,7 +200,9 @@ def seller_lists_all_tickets(step, client, context):
 
 
 @when('seller lists tickets by section with:')
-def seller_lists_tickets_by_section(step, client, context):
+def seller_lists_tickets_by_section(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Seller lists tickets for specific section."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
@@ -202,7 +220,7 @@ def seller_lists_tickets_by_section(step, client, context):
 
 
 @when('buyer lists available tickets with:')
-def buyer_lists_available_tickets(step, client, context):
+def buyer_lists_available_tickets(step: Step, client: TestClient, context: dict[str, Any]) -> None:
     data = extract_table_data(step)
     event_id = int(data['event_id'])
 
@@ -218,7 +236,9 @@ def buyer_lists_available_tickets(step, client, context):
 
 
 @when('buyer attempts to access section tickets with:')
-def buyer_attempts_to_access_section_tickets(step, client, context):
+def buyer_attempts_to_access_section_tickets(
+    step: Step, client: TestClient, context: dict[str, Any]
+) -> None:
     """Buyer attempts to access section-specific tickets (seller-only functionality)."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
@@ -236,7 +256,9 @@ def buyer_attempts_to_access_section_tickets(step, client, context):
 
 
 @when('buyer lists available tickets with detailed view:')
-def buyer_lists_tickets_with_detail(step, context, client):
+def buyer_lists_tickets_with_detail(
+    step: Step, context: dict[str, Any], client: TestClient
+) -> None:
     """Buyer lists tickets with detailed view for an event."""
     data = extract_table_data(step)
     event_id = int(data['event_id'])
@@ -249,7 +271,7 @@ def buyer_lists_tickets_with_detail(step, context, client):
 
 
 @when('buyer cancels the booking')
-def buyer_cancels_booking(client, context):
+def buyer_cancels_booking(client: TestClient, context: dict[str, Any]) -> None:
     """Buyer cancels their booking."""
     booking_id = context.get('booking_id')
     if not booking_id:
@@ -261,13 +283,13 @@ def buyer_cancels_booking(client, context):
 
 
 @when('I get the event details')
-def get_event_details(client: TestClient, event_state):
+def get_event_details(client: TestClient, event_state: dict[str, Any]) -> None:
     """Get event details by ID."""
     event_id = event_state['event_id']
     event_state['response'] = client.get(f'{EVENT_BASE}/{event_id}')
 
 
 @when('I get event with id 99999')
-def get_nonexistent_event(client: TestClient, event_state):
+def get_nonexistent_event(client: TestClient, event_state: dict[str, Any]) -> None:
     """Try to get a non-existent event."""
     event_state['response'] = client.get(f'{EVENT_BASE}/99999')

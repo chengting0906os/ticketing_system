@@ -15,7 +15,7 @@ from src.service.reservation.driven_adapter.reservation_helper.seat_finder impor
 # =============================================================================
 class TestSeatFinderCalculations:
     @pytest.mark.unit
-    def test_calculate_seat_index(self):
+    def test_calculate_seat_index(self) -> None:
         finder = SeatFinder()
 
         # Row 1, Seat 1, 5 seats per row → index 0

@@ -4,6 +4,8 @@ Unit tests for BookingStatusManager
 Tests idempotency control and booking status management logic.
 """
 
+from typing import Any
+
 import pytest
 from src.service.reservation.driven_adapter.reservation_helper.booking_status_manager import (
     BookingStatusManager,
@@ -19,14 +21,16 @@ from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
 class MockBookingMetadataHandler(IBookingMetadataHandler):
     """Mock implementation of IBookingMetadataHandler for testing"""
 
-    def __init__(self):
-        self.metadata = {}
+    def __init__(self) -> None:
+        self.metadata: dict[str, dict[str, Any]] = {}
 
-    async def get_booking_metadata(self, *, booking_id: str):
+    async def get_booking_metadata(self, *, booking_id: str) -> dict[str, Any] | None:
         """Get booking metadata"""
         return self.metadata.get(booking_id)
 
-    async def update_booking_status(self, *, booking_id: str, status: str, error_message: str = ''):
+    async def update_booking_status(
+        self, *, booking_id: str, status: str, error_message: str = ''
+    ) -> None:
         """Update booking status"""
         if booking_id not in self.metadata:
             self.metadata[booking_id] = {}
@@ -74,7 +78,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_no_metadata(self, booking_id):
+    async def test_check_booking_status_no_metadata(self, booking_id: UUID) -> None:
         """Test checking status when no metadata exists"""
         # Given: Empty metadata handler
         mock_handler = MockBookingMetadataHandler()
@@ -88,7 +92,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_pending_reservation(self, booking_id):
+    async def test_check_booking_status_pending_reservation(self, booking_id: UUID) -> None:
         """Test checking status when booking is in PENDING_RESERVATION state"""
         # Given: Booking with PENDING_RESERVATION status
         mock_handler = MockBookingMetadataHandler()
@@ -103,7 +107,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_reserve_success(self, booking_id):
+    async def test_check_booking_status_reserve_success(self, booking_id: UUID) -> None:
         """Test checking status when booking already succeeded"""
         # Given: Booking with RESERVE_SUCCESS status and complete data
         mock_handler = MockBookingMetadataHandler()
@@ -130,7 +134,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_reserve_failed(self, booking_id):
+    async def test_check_booking_status_reserve_failed(self, booking_id: UUID) -> None:
         """Test checking status when booking already failed"""
         # Given: Booking with RESERVE_FAILED status
         mock_handler = MockBookingMetadataHandler()
@@ -152,7 +156,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_unknown_status(self, booking_id):
+    async def test_check_booking_status_unknown_status(self, booking_id: UUID) -> None:
         """Test checking status with unknown status value"""
         # Given: Booking with unknown status
         mock_handler = MockBookingMetadataHandler()
@@ -167,7 +171,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_save_reservation_failure(self, booking_id):
+    async def test_save_reservation_failure(self, booking_id: UUID) -> None:
         """Test saving reservation failure"""
         # Given: Empty metadata handler
         mock_handler = MockBookingMetadataHandler()
@@ -184,7 +188,9 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_check_booking_status_reserve_success_missing_data(self, booking_id):
+    async def test_check_booking_status_reserve_success_missing_data(
+        self, booking_id: UUID
+    ) -> None:
         """Test RESERVE_SUCCESS with missing data fields"""
         # Given: RESERVE_SUCCESS with minimal data
         mock_handler = MockBookingMetadataHandler()
@@ -205,7 +211,7 @@ class TestBookingStatusManager:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_idempotency_prevents_duplicate_reservation(self, booking_id):
+    async def test_idempotency_prevents_duplicate_reservation(self, booking_id: UUID) -> None:
         """Test that idempotency check prevents duplicate reservations"""
         # Given: Manager with successful reservation
         mock_handler = MockBookingMetadataHandler()

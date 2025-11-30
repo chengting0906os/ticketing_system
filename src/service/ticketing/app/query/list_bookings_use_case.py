@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Self
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
@@ -11,7 +11,7 @@ from src.platform.logging.loguru_io import Logger
 
 
 class ListBookingsUseCase:
-    def __init__(self, session: AsyncSession, booking_query_repo: IBookingQueryRepo):
+    def __init__(self, session: AsyncSession, booking_query_repo: IBookingQueryRepo) -> None:
         self.session = session
         self.booking_query_repo = booking_query_repo
 
@@ -21,7 +21,7 @@ class ListBookingsUseCase:
         cls,
         session: AsyncSession = Depends(get_async_read_session),
         booking_query_repo: IBookingQueryRepo = Depends(Provide[Container.booking_query_repo]),
-    ):
+    ) -> Self:
         return cls(session=session, booking_query_repo=booking_query_repo)
 
     @Logger.io

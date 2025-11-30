@@ -1,5 +1,4 @@
-from typing import List
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Ticket
 from src.service.ticketing.domain.entity.booking_entity import Booking
@@ -10,9 +9,9 @@ class RepositoryMocks:
         self,
         *,
         booking: Booking | None = None,
-        tickets: List[Ticket] | None = None,
-        ticket_ids: List[int] | None = None,
-    ):
+        tickets: list[Ticket] | None = None,
+        ticket_ids: list[int] | None = None,
+    ) -> None:
         """
         Initialize mock repositories with test data
 
@@ -26,12 +25,12 @@ class RepositoryMocks:
         self.ticket_ids = ticket_ids or []
 
         # Booking command repo
-        self.booking_command_repo = AsyncMock()
+        self.booking_command_repo: Mock = AsyncMock()
         self.booking_command_repo.get_by_id = AsyncMock(return_value=booking)
         self.booking_command_repo.get_tickets_by_booking_id = AsyncMock(return_value=tickets)
 
         # Event ticketing command repo
-        self.event_ticketing_command_repo = AsyncMock()
+        self.event_ticketing_command_repo: Mock = AsyncMock()
         self.event_ticketing_command_repo.get_ticket_ids_by_seat_identifiers = AsyncMock(
             return_value=ticket_ids
         )
@@ -39,7 +38,7 @@ class RepositoryMocks:
         self.event_ticketing_command_repo.update_tickets_status = AsyncMock()
 
         # Event ticketing query repo
-        self.event_ticketing_query_repo = AsyncMock()
+        self.event_ticketing_query_repo: Mock = AsyncMock()
         self.event_ticketing_query_repo.get_tickets_by_ids = AsyncMock(return_value=tickets)
 
     async def _update_booking(self, *, booking: Booking) -> Booking:

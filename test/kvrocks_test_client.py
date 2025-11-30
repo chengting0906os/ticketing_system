@@ -8,7 +8,6 @@ Production code stays simple - test complexity isolated here.
 """
 
 import asyncio
-from typing import Optional
 
 from redis import Redis as SyncRedis
 from redis.asyncio import ConnectionPool as AsyncConnectionPool, Redis as AsyncRedis
@@ -65,13 +64,13 @@ class KvrocksTestClientAsync(KvrocksClient):
 
         return self._clients[loop_id]
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """Close connection for current event loop"""
         loop_id = id(asyncio.get_running_loop())
         if client := self._clients.pop(loop_id, None):
             await client.aclose()
 
-    async def disconnect_all(self):
+    async def disconnect_all(self) -> None:
         """Close all connections"""
         for client in self._clients.values():
             await client.aclose()
@@ -86,8 +85,8 @@ class KvrocksTestClientSync:
     to clean test data without async/event-loop complications.
     """
 
-    def __init__(self):
-        self._client: Optional[SyncRedis] = None
+    def __init__(self) -> None:
+        self._client: SyncRedis | None = None
 
     def connect(self) -> SyncRedis:
         """Establish Kvrocks connection (sync version)"""
@@ -104,7 +103,7 @@ class KvrocksTestClientSync:
             )
         return self._client
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Close Kvrocks connection"""
         if self._client:
             self._client.close()

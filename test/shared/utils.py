@@ -1,7 +1,10 @@
+from collections.abc import Callable
 from typing import Any, Dict
 
 import orjson
 from fastapi.testclient import TestClient
+from httpx import Response
+from pytest_bdd.model import Step
 from test.event_test_constants import (
     DEFAULT_SEATING_CONFIG,
     DEFAULT_SEATING_CONFIG_JSON,
@@ -11,19 +14,19 @@ from test.event_test_constants import (
 from src.platform.constant.route_constant import EVENT_BASE, USER_CREATE, USER_LOGIN
 
 
-def extract_table_data(step) -> Dict[str, Any]:
+def extract_table_data(step: Step) -> Dict[str, Any]:
     rows = step.data_table.rows
     headers = [cell.value for cell in rows[0].cells]
     values = [cell.value for cell in rows[1].cells]
     return dict(zip(headers, values, strict=True))
 
 
-def extract_single_value(step, row_index: int = 0, col_index: int = 0) -> str:
+def extract_single_value(step: Step, row_index: int = 0, col_index: int = 0) -> str:
     rows = step.data_table.rows
     return rows[row_index].cells[col_index].value
 
 
-def login_user(client: TestClient, email: str, password: str) -> Any:
+def login_user(client: TestClient, email: str, password: str) -> Response:
     """Helper function to login a user and set cookies."""
     login_response = client.post(
         USER_LOGIN,
@@ -35,7 +38,9 @@ def login_user(client: TestClient, email: str, password: str) -> Any:
     return login_response
 
 
-def assert_response_status(response, expected_status: int, message: str | None = None):
+def assert_response_status(
+    response: Response, expected_status: int, message: str | None = None
+) -> None:
     response_text = getattr(response, 'text', getattr(response, 'content', 'N/A'))
     assert response.status_code == expected_status, (
         message or f'Expected {expected_status}, got {response.status_code}: {response_text}'
@@ -107,7 +112,7 @@ def create_event_with_venue_seating(
     seller_login_required: bool = True,
     seller_email: str | None = None,
     seller_password: str = 'P@ssw0rd',
-) -> tuple[Any, dict]:
+) -> tuple[Response, dict]:
     if seller_login_required and seller_email:
         login_user(client, seller_email, seller_password)
 
@@ -116,7 +121,9 @@ def create_event_with_venue_seating(
     return response, request_data
 
 
-def create_event_in_database(execute_sql_statement, event_data: dict, seller_id: int = 1) -> int:
+def create_event_in_database(
+    execute_sql_statement: Callable[..., Any], event_data: dict, seller_id: int = 1
+) -> int:
     execute_sql_statement(
         """
         INSERT INTO event (name, description, price, seller_id, is_active, status, venue_name, seating_config)

@@ -1,11 +1,15 @@
 """Then steps for seat reservation SSE test"""
 
+from typing import Any
+
 from pytest_bdd import then
+from pytest_bdd.model import Step
+
 from test.shared.utils import extract_table_data
 
 
 @then('SSE connection should be established')
-def sse_connection_established(context):
+def sse_connection_established(context: dict[str, Any]) -> None:
     response = context['response']
     assert response.status_code == 200, f'Expected 200, got {response.status_code}'
     assert 'text/event-stream' in response.headers.get('content-type', ''), (
@@ -14,7 +18,7 @@ def sse_connection_established(context):
 
 
 @then('initial status event should be received with:')
-def initial_status_received(step, context):
+def initial_status_received(step: Step, context: dict[str, Any]) -> None:
     data = extract_table_data(step)
     events = context.get('sse_events', [])
 
@@ -42,7 +46,7 @@ def initial_status_received(step, context):
 
 
 @then('section stats should include:')
-def section_stats_include(step, context):
+def section_stats_include(step: Step, context: dict[str, Any]) -> None:
     """Verify section stats contain expected data."""
     data = extract_table_data(step)
     events = context.get('sse_events', [])
@@ -73,7 +77,7 @@ def section_stats_include(step, context):
 
 
 @then('status update event should be received with:')
-def status_update_received(step, context):
+def status_update_received(step: Step, context: dict[str, Any]) -> None:
     """Verify status update event was received."""
     data = extract_table_data(step)
     events = context.get('sse_events', [])
@@ -92,7 +96,7 @@ def status_update_received(step, context):
 
 
 @then('updated section stats should show:')
-def updated_section_stats_show(step, context):
+def updated_section_stats_show(step: Step, context: dict[str, Any]) -> None:
     """Verify updated section stats."""
     data = extract_table_data(step)
 
@@ -109,7 +113,7 @@ def updated_section_stats_show(step, context):
 
 
 @then('all 3 users should receive status update event')
-def all_users_receive_update(context):
+def all_users_receive_update(context: dict[str, Any]) -> None:
     """Verify all users received the update."""
     connections = context.get('user_connections', [])
 
@@ -122,7 +126,7 @@ def all_users_receive_update(context):
 
 
 @then('all users should see same section stats:')
-def all_users_see_same_stats(step, context):
+def all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
     """Verify all users see the same stats."""
     data = extract_table_data(step)
     connections = context.get('user_connections', [])

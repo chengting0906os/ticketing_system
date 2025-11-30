@@ -8,7 +8,7 @@ Test Focus:
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import AsyncMock
 
 from anyio import create_memory_object_stream
@@ -30,14 +30,14 @@ from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 class MockBookingCommandRepo(IBookingCommandRepo):
     """Mock implementation of IBookingCommandRepo for testing"""
 
-    def __init__(self):
-        self.created_bookings: List[Dict] = []
+    def __init__(self) -> None:
+        self.created_bookings: list[dict[str, Any]] = []
 
-    async def get_by_id(self, *, booking_id: UUID) -> Optional[Booking]:
+    async def get_by_id(self, *, booking_id: UUID) -> Booking | None:
         """Mock implementation - not used in these tests"""
         return None
 
-    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> list:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> list[Any]:
         """Mock implementation - not used in these tests"""
         return []
 
@@ -66,7 +66,7 @@ class MockBookingCommandRepo(IBookingCommandRepo):
         seat_selection_mode: str,
         reserved_seats: list[str],
         total_price: int,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Mock implementation that returns booking and tickets"""
         # Store call for verification
         self.created_bookings.append(
@@ -123,18 +123,18 @@ class MockBookingCommandRepo(IBookingCommandRepo):
 
 
 class MockEventBroadcaster(IInMemoryEventBroadcaster):
-    def __init__(self):
-        self.broadcast_calls: List[Dict[str, Any]] = []
+    def __init__(self) -> None:
+        self.broadcast_calls: list[dict[str, Any]] = []
 
-    async def broadcast(self, *, booking_id: UUID, event_data: dict) -> None:
+    async def broadcast(self, *, booking_id: UUID, event_data: dict[str, Any]) -> None:
         self.broadcast_calls.append({'booking_id': booking_id, 'event_data': event_data})
 
-    async def subscribe(self, *, booking_id: UUID) -> MemoryObjectReceiveStream[dict]:
-        _, receive_stream = create_memory_object_stream[dict](max_buffer_size=10)
+    async def subscribe(self, *, booking_id: UUID) -> MemoryObjectReceiveStream[dict[str, Any]]:
+        _, receive_stream = create_memory_object_stream[dict[str, Any]](max_buffer_size=10)
         return receive_stream
 
     async def unsubscribe(
-        self, *, booking_id: UUID, stream: MemoryObjectReceiveStream[dict]
+        self, *, booking_id: UUID, stream: MemoryObjectReceiveStream[dict[str, Any]]
     ) -> None:
         pass
 
@@ -166,8 +166,11 @@ class TestUpdateBookingToPendingPaymentWithStats:
 
     @pytest.mark.asyncio
     async def test_broadcast_includes_subsection_stats(
-        self, use_case, booking_id, mock_broadcaster
-    ):
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Subsection stats from Seat Reservation Service
         subsection_stats = {
             'section_id': 'A-1',
@@ -197,7 +200,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert event_data['subsection_stats'] == subsection_stats
 
     @pytest.mark.asyncio
-    async def test_broadcast_includes_event_stats(self, use_case, booking_id, mock_broadcaster):
+    async def test_broadcast_includes_event_stats(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Event stats from Seat Reservation Service
         event_stats = {
             'event_id': 1,
@@ -226,7 +234,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert event_data['event_stats'] == event_stats
 
     @pytest.mark.asyncio
-    async def test_broadcast_includes_both_stats(self, use_case, booking_id, mock_broadcaster):
+    async def test_broadcast_includes_both_stats(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Both subsection and event stats
         subsection_stats = {'section_id': 'A-1', 'available': 8}
         event_stats = {'event_id': 1, 'available': 98}
@@ -255,8 +268,11 @@ class TestUpdateBookingToPendingPaymentWithStats:
 
     @pytest.mark.asyncio
     async def test_broadcast_without_stats_backward_compatibility(
-        self, use_case, booking_id, mock_broadcaster
-    ):
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: No stats provided (None)
 
         # When: Execute use case without stats
@@ -278,7 +294,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert 'event_stats' not in event_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_omits_none_stats(self, use_case, booking_id, mock_broadcaster):
+    async def test_broadcast_omits_none_stats(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Stats explicitly set to None
 
         # When: Execute use case with None stats
@@ -302,7 +323,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert 'event_stats' not in event_data
 
     @pytest.mark.asyncio
-    async def test_broadcast_includes_required_fields(self, use_case, booking_id, mock_broadcaster):
+    async def test_broadcast_includes_required_fields(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Use case with stats
 
         # When: Execute use case
@@ -336,8 +362,11 @@ class TestUpdateBookingToPendingPaymentWithStats:
 
     @pytest.mark.asyncio
     async def test_broadcast_failure_does_not_fail_use_case(
-        self, use_case, booking_id, mock_broadcaster
-    ):
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Broadcaster that raises exception
         mock_broadcaster.broadcast = AsyncMock(side_effect=Exception('Broadcast failed'))
 
@@ -359,7 +388,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert result.status == BookingStatus.PENDING_PAYMENT
 
     @pytest.mark.asyncio
-    async def test_empty_dict_stats_are_included(self, use_case, booking_id, mock_broadcaster):
+    async def test_empty_dict_stats_are_included(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Empty dict stats (different from None)
         subsection_stats = {}
         event_stats = {}
@@ -387,7 +421,12 @@ class TestUpdateBookingToPendingPaymentWithStats:
         assert 'event_stats' not in event_data
 
     @pytest.mark.asyncio
-    async def test_ticket_data_in_broadcast(self, use_case, booking_id, mock_broadcaster):
+    async def test_ticket_data_in_broadcast(
+        self,
+        use_case: UpdateBookingToPendingPaymentAndTicketToReservedUseCase,
+        booking_id: UUID,
+        mock_broadcaster: MockEventBroadcaster,
+    ) -> None:
         # Given: Reserved seats
 
         # When: Execute use case

@@ -1,7 +1,9 @@
 import time
+from typing import Any
 
 from fastapi.testclient import TestClient
 from pytest_bdd import when
+from pytest_bdd.model import Step
 from test.shared.utils import create_user, extract_table_data, login_user
 from test.util_constant import (
     ANOTHER_BUYER_EMAIL,
@@ -20,7 +22,7 @@ from src.platform.constant.route_constant import (
 
 
 @when('the buyer pays for the booking with:')
-def buyer_pays_for_booking(step, client: TestClient, booking_state):
+def buyer_pays_for_booking(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     payment_data = extract_table_data(step)
     booking_id = booking_state['booking']['id']
     response = client.post(
@@ -37,7 +39,7 @@ def buyer_pays_for_booking(step, client: TestClient, booking_state):
 
 
 @when('the buyer tries to pay for the booking again')
-def buyer_tries_to_pay_again(step, client: TestClient, booking_state):
+def buyer_tries_to_pay_again(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     response = client.post(
         BOOKING_PAY.format(booking_id=booking_state['booking']['id']),
         json={'card_number': TEST_CARD_NUMBER},
@@ -46,7 +48,7 @@ def buyer_tries_to_pay_again(step, client: TestClient, booking_state):
 
 
 @when('the buyer tries to pay for the booking')
-def buyer_tries_to_pay(step, client: TestClient, booking_state):
+def buyer_tries_to_pay(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     response = client.post(
         BOOKING_PAY.format(booking_id=booking_state['booking']['id']),
         json={'card_number': TEST_CARD_NUMBER},
@@ -55,7 +57,9 @@ def buyer_tries_to_pay(step, client: TestClient, booking_state):
 
 
 @when('another user tries to pay for the booking')
-def another_user_tries_to_pay(step, client: TestClient, booking_state):
+def another_user_tries_to_pay(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     create_user(client, ANOTHER_BUYER_EMAIL, DEFAULT_PASSWORD, ANOTHER_BUYER_NAME, 'buyer')
     login_user(client, ANOTHER_BUYER_EMAIL, DEFAULT_PASSWORD)
     response = client.post(
@@ -66,7 +70,7 @@ def another_user_tries_to_pay(step, client: TestClient, booking_state):
 
 
 @when('the buyer cancels the booking')
-def buyer_cancels_booking(step, client: TestClient, booking_state):
+def buyer_cancels_booking(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     booking_id = booking_state['booking']['id']
     response = client.patch(BOOKING_CANCEL.format(booking_id=booking_id))
     booking_state['response'] = response
@@ -80,25 +84,31 @@ def buyer_cancels_booking(step, client: TestClient, booking_state):
 
 
 @when('the buyer tries to cancel the booking')
-def buyer_tries_to_cancel(step, client: TestClient, booking_state):
+def buyer_tries_to_cancel(step: Step, client: TestClient, booking_state: dict[str, Any]) -> None:
     response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when("the user tries to cancel someone else's booking")
-def user_tries_cancel_others_booking(step, client: TestClient, booking_state):
+def user_tries_cancel_others_booking(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when("the seller tries to cancel the buyer's booking")
-def seller_tries_cancel_buyer_booking(step, client: TestClient, booking_state):
+def seller_tries_cancel_buyer_booking(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     response = client.patch(BOOKING_CANCEL.format(booking_id=booking_state['booking']['id']))
     booking_state['response'] = response
 
 
 @when('the buyer tries to cancel a non-existent booking')
-def buyer_tries_cancel_nonexistent(step, client: TestClient, booking_state):
+def buyer_tries_cancel_nonexistent(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     # Use a valid UUID7 format that doesn't exist in database
     # UUID7 has version bits set to 0111 (7) in the time_hi_and_version field
     nonexistent_uuid = '01900000-0000-7000-8000-000000000000'
@@ -119,7 +129,9 @@ def get_user_email_by_id(user_id: int) -> str:
 
 
 @when('buyer with id 6 requests their bookings:')
-def buyer_6_requests_bookings(step, client: TestClient, booking_state):
+def buyer_6_requests_bookings(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
     booking_status = extract_table_data(step).get('booking_status', '')
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status={booking_status}')
@@ -127,35 +139,45 @@ def buyer_6_requests_bookings(step, client: TestClient, booking_state):
 
 
 @when('buyer with id 6 requests their bookings')
-def buyer_6_requests_bookings_no_table(step, client: TestClient, booking_state):
+def buyer_6_requests_bookings_no_table(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
 @when('buyer with id 8 requests their bookings')
-def buyer_8_requests_bookings(step, client: TestClient, booking_state):
+def buyer_8_requests_bookings(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(8), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
 @when('seller with id 4 requests their bookings')
-def seller_4_requests_bookings(step, client: TestClient, booking_state):
+def seller_4_requests_bookings(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(4), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     booking_state['response'] = response
 
 
 @when('buyer with id 6 requests their bookings with status "paid"')
-def buyer_6_requests_bookings_paid(step, client: TestClient, booking_state):
+def buyer_6_requests_bookings_paid(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=paid')
     booking_state['response'] = response
 
 
 @when('buyer with id 6 requests their bookings with status "pending_payment"')
-def buyer_6_requests_bookings_pending(step, client: TestClient, booking_state):
+def buyer_6_requests_bookings_pending(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     login_user(client, get_user_email_by_id(6), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=pending_payment')
     booking_state['response'] = response
@@ -163,8 +185,8 @@ def buyer_6_requests_bookings_pending(step, client: TestClient, booking_state):
 
 @when('buyer with id {buyer_id:d} requests booking details for booking {booking_id:d}')
 def buyer_requests_booking_details(
-    buyer_id: int, booking_id: int, client: TestClient, booking_state
-):
+    buyer_id: int, booking_id: int, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     from src.platform.constant.route_constant import BOOKING_GET
 
     # Get the actual UUID7 booking ID from the booking_state mapping
@@ -180,7 +202,9 @@ def buyer_requests_booking_details(
 
 
 @when('buyer creates booking with manual seat selection:')
-def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, booking_state):
+def buyer_creates_booking_with_manual_seat_selection(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     """Buyer creates booking with manual seat selection."""
     seat_data = extract_table_data(step)
     selected_seat_locations = seat_data['seat_positions'].split(',')
@@ -212,8 +236,8 @@ def buyer_creates_booking_with_manual_seat_selection(step, client: TestClient, b
 
 @when('buyer creates booking with best available seat selection:')
 def buyer_creates_booking_with_best_available_seat_selection(
-    step, client: TestClient, booking_state
-):
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     """Buyer creates booking with best available seat selection."""
     seat_data = extract_table_data(step)
     quantity = int(seat_data['quantity'])
@@ -238,7 +262,7 @@ def buyer_creates_booking_with_best_available_seat_selection(
 
 
 @when('wait for async processing:')
-def wait_for_async_processing(step):
+def wait_for_async_processing(step: Step) -> None:
     """Wait for async processing to complete"""
     wait_data = extract_table_data(step)
     seconds = int(wait_data.get('seconds', 1))
@@ -246,7 +270,9 @@ def wait_for_async_processing(step):
 
 
 @when('buyer creates booking with best available in section:')
-def buyer_creates_booking_with_best_available_in_section(step, client: TestClient, booking_state):
+def buyer_creates_booking_with_best_available_in_section(
+    step: Step, client: TestClient, booking_state: dict[str, Any]
+) -> None:
     """Buyer creates booking with best available seat selection in specified section."""
     seat_data = extract_table_data(step)
     quantity = int(seat_data['quantity'])

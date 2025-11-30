@@ -16,7 +16,7 @@ from src.service.shared_kernel.app.dto import (
 class ReleaseSeatUseCase:
     """Seat Release Use Case"""
 
-    def __init__(self, seat_state_handler: ISeatStateCommandHandler):
+    def __init__(self, seat_state_handler: ISeatStateCommandHandler) -> None:
         self.seat_state_handler = seat_state_handler
 
     @Logger.io

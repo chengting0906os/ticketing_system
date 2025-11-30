@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import attrs
 from pydantic import SecretStr
@@ -11,6 +11,9 @@ from src.platform.exception.exceptions import (
     ForbiddenError,
     LoginError,
 )
+
+if TYPE_CHECKING:
+    from src.service.ticketing.app.interface.i_password_hasher import IPasswordHasher
 
 
 class UserRole(str, Enum):
@@ -62,7 +65,7 @@ class UserEntity:
         if role not in valid_roles:
             raise DomainError(f'Invalid role: {role}. Must be one of: {", ".join(valid_roles)}')
 
-    def set_password(self, plain_password: str, password_hasher) -> None:
+    def set_password(self, plain_password: str, password_hasher: 'IPasswordHasher') -> None:
         """Set password using provided password hasher"""
         from src.service.ticketing.app.interface.i_password_hasher import IPasswordHasher
 

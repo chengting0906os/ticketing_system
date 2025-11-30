@@ -5,9 +5,11 @@ Test integration behavior between ticketing service and Kvrocks
 """
 
 import os
+from typing import Any
 
 import orjson
 import pytest
+from redis.asyncio import Redis
 
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -17,7 +19,9 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
 )
 
 
-async def _setup_event_state_json(client, event_id: int, section_id: str, stats: dict) -> None:
+async def _setup_event_state_json(
+    client: Redis, event_id: int, section_id: str, stats: dict[str, Any]
+) -> None:
     """
     Helper to set up event_state JSON with section stats
 
@@ -64,7 +68,7 @@ async def _setup_event_state_json(client, event_id: int, section_id: str, stats:
 class TestMakeKeyIntegration:
     """Test _make_key() behavior in actual environment"""
 
-    def test_make_key_uses_environment_prefix(self):
+    def test_make_key_uses_environment_prefix(self) -> None:
         """Test: should use prefix from environment variable"""
         # Given: conftest.py will set KVROCKS_KEY_PREFIX
         prefix = os.getenv('KVROCKS_KEY_PREFIX', '')
@@ -83,12 +87,14 @@ class TestCheckSubsectionAvailabilityIntegration:
     """Test check_subsection_availability() integration with real Kvrocks"""
 
     @pytest.fixture
-    async def handler(self):
+    async def handler(self) -> SeatAvailabilityQueryHandlerImpl:
         await kvrocks_client.initialize()
         return SeatAvailabilityQueryHandlerImpl()
 
     @pytest.mark.asyncio
-    async def test_returns_true_when_sufficient_seats_available(self, handler):
+    async def test_returns_true_when_sufficient_seats_available(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should return True when sufficient seats available"""
         # Given: Set seat statistics in Kvrocks (using event_state JSON)
         client = kvrocks_client.get_client()
@@ -108,7 +114,9 @@ class TestCheckSubsectionAvailabilityIntegration:
         assert result.has_enough_seats is True
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_insufficient_seats(self, handler):
+    async def test_returns_false_when_insufficient_seats(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should return False when insufficient seats"""
         # Given: only 5 seats available
         client = kvrocks_client.get_client()
@@ -128,7 +136,9 @@ class TestCheckSubsectionAvailabilityIntegration:
         assert result.has_enough_seats is False
 
     @pytest.mark.asyncio
-    async def test_queries_correct_kvrocks_key(self, handler):
+    async def test_queries_correct_kvrocks_key(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should query using correct Kvrocks key format"""
         # Given
         client = kvrocks_client.get_client()
@@ -149,10 +159,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         # ✨ Use JSON.GET to read JSON data (not regular GET)
         try:
             result = await client.execute_command('JSON.GET', config_key, '$')
-            if isinstance(result, list) and result:
-                config_json = result[0]
-            else:
-                config_json = result
+            config_json = result[0] if isinstance(result, list) and result else result
         except Exception:
             # Fallback to regular GET if JSON commands not supported
             config_json = await client.get(config_key)
@@ -167,7 +174,9 @@ class TestCheckSubsectionAvailabilityIntegration:
         assert event_state['sections']['C']['subsections']['3']['stats']['available'] == 10
 
     @pytest.mark.asyncio
-    async def test_raises_not_found_error_when_section_not_exists(self, handler):
+    async def test_raises_not_found_error_when_section_not_exists(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should raise NotFoundError when event does not exist"""
         # Given: no data for this event in Kvrocks (conftest clears it)
 
@@ -178,7 +187,9 @@ class TestCheckSubsectionAvailabilityIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_handles_edge_case_exact_quantity_match(self, handler):
+    async def test_handles_edge_case_exact_quantity_match(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should return True when available seat count exactly matches requirement"""
         # Given: exactly 10 seats
         client = kvrocks_client.get_client()
@@ -195,7 +206,9 @@ class TestCheckSubsectionAvailabilityIntegration:
         assert result.has_enough_seats is True
 
     @pytest.mark.asyncio
-    async def test_handles_available_count_as_string(self, handler):
+    async def test_handles_available_count_as_string(
+        self, handler: SeatAvailabilityQueryHandlerImpl
+    ) -> None:
         """Test: should correctly handle numeric types in JSON"""
         # Given: numbers in JSON
         client = kvrocks_client.get_client()

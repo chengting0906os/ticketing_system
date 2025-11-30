@@ -21,5 +21,5 @@ class UserModel(Base):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'<UserModel(id={self.id}, email={self.email}, name={self.name})>'
