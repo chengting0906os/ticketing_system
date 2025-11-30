@@ -35,7 +35,7 @@ def create_producer():
 
 def create_dlq_consumer(event_id: int):
     """創建 DLQ consumer"""
-    dlq_topic = KafkaTopicBuilder.seat_reservation_dlq(event_id=event_id)
+    dlq_topic = KafkaTopicBuilder.reservation_dlq(event_id=event_id)
 
     consumer = Consumer(
         {

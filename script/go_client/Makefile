@@ -141,13 +141,13 @@ rlt: build-reserved  ## 🔥 Reserved Load Test - Auto-detect env (random 1-4 ti
 		echo "$(COLOR_YELLOW)📊 Local Dev 1000 mode: 1,000 seats$(COLOR_RESET)"; \
 		./$(RESERVED_BIN) -env local_dev_1000 -event 1 -workers 100 -host $(API_HOST); \
 	else \
-		echo "$(COLOR_YELLOW)📊 Development mode: 500 seats$(COLOR_RESET)"; \
-		./$(RESERVED_BIN) -env development -event 1 -workers 100 -host $(API_HOST); \
+		echo "$(COLOR_YELLOW)📊 Local dev mode: 500 seats$(COLOR_RESET)"; \
+		./$(RESERVED_BIN) -env local_dev -event 1 -workers 100 -host $(API_HOST); \
 	fi
 
-rlt-dev: build-reserved  ## 🔥 Reserved Load Test - Development (500 seats)
-	@echo "$(COLOR_BLUE)🔥 Running reserved load test (Development)...$(COLOR_RESET)"
-	@./$(RESERVED_BIN) -env development -event 1 -workers 100 -host $(API_HOST)
+rlt-dev: build-reserved  ## 🔥 Reserved Load Test - Local dev (500 seats)
+	@echo "$(COLOR_BLUE)🔥 Running reserved load test (Local dev)...$(COLOR_RESET)"
+	@./$(RESERVED_BIN) -env local_dev -event 1 -workers 100 -host $(API_HOST)
 
 rlt-1k: build-reserved  ## 🔥 Reserved Load Test - Local Dev 1000 (1,000 seats)
 	@echo "$(COLOR_BLUE)🔥 Running reserved load test (Local Dev 1000)...$(COLOR_RESET)"
@@ -178,8 +178,8 @@ frlt: build-full-reserved  ## 🚀 Full Reserved Load Test - Configurable (WORKE
 		echo "$(COLOR_YELLOW)📊 Local Dev 1000 mode: 1,000 seats$(COLOR_RESET)"; \
 		./$(FULL_RESERVED_BIN) -env local_dev_1000 -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
 	else \
-		echo "$(COLOR_YELLOW)📊 Development mode: 500 seats$(COLOR_RESET)"; \
-		./$(FULL_RESERVED_BIN) -env development -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
+		echo "$(COLOR_YELLOW)📊 Local dev mode: 500 seats$(COLOR_RESET)"; \
+		./$(FULL_RESERVED_BIN) -env local_dev -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST); \
 	fi
 
 frlt-1k: build-full-reserved  ## 🚀 Full Reserved Load Test - 1000 seats (local_dev_1000)

@@ -14,7 +14,7 @@ echo "🔄 Refresh interval: ${REFRESH_INTERVAL}s"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-SERVICES=("ticketing-service" "seat-reservation-service" "kvrocks-master")
+SERVICES=("ticketing-service" "reservation-service" "kvrocks-master")
 
 while true; do
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')

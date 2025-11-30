@@ -12,5 +12,5 @@ Organization:
 # =============================================================================
 # Service-Specific Fixtures
 # =============================================================================
-from test.service.seat_reservation.fixtures import *  # noqa: E402, F403
+from test.service.reservation.fixtures import *  # noqa: E402, F403
 from test.service.ticketing.fixtures import *  # noqa: E402, F403

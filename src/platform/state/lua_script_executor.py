@@ -29,9 +29,9 @@ class LuaScripts:
         lua_scripts_dir = (
             project_root
             / 'service'
-            / 'seat_reservation'
+            / 'reservation'
             / 'driven_adapter'
-            / 'seat_reservation_helper'
+            / 'reservation_helper'
             / 'lua_scripts'
         )
 

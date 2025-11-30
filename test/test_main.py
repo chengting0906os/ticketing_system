@@ -19,6 +19,11 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+# Seat Reservation Service imports
+from src.service.reservation.driving_adapter.reservation_controller import (
+    router as reservation_router,
+)
+
 from src.platform.config.core_setting import settings
 from src.platform.config.di import container
 from src.platform.database.asyncpg_setting import close_all_asyncpg_pools, get_asyncpg_pool
@@ -30,11 +35,6 @@ from src.platform.observability.tracing import TracingConfig
 # Use monkey-patched test client from conftest.py
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
-
-# Seat Reservation Service imports
-from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
-    router as seat_reservation_router,
-)
 
 # Ticketing Service imports
 from src.service.ticketing.app.command import (
@@ -179,7 +179,7 @@ app.mount('/static', StaticFiles(directory='static'), name='static')
 app.include_router(auth_router, prefix='/api/user', tags=['user'])
 app.include_router(event_router, prefix='/api/event', tags=['event'])
 app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
-app.include_router(seat_reservation_router)  # Already has /api/reservation prefix
+app.include_router(reservation_router)  # Already has /api/reservation prefix
 
 
 @app.get('/')

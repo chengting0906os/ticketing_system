@@ -40,7 +40,7 @@ services:
       - |
         export KAFKA_CONSUMER_INSTANCE_ID="reservation-service-consumer-$$(hostname)"
         export KAFKA_PRODUCER_INSTANCE_ID="reservation-service-producer-$$(hostname)"
-        /app/.venv/bin/python src/service/seat_reservation/driving_adapter/start_seat_reservation_consumer.py
+        /app/.venv/bin/python src/service/reservation/driving_adapter/start_reservation_consumer.py
     environment:
       # Python
       PYTHONPATH: /app

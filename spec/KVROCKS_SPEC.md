@@ -1,6 +1,6 @@
 # Kvrocks Data Storage Specification
 
-> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [atomic_reservation_executor.py](../src/service/seat_reservation/driven_adapter/seat_reservation_helper/atomic_reservation_executor.py) | [docker-compose.yml](../docker-compose.yml)
+> **📁 Related Files**: [kvrocks_client.py](../src/platform/state/kvrocks_client.py) | [atomic_reservation_executor.py](../src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py) | [docker-compose.yml](../docker-compose.yml)
 
 ## Quick Reference
 
@@ -209,7 +209,7 @@ def _make_key(key: str) -> str:
 
 ## Sellout Time Tracking
 
-> **Implementation**: [atomic_reservation_executor.py:56-159](../src/service/seat_reservation/driven_adapter/seat_reservation_helper/atomic_reservation_executor.py#L56-L159)
+> **Implementation**: [atomic_reservation_executor.py:56-159](../src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py#L56-L159)
 
 ### Overview
 

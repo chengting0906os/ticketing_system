@@ -4,37 +4,37 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 """
 
 from dependency_injector import containers, providers
+from src.service.reservation.app.command.finalize_seat_payment_use_case import (
+    FinalizeSeatPaymentUseCase,
+)
+from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
+from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.reservation.driven_adapter.event_state_broadcaster_impl import (
+    EventStateBroadcasterImpl,
+)
+from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
+    AtomicReservationExecutor,
+)
+from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer import (
+    PaymentFinalizer,
+)
+from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
+    ReleaseExecutor,
+)
+from src.service.reservation.driven_adapter.reservation_mq_publisher import (
+    SeatReservationEventPublisher,
+)
+from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+    SeatStateCommandHandlerImpl,
+)
+from src.service.reservation.driven_adapter.seat_state_query_handler_impl import (
+    SeatStateQueryHandlerImpl,
+)
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
 from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
-from src.service.seat_reservation.app.command.finalize_seat_payment_use_case import (
-    FinalizeSeatPaymentUseCase,
-)
-from src.service.seat_reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
-from src.service.seat_reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.seat_reservation.driven_adapter.event_state_broadcaster_impl import (
-    EventStateBroadcasterImpl,
-)
-from src.service.seat_reservation.driven_adapter.seat_reservation_helper.atomic_reservation_executor import (
-    AtomicReservationExecutor,
-)
-from src.service.seat_reservation.driven_adapter.seat_reservation_helper.payment_finalizer import (
-    PaymentFinalizer,
-)
-from src.service.seat_reservation.driven_adapter.seat_reservation_helper.release_executor import (
-    ReleaseExecutor,
-)
-from src.service.seat_reservation.driven_adapter.seat_reservation_mq_publisher import (
-    SeatReservationEventPublisher,
-)
-from src.service.seat_reservation.driven_adapter.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
-from src.service.seat_reservation.driven_adapter.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
-)
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
 )
@@ -104,7 +104,7 @@ class Container(containers.DeclarativeContainer):
     booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
 
     # Message Queue Publishers
-    seat_reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
+    reservation_mq_publisher = providers.Factory(SeatReservationEventPublisher)
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
 
     # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
@@ -150,7 +150,7 @@ class Container(containers.DeclarativeContainer):
     reserve_seats_use_case = providers.Factory(
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
-        mq_publisher=seat_reservation_mq_publisher,
+        mq_publisher=reservation_mq_publisher,
         event_state_broadcaster=event_state_broadcaster,
     )
     release_seat_use_case = providers.Factory(

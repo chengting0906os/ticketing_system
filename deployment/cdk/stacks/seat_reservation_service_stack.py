@@ -101,7 +101,7 @@ class SeatReservationServiceStack(Stack):
             command=[
                 'sh',
                 '-c',
-                'uv run python -m src.service.seat_reservation.driving_adapter.start_seat_reservation_consumer',
+                'uv run python -m src.service.reservation.driving_adapter.start_reservation_consumer',
             ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='reservation-consumer', log_retention=logs.RetentionDays.ONE_WEEK

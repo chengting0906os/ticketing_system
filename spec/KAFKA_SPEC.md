@@ -16,9 +16,9 @@
 
 | Builder Method | Example Topic Name |
 |----------------|-------------------|
-| `reserve_seats__ticketing_to_seat_reservation(1)` | `event-id-1______reserve-seats______ticketing-service___to___seat-reservation-service` |
-| `seat_reserved__seat_reservation_to_ticketing(1)` | `event-id-1______seat-reserved______seat-reservation-service___to___ticketing-service` |
-| `seat_reservation_failed__seat_reservation_to_ticketing(1)` | `event-id-1______seat-reservation-failed______seat-reservation-service___to___ticketing-service` |
+| `reserve_seats__ticketing_to_reservation(1)` | `event-id-1______reserve-seats______ticketing-service___to___reservation-service` |
+| `seat_reserved__reservation_to_ticketing(1)` | `event-id-1______seat-reserved______reservation-service___to___ticketing-service` |
+| `reservation_failed__reservation_to_ticketing(1)` | `event-id-1______seat-reservation-failed______reservation-service___to___ticketing-service` |
 
 **Get all topics**: `KafkaTopicBuilder.get_all_topics(event_id)`
 
@@ -29,7 +29,7 @@
 | Builder Method | Example Consumer Group |
 |----------------|----------------------|
 | `ticketing_service(1)` | `event-id-1_____ticketing-service--1` |
-| `seat_reservation_service(1)` | `event-id-1_____seat-reservation-service--1` |
+| `reservation_service(1)` | `event-id-1_____reservation-service--1` |
 
 ## Partition Strategy
 
@@ -124,7 +124,7 @@ make c-stop
 # View consumer group details
 docker exec kafka1 kafka-consumer-groups \
   --bootstrap-server kafka1:29092 \
-  --group event-id-1_____seat-reservation-service--1 \
+  --group event-id-1_____reservation-service--1 \
   --describe
 
 # List all consumer groups

@@ -22,9 +22,9 @@ from test.pytest_bdd_ng_example.when import *  # noqa: E402, F403
 # =============================================================================
 # Seat Reservation Service Steps
 # =============================================================================
-from test.service.seat_reservation.integration.steps.seat_reservation.given import *  # noqa: E402, F403
-from test.service.seat_reservation.integration.steps.seat_reservation.then import *  # noqa: E402, F403
-from test.service.seat_reservation.integration.steps.seat_reservation.when import *  # noqa: E402, F403
+from test.service.reservation.integration.steps.reservation.given import *  # noqa: E402, F403
+from test.service.reservation.integration.steps.reservation.then import *  # noqa: E402, F403
+from test.service.reservation.integration.steps.reservation.when import *  # noqa: E402, F403
 
 # =============================================================================
 # Ticketing Service Steps

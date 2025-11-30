@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
 Database Seed Script
-填充測試資料到資料庫
+Populate test data into the database
 
-功能：
-1. Create Users - 創建 12 個測試用戶 (1 seller + 1 buyer + 10 load test)
-2. Create Event - 創建活動並發送座位初始化到 Kafka (→ seat_reservation Kvrocks)
+Features:
+1. Create Users - Create 12 test users (1 seller + 1 buyer + 10 load test)
+2. Create Event - Create event and send seat initialization to Kafka (→ reservation Kvrocks)
 
-注意：
-- 座位資料會存入 seat_reservation 的 Kvrocks (不是 PostgreSQL)
-- 票券資料會存入 event_ticketing 的 PostgreSQL
+Notes:
+- Seat data is stored in reservation's Kvrocks (not PostgreSQL)
+- Ticket data is stored in event_ticketing's PostgreSQL
 """
 
 import asyncio
@@ -81,7 +81,7 @@ def get_seating_config() -> dict:
 
 
 async def create_init_users_in_session(session) -> int:
-    """創建初始測試用戶 (12 users total)
+    """Create initial test users (12 users total)
 
     Returns:
         int: seller_id
@@ -96,7 +96,7 @@ async def create_init_users_in_session(session) -> int:
         user_repo = UserCommandRepoImpl(lambda: get_current_user_session())
         password_hasher = BcryptPasswordHasher()
 
-        # 1. 創建 seller
+        # 1. Create seller
         seller = UserEntity(
             email='s@t.com',
             name='init seller',
@@ -109,7 +109,7 @@ async def create_init_users_in_session(session) -> int:
         created_seller = await user_repo.create(seller)
         print(f'   ✅ Created seller: ID={created_seller.id}, Email={created_seller.email}')
 
-        # 2. 創建 buyer
+        # 2. Create buyer
         buyer = UserEntity(
             email='b@t.com',
             name='init buyer',
@@ -122,7 +122,7 @@ async def create_init_users_in_session(session) -> int:
         created_buyer = await user_repo.create(buyer)
         print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
 
-        # 3. 批量創建 10 個 load test 用戶
+        # 3. Batch create 10 load test users
         print('   📝 Creating 10 load test users...')
         for i in range(1, 11):
             loadtest_user = UserEntity(
@@ -157,11 +157,11 @@ async def create_init_users_in_session(session) -> int:
 
 
 async def create_init_event_in_session(session, seller_id: int):
-    """創建初始測試活動"""
+    """Create initial test event"""
     try:
         print('🎫 Creating initial event...')
 
-        # 確認用戶存在
+        # Verify user exists
         result = await session.execute(text(f'SELECT id, email FROM "user" WHERE id = {seller_id}'))
         user_check = result.fetchone()
         if user_check:
@@ -174,22 +174,22 @@ async def create_init_event_in_session(session, seller_id: int):
         async def get_current_session():
             yield session
 
-        # 從 DI 容器取得所有依賴
+        # Get all dependencies from DI container
         from src.platform.config.di import container
 
-        # Command repo 使用 raw SQL，不需要 session
+        # Command repo uses raw SQL, no session needed
         event_ticketing_repo = EventTicketingCommandRepoImpl()
         init_state_handler = container.init_event_and_tickets_state_handler()
         mq_infra_orchestrator = container.mq_infra_orchestrator()
 
-        # 創建 UseCase
+        # Create UseCase
         create_event_use_case = CreateEventAndTicketsUseCase(
             event_ticketing_command_repo=event_ticketing_repo,
             mq_infra_orchestrator=mq_infra_orchestrator,
             init_state_handler=init_state_handler,
         )
 
-        # 座位配置選擇（根據 DEPLOY_ENV 環境變數）
+        # Select seating config (based on DEPLOY_ENV environment variable)
         seating_config = get_seating_config()
 
         # Calculate total seats (compact format: rows/cols at top level, subsections as int)
@@ -225,7 +225,7 @@ async def create_init_event_in_session(session, seller_id: int):
 
 
 async def verify_data():
-    """驗證填充的資料"""
+    """Verify seeded data"""
     # async_session_maker is a function that returns a sessionmaker
     async with async_session_maker()() as session:
         try:
@@ -274,7 +274,7 @@ async def main():
         exit(1)
 
     try:
-        # 使用單一 session 來處理所有數據操作
+        # Use a single session to handle all data operations
         # async_session_maker is a function that returns a sessionmaker
         async with async_session_maker()() as session:
             try:
@@ -284,7 +284,7 @@ async def main():
                 await create_init_event_in_session(session, seller_id)
                 print()
 
-                # 一次性提交所有操作
+                # Commit all operations at once
                 await session.commit()
                 print('✅ All data operations committed successfully!')
 

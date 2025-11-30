@@ -355,9 +355,9 @@ Kafka retries, idempotency prevents duplicates.
 ## Implementation Files
 
 - **Lua:** `src/platform/state/lua_scripts/find_consecutive_seats.lua`
-- **Executor:** `src/service/seat_reservation/driven_adapter/seat_reservation_helper/atomic_reservation_executor.py`
-- **Handler:** `src/service/seat_reservation/driven_adapter/seat_state_command_handler_impl.py`
-- **Finder:** `src/service/seat_reservation/driven_adapter/seat_reservation_helper/seat_finder.py`
+- **Executor:** `src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py`
+- **Handler:** `src/service/reservation/driven_adapter/seat_state_command_handler_impl.py`
+- **Finder:** `src/service/reservation/driven_adapter/reservation_helper/seat_finder.py`
 
 ---
 

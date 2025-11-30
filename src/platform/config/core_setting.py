@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # Database Connection Pool Configuration (SQLAlchemy)
     # Formula: PostgreSQL max_connections (200) × 0.8 = 160 total
-    # Distributed across 8 workers (4 ticketing + 4 seat_reservation)
+    # Distributed across 8 workers (4 ticketing + 4 reservation)
     # Per worker: 160 / 8 = 20 connections
     DB_POOL_SIZE_WRITE: int = 1  # Write pool per worker
     DB_POOL_SIZE_READ: int = 1  # Read pool per worker
@@ -182,7 +182,7 @@ class KafkaConfig:
         """
         Args:
             event_id: Event ID
-            service: Service name ('ticketing' or 'seat_reservation')
+            service: Service name ('ticketing' or 'reservation')
 
         Note: instance_id is obtained from settings at runtime to avoid fork issues
         """
@@ -201,8 +201,8 @@ class KafkaConfig:
             return self._transactional_id_builder.ticketing_service(
                 event_id=self.event_id, instance_id=self.instance_id
             )
-        elif self.service == 'seat_reservation':
-            return self._transactional_id_builder.seat_reservation_service(
+        elif self.service == 'reservation':
+            return self._transactional_id_builder.reservation_service(
                 event_id=self.event_id, instance_id=self.instance_id
             )
         else:

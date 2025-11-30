@@ -28,8 +28,8 @@ from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
 
 # Seat Reservation Service imports
-from src.service.seat_reservation.driving_adapter.seat_reservation_controller import (
-    router as seat_reservation_router,
+from src.service.reservation.driving_adapter.reservation_controller import (
+    router as reservation_router,
 )
 
 # Ticketing Service imports
@@ -227,7 +227,7 @@ app.mount('/static', StaticFiles(directory='static'), name='static')
 app.include_router(auth_router, prefix='/api/user', tags=['user'])
 app.include_router(event_router, prefix='/api/event', tags=['event'])
 app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
-app.include_router(seat_reservation_router)  # Already has /api/reservation prefix
+app.include_router(reservation_router)  # Already has /api/reservation prefix
 
 
 @app.get('/')

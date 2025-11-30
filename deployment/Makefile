@@ -560,7 +560,7 @@ ecr-push-ticketing:  ## 🎫 Build and push ticketing service to ECR (production
 	@./deployment/script/ecr-push.sh production ticketing
 
 ecr-push-reservation:  ## 🪑 Build and push seat-reservation service to ECR (production)
-	@echo "🪑 Building and pushing seat-reservation-service to ECR (production)..."
+	@echo "🪑 Building and pushing reservation-service to ECR (production)..."
 	@./deployment/script/ecr-push.sh production seat-reservation
 
 ecr-push-loadtest:  ## 🧪 Build and push loadtest (Go + Python) to ECR
@@ -589,15 +589,15 @@ ecr-list:  ## 📋 List Docker images in ECR repositories
 	@echo "📋 Images in ticketing-service repository:"
 	@aws ecr list-images --repository-name ticketing-service --region $(AWS_REGION) --output table || echo "Repository not found"
 	@echo ""
-	@echo "📋 Images in seat-reservation-service repository:"
-	@aws ecr list-images --repository-name seat-reservation-service --region $(AWS_REGION) --output table || echo "Repository not found"
+	@echo "📋 Images in reservation-service repository:"
+	@aws ecr list-images --repository-name reservation-service --region $(AWS_REGION) --output table || echo "Repository not found"
 
 ecr-cleanup:  ## 🧹 Remove old ECR images (keep last 10 per environment)
 	@echo "🧹 Cleaning up old ECR images..."
 	@echo "⚠️  This will keep only the last 10 images per environment tag"
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
-	@for repo in ticketing-service seat-reservation-service; do \
+	@for repo in ticketing-service reservation-service; do \
 		echo "Cleaning $$repo..."; \
 		aws ecr list-images --repository-name $$repo --region $(AWS_REGION) \
 			--query 'imageIds[?type(imageTag)!=`null`]|sort_by(@, &imageTag)|[0:-10].[imageDigest]' \

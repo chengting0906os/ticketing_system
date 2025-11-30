@@ -1,19 +1,19 @@
 import random
 import string
-from uuid_utils import UUID
 from typing import Any, Dict
 
 from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
+from uuid_utils import UUID
 
 from src.platform.config.di import Container
-from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
-from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
-from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
+from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
+from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 
 
 class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
@@ -95,7 +95,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
                     total_amount=float(sum(ticket.price for ticket in reserved_tickets)),
                 )
 
-                # Publish to seat_reservation service to finalize payment in Kvrocks
+                # Publish to reservation service to finalize payment in Kvrocks
                 topic_name = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
                     event_id=booking.event_id
                 )

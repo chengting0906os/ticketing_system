@@ -7,7 +7,7 @@ Complete System Cleanup Script
 - Kafka Topics: 所有 event-id-* topics
 - Consumer Groups: 所有 consumer groups
 - Kvrocks Data: FLUSHDB 清空所有鍵值資料
-- Kvrocks State: seat_reservation 和 event_ticketing 的狀態目錄
+- Kvrocks State: reservation 和 event_ticketing 的狀態目錄
 - PostgreSQL: TRUNCATE 清空所有資料表 (ticket, booking, event, user)
 """
 
@@ -221,7 +221,7 @@ class SystemCleaner:
             Logger.base.error(f'❌ Failed to flush Kvrocks: {e}')
 
     def clean_kvrocks_state(self):
-        """清理 Kvrocks 狀態目錄 (seat_reservation + event_ticketing)"""
+        """清理 Kvrocks 狀態目錄 (reservation + event_ticketing)"""
         Logger.base.info('💾 ==================== CLEANING KVROCKS STATE ====================')
 
         try:
@@ -233,7 +233,7 @@ class SystemCleaner:
                 Logger.base.info(f'🗑️ Removing Kvrocks state directory: {self.kvrocks_state_dir}')
                 shutil.rmtree(self.kvrocks_state_dir)
                 Logger.base.info(
-                    '✅ Kvrocks state directory removed (both seat_reservation and event_ticketing)'
+                    '✅ Kvrocks state directory removed (both reservation and event_ticketing)'
                 )
             else:
                 Logger.base.info('ℹ️ Kvrocks state directory does not exist')

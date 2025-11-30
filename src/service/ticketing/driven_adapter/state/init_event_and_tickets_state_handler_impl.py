@@ -10,13 +10,13 @@ from datetime import datetime, timezone
 from typing import Dict, TypedDict
 
 import orjson
-
-from src.platform.logging.loguru_io import Logger
-from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.seat_reservation.driven_adapter.seat_reservation_helper.key_str_generator import (
+from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
     make_event_state_key,
     make_seats_bf_key,
 )
+
+from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
     IInitEventAndTicketsStateHandler,
 )

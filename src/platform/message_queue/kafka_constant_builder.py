@@ -2,7 +2,7 @@ class ServiceNames:
     """Service name constants"""
 
     TICKETING_SERVICE = 'ticketing-service'  # Integrates booking + event_ticketing
-    SEAT_RESERVATION_SERVICE = 'seat-reservation-service'
+    RESERVATION_SERVICE = 'reservation-service'
 
 
 class KafkaTopicBuilder:
@@ -15,15 +15,15 @@ class KafkaTopicBuilder:
     # ====== To Seat Reservation Service =======
     @staticmethod
     def ticket_reserving_request_to_reserved_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
 
     @staticmethod
     def release_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
 
     @staticmethod
     def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
 
     # ====== To Ticketing Service (includes Booking + Event Ticketing) =======
 
@@ -32,11 +32,11 @@ class KafkaTopicBuilder:
         *, event_id: int
     ) -> str:
         """After successful seat reservation, update both Booking and Ticket status (atomic operation)"""
-        return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
+        return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
     def update_booking_status_to_failed(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.SEAT_RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
+        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
     def ticketing_dlq(*, event_id: int) -> str:
@@ -44,9 +44,11 @@ class KafkaTopicBuilder:
         return f'event-id-{event_id}______ticketing-dlq______{ServiceNames.TICKETING_SERVICE}'
 
     @staticmethod
-    def seat_reservation_dlq(*, event_id: int) -> str:
+    def reservation_dlq(*, event_id: int) -> str:
         """Dead Letter Queue for seat reservation service unrecoverable errors"""
-        return f'event-id-{event_id}______seat-reservation-dlq______{ServiceNames.SEAT_RESERVATION_SERVICE}'
+        return (
+            f'event-id-{event_id}______seat-reservation-dlq______{ServiceNames.RESERVATION_SERVICE}'
+        )
 
     @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
@@ -62,7 +64,7 @@ class KafkaTopicBuilder:
             KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
             # Dead Letter Queues
             KafkaTopicBuilder.ticketing_dlq(event_id=event_id),
-            KafkaTopicBuilder.seat_reservation_dlq(event_id=event_id),
+            KafkaTopicBuilder.reservation_dlq(event_id=event_id),
         ]
 
 
@@ -79,15 +81,15 @@ class KafkaConsumerGroupBuilder:
         return f'event-id-{event_id}_____{ServiceNames.TICKETING_SERVICE}--{event_id}'
 
     @staticmethod
-    def seat_reservation_service(*, event_id: int) -> str:
-        return f'event-id-{event_id}_____{ServiceNames.SEAT_RESERVATION_SERVICE}--{event_id}'
+    def reservation_service(*, event_id: int) -> str:
+        return f'event-id-{event_id}_____{ServiceNames.RESERVATION_SERVICE}--{event_id}'
 
     @staticmethod
     def get_all_consumer_groups(*, event_id: int) -> list[str]:
         """Get all consumer groups (Ticketing + Seat Reservation)"""
         return [
             KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
-            KafkaConsumerGroupBuilder.seat_reservation_service(event_id=event_id),
+            KafkaConsumerGroupBuilder.reservation_service(event_id=event_id),
         ]
 
 
@@ -110,9 +112,11 @@ class KafkaProducerTransactionalIdBuilder:
         return f'{ServiceNames.TICKETING_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
 
     @staticmethod
-    def seat_reservation_service(*, event_id: int, instance_id: str) -> str:
+    def reservation_service(*, event_id: int, instance_id: str) -> str:
         """Seat Reservation Service Producer Transactional ID"""
-        return f'{ServiceNames.SEAT_RESERVATION_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
+        return (
+            f'{ServiceNames.RESERVATION_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
+        )
 
 
 class PartitionKeyBuilder:

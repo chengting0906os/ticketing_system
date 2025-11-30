@@ -10,7 +10,7 @@ Integrated Responsibilities (2 topics):
 
 Important:
 - This consumer **only operates on PostgreSQL**, doesn't touch Kvrocks!
-- Kvrocks state management is the responsibility of seat_reservation_consumer
+- Kvrocks state management is the responsibility of reservation_consumer
 - Merged topics ensure atomicity of Booking and Ticket state updates
 
 Features:

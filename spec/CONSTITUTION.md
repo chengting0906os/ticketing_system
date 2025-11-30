@@ -9,7 +9,7 @@
 - [KAFKA_SPEC.md](KAFKA_SPEC.md) - Event-driven messaging
 - [KVROCKS_SPEC.md](KVROCKS_SPEC.md) - State storage
 - [TICKETING_SERVICE_SPEC.md](TICKETING_SERVICE_SPEC.md) - Ticketing service architecture
-- [SEAT_RESERVATION_SPEC.md](SEAT_RESERVATION_SPEC.md) - Seat reservation service architecture
+- [RESERVATION_SPEC.md](RESERVATION_SPEC.md) - Seat reservation service architecture
 - [TEST_SPEC.md](TEST_SPEC.md) - Test tech stack
 
 **Architecture**: Use `tree` command to understand hexagonal structure
