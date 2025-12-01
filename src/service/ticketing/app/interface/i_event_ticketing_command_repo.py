@@ -44,7 +44,7 @@ class IEventTicketingCommandRepo(ABC):
         self,
         *,
         event_aggregate: EventTicketingAggregate,
-        ticket_tuples: Optional[List[tuple]] = None,
+        ticket_tuples: List[tuple],
     ) -> EventTicketingAggregate:
         """
         Create Event Aggregate with large number of tickets using high-performance batch method

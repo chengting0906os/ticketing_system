@@ -21,6 +21,9 @@ SCALE_TICKETING ?= 10
 SCALE_RESERVATION ?= 10
 SCALE_BOOKING ?= 10
 
+# Default seats for seeding
+SEATS ?= 500
+
 # ==============================================================================
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
@@ -63,24 +66,30 @@ migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message'
 migrate-history:  ## 📜 Show migration history
 	@uv run alembic -c $(ALEMBIC_CONFIG) history
 
-re-seed:  ## 🔄 Reset and re-seed database (usage: make re-seed DEPLOY_ENV=local_dev_1000)
+re-seed:  ## 🔄 Reset and re-seed database (default: 500 seats, usage: make re-seed SEATS=5k)
 	@echo "🗑️  Resetting database..."
 	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost uv run python -m script.reset_database
-	@echo "🌱 Seeding database with DEPLOY_ENV=$(DEPLOY_ENV)..."
-	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost DEPLOY_ENV=$(DEPLOY_ENV) uv run python -m script.seed_data
+	@echo "🌱 Seeding database with SEATS=$(SEATS)..."
+	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost SEATS=$(SEATS) uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
 
-re-seed-1k:  ## 🔄 Reset and seed with 1000 seats (local_dev_1000)
-	@$(MAKE) re-seed DEPLOY_ENV=local_dev_1000
+re-seed-500:  ## 🔄 Reset and seed with 500 seats
+	@$(MAKE) re-seed SEATS=500
 
-re-seed-5k:  ## 🔄 Reset and seed with 5000 seats (staging)
-	@$(MAKE) re-seed DEPLOY_ENV=staging
+re-seed-1k:  ## 🔄 Reset and seed with 1,000 seats
+	@$(MAKE) re-seed SEATS=1k
 
-re-seed-2k:  ## 🔄 Reset and seed with 2000 seats (local_dev_2k)
-	@$(MAKE) re-seed DEPLOY_ENV=local_dev_2k
+re-seed-2k:  ## 🔄 Reset and seed with 2,000 seats
+	@$(MAKE) re-seed SEATS=2k
 
-re-seed-50k:  ## 🔄 Reset and seed with 50000 seats (production)
-	@$(MAKE) re-seed DEPLOY_ENV=production
+re-seed-5k:  ## 🔄 Reset and seed with 5,000 seats
+	@$(MAKE) re-seed SEATS=5k
+
+re-seed-50k:  ## 🔄 Reset and seed with 50,000 seats
+	@$(MAKE) re-seed SEATS=50k
+
+re-seed-200k:  ## 🔄 Reset and seed with 200,000 seats
+	@$(MAKE) re-seed SEATS=200k
 
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U postgres -d ticketing_system_db
@@ -202,41 +211,32 @@ tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, SSE slow tests)
 # 🎯 K6 LOAD TESTING
 # ==============================================================================
 
-.PHONY: k6-local k6-stress k6-prod k6-prod-stress
-k6-local:  ## 🎯 Run k6 load test (local: peak 250 RPS, 1 min)
-	@k6 run script/k6/local/load-test.js
+.PHONY: k6-dev-load k6-dev-stress k6-dev-spike k6-prod-load k6-prod-stress k6-prod-spike
+k6-dev-load:  ## 🎯 Run k6 load test (dev: ~10K req, peak 900 RPS)
+	@k6 run script/k6/dev/load-test.js
 
-k6-stress:  ## 💥 Run k6 stress test (local: peak 500 RPS)
-	@k6 run script/k6/local/stress-test.js
+k6-dev-stress:  ## 💥 Run k6 stress test (dev: peak 1000 RPS)
+	@k6 run script/k6/dev/stress-test.js
 
-k6-prod:  ## 🚀 Run k6 load test (production: peak 2500 RPS)
-	@k6 run -e API_URL=$(API_HOST) script/k6/production/load-test.js
+k6-dev-spike:  ## ⚡ Run k6 spike test (dev: spike to 1000 RPS)
+	@k6 run script/k6/dev/spike-test.js
 
-k6-prod-stress:  ## 💥 Run k6 stress test (production: peak 7000 RPS)
-	@k6 run -e API_URL=$(API_HOST) script/k6/production/stress-test.js
+k6-prod-load:  ## 🚀 Run k6 load test (prod: ~20K req, peak 1800 RPS)
+	@k6 run -e API_HOST=$(API_HOST) script/k6/production/load-test.js
+
+k6-prod-stress:  ## 💥 Run k6 stress test (prod: peak 7000 RPS)
+	@k6 run -e API_HOST=$(API_HOST) script/k6/production/stress-test.js
+
+k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS)
+	@k6 run -e API_HOST=$(API_HOST) script/k6/production/spike-test.js
 
 # ==============================================================================
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
 # ==============================================================================
-# All go-* targets are forwarded to script/go_client/Makefile
 # Usage: make go-<target>
-#   make go-clt-t          # Tiny concurrent load test
-#   make go-clt-s          # Small concurrent load test
-#   make go-clt-m          # Medium concurrent load test
-#   make go-clt-l          # Large concurrent load test
-#   make go-clt-f          # Full concurrent load test
-#   make go-rlt            # Reserved load test (auto-detect env)
-#   make go-rlt-1k         # Reserved load test (1000 seats)
-#   make go-frlt           # Full reserved load test (WORKERS=100 BATCH=1)
-#   make go-frlt-1k        # Full reserved load test (1000 seats)
-#   make go-frlt-staging   # Full reserved load test (5000 seats)
-#   make go-frlt-prod      # Full reserved load test (50000 seats)
-#   make go-both-m         # Both tests in parallel - medium
-#   make go-both-l         # Both tests in parallel - large
-#   make go-both-f         # Both tests in parallel - full
-#   make go-help           # Show go_client Makefile help
-#
-# For full list: cd script/go_client && make help
+#   make go-clt-t/s/m/l/f      # Concurrent load test (tiny → full)
+#   make go-frlt-{500,5k,50k,200k}  # Full reserved load test (default: 500)
+#   make go-help               # Show all go_client commands
 # ==============================================================================
 
 # Auto-delegate all go-* targets to script/go_client/Makefile
@@ -245,23 +245,12 @@ go-%:
 
 
 # ==============================================================================
-# ☁️ AWS OPERATIONS
+# ☁️ AWS OPERATIONS (deployment/Makefile)
 # ==============================================================================
-# All AWS-related commands are now in deployment/Makefile
-# Run them with: make -f deployment/Makefile <target>
-# Or use: make aws-<command> (auto-delegated)
-#
-# Available AWS commands:
-#   aws-go-clt-t/s/m/l/f      - AWS Load Testing
-#   aws-go-rlt                - AWS Reserved Load Test
-#   aws-loadtest-full         - Complete workflow (seed + loadtest)
-#   aws-loadtest-run/exec     - Interactive LoadTest task
-#   dev-deploy-all/full       - Deploy to development
-#   prod-deploy-all/full      - Deploy to production
-#   aws-reset                 - Complete reset (migrate + seed)
-#   aws-status/logs           - Service monitoring
-#
-# For full list: make -f deployment/Makefile help
+# Run with: make -f deployment/Makefile <target> or make aws-<target>
+#   aws-start/stop/status     - Service lifecycle
+#   aws-lt-exec               - Connect to LoadTest EC2
+#   dev-deploy-full           - Build + Push + Deploy
 # ==============================================================================
 
 # Auto-delegate all aws-* targets to deployment/Makefile
@@ -302,7 +291,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-1k / 2k / 5k / 50k  - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,5k,50k,200k} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
@@ -315,8 +304,8 @@ help:
 	@echo ""
 	@echo "⚡ LOAD TESTING"
 	@echo "  go-clt-t/s/m/l/f  - Concurrent load test (tiny → full)"
-	@echo "  go-rlt / go-frlt  - Reserved seat load test"
-	@echo "  k6-local / k6-stress"
+	@echo "  go-frlt-{500,5k,50k,200k} - Full reserved load test"
+	@echo "  k6-dev-load / k6-dev-stress / k6-dev-spike / k6-prod-load / k6-prod-stress / k6-prod-spike"
 	@echo ""
 	@echo "☁️  AWS (make -f deployment/Makefile help)"
 	@echo "  dev-deploy-full / prod-deploy-full"

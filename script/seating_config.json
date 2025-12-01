@@ -1,5 +1,5 @@
 {
-  "local_dev": {
+  "500": {
     "total_seats": 500,
     "rows": 1,
     "cols": 5,
@@ -16,7 +16,7 @@
       { "name": "J", "price": 800, "subsections": 10 }
     ]
   },
-  "local_dev_1000": {
+  "1k": {
     "total_seats": 1000,
     "rows": 2,
     "cols": 5,
@@ -33,7 +33,7 @@
       { "name": "J", "price": 800, "subsections": 10 }
     ]
   },
-  "local_dev_2k": {
+  "2k": {
     "total_seats": 2000,
     "rows": 4,
     "cols": 5,
@@ -50,7 +50,7 @@
       { "name": "J", "price": 800, "subsections": 10 }
     ]
   },
-  "development": {
+  "5k": {
     "total_seats": 5000,
     "rows": 5,
     "cols": 10,
@@ -67,24 +67,7 @@
       { "name": "J", "price": 800, "subsections": 10 }
     ]
   },
-  "staging": {
-    "total_seats": 25000,
-    "rows": 25,
-    "cols": 10,
-    "sections": [
-      { "name": "A", "price": 3000, "subsections": 10 },
-      { "name": "B", "price": 2800, "subsections": 10 },
-      { "name": "C", "price": 2500, "subsections": 10 },
-      { "name": "D", "price": 2200, "subsections": 10 },
-      { "name": "E", "price": 2000, "subsections": 10 },
-      { "name": "F", "price": 1800, "subsections": 10 },
-      { "name": "G", "price": 1500, "subsections": 10 },
-      { "name": "H", "price": 1200, "subsections": 10 },
-      { "name": "I", "price": 1000, "subsections": 10 },
-      { "name": "J", "price": 800, "subsections": 10 }
-    ]
-  },
-  "production": {
+  "50k": {
     "total_seats": 50000,
     "rows": 25,
     "cols": 20,
@@ -99,6 +82,23 @@
       { "name": "H", "price": 1200, "subsections": 10 },
       { "name": "I", "price": 1000, "subsections": 10 },
       { "name": "J", "price": 800, "subsections": 10 }
+    ]
+  },
+  "200k": {
+    "total_seats": 200000,
+    "rows": 25,
+    "cols": 20,
+    "sections": [
+      { "name": "A", "price": 3000, "subsections": 40 },
+      { "name": "B", "price": 2800, "subsections": 40 },
+      { "name": "C", "price": 2500, "subsections": 40 },
+      { "name": "D", "price": 2200, "subsections": 40 },
+      { "name": "E", "price": 2000, "subsections": 40 },
+      { "name": "F", "price": 1800, "subsections": 40 },
+      { "name": "G", "price": 1500, "subsections": 40 },
+      { "name": "H", "price": 1200, "subsections": 40 },
+      { "name": "I", "price": 1000, "subsections": 40 },
+      { "name": "J", "price": 800, "subsections": 40 }
     ]
   }
 }

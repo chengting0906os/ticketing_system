@@ -173,7 +173,7 @@ async def flush_kvrocks():
 
         # 清空所有資料
         await client.flushdb()
-        await client.close()
+        await client.aclose()
 
         print('✅ Kvrocks flushed successfully!')
 

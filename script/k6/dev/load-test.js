@@ -1,19 +1,19 @@
 import { setup, makeBooking } from '../lib/booking.js';
 export { setup };
 
-// ~20K requests (2x local)
+// ~10K requests
 export const options = {
   scenarios: {
     load: {
       executor: 'ramping-arrival-rate',
-      startRate: 400,
+      startRate: 200,
       timeUnit: '1s',
-      preAllocatedVUs: 1400,
-      maxVUs: 2000,
+      preAllocatedVUs: 700,
+      maxVUs: 1000,
       stages: [
-        { target: 1200, duration: '5s' },  // 4K
-        { target: 1800, duration: '8s' },  // 12K
-        { target: 1000, duration: '3s' },  // 4K
+        { target: 600, duration: '5s' },   // 2K
+        { target: 900, duration: '8s' },   // 6K
+        { target: 500, duration: '3s' },   // 2K
       ],
     },
   },

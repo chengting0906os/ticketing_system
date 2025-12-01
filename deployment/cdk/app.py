@@ -96,6 +96,7 @@ ticketing_service_stack = TicketingServiceStack(
     vpc=aurora_stack.vpc,
     ecs_cluster=aurora_stack.ecs_cluster,
     alb_listener=aurora_stack.alb_listener,
+    internal_alb_listener=aurora_stack.internal_alb_listener,
     aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
     aurora_cluster_secret=aurora_stack.cluster.secret,
     app_secrets=aurora_stack.app_secrets,

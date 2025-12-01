@@ -116,7 +116,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         self,
         *,
         event_aggregate: EventTicketingAggregate,
-        ticket_tuples: Optional[List[tuple]] = None,
+        ticket_tuples: List[tuple],
     ) -> EventTicketingAggregate:
         """Create Event Aggregate using high-performance batch ticket creation
 
@@ -127,67 +127,43 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         if not event_aggregate.event.id:
             raise ValueError('Event must be persisted before using batch ticket creation')
 
-        # High-performance batch ticket creation
-        if event_aggregate.tickets:
-            Logger.base.info(
-                f'🚀 [BATCH_CREATE] Using high-performance batch creation for {len(event_aggregate.tickets)} tickets'
+        start_time = time.time()
+        actual_tuples = ticket_tuples
+
+        # Use asyncpg connection pool for COPY operation
+        async with (await get_asyncpg_pool()).acquire() as conn:
+            # COPY operation
+            copy_start = time.time()
+            await conn.copy_records_to_table(
+                'ticket',
+                records=actual_tuples,
+                columns=[
+                    'event_id',
+                    'section',
+                    'subsection',
+                    'row_number',
+                    'seat_number',
+                    'price',
+                    'status',
+                ],
             )
+            copy_time = time.time() - copy_start
+            Logger.base.info(f'  📦 [BATCH_CREATE] COPY completed ({copy_time:.3f}s)')
 
-            start_time = time.time()
-
-            # Use provided batch data, or generate from tickets if not provided
-            if ticket_tuples is None:
-                ticket_tuples = [
-                    (
-                        event_aggregate.event.id,  # Use existing event_id
-                        ticket.section,
-                        ticket.subsection,
-                        ticket.row,
-                        ticket.seat,
-                        ticket.price,
-                        ticket.status.value,
-                    )
-                    for ticket in event_aggregate.tickets
-                ]
-            else:
-                Logger.base.info('📦 [BATCH_CREATE] Using pre-generated ticket tuples')
-
-            actual_tuples = ticket_tuples
-
-            # Use asyncpg connection pool for COPY operation
-            async with (await get_asyncpg_pool()).acquire() as conn:
-                # COPY operation
-                copy_start = time.time()
-                await conn.copy_records_to_table(
-                    'ticket',
-                    records=actual_tuples,
-                    columns=[
-                        'event_id',
-                        'section',
-                        'subsection',
-                        'row_number',
-                        'seat_number',
-                        'price',
-                        'status',
-                    ],
-                )
-                copy_time = time.time() - copy_start
-                Logger.base.info(f'  📦 [BATCH_CREATE] COPY completed ({copy_time:.3f}s)')
-
-                # Fetch inserted tickets
-                fetch_start = time.time()
-                rows = await conn.fetch(
-                    """
-                    SELECT id, event_id, section, subsection, row_number, seat_number, price, status,
-                           buyer_id, reserved_at, created_at, updated_at
-                    FROM ticket
-                    WHERE event_id = $1
-                    ORDER BY id
-                """,
-                    event_aggregate.event.id,
-                )
-                fetch_time = time.time() - fetch_start
-                Logger.base.info(f'  🔍 [BATCH_CREATE] Fetch completed ({fetch_time:.3f}s)')
+            # Fetch inserted tickets
+            fetch_start = time.time()
+            rows = await conn.fetch(
+                """
+                SELECT id, event_id, section, subsection, row_number, seat_number, price, status,
+                        buyer_id, reserved_at, created_at, updated_at
+                FROM ticket
+                WHERE event_id = $1
+                ORDER BY id
+            """,
+                event_aggregate.event.id,
+            )
+            fetch_time = time.time() - fetch_start
+            Logger.base.info(f'  🔍 [BATCH_CREATE] Fetch completed ({fetch_time:.3f}s)')
 
             # Update Ticket entity IDs
             convert_start = time.time()

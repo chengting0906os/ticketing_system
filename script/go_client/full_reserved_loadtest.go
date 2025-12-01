@@ -536,7 +536,10 @@ func main() {
 	fmt.Printf("   ✅ All workers ready\n\n")
 
 	// Producer: Send all subsection tasks to channel
-	totalTasks := len(config.Sections) * 10
+	totalTasks := 0
+	for _, section := range config.Sections {
+		totalTasks += len(section.Subsections)
+	}
 	fmt.Printf("   📋 Queueing %d subsection tasks for workers...\n", totalTasks)
 	go func() {
 		for _, section := range config.Sections {
@@ -561,7 +564,7 @@ func main() {
 	var totalBookings atomic.Int64
 	var totalErrors atomic.Int64
 	completedSubsections := 0
-	totalSubsections := len(config.Sections) * 10 // 10 subsections per section
+	totalSubsections := totalTasks // Dynamic based on config
 
 	// Collect all latencies
 	var allLatencies []time.Duration

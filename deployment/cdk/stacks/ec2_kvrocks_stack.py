@@ -367,9 +367,9 @@ class EC2KvrocksStack(Stack):
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             launch_template=launch_template,
-            min_capacity=1,
+            min_capacity=0,  # Can scale to 0 to save cost
             max_capacity=1,
-            desired_capacity=1,
+            # Use AWS CLI: aws autoscaling set-desired-capacity --desired-capacity 0|1
         )
 
         # Tag instances for EventBridge filtering

@@ -3,33 +3,14 @@ import { check } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
-const bookingTime = new Trend('booking_time', true);
-const bookingCompleted = new Counter('booking_completed');
-
-// Stress test - find breaking point
-export const options = {
-  scenarios: {
-    stress: {
-      executor: 'ramping-arrival-rate',
-      startRate: 100,
-      timeUnit: '1s',
-      preAllocatedVUs: 500,
-      maxVUs: 1000,
-      stages: [
-        { target: 200, duration: '10s' },
-        { target: 400, duration: '20s' },
-        { target: 500, duration: '30s' },
-        { target: 200, duration: '10s' },
-      ],
-      gracefulStop: '10s',
-    },
-  },
-};
+export const bookingTime = new Trend('booking_time', true);
+export const bookingCompleted = new Counter('booking_completed');
 
 // API_HOST: cloud uses port 80 (http://alb-dns), local uses port 8100 (http://localhost:8100)
-const BASE_URL = __ENV.API_HOST || 'http://localhost:8100';
-const EVENT_ID = parseInt(__ENV.EVENT_ID || '1');
-const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+export const BASE_URL = __ENV.API_HOST || 'http://localhost:8100';
+export const EVENT_ID = parseInt(__ENV.EVENT_ID || '1');
+export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+export const MAX_SUBSECTION = parseInt(__ENV.MAX_SUBSECTION || '10');  // 200k uses 40
 
 function login(baseUrl) {
   const res = http.post(`${baseUrl}/api/user/login`, JSON.stringify({
@@ -50,9 +31,9 @@ export function setup() {
   return { baseUrl: BASE_URL, eventId: EVENT_ID, token };
 }
 
-export default function (data) {
+export function makeBooking(data) {
   const section = SECTIONS[Math.floor(Math.random() * SECTIONS.length)];
-  const subsection = randomIntBetween(1, 10);
+  const subsection = randomIntBetween(1, MAX_SUBSECTION);
   const quantity = randomIntBetween(1, 4);
 
   const res = http.post(`${data.baseUrl}/api/booking`, JSON.stringify({

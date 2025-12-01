@@ -48,9 +48,10 @@ _shared:
     memory_threshold: 60
 
   # Consumer task resources (booking & reservation)
+  # task_cpu: ECS CPU units (256, 512, 1024), task_memory: MB (512, 1024, 2048)
   consumer_task: &consumer_task
-    task_cpu: 256
-    task_memory: 512
+    task_cpu: 256       # 0.25 vCPU
+    task_memory: 512    # 0.5 GB
 
   performance: &performance
     rate_limit_per_minute: 100000
@@ -71,8 +72,8 @@ production:
     ticketing:
       min_tasks: 100
       max_tasks: 100
-      task_cpu: 512
-      task_memory: 1204
+      task_cpu: 512      # 0.5 vCPU
+      task_memory: 1024  # 1 GB
       workers: 1
       <<: *scaling
 
@@ -87,8 +88,8 @@ production:
       <<: *consumer_task
 
   aurora:
-    min_acu: 4
-    max_acu: 64
+    min_acu: 2
+    max_acu: 8
 
   kafka: *kafka
   kvrocks: *kvrocks
@@ -116,8 +117,8 @@ staging:
     ticketing:
       min_tasks: 50
       max_tasks: 50
-      task_cpu: 512
-      task_memory: 1204
+      task_cpu: 512      # 0.5 vCPU
+      task_memory: 1024  # 1 GB
       workers: 1
       <<: *scaling
 
@@ -132,8 +133,8 @@ staging:
       <<: *consumer_task
 
   aurora:
-    min_acu: 2
-    max_acu: 32
+    min_acu: 1
+    max_acu: 8
 
   kafka: *kafka
   kvrocks: *kvrocks
@@ -159,20 +160,20 @@ development:
 
   services:
     ticketing:
-      min_tasks: 10
-      max_tasks: 10
-      task_cpu: 512
-      task_memory: 1204
+      min_tasks: 5
+      max_tasks: 20
+      task_cpu: 512      # 0.5 vCPU
+      task_memory: 1024  # 1 GB
       workers: 1
       <<: *scaling
 
     booking:
-      min_tasks: 20
+      min_tasks: 5
       max_tasks: 20
       <<: *consumer_task
 
     reservation:
-      min_tasks: 20
+      min_tasks: 5
       max_tasks: 20
       <<: *consumer_task
 

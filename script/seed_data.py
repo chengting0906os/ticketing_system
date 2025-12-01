@@ -4,13 +4,14 @@ Database Seed Script
 Populate test data into the database
 
 Features:
-1. Create Users - Create 12 test users (1 seller + 1 buyer + 10 load test)
+1. Create Users - Create 3 test users (1 seller + 1 buyer + 1 load test)
 2. Create Event - Create event and send seat initialization to Kafka (→ reservation Kvrocks)
 
 Notes:
 - Seat data is stored in reservation's Kvrocks (not PostgreSQL)
 - Ticket data is stored in event_ticketing's PostgreSQL
 """
+from src.platform.config.di import container
 
 import asyncio
 import json
@@ -36,18 +37,14 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
 
 def get_seating_config() -> dict:
     """
-    Get seating configuration based on DEPLOY_ENV environment variable.
+    Get seating configuration based on SEATS environment variable.
 
     Returns:
         dict: Seating configuration for the current environment (expanded to full format)
 
-    Environment mapping (all have 10 sections × 10 subsections):
-        - local_dev: 500 seats (1 row × 5 seats per subsection)
-        - development: 5000 seats (5 rows × 10 seats per subsection)
-        - production: 50000 seats (25 rows × 20 seats per subsection)
-        - default: 500 seats (if DEPLOY_ENV not set)
+    Available seat configs: 500, 1k, 2k, 5k, 25k, 50k, 200k
     """
-    env = os.getenv('DEPLOY_ENV', 'local_dev')
+    seats = os.getenv('SEATS', '500')
 
     # Load from JSON file
     config_file = Path(__file__).parent / 'seating_config.json'
@@ -55,27 +52,19 @@ def get_seating_config() -> dict:
         all_configs = json.load(f)
 
     # Get config for this environment
-    if env not in all_configs:
-        print(f'⚠️  Environment {env} not found in config, using local_dev')
-        env = 'local_dev'
+    if seats not in all_configs:
+        print(f'⚠️  Seats config {seats} not found, using 500')
+        seats = '500'
 
-    config = all_configs[env]
-
-    # Calculate total seats for logging (supports compact format)
+    config = all_configs[seats]
     total_seats = 0
     rows = config.get('rows', 1)
     cols = config.get('cols', 10)
     for section in config['sections']:
         subsections = section['subsections']
-        if isinstance(subsections, int):
-            # Compact format: subsections is count
-            total_seats += subsections * rows * cols
-        else:
-            # Full format: subsections is array
-            for subsection in subsections:
-                total_seats += subsection['rows'] * subsection['cols']
-
-    print(f'📊 Using seating config for environment: {env} ({total_seats:,} seats)')
+        total_seats += subsections * rows * cols
+    
+    print(f'📊 Using seating config: {seats} ({total_seats:,} seats)')
 
     return config
 
@@ -87,7 +76,7 @@ async def create_init_users_in_session(session) -> int:
         int: seller_id
     """
     try:
-        print('👥 Creating 12 users (1 seller + 1 buyer + 10 load test)...')
+        print('👥 Creating 3 users (1 seller + 1 buyer + 1 load test)...')
 
         @asynccontextmanager
         async def get_current_user_session():
@@ -122,29 +111,25 @@ async def create_init_users_in_session(session) -> int:
         created_buyer = await user_repo.create(buyer)
         print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
 
-        # 3. Batch create 10 load test users
-        print('   📝 Creating 10 load test users...')
-        for i in range(1, 11):
-            loadtest_user = UserEntity(
-                email=f'b_{i}@t.com',
-                name=f'Load Test User {i}',
-                role=UserRole.BUYER,
-                is_active=True,
-                is_superuser=False,
-                is_verified=True,
-            )
-            loadtest_user.set_password('P@ssw0rd', password_hasher)
-            await user_repo.create(loadtest_user)
-
-        print('   ✅ Created 10 load test users')
+        # 3. Create 1 load test user
+        loadtest_user = UserEntity(
+            email='b_1@t.com',
+            name='Load Test User',
+            role=UserRole.BUYER,
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+        )
+        loadtest_user.set_password('P@ssw0rd', password_hasher)
+        await user_repo.create(loadtest_user)
+        print('   ✅ Created load test user: b_1@t.com')
 
         result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
         user_count = result.scalar()
 
-        print(f'   📊 Total users: {user_count}')
         print(f'   📧 Seller: s@t.com / P@ssw0rd (ID={created_seller.id})')
         print(f'   📧 Buyer: b@t.com / P@ssw0rd')
-        print(f'   📧 Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
+        print(f'   📧 Load test: b_1@t.com / P@ssw0rd')
 
         if created_seller.id is None:
             raise Exception("Failed to create seller: ID is None")
@@ -170,13 +155,8 @@ async def create_init_event_in_session(session, seller_id: int):
             print(f'   ❌ User {seller_id} NOT found in database!')
             return None
 
-        @asynccontextmanager
-        async def get_current_session():
-            yield session
-
         # Get all dependencies from DI container
-        from src.platform.config.di import container
-
+        
         # Command repo uses raw SQL, no session needed
         event_ticketing_repo = EventTicketingCommandRepoImpl()
         init_state_handler = container.init_event_and_tickets_state_handler()
@@ -280,11 +260,9 @@ async def main():
             try:
                 seller_id = await create_init_users_in_session(session)
                 print()
-
                 await create_init_event_in_session(session, seller_id)
                 print()
 
-                # Commit all operations at once
                 await session.commit()
                 print('✅ All data operations committed successfully!')
 
@@ -301,7 +279,7 @@ async def main():
         print('📋 Test accounts:')
         print('   Seller: s@t.com / P@ssw0rd')
         print('   Buyer:  b@t.com / P@ssw0rd')
-        print('   Load test: b_1@t.com ~ b_10@t.com / P@ssw0rd')
+        print('   Load test: b_1@t.com / P@ssw0rd')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')

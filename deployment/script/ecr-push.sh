@@ -7,7 +7,7 @@
 #
 # Arguments:
 #   environment: production | development
-#   service: ticketing | booking | reservation | loadtest | all (default: all)
+#   service: ticketing | booking | reservation | all (default: all)
 #
 # Examples:
 #   ./ecr-push.sh production all           # Push all services
@@ -45,7 +45,6 @@ REPOSITORIES=(
     "ticketing-service"
     "booking-service"
     "reservation-service"
-    "loadtest-service"
 )
 
 # Docker Configuration
@@ -66,7 +65,7 @@ print_usage() {
     echo ""
     echo "Arguments:"
     echo "  environment: production | development"
-    echo "  service: ticketing | booking | reservation | loadtest | all (default: all)"
+    echo "  service: ticketing | booking | reservation | all (default: all)"
     echo ""
     echo "Examples:"
     echo "  $0 production all"
@@ -89,7 +88,7 @@ if [[ ! "$ENVIRONMENT" =~ ^(production|development)$ ]]; then
     print_usage
 fi
 
-if [[ ! "$SERVICE" =~ ^(ticketing|booking|reservation|loadtest|all)$ ]]; then
+if [[ ! "$SERVICE" =~ ^(ticketing|booking|reservation|all)$ ]]; then
     log_error "Invalid service: $SERVICE"
     print_usage
 fi
@@ -227,7 +226,6 @@ case "$SERVICE" in
         build_and_push "ticketing-service" "ticketing-service"
         build_and_push "booking-service" "booking-service"
         build_and_push "reservation-service" "reservation-service"
-        build_and_push "loadtest-service" "loadtest-service" "script/go_client/Dockerfile" "script"
         ;;
     ticketing)
         build_and_push "ticketing-service" "ticketing-service"
@@ -237,9 +235,6 @@ case "$SERVICE" in
         ;;
     reservation)
         build_and_push "reservation-service" "reservation-service"
-        ;;
-    loadtest)
-        build_and_push "loadtest-service" "loadtest-service" "script/go_client/Dockerfile" "script"
         ;;
 esac
 

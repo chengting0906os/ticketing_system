@@ -1,655 +1,178 @@
-# AWS Operations & Deployment Guide
+# AWS Operations Guide
 
-Complete guide for deploying and operating the Ticketing System on AWS infrastructure.
-
-**Cost-Optimized Architecture** - EC2 Kafka saves 95% vs MSK (~$24/month vs $466/month)
-
----
-
-## 📋 Architecture Overview
-
-| Stack | Components | Deploy Time |
-|-------|-----------|-------------|
-| TicketingAuroraStack | VPC + Aurora + ALB + ECS Cluster | ~15 min |
-| TicketingEC2KafkaStack | EC2 Kafka (3 brokers, KRaft mode) | ~5 min |
-| TicketingKvrocksStack | Redis cache (ECS + EFS) | ~5 min |
-| APIServiceStack | Unified API endpoint | ~5 min |
-| TicketingConsumerStack | Booking event consumer | ~10 min |
-| ReservationConsumerStack | Seat reservation consumer | ~10 min |
-
-**Total deployment time:** ~50 minutes
-
----
-
-## 🚀 Initial Deployment (3 Steps)
-
-### 1. Prerequisites
+## Infrastructure IDs
 
 ```bash
-# Install tools
-brew install awscli node python@3.13
-npm install -g aws-cdk
+# Kafka EC2 Instances
+KAFKA_INSTANCES="i-01de6aa1003e42e07 i-0d502954e59df5b62 i-07438e7245ec5308e"
 
-# Configure AWS
-aws configure
-# Region: us-west-2
-
-# Bootstrap CDK (once per account/region)
-cd deployment/cdk
-cdk bootstrap aws://YOUR_ACCOUNT_ID/us-west-2
+# Kvrocks ASG
+KVROCKS_ASG="TicketingKvrocksStack-KvrocksASGA62369E3-nmgIKdcLEJGz"
 ```
 
-### 2. Push Docker Images to ECR
+---
 
-**⚠️ CRITICAL: Must complete BEFORE deploying ECS services**
+## Quick Start (Complete)
 
 ```bash
-# Production environment
-./deployment/script/ecr-push.sh production all
+# 1. Start Kafka EC2 (3 brokers)
+aws ec2 start-instances --instance-ids i-01de6aa1003e42e07 i-0d502954e59df5b62 i-07438e7245ec5308e
 
-# Development environment
+# 2. Start Kvrocks EC2 (ASG)
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name "TicketingKvrocksStack-KvrocksASGA62369E3-nmgIKdcLEJGz" \
+  --desired-capacity 1
+
+# 3. Wait for Kafka to be running
+aws ec2 wait instance-running --instance-ids i-01de6aa1003e42e07 i-0d502954e59df5b62 i-07438e7245ec5308e
+
+# 4. Push Docker images to ECR
 ./deployment/script/ecr-push.sh development all
 
-# Wait ~10-15 minutes
-# Expected output:
-# ✅ Pushed: ticketing-service:latest
-# ✅ Pushed: ticketing-consumer:latest
-# ✅ Pushed: seat-reservation-consumer:latest
-```
+# 5. Deploy CDK stacks
+DEPLOY_ENV=development uv run cdk deploy --all
 
-### 3. Deploy All Stacks
-
-```bash
-# Production
-export DEPLOY_ENV=production
-make cdk-deploy-all
-
-# Development (lower cost for testing)
-export DEPLOY_ENV=development
-make dev-deploy-all
-
-# Wait ~50 minutes
-```
-
-**Verify deployment:**
-
-```bash
-# Check all services
-make aws-status
-
-# Get ALB endpoint
-aws cloudformation describe-stacks \
-  --stack-name TicketingAuroraStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ALBEndpoint`].OutputValue' \
-  --output text
-
-# Test API health
-curl http://<ALB-ENDPOINT>/health
-# Expected: {"status": "healthy"}
-```
-
----
-
-## 💡 Quick Reference: Local vs AWS Commands
-
-| Local Docker | AWS Cloud | Description |
-|-------------|-----------|-------------|
-| `make dra` | `make aws-reset` | Complete reset: restart all services, migrate DB, reset Kafka, seed data |
-| `make dm` | `make aws-migrate` | Run database migrations |
-| `make drk` | `make aws-reset-kafka` | Reset Kafka topics (delete + recreate) |
-| `make ds` | `make aws-seed` | Seed initial data |
-| `make dc` | `make aws-status` | Check service status |
-| `docker logs -f api` | `make aws-logs` | View API service logs |
-
----
-
-## 🚀 Complete Reset (Cloud version of `make dra`)
-
-```bash
-make aws-reset
-```
-
-**What it does:**
-1. ✅ Restarts all ECS services (API + 2 consumer services)
-2. ✅ Runs database migrations on Aurora
-3. ✅ Resets Kafka topics (delete + recreate with proper config)
-4. ✅ Seeds initial data
-5. ✅ Waits for services to be healthy
-
-**Use this when:**
-- Starting fresh testing on AWS
-- After deploying new infrastructure changes
-- Debugging production-like environment issues
-
----
-
-## 🗄️ Database Operations
-
-### Run Migrations
-```bash
-make aws-migrate
-```
-
-This starts a **one-time ECS task** that runs `alembic upgrade head` against Aurora.
-
-### Seed Data
-```bash
+# 6. Seed data (optional)
 make aws-seed
 ```
 
-Runs the seed script as a one-time ECS task.
+---
 
-### Direct Database Access
+## Stop All (Save Cost)
+
 ```bash
-# Get Aurora endpoint
-aws rds describe-db-clusters \
-  --db-cluster-identifier ticketing-aurora-cluster \
-  --query 'DBClusters[0].Endpoint' --output text
+# 1. Scale down ECS services
+for svc in ticketing-development-ticketing-service ticketing-development-booking-service ticketing-development-reservation-service; do
+  aws ecs update-service --cluster ticketing-cluster --service $svc --desired-count 0
+done
 
-# Get credentials from Secrets Manager
-aws secretsmanager get-secret-value \
-  --secret-id ticketing/aurora/credentials \
-  --query 'SecretString' --output text | jq -r '.password'
+# 2. Stop Kafka EC2
+aws ec2 stop-instances --instance-ids i-01de6aa1003e42e07 i-0d502954e59df5b62 i-07438e7245ec5308e
 
-# Connect via bastion (if you have one) or use aurora_inspect.py
-python deployment/script/aurora_inspect.py
+# 3. Stop Kvrocks (ASG scale to 0)
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name "TicketingKvrocksStack-KvrocksASGA62369E3-nmgIKdcLEJGz" \
+  --desired-capacity 0
+
+# 4. Stop LoadTest EC2
+LOADTEST_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=loadtest-*" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text)
+[ "$LOADTEST_ID" != "None" ] && aws ec2 stop-instances --instance-ids $LOADTEST_ID
 ```
 
 ---
 
-## 🌊 Kafka Operations
-
-### Reset Kafka Topics
-```bash
-make aws-reset-kafka
-```
-
-**What it does:**
-1. Finds the EC2 Kafka instance ID
-2. Connects via AWS SSM (no SSH keys needed!)
-3. Deletes existing topics: `ticketing-events`, `seat-reservation-events`
-4. Recreates topics with:
-   - **6 partitions** (for parallel consumer processing)
-   - **Replication factor 3** (across 3 Kafka brokers)
-
-### Manual Kafka Commands via SSM
+## Check Status
 
 ```bash
-# Get Kafka EC2 instance ID
-INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[0].Instances[0].InstanceId' --output text)
+# All EC2 instances
+aws ec2 describe-instances \
+  --query 'Reservations[].Instances[].{Name:Tags[?Key==`Name`].Value|[0],State:State.Name,Id:InstanceId}' \
+  --output table
 
-# List topics
-aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
-  --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["cd /opt/kafka && docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --list"]'
+# ECS services
+aws ecs list-services --cluster ticketing-cluster --query 'serviceArns[*]' --output table
 
-# Check consumer lag
-aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
-  --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["cd /opt/kafka && docker-compose exec -T kafka-1 kafka-consumer-groups --bootstrap-server localhost:9092 --describe --all-groups"]'
+# Kvrocks ASG
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names "TicketingKvrocksStack-KvrocksASGA62369E3-nmgIKdcLEJGz" \
+  --query 'AutoScalingGroups[0].{Desired:DesiredCapacity,Running:Instances[*].InstanceId}' \
+  --output table
 ```
 
 ---
 
-## 📊 Service Management
+## Common Operations
 
-### Check All Services Status
+### Restart ECS Services
+
 ```bash
-make aws-status
+# Restart all services (force new deployment)
+for svc in ticketing-development-ticketing-service ticketing-development-booking-service ticketing-development-reservation-service; do
+  aws ecs update-service --cluster ticketing-cluster --service $svc --force-new-deployment
+done
 ```
 
-Shows:
-- Service name
-- Status (ACTIVE/INACTIVE)
-- Running task count
-- Desired task count
+### View Logs
 
-### Restart a Service
 ```bash
-# Restart API service
-aws ecs update-service --cluster ticketing-cluster \
-  --service ticketing-development-api-service --force-new-deployment
-
-# Restart ticketing consumer
-aws ecs update-service --cluster ticketing-cluster \
-  --service ticketing-development-ticketing-consumer-service --force-new-deployment
-
-# Restart reservation consumer
-aws ecs update-service --cluster ticketing-cluster \
-  --service ticketing-development-reservation-consumer-service --force-new-deployment
-```
-
-### Scale Services
-```bash
-# Scale ticketing consumer to 3 tasks
-aws ecs update-service --cluster ticketing-cluster \
-  --service ticketing-development-ticketing-consumer-service --desired-count 3
-
-# Scale reservation consumer to 3 tasks
-aws ecs update-service --cluster ticketing-cluster \
-  --service ticketing-development-reservation-consumer-service --desired-count 3
-```
-
----
-
-## 🔍 Logging and Debugging
-
-### Tail API Logs
-```bash
-make aws-logs
-```
-
-### Tail Consumer Logs
-```bash
-# Ticketing consumer
-aws logs tail /ecs/ticketing-development-ticketing-consumer --follow
-
-# Reservation consumer
+aws logs tail /ecs/ticketing-development-ticketing-service --follow
+aws logs tail /ecs/ticketing-development-booking-consumer --follow
 aws logs tail /ecs/ticketing-development-reservation-consumer --follow
 ```
 
-### View Recent Errors
+### SSM Connect to EC2
+
 ```bash
-aws logs filter-pattern /ecs/ticketing-development-api \
-  --filter-pattern "ERROR" \
-  --start-time $(date -u -d '1 hour ago' +%s)000
+# Connect to Kafka broker
+aws ssm start-session --target i-01de6aa1003e42e07
+
+# Connect to LoadTest instance (get ID first)
+LOADTEST_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=loadtest-*" --query 'Reservations[0].Instances[0].InstanceId' --output text)
+aws ssm start-session --target $LOADTEST_ID
 ```
 
-### Check ECS Task Details
+### Reset Kafka Topics
+
 ```bash
-# List running tasks
-aws ecs list-tasks --cluster ticketing-cluster
-
-# Get task details
-aws ecs describe-tasks --cluster ticketing-cluster \
-  --tasks <task-arn>
-```
-
----
-
-## 🏗️ Infrastructure Operations
-
-### Deploy All Stacks (Development)
-```bash
-make dev-deploy-all
-```
-
-### Check Aurora Configuration
-```bash
-make cdk-check-env
-```
-
-### View Stack Outputs
-```bash
-aws cloudformation describe-stacks \
-  --stack-name TicketingAuroraStack \
-  --query 'Stacks[0].Outputs' --output table
-```
-
----
-
-## 💡 Common Workflows
-
-### Fresh Start on AWS
-```bash
-# 1. Deploy infrastructure (if not already deployed)
-make dev-deploy-all
-
-# 2. Wait for deployment to complete (~10 minutes)
-
-# 3. Complete reset (migrate + seed + reset Kafka)
-make aws-reset
-
-# 4. Check everything is running
-make aws-status
-```
-
-### Update Code and Redeploy
-```bash
-# 1. Build and push new Docker images
-./deployment/script/ecr-push.sh
-
-# 2. Restart services to use new images
-make aws-reset
-
-# 3. Monitor logs
-make aws-logs
-```
-
-### Debug Consumer Issues
-```bash
-# 1. Check service status
-make aws-status
-
-# 2. Check Kafka topics
-make aws-reset-kafka
-
-# 3. Tail consumer logs
-aws logs tail /ecs/ticketing-development-ticketing-consumer --follow
-
-# 4. Check consumer lag
-# (use SSM command shown in Kafka Operations section)
-```
-
----
-
-## 🆘 Troubleshooting
-
-### Services Not Starting
-```bash
-# Check ECS service events
-aws ecs describe-services --cluster ticketing-cluster \
-  --services ticketing-development-api-service \
-  --query 'services[0].events[0:5]'
-
-# Check task stopped reasons
-aws ecs describe-tasks --cluster ticketing-cluster \
-  --tasks $(aws ecs list-tasks --cluster ticketing-cluster --query 'taskArns[0]' --output text) \
-  --query 'tasks[0].stoppedReason'
-```
-
-### Kafka Connection Issues
-```bash
-# 1. Check Kafka EC2 instance is running
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*KafkaInstance*" \
-  --query 'Reservations[0].Instances[0].State.Name'
-
-# 2. Check Kafka containers are running
-INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
+# Get Kafka instance ID
+KAFKA_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=kafka-broker-1" "Name=instance-state-name,Values=running" \
   --query 'Reservations[0].Instances[0].InstanceId' --output text)
 
-aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
+# Delete and recreate topics via SSM
+aws ssm send-command --instance-ids $KAFKA_ID \
   --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["docker ps"]'
-
-# 3. Check Kafka logs
-aws ssm send-command \
-  --instance-ids $INSTANCE_ID \
-  --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["cd /opt/kafka && docker-compose logs kafka-1 --tail 100"]'
-```
-
-### Database Connection Issues
-```bash
-# Check Aurora cluster status
-aws rds describe-db-clusters \
-  --db-cluster-identifier ticketing-aurora-cluster \
-  --query 'DBClusters[0].Status'
-
-# Check security group allows connections from ECS tasks
-aws ec2 describe-security-groups \
-  --filters "Name=tag:aws:cloudformation:logical-id,Values=AuroraSecurityGroup"
+  --parameters 'commands=[
+    "cd /opt/kafka",
+    "docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --delete --topic ticketing-events || true",
+    "docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --delete --topic seat-reservation-events || true",
+    "docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --create --topic ticketing-events --partitions 100 --replication-factor 3",
+    "docker-compose exec -T kafka-1 kafka-topics --bootstrap-server localhost:9092 --create --topic seat-reservation-events --partitions 100 --replication-factor 3"
+  ]'
 ```
 
 ---
 
-## 🛑 Cost Optimization - Stop/Start Services
-
-### Stop All Services (Keep Aurora Only)
-
-```bash
-make aws-stop
-```
-
-**What it does:**
-- Scales all ECS services to 0 (API + consumers + Kvrocks)
-- Stops EC2 Kafka instance
-- Keeps Aurora running at minimum ACU (0.5)
-
-**Cost:** ~$0.01/hour (Aurora only)
-
-### Restart All Services
-
-```bash
-make aws-start
-```
-
-**What it does:**
-- Restarts EC2 Kafka instance
-- Scales all ECS services back to desired count
-- Waits for services to be healthy
-
----
-
-## 🔄 Update Application Code
+## Update Code & Redeploy
 
 ```bash
 # 1. Push new Docker images
-./deployment/script/ecr-push.sh production all
+./deployment/script/ecr-push.sh development all
 
-# 2. Restart services with new images
-make aws-reset
-
-# 3. Monitor deployment
-make aws-logs
+# 2. Force new deployment
+for svc in ticketing-development-ticketing-service ticketing-development-booking-service ticketing-development-reservation-service; do
+  aws ecs update-service --cluster ticketing-cluster --service $svc --force-new-deployment
+done
 ```
 
 ---
 
-## 💰 Cost Breakdown
+## Troubleshooting
 
-### Development Environment
-
-| Resource | Configuration | Monthly Cost |
-|----------|--------------|--------------|
-| Aurora Serverless v2 | 0.5-16 ACU (avg 2) | $29 |
-| EC2 Kafka | t4g.medium + 50GB EBS | $24 |
-| ECS API | 1 task × 2 vCPU | $30 |
-| ECS Consumers | 2 tasks × 1 vCPU | $30 |
-| Kvrocks | 1 task × 1 vCPU | $15 |
-| ALB | - | $22 |
-| NAT Gateway | - | $32 |
-| **Total** | | **~$182/month** |
-
-### Production Environment
-
-| Resource | Configuration | Monthly Cost |
-|----------|--------------|--------------|
-| Aurora Serverless v2 | 0.5-64 ACU (avg 8) | $680 |
-| EC2 Kafka | t4g.medium + 50GB EBS | $24 |
-| ECS API | 1-4 tasks × 8 vCPU | $120-480 |
-| ECS Consumers | 100-200 tasks × 1 vCPU | $1440-2880 |
-| Kvrocks | 1 task × 1 vCPU | $15 |
-| ALB | - | $22 |
-| NAT Gateway | - | $32 |
-| CloudWatch Logs | 50 GB | $25 |
-| **Total** | | **~$2,338-4,138/month** |
-
-**Savings vs MSK:** $442/month (95% reduction on Kafka costs)
-
----
-
-## 🗑️ Cleanup Resources
+### Service not starting
 
 ```bash
-# Destroy all stacks
-make dev-destroy-all
-# or
-make cdk-destroy-all
-
-# Delete ECR repositories (optional)
-aws ecr delete-repository --repository-name ticketing-service --force
-aws ecr delete-repository --repository-name ticketing-consumer --force
-aws ecr delete-repository --repository-name seat-reservation-consumer --force
+# Check ECS events
+aws ecs describe-services --cluster ticketing-cluster \
+  --services ticketing-development-ticketing-service \
+  --query 'services[0].events[0:5]'
 ```
 
----
-
-## 🗄️ Database Operations & Inspection
-
-### Aurora Database Commands
-
-Since Aurora is inside a private VPC, we use ECS tasks to inspect the database:
+### Kafka connection issues
 
 ```bash
-# Check migration status
-make aws-db-migrations
-
-# List all tables with row counts
-make aws-db-list
-
-# Show table schema
-make aws-db-schema TABLE=events
-make aws-db-schema TABLE=bookings
-
-# Query table data
-make aws-db-query TABLE=events LIMIT=10
-```
-
-### How Database Inspection Works
-
-1. Starts an ECS Fargate task using your API container
-2. Runs [deployment/script/aurora_inspect.py](../deployment/script/aurora_inspect.py) inside the container
-3. Captures CloudWatch logs from task execution
-4. Displays results in your terminal
-
-### Aurora Performance Monitoring
-
-```bash
-# Check current ACU usage
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/RDS \
-  --metric-name ServerlessDatabaseCapacity \
-  --dimensions Name=DBClusterIdentifier,Value=ticketing-aurora-cluster \
-  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%S) \
-  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
-  --period 300 \
-  --statistics Average
-
-# View Performance Insights (AWS Console)
-# Go to RDS → ticketing-aurora-cluster → Performance Insights
-```
-
-**Key Metrics to Monitor:**
-- `DatabaseConnections` - Active connections
-- `CPUUtilization` - CPU usage
-- `ServerlessDatabaseCapacity` - Current ACU usage
-- `ReadLatency` / `WriteLatency` - Query performance
-
----
-
-## 🆘 Common Issues
-
-### Issue: Circuit Breaker Triggered
-
-**Cause:** Docker images not pushed to ECR before deployment
-
-**Fix:**
-```bash
-# Verify images exist
-aws ecr list-images --repository-name ticketing-service
-aws ecr list-images --repository-name ticketing-consumer
-aws ecr list-images --repository-name seat-reservation-consumer
-
-# Should see 'latest' tag. If missing:
-./deployment/script/ecr-push.sh production all
-```
-
-### Issue: API Service Failed to Start
-
-**Cause:** Module path error or database connection issue
-
-**Fix:**
-```bash
-# Check logs for errors
-make aws-logs
-
-# Common issues:
-# 1. Wrong module path (should be: src.main:app)
-# 2. Aurora not ready (wait for cluster status: available)
-# 3. Security group blocking connections
-```
-
-### Issue: Stack in UPDATE_IN_PROGRESS
-
-**Fix:**
-```bash
-# Wait for update to complete
-aws cloudformation wait stack-update-complete \
-  --stack-name TicketingAuroraStack
-
-# Or deploy specific stacks only
-export DEPLOY_ENV=production
-cdk deploy APIServiceStack TicketingConsumerStack ReservationConsumerStack
-```
-
-### Issue: Task Failures
-
-**Check stopped tasks:**
-```bash
-# List stopped tasks
-aws ecs list-tasks --cluster ticketing-cluster --desired-status STOPPED
-
-# Get failure reason
-aws ecs describe-tasks --cluster ticketing-cluster --tasks <TASK_ARN> \
-  --query 'tasks[0].stoppedReason'
-```
-
-**Common causes:**
-- Image pull failed → Check ECR permissions
-- Out of memory → Increase task memory in config.yml
-- Environment variable errors → Check Secrets Manager
-
-### Issue: ALB Health Check Failed
-
-```bash
-# Check target health
-TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
-  --query 'TargetGroups[?contains(TargetGroupName, `APITargets`)].TargetGroupArn' \
-  --output text)
-
-aws elbv2 describe-target-health --target-group-arn $TARGET_GROUP_ARN
-
-# Debug container health endpoint
-aws ecs execute-command --cluster ticketing-cluster \
-  --task <TASK_ID> --container Container \
-  --command "/bin/sh" --interactive
-```
-
-### Issue: Consumer Can't Connect to Kafka
-
-```bash
-# Check EC2 Kafka instance status
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*KafkaInstance*" \
-  --query 'Reservations[0].Instances[0].State.Name'
-
-# Connect to Kafka instance and check Docker containers
-INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*KafkaInstance*" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[0].Instances[0].InstanceId' --output text)
-
-aws ssm send-command --instance-ids $INSTANCE_ID \
+# Check Kafka containers
+aws ssm send-command --instance-ids i-01de6aa1003e42e07 \
   --document-name "AWS-RunShellScript" \
   --parameters 'commands=["docker ps"]'
 ```
 
----
+### Aurora status
 
-## 📚 Related Documentation
-
-- [Makefile](../Makefile) - All available commands (`make help`)
-- [config.yml](config.yml) - Environment configuration
-- [CDK Stacks](cdk/stacks/) - Infrastructure as code
-- [aurora_inspect.py](../deployment/script/aurora_inspect.py) - Database inspection script
-
-### AWS Console Quick Links
-
-- **ECS Cluster**: https://console.aws.amazon.com/ecs/home?region=us-west-2#/clusters/ticketing-cluster
-- **Aurora DB**: https://console.aws.amazon.com/rds/home?region=us-west-2
-- **CloudWatch**: https://console.aws.amazon.com/cloudwatch/home?region=us-west-2
-- **Secrets Manager**: https://console.aws.amazon.com/secretsmanager/home?region=us-west-2
+```bash
+aws rds describe-db-clusters \
+  --db-cluster-identifier ticketing-aurora-cluster \
+  --query 'DBClusters[0].Status'
+```
 
 ---
-
-**Version:** 4.0 (EC2 Kafka + Complete Operations & Deployment)
-**Last Updated:** 2025-11-03
-**Region:** us-west-2
-**Maintainer:** CTC

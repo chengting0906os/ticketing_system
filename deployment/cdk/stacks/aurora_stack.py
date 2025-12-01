@@ -153,7 +153,11 @@ def handler(event, context):
 """
             ),
             timeout=Duration.seconds(30),
-            log_retention=logs.RetentionDays.ONE_WEEK,
+            log_group=logs.LogGroup(
+                self,
+                'SecretsGeneratorLogs',
+                retention=logs.RetentionDays.ONE_WEEK,
+            ),
         )
 
         # Grant Lambda permission to update the secret
@@ -167,7 +171,11 @@ def handler(event, context):
                 self,
                 'SecretsGeneratorProvider',
                 on_event_handler=secrets_generator_fn,
-                log_retention=logs.RetentionDays.ONE_WEEK,
+                log_group=logs.LogGroup(
+                    self,
+                    'SecretsGeneratorProviderLogs',
+                    retention=logs.RetentionDays.ONE_WEEK,
+                ),
             ).service_token,
             properties={
                 'SecretArn': self.app_secrets.secret_arn,
@@ -227,7 +235,7 @@ def handler(event, context):
             self,
             'ClusterEndpoint',
             value=self.cluster.cluster_endpoint.hostname,
-            description='Aurora cluster writer endpoint (for writes)',
+            description='Aurora cluster writer endpoint',
             export_name='TicketingAuroraWriterEndpoint',
         )
 
@@ -300,7 +308,7 @@ def handler(event, context):
             'ALB',
             vpc=vpc,
             internet_facing=True,
-            load_balancer_name=f'ticketing-alb-{self.deploy_env}',
+            load_balancer_name='ticketing-alb',
         )
 
         # ALB listener with default 404 response
@@ -321,6 +329,36 @@ def handler(event, context):
             value=f'http://{self.alb.load_balancer_dns_name}',
             description='Application Load Balancer endpoint',
             export_name='TicketingALBEndpoint',
+        )
+
+        # ============= Internal ALB (for LoadTest & VPC-internal traffic) =============
+        # Internal ALB for load testing - traffic stays within VPC
+        self.internal_alb = elbv2.ApplicationLoadBalancer(
+            self,
+            'InternalALB',
+            vpc=vpc,
+            internet_facing=False,  # Internal only - no NAT Gateway roundtrip
+            load_balancer_name=f'ticket-int-alb-{self.deploy_env}',  # Max 32 chars
+        )
+
+        # Internal ALB listener with default 404 response
+        self.internal_alb_listener = self.internal_alb.add_listener(
+            'InternalHttpListener',
+            port=80,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            default_action=elbv2.ListenerAction.fixed_response(
+                status_code=404,
+                content_type='application/json',
+                message_body='{"error": "Not Found"}',
+            ),
+        )
+
+        CfnOutput(
+            self,
+            'InternalALBEndpoint',
+            value=f'http://{self.internal_alb.load_balancer_dns_name}',
+            description='Internal ALB endpoint (VPC only, for LoadTest)',
+            export_name='TicketingInternalALBEndpoint',
         )
 
         # Store references for other stacks

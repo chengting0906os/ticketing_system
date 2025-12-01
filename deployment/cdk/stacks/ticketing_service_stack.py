@@ -46,6 +46,7 @@ class TicketingServiceStack(Stack):
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
         alb_listener: elbv2.IApplicationListener,
+        internal_alb_listener: elbv2.IApplicationListener,
         aurora_cluster_endpoint: str,
         aurora_cluster_secret: secretsmanager.ISecret,
         app_secrets: secretsmanager.ISecret,
@@ -151,10 +152,10 @@ class TicketingServiceStack(Stack):
                 'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
             ],
             logging=ecs.LogDriver.aws_logs(
-                stream_prefix='api-service', log_retention=logs.RetentionDays.ONE_WEEK
+                stream_prefix='ticketing-service', log_retention=logs.RetentionDays.ONE_WEEK
             ),
             environment={
-                'SERVICE_NAME': 'api-service',
+                'SERVICE_NAME': 'ticketing-service',
                 'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
                 'WORKERS': str(config['services']['ticketing']['workers']),
@@ -269,9 +270,28 @@ service:
             target_utilization_percent=config['services']['ticketing']['memory_threshold'],
         )
 
-        # ALB Target Group - Handle all /api/* routes
+        # ALB Target Group - Handle all /api/* routes (internet-facing)
         alb_listener.add_targets(
             'APITargets',
+            port=8100,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            targets=[service],
+            health_check=elbv2.HealthCheck(
+                path='/health',
+                interval=Duration.seconds(30),
+                healthy_threshold_count=2,
+                unhealthy_threshold_count=3,
+            ),
+            deregistration_delay=Duration.seconds(30),
+            priority=10,
+            conditions=[
+                elbv2.ListenerCondition.path_patterns(['/api/*'])  # All API routes
+            ],
+        )
+
+        # Internal ALB Target Group - For LoadTest (VPC internal traffic only)
+        internal_alb_listener.add_targets(
+            'InternalAPITargets',
             port=8100,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[service],
