@@ -14,6 +14,7 @@ from uuid_utils import UUID
 from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
 
+
 if TYPE_CHECKING:
     from src.service.ticketing.app.dto import AvailabilityCheckResult
 
@@ -32,38 +33,13 @@ class BookingCreatedDomainEvent:
     seat_selection_mode: str
     seat_positions: List[str]
     status: BookingStatus
-    occurred_at: datetime  # Required by DomainEvent protocol
-    # Config for downstream services (avoids redundant Kvrocks lookups)
+    occurred_at: datetime
     config: Optional[SubsectionConfig] = None
-
-    @property
-    def aggregate_id(self) -> UUID:
-        return self.booking_id
-
-    @classmethod
-    def from_booking(cls, booking: 'Booking') -> 'BookingCreatedDomainEvent':
-        from datetime import datetime, timezone
-
-        return cls(
-            booking_id=booking.id,
-            buyer_id=booking.buyer_id,
-            event_id=booking.event_id,
-            total_price=booking.total_price,
-            section=booking.section,
-            subsection=booking.subsection,
-            quantity=booking.quantity,
-            seat_selection_mode=booking.seat_selection_mode,
-            seat_positions=booking.seat_positions or [],
-            status=booking.status,
-            occurred_at=datetime.now(timezone.utc),
-        )
 
     @classmethod
     def from_booking_with_config(
         cls, booking: 'Booking', config: 'AvailabilityCheckResult'
     ) -> 'BookingCreatedDomainEvent':
-        """Create event with subsection config for downstream services"""
-
         return cls(
             booking_id=booking.id,
             buyer_id=booking.buyer_id,
@@ -82,8 +58,6 @@ class BookingCreatedDomainEvent:
 
 @attrs.define
 class BookingPaidEvent:
-    """Published when a booking is successfully paid"""
-
     booking_id: UUID
     buyer_id: int
     event_id: int
@@ -92,22 +66,12 @@ class BookingPaidEvent:
     total_amount: float
 
     @property
-    def aggregate_id(self) -> UUID:
-        return self.booking_id
-
-    @property
     def occurred_at(self) -> datetime:
         return self.paid_at
-
-    @property
-    def event_type(self) -> str:
-        return 'booking.paid'
 
 
 @attrs.define
 class BookingCancelledEvent:
-    """Published when a booking is cancelled"""
-
     booking_id: UUID
     buyer_id: int
     event_id: int
@@ -116,13 +80,5 @@ class BookingCancelledEvent:
     cancelled_at: datetime
 
     @property
-    def aggregate_id(self) -> UUID:
-        return self.booking_id
-
-    @property
     def occurred_at(self) -> datetime:
         return self.cancelled_at
-
-    @property
-    def event_type(self) -> str:
-        return 'booking.cancelled'

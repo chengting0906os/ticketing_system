@@ -2,52 +2,93 @@ syntax = "proto3";
 
 package ticketing.events;
 
-// Base domain event structure
-message MqDomainEvent {
-  string event_id = 1;
-  string event_type = 2;
-  string aggregate_id = 3;
-  string aggregate_type = 4;
-  int64 occurred_at = 5;  // Unix timestamp
-  map<string, string> metadata = 6;
-  bytes data = 7;  // Serialized event data
+// Subsection configuration (embedded in BookingCreatedDomainEvent)
+// Using optional to distinguish between "not set" and "set to 0" (e.g., free tickets)
+message SubsectionConfig {
+  optional int32 rows = 1;
+  optional int32 cols = 2;
+  optional int32 price = 3;
 }
 
-// Ticket reservation successful event
-message TicketsReservedEvent {
-  string buyer_id = 1;
-  string booking_id = 2;
-  repeated string ticket_ids = 3;
-  string event_id = 4;
-  int32 quantity = 5;
-  double total_price = 6;
+// 1. Ticketing → Reservation: New booking created
+message BookingCreatedDomainEvent {
+  string booking_id = 1;
+  int32 buyer_id = 2;
+  int32 event_id = 3;
+  int32 total_price = 4;
+  string section = 5;
+  int32 subsection = 6;
+  int32 quantity = 7;
+  string seat_selection_mode = 8;
+  repeated string seat_positions = 9;
+  string status = 10;
+  int64 occurred_at = 11;  // Unix timestamp ms
+  SubsectionConfig config = 12;  // Optional config for downstream
+  // OpenTelemetry W3C Trace Context (embedded for Quix Streams compatibility)
+  string traceparent = 13;
+  string tracestate = 14;
 }
 
-// Ticket reservation failed event
-message TicketReservationFailedEvent {
-  string request_id = 1;
-  string buyer_id = 2;
-  string event_id = 3;
-  string error_code = 4;
-  string error_message = 5;
-  int32 requested_quantity = 6;
+// 2. Reservation → Ticketing: Seats reserved successfully
+message SeatsReservedEvent {
+  string booking_id = 1;
+  int32 buyer_id = 2;
+  int32 event_id = 3;
+  string section = 4;
+  int32 subsection = 5;
+  string seat_selection_mode = 6;
+  repeated string reserved_seats = 7;
+  int32 total_price = 8;
+  map<string, int32> subsection_stats = 9;  // available, reserved, sold, total
+  map<string, int32> event_stats = 10;  // available, reserved, sold, total
+  string status = 11;
+  int64 occurred_at = 12;  // Unix timestamp ms
+  // OpenTelemetry W3C Trace Context
+  string traceparent = 13;
+  string tracestate = 14;
 }
 
-// Booking payment successful event
+// 3. Reservation → Ticketing: Seat reservation failed
+message SeatReservationFailedEvent {
+  string booking_id = 1;
+  int32 buyer_id = 2;
+  int32 event_id = 3;
+  string section = 4;
+  int32 subsection = 5;
+  int32 quantity = 6;
+  string seat_selection_mode = 7;
+  repeated string seat_positions = 8;
+  string error_message = 9;
+  string status = 10;
+  int64 occurred_at = 11;  // Unix timestamp ms
+  // OpenTelemetry W3C Trace Context
+  string traceparent = 12;
+  string tracestate = 13;
+}
+
+// 4. Ticketing → Reservation: Booking paid
 message BookingPaidEvent {
   string booking_id = 1;
-  string buyer_id = 2;
-  string payment_id = 3;
-  double amount = 4;
-  string currency = 5;
-  int64 paid_at = 6;
+  int32 buyer_id = 2;
+  int32 event_id = 3;
+  repeated int32 ticket_ids = 4;
+  repeated string seat_positions = 5;
+  int64 paid_at = 6;  // Unix timestamp ms
+  double total_amount = 7;
+  // OpenTelemetry W3C Trace Context
+  string traceparent = 8;
+  string tracestate = 9;
 }
 
-// Booking cancelled event
+// 5. Ticketing → Reservation: Booking cancelled
 message BookingCancelledEvent {
   string booking_id = 1;
-  string buyer_id = 2;
-  string reason = 3;
-  int64 cancelled_at = 4;
-  repeated string refunded_ticket_ids = 5;
+  int32 buyer_id = 2;
+  int32 event_id = 3;
+  repeated int32 ticket_ids = 4;
+  repeated string seat_positions = 5;
+  int64 cancelled_at = 6;  // Unix timestamp ms
+  // OpenTelemetry W3C Trace Context
+  string traceparent = 7;
+  string tracestate = 8;
 }

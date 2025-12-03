@@ -32,6 +32,8 @@ from uuid_utils import UUID
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
 
+from quixstreams.models.serializers.protobuf import ProtobufDeserializer
+
 from src.platform.config.core_setting import KafkaConfig, settings
 from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.logging.loguru_io import Logger
@@ -39,6 +41,7 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+from src.platform.message_queue.proto import domain_event_pb2 as pb
 from src.platform.observability.tracing import extract_trace_context
 from src.service.ticketing.app.command.update_booking_status_to_failed_use_case import (
     UpdateBookingToFailedUseCase,
@@ -147,32 +150,28 @@ class BookingMqConsumer:
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
-        # Define topic configuration
-        topics = {
-            'pending_payment_and_reserved': (
-                KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-                    event_id=self.event_id
-                ),
-                self._process_pending_payment_and_reserved,
+        # === Topic 1: SeatsReservedEvent (Protobuf) ===
+        pending_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
+                event_id=self.event_id
             ),
-            'failed': (
-                KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
-                self._process_failed,
+            key_serializer='str',
+            value_deserializer=ProtobufDeserializer(
+                msg_type=pb.SeatsReservedEvent, preserving_proto_field_name=True
             ),
-        }
-
-        # Register all topics - Use stateless mode, rely on Kafka transactions
-        for name, (topic_name, handler) in topics.items():
-            topic = self.kafka_app.topic(
-                name=topic_name,
-                key_serializer='str',
-                value_serializer='json',
-            )
-
-            # Use stateless processing, rely on Kafka transactions for exactly once guarantee
-            self.kafka_app.dataframe(topic=topic).apply(handler, stateful=False)
-            Logger.base.info(f'   ✓ {name.capitalize()} topic configured (stateless + transaction)')
-
+        )
+        self.kafka_app.dataframe(topic=pending_topic).apply(
+            self._process_pending_payment_and_reserved, stateful=False
+        )
+        # === Topic 2: SeatReservationFailedEvent (Protobuf) ===
+        failed_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.update_booking_status_to_failed(event_id=self.event_id),
+            key_serializer='str',
+            value_deserializer=ProtobufDeserializer(
+                msg_type=pb.SeatReservationFailedEvent, preserving_proto_field_name=True
+            ),
+        )
+        self.kafka_app.dataframe(topic=failed_topic).apply(self._process_failed, stateful=False)
         Logger.base.info('✅ All topics configured (exactly once via Kafka transactions)')
 
     # ========== DLQ Helper ==========
@@ -187,7 +186,6 @@ class BookingMqConsumer:
             return
 
         try:
-            # Build DLQ message (includes original message and error info)
             dlq_message = {
                 'original_message': message,
                 'original_topic': original_topic,
@@ -199,7 +197,6 @@ class BookingMqConsumer:
 
             # Send to DLQ (use booking_id as key to maintain order)
             serialized_message = orjson.dumps(dlq_message)
-
             with self.kafka_app.get_producer() as producer:
                 producer.produce(
                     topic=self.dlq_topic,
@@ -219,21 +216,20 @@ class BookingMqConsumer:
 
     @Logger.io
     def _process_pending_payment_and_reserved(
-        self, message: Dict, key: object | None = None, context: object | None = None
+        self,
+        message: Dict[str, Any],  # ProtobufDeserializer returns dict
+        _key: object = None,
+        _context: object = None,
     ) -> Dict:
         """Process Booking → PENDING_PAYMENT + Ticket → RESERVED (atomic operation)"""
-        # Extract trace context from message for distributed tracing
-        trace_headers = message.get('_trace_headers', {})
-        if trace_headers:
-            extract_trace_context(headers=trace_headers)
-
+        extract_trace_context(
+            headers={
+                'traceparent': message.get('traceparent', ''),
+                'tracestate': message.get('tracestate', ''),
+            }
+        )
         booking_id = message.get('booking_id')
         reserved_seats = message.get('reserved_seats', [])
-
-        # Extract partition info from Quix Streams context
-        partition_info = ''
-        if hasattr(context, 'partition'):
-            partition_info = f' | partition={context.partition}'
 
         try:
             with self.tracer.start_as_current_span(
@@ -246,7 +242,7 @@ class BookingMqConsumer:
                 },
             ):
                 Logger.base.info(
-                    f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                    f'📥 [BOOKING+TICKET-{self.instance_id}] Processing: booking_id={booking_id}'
                 )
 
                 # Use portal to call async function (ensures proper async context)
@@ -262,6 +258,7 @@ class BookingMqConsumer:
             Logger.base.error(f'❌ [BOOKING+TICKET] Failed: booking_id={booking_id}, error={e}')
             return {'success': False, 'error': str(e)}
 
+    @Logger.io
     async def _handle_pending_payment_and_reserved_async(self, message: Dict[str, Any]) -> None:
         """
         Async handler for pending payment and reserved - Upsert booking with tickets
@@ -320,24 +317,28 @@ class BookingMqConsumer:
 
     @Logger.io
     def _process_failed(
-        self, message: Dict, key: object | None = None, context: object | None = None
+        self,
+        message: Dict[str, Any],  # ProtobufDeserializer returns dict
+        _key: object = None,
+        _context: object = None,
     ) -> Dict:
         """Process Booking → FAILED"""
+        extract_trace_context(
+            headers={
+                'traceparent': message.get('traceparent', ''),
+                'tracestate': message.get('tracestate', ''),
+            }
+        )
         booking_id = message.get('booking_id')
-
-        # Extract partition info from Quix Streams context
-        partition_info = ''
-        if hasattr(context, 'partition'):
-            partition_info = f' | partition={context.partition}'
 
         try:
             Logger.base.info(
-                f'📥 [BOOKING-FAILED-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}'
+                f'📥 [BOOKING-FAILED-{self.instance_id}] Processing: booking_id={booking_id}'
             )
 
             # Use portal to call async function (ensures proper async context)
             # pyrefly: ignore  # missing-attribute
-            self.portal.call(self._handle_failed_async, message)
+            self.portal.call(self._handle_booking_failed_async, message)
 
             Logger.base.info(f'✅ [BOOKING-FAILED] Completed: {booking_id}')
             return {'success': True}
@@ -346,16 +347,7 @@ class BookingMqConsumer:
             Logger.base.error(f'❌ [BOOKING-FAILED] Failed: booking_id={booking_id}, error={e}')
             return {'success': False, 'error': str(e)}
 
-    async def _handle_failed_async(self, message: Dict[str, Any]) -> None:
-        """
-        Async handler for failed booking
-
-        Creates FAILED booking directly from Kafka event data (no query, no Kvrocks read).
-        Booking doesn't exist in PostgreSQL yet when reservation fails.
-
-        Note: Repositories use asyncpg and manage their own connections.
-        """
-        # Extract all booking info from Kafka event
+    async def _handle_booking_failed_async(self, message: Dict[str, Any]) -> None:
         booking_id = message.get('booking_id')
         buyer_id = message.get('buyer_id')
         event_id = message.get('event_id')
@@ -383,8 +375,6 @@ class BookingMqConsumer:
 
         # Create repository (manages its own asyncpg connections)
         booking_command_repo = BookingCommandRepoImpl()
-
-        # Create and execute use case (no query repo needed - direct creation)
         use_case = UpdateBookingToFailedUseCase(
             booking_command_repo=booking_command_repo,
             event_broadcaster=self.event_broadcaster,
@@ -407,9 +397,6 @@ class BookingMqConsumer:
     # ========== Lifecycle ==========
 
     def start(self) -> None:
-        """Start service - Support topic metadata sync retry"""
-        import time
-
         max_retries = 5
         retry_delay = 2  # seconds
 

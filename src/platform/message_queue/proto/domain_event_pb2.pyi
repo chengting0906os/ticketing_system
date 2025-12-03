@@ -2,149 +2,301 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class MqDomainEvent(_message.Message):
+class SubsectionConfig(_message.Message):
+    __slots__ = ('rows', 'cols', 'price')
+    ROWS_FIELD_NUMBER: _ClassVar[int]
+    COLS_FIELD_NUMBER: _ClassVar[int]
+    PRICE_FIELD_NUMBER: _ClassVar[int]
+    rows: int
+    cols: int
+    price: int
+    def __init__(
+        self, rows: _Optional[int] = ..., cols: _Optional[int] = ..., price: _Optional[int] = ...
+    ) -> None: ...
+
+class BookingCreatedDomainEvent(_message.Message):
     __slots__ = (
+        'booking_id',
+        'buyer_id',
         'event_id',
-        'event_type',
-        'aggregate_id',
-        'aggregate_type',
+        'total_price',
+        'section',
+        'subsection',
+        'quantity',
+        'seat_selection_mode',
+        'seat_positions',
+        'status',
         'occurred_at',
-        'metadata',
-        'data',
+        'config',
+        'traceparent',
+        'tracestate',
     )
-    class MetadataEntry(_message.Message):
+    BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
+    BUYER_ID_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_PRICE_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
+    QUANTITY_FIELD_NUMBER: _ClassVar[int]
+    SEAT_SELECTION_MODE_FIELD_NUMBER: _ClassVar[int]
+    SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    OCCURRED_AT_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
+    booking_id: str
+    buyer_id: int
+    event_id: int
+    total_price: int
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: _containers.RepeatedScalarFieldContainer[str]
+    status: str
+    occurred_at: int
+    config: SubsectionConfig
+    traceparent: str
+    tracestate: str
+    def __init__(
+        self,
+        booking_id: _Optional[str] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        total_price: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
+        quantity: _Optional[int] = ...,
+        seat_selection_mode: _Optional[str] = ...,
+        seat_positions: _Optional[_Iterable[str]] = ...,
+        status: _Optional[str] = ...,
+        occurred_at: _Optional[int] = ...,
+        config: _Optional[_Union[SubsectionConfig, _Mapping]] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
+    ) -> None: ...
+
+class SeatsReservedEvent(_message.Message):
+    __slots__ = (
+        'booking_id',
+        'buyer_id',
+        'event_id',
+        'section',
+        'subsection',
+        'seat_selection_mode',
+        'reserved_seats',
+        'total_price',
+        'subsection_stats',
+        'event_stats',
+        'status',
+        'occurred_at',
+        'traceparent',
+        'tracestate',
+    )
+    class SubsectionStatsEntry(_message.Message):
         __slots__ = ('key', 'value')
         KEY_FIELD_NUMBER: _ClassVar[int]
         VALUE_FIELD_NUMBER: _ClassVar[int]
         key: str
-        value: str
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+        value: int
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[int] = ...) -> None: ...
 
-    EVENT_ID_FIELD_NUMBER: _ClassVar[int]
-    EVENT_TYPE_FIELD_NUMBER: _ClassVar[int]
-    AGGREGATE_ID_FIELD_NUMBER: _ClassVar[int]
-    AGGREGATE_TYPE_FIELD_NUMBER: _ClassVar[int]
-    OCCURRED_AT_FIELD_NUMBER: _ClassVar[int]
-    METADATA_FIELD_NUMBER: _ClassVar[int]
-    DATA_FIELD_NUMBER: _ClassVar[int]
-    event_id: str
-    event_type: str
-    aggregate_id: str
-    aggregate_type: str
-    occurred_at: int
-    metadata: _containers.ScalarMap[str, str]
-    data: bytes
-    def __init__(
-        self,
-        event_id: _Optional[str] = ...,
-        event_type: _Optional[str] = ...,
-        aggregate_id: _Optional[str] = ...,
-        aggregate_type: _Optional[str] = ...,
-        occurred_at: _Optional[int] = ...,
-        metadata: _Optional[_Mapping[str, str]] = ...,
-        data: _Optional[bytes] = ...,
-    ) -> None: ...
+    class EventStatsEntry(_message.Message):
+        __slots__ = ('key', 'value')
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: int
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[int] = ...) -> None: ...
 
-class TicketsReservedEvent(_message.Message):
-    __slots__ = ('buyer_id', 'booking_id', 'ticket_ids', 'event_id', 'quantity', 'total_price')
-    BUYER_ID_FIELD_NUMBER: _ClassVar[int]
     BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
-    TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
+    BUYER_ID_FIELD_NUMBER: _ClassVar[int]
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
-    QUANTITY_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
+    SEAT_SELECTION_MODE_FIELD_NUMBER: _ClassVar[int]
+    RESERVED_SEATS_FIELD_NUMBER: _ClassVar[int]
     TOTAL_PRICE_FIELD_NUMBER: _ClassVar[int]
-    buyer_id: str
+    SUBSECTION_STATS_FIELD_NUMBER: _ClassVar[int]
+    EVENT_STATS_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    OCCURRED_AT_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
     booking_id: str
-    ticket_ids: _containers.RepeatedScalarFieldContainer[str]
-    event_id: str
-    quantity: int
-    total_price: float
+    buyer_id: int
+    event_id: int
+    section: str
+    subsection: int
+    seat_selection_mode: str
+    reserved_seats: _containers.RepeatedScalarFieldContainer[str]
+    total_price: int
+    subsection_stats: _containers.ScalarMap[str, int]
+    event_stats: _containers.ScalarMap[str, int]
+    status: str
+    occurred_at: int
+    traceparent: str
+    tracestate: str
     def __init__(
         self,
-        buyer_id: _Optional[str] = ...,
         booking_id: _Optional[str] = ...,
-        ticket_ids: _Optional[_Iterable[str]] = ...,
-        event_id: _Optional[str] = ...,
-        quantity: _Optional[int] = ...,
-        total_price: _Optional[float] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
+        seat_selection_mode: _Optional[str] = ...,
+        reserved_seats: _Optional[_Iterable[str]] = ...,
+        total_price: _Optional[int] = ...,
+        subsection_stats: _Optional[_Mapping[str, int]] = ...,
+        event_stats: _Optional[_Mapping[str, int]] = ...,
+        status: _Optional[str] = ...,
+        occurred_at: _Optional[int] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
     ) -> None: ...
 
-class TicketReservationFailedEvent(_message.Message):
+class SeatReservationFailedEvent(_message.Message):
     __slots__ = (
-        'request_id',
+        'booking_id',
         'buyer_id',
         'event_id',
-        'error_code',
+        'section',
+        'subsection',
+        'quantity',
+        'seat_selection_mode',
+        'seat_positions',
         'error_message',
-        'requested_quantity',
+        'status',
+        'occurred_at',
+        'traceparent',
+        'tracestate',
     )
-    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
     BUYER_ID_FIELD_NUMBER: _ClassVar[int]
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
-    ERROR_CODE_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
+    QUANTITY_FIELD_NUMBER: _ClassVar[int]
+    SEAT_SELECTION_MODE_FIELD_NUMBER: _ClassVar[int]
+    SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
-    REQUESTED_QUANTITY_FIELD_NUMBER: _ClassVar[int]
-    request_id: str
-    buyer_id: str
-    event_id: str
-    error_code: str
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    OCCURRED_AT_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
+    booking_id: str
+    buyer_id: int
+    event_id: int
+    section: str
+    subsection: int
+    quantity: int
+    seat_selection_mode: str
+    seat_positions: _containers.RepeatedScalarFieldContainer[str]
     error_message: str
-    requested_quantity: int
+    status: str
+    occurred_at: int
+    traceparent: str
+    tracestate: str
     def __init__(
         self,
-        request_id: _Optional[str] = ...,
-        buyer_id: _Optional[str] = ...,
-        event_id: _Optional[str] = ...,
-        error_code: _Optional[str] = ...,
+        booking_id: _Optional[str] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
+        quantity: _Optional[int] = ...,
+        seat_selection_mode: _Optional[str] = ...,
+        seat_positions: _Optional[_Iterable[str]] = ...,
         error_message: _Optional[str] = ...,
-        requested_quantity: _Optional[int] = ...,
+        status: _Optional[str] = ...,
+        occurred_at: _Optional[int] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
     ) -> None: ...
 
 class BookingPaidEvent(_message.Message):
-    __slots__ = ('booking_id', 'buyer_id', 'payment_id', 'amount', 'currency', 'paid_at')
+    __slots__ = (
+        'booking_id',
+        'buyer_id',
+        'event_id',
+        'ticket_ids',
+        'seat_positions',
+        'paid_at',
+        'total_amount',
+        'traceparent',
+        'tracestate',
+    )
     BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
     BUYER_ID_FIELD_NUMBER: _ClassVar[int]
-    PAYMENT_ID_FIELD_NUMBER: _ClassVar[int]
-    AMOUNT_FIELD_NUMBER: _ClassVar[int]
-    CURRENCY_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
+    SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
     PAID_AT_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_AMOUNT_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
     booking_id: str
-    buyer_id: str
-    payment_id: str
-    amount: float
-    currency: str
+    buyer_id: int
+    event_id: int
+    ticket_ids: _containers.RepeatedScalarFieldContainer[int]
+    seat_positions: _containers.RepeatedScalarFieldContainer[str]
     paid_at: int
+    total_amount: float
+    traceparent: str
+    tracestate: str
     def __init__(
         self,
         booking_id: _Optional[str] = ...,
-        buyer_id: _Optional[str] = ...,
-        payment_id: _Optional[str] = ...,
-        amount: _Optional[float] = ...,
-        currency: _Optional[str] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        ticket_ids: _Optional[_Iterable[int]] = ...,
+        seat_positions: _Optional[_Iterable[str]] = ...,
         paid_at: _Optional[int] = ...,
+        total_amount: _Optional[float] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
     ) -> None: ...
 
 class BookingCancelledEvent(_message.Message):
-    __slots__ = ('booking_id', 'buyer_id', 'reason', 'cancelled_at', 'refunded_ticket_ids')
+    __slots__ = (
+        'booking_id',
+        'buyer_id',
+        'event_id',
+        'ticket_ids',
+        'seat_positions',
+        'cancelled_at',
+        'traceparent',
+        'tracestate',
+    )
     BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
     BUYER_ID_FIELD_NUMBER: _ClassVar[int]
-    REASON_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
+    SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
     CANCELLED_AT_FIELD_NUMBER: _ClassVar[int]
-    REFUNDED_TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
+    TRACEPARENT_FIELD_NUMBER: _ClassVar[int]
+    TRACESTATE_FIELD_NUMBER: _ClassVar[int]
     booking_id: str
-    buyer_id: str
-    reason: str
+    buyer_id: int
+    event_id: int
+    ticket_ids: _containers.RepeatedScalarFieldContainer[int]
+    seat_positions: _containers.RepeatedScalarFieldContainer[str]
     cancelled_at: int
-    refunded_ticket_ids: _containers.RepeatedScalarFieldContainer[str]
+    traceparent: str
+    tracestate: str
     def __init__(
         self,
         booking_id: _Optional[str] = ...,
-        buyer_id: _Optional[str] = ...,
-        reason: _Optional[str] = ...,
+        buyer_id: _Optional[int] = ...,
+        event_id: _Optional[int] = ...,
+        ticket_ids: _Optional[_Iterable[int]] = ...,
+        seat_positions: _Optional[_Iterable[str]] = ...,
         cancelled_at: _Optional[int] = ...,
-        refunded_ticket_ids: _Optional[_Iterable[str]] = ...,
+        traceparent: _Optional[str] = ...,
+        tracestate: _Optional[str] = ...,
     ) -> None: ...

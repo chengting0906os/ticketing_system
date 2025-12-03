@@ -136,7 +136,7 @@ def inject_trace_context(*, headers: dict[str, str] | None = None) -> dict[str, 
     return headers
 
 
-def extract_trace_context(*, headers: dict[str, str] | None = None) -> Context:
+def extract_trace_context(*, headers: dict[str, str]) -> Context:
     """
     Extract trace context from Kafka message headers and attach to current context.
 
@@ -177,12 +177,10 @@ def extract_trace_context(*, headers: dict[str, str] | None = None) -> Context:
             (e.g., {"traceparent": "00-abc123-def456-01"})
 
     Returns:
-        Context object with extracted trace context, or current context if no headers
+        Context object with extracted trace context
     """
-    if headers:
-        # Extract returns a new Context with the propagated data
-        ctx = extract(headers)
-        # Attach the context to make it the current context
-        otel_context.attach(ctx)
-        return ctx
-    return otel_context.get_current()
+    # Extract returns a new Context with the propagated data
+    ctx = extract(headers)
+    # Attach the context to make it the current context
+    otel_context.attach(ctx)
+    return ctx

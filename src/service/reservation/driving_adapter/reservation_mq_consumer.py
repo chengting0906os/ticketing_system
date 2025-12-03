@@ -15,15 +15,11 @@ from anyio.from_thread import BlockingPortal
 from opentelemetry import trace
 import orjson
 from quixstreams import Application
+from quixstreams.models.serializers.protobuf import ProtobufDeserializer
 
 
 if TYPE_CHECKING:
     from anyio.from_thread import BlockingPortal
-
-from src.service.reservation.app.dto import (
-    FinalizeSeatPaymentRequest,
-    ReservationRequest,
-)
 
 from src.platform.config.core_setting import KafkaConfig, settings
 from src.platform.config.di import container
@@ -32,7 +28,12 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaConsumerGroupBuilder,
     KafkaTopicBuilder,
 )
+from src.platform.message_queue.proto import domain_event_pb2 as pb
 from src.platform.observability.tracing import extract_trace_context
+from src.service.reservation.app.dto import (
+    FinalizeSeatPaymentRequest,
+    ReservationRequest,
+)
 from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
 from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
@@ -126,37 +127,50 @@ class SeatReservationConsumer:
         if not self.kafka_app:
             self.kafka_app = self._create_kafka_app()
 
-        # Define topic configuration
-        topics = {
-            'reservation': (
-                KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
-                    event_id=self.event_id
-                ),
-                self._process_reservation_request,
+        # === Topic 1: Reservation (Protobuf - domain event from ticketing service) ===
+        reservation_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(
+                event_id=self.event_id
             ),
-            'release': (
-                KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
-                    event_id=self.event_id
-                ),
-                self._process_release_seat,
+            key_serializer='str',
+            value_deserializer=ProtobufDeserializer(
+                msg_type=pb.BookingCreatedDomainEvent, preserving_proto_field_name=True
             ),
-            'finalize': (
-                KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=self.event_id),
-                self._process_finalize_payment,
-            ),
-        }
+        )
+        self.kafka_app.dataframe(topic=reservation_topic).apply(
+            self._process_reservation_request, stateful=False
+        )
+        Logger.base.info('   ✓ Reservation topic configured (protobuf)')
 
-        # Register all topics - Use stateless mode, rely on Kafka transactions
-        for name, (topic_name, handler) in topics.items():
-            topic = self.kafka_app.topic(
-                name=topic_name,
-                key_serializer='str',
-                value_serializer='json',
-            )
+        # === Topic 2: Release (Protobuf - BookingCancelledEvent from ticketing service) ===
+        release_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
+                event_id=self.event_id
+            ),
+            key_serializer='str',
+            value_deserializer=ProtobufDeserializer(
+                msg_type=pb.BookingCancelledEvent, preserving_proto_field_name=True
+            ),
+        )
+        self.kafka_app.dataframe(topic=release_topic).apply(
+            self._process_release_seat, stateful=False
+        )
+        Logger.base.info('   ✓ Release topic configured (protobuf)')
 
-            # Use stateless processing, rely on Kafka transactions for exactly once guarantee
-            self.kafka_app.dataframe(topic=topic).apply(handler, stateful=False)
-            Logger.base.info(f'   ✓ {name.capitalize()} topic configured (stateless + transaction)')
+        # === Topic 3: Finalize (Protobuf - BookingPaidEvent from ticketing service) ===
+        finalize_topic = self.kafka_app.topic(
+            name=KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
+                event_id=self.event_id
+            ),
+            key_serializer='str',
+            value_deserializer=ProtobufDeserializer(
+                msg_type=pb.BookingPaidEvent, preserving_proto_field_name=True
+            ),
+        )
+        self.kafka_app.dataframe(topic=finalize_topic).apply(
+            self._process_finalize_payment, stateful=False
+        )
+        Logger.base.info('   ✓ Finalize topic configured (protobuf)')
 
         Logger.base.info('✅ All topics configured (exactly once via Kafka transactions)')
 
@@ -181,19 +195,18 @@ class SeatReservationConsumer:
                 'instance_id': self.instance_id,
             }
 
-            # Send to DLQ (use aggregate_id as key to maintain order)
-            # Serialize message to JSON
+            # Send to DLQ (use booking_id as key to maintain order)
             serialized_message = orjson.dumps(dlq_message)
 
             with self.kafka_app.get_producer() as producer:
                 producer.produce(
                     topic=self.dlq_topic,
-                    key=str(message.get('aggregate_id', 'unknown')),
+                    key=str(message.get('booking_id', 'unknown')),
                     value=serialized_message,
                 )
 
             Logger.base.warning(
-                f'📮 [DLQ] Sent to DLQ: {message.get("aggregate_id")} '
+                f'📮 [DLQ] Sent to DLQ: {message.get("booking_id")} '
                 f'after {retry_count} retries, error: {error}'
             )
 
@@ -202,8 +215,12 @@ class SeatReservationConsumer:
 
     # ========== Message Handlers ==========
 
+    @Logger.io
     def _process_reservation_request(
-        self, message: Dict, key: object = None, context: object = None
+        self,
+        message: Dict[str, Any],  # ProtobufDeserializer returns dict
+        _key: object = None,
+        _context: object = None,
     ) -> Dict:
         """
         Process reservation request - Simplified version, errors handled by on_processing_error callback
@@ -211,18 +228,16 @@ class SeatReservationConsumer:
         Note: No application-layer retry, let Quix Streams error callback handle errors
         This way the consumer won't be blocked
         """
-        # Extract trace context from message for distributed tracing
-        trace_headers = message.get('_trace_headers', {})
-        if trace_headers:
-            extract_trace_context(headers=trace_headers)
+        # Extract trace context from protobuf fields for distributed tracing
+        # (Quix Streams dataframe API doesn't pass Kafka headers to callbacks)
+        extract_trace_context(
+            headers={
+                'traceparent': message.get('traceparent', ''),
+                'tracestate': message.get('tracestate', ''),
+            }
+        )
 
         event_id = message.get('event_id', self.event_id)
-
-        # Extract partition info from Quix Streams context
-        partition_info = ''
-        if hasattr(context, 'topic') and hasattr(context, 'partition'):
-            partition_info = f' | partition={context.partition}, offset={context.offset}'
-
         booking_id = message.get('booking_id', 'unknown')
 
         with self.tracer.start_as_current_span(
@@ -235,38 +250,29 @@ class SeatReservationConsumer:
             },
         ):
             Logger.base.info(
-                f'\033[94m🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}{partition_info}\033[0m'
+                f'\033[94m🎫 [RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}\033[0m'
             )
 
-            # Execute reservation logic (exceptions will be caught by on_processing_error)
-            # pyrefly: ignore  # missing-attribute
             result = self.portal.call(self._handle_reservation_async, message)
-
             return {'success': True, 'result': result}
 
     @Logger.io
     def _process_release_seat(
-        self, message: Dict, key: object = None, context: object = None
+        self,
+        message: Dict[str, Any],  # ProtobufDeserializer returns dict
+        _key: object = None,
+        _context: object = None,
     ) -> Dict:
         """Process seat release - Support DLQ (release operations usually don't need retry)"""
-        # Extract trace context from message for distributed tracing
-        trace_headers = message.get('_trace_headers', {})
-        if trace_headers:
-            extract_trace_context(headers=trace_headers)
-
-        # Extract partition info
-        partition_info = ''
-        if hasattr(context, 'partition'):
-            partition_info = f' | partition={context.partition}'
-
-        # Handle both old format (seat_id) and new format (seat_positions)
-        seat_id = message.get('seat_id')
+        extract_trace_context(
+            headers={
+                'traceparent': message.get('traceparent', ''),
+                'tracestate': message.get('tracestate', ''),
+            }
+        )
         seat_positions = message.get('seat_positions', [])
 
-        if seat_id:
-            # Legacy single seat release
-            seat_positions = [seat_id]
-        elif not seat_positions:
+        if not seat_positions:
             error_msg = 'Missing seat_id or seat_positions'
             self._send_to_dlq(
                 message=message,
@@ -291,14 +297,11 @@ class SeatReservationConsumer:
                 # PERFORMANCE OPTIMIZATION: Release all seats in a SINGLE batch call
                 # instead of N sequential calls to reduce portal overhead
                 Logger.base.info(
-                    f'🔓 [RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats in batch{partition_info}'
+                    f'🔓 [RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats in batch'
                 )
 
                 batch_request = ReleaseSeatsBatchRequest(seat_ids=seat_positions, event_id=event_id)
-                # pyrefly: ignore  # missing-attribute
                 result = self.portal.call(self.release_seat_use_case.execute_batch, batch_request)
-
-                # Log results
 
                 return {
                     'success': True,
@@ -320,17 +323,22 @@ class SeatReservationConsumer:
 
     @Logger.io
     def _process_finalize_payment(
-        self, message: Dict, key: object = None, context: object = None
+        self,
+        message: Dict[str, Any],  # ProtobufDeserializer returns dict
+        _key: object = None,
+        _context: object = None,
     ) -> Dict:
-        """Process payment finalization - Support DLQ (payment finalization operations usually don't need retry)"""
-        # Extract partition info
-        partition_info = ''
-        if hasattr(context, 'partition'):
-            partition_info = f' | partition={context.partition}'
+        """Process payment finalization - Batch update seats to SOLD status"""
+        extract_trace_context(
+            headers={
+                'traceparent': message.get('traceparent', ''),
+                'tracestate': message.get('tracestate', ''),
+            }
+        )
+        seat_positions = message.get('seat_positions', [])
 
-        seat_id = message.get('seat_id')
-        if not seat_id:
-            error_msg = 'Missing seat_id'
+        if not seat_positions:
+            error_msg = 'Missing seat_positions'
             self._send_to_dlq(
                 message=message,
                 original_topic='finalize_ticket_status_to_paid_in_kvrocks',
@@ -339,31 +347,42 @@ class SeatReservationConsumer:
             )
             return {'success': False, 'error': error_msg, 'sent_to_dlq': True}
 
+        booking_id = message.get('booking_id', 'unknown')
+        event_id = message.get('event_id', self.event_id)
+
         try:
-            request = FinalizeSeatPaymentRequest(
-                seat_id=seat_id,
-                event_id=self.event_id,
+            Logger.base.info(
+                f'💰 [FINALIZE-{self.instance_id}] Finalizing {len(seat_positions)} seats'
             )
 
-            # pyrefly: ignore  # missing-attribute
-            result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
+            # Process each seat (TODO: consider batch use case for better performance)
+            successful_seats = []
+            failed_seats = []
+            for seat_id in seat_positions:
+                request = FinalizeSeatPaymentRequest(
+                    seat_id=seat_id,
+                    event_id=event_id,
+                )
+                # pyrefly: ignore  # missing-attribute
+                result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
+                if result.success:
+                    successful_seats.append(seat_id)
+                else:
+                    failed_seats.append(seat_id)
 
-            if result.success:
-                Logger.base.info(f'💰 [FINALIZE-{self.instance_id}] {seat_id}{partition_info}')
-                return {'success': True, 'seat_id': seat_id}
-
-            # Use case execution failed, send to DLQ
-            self._send_to_dlq(
-                message=message,
-                original_topic='finalize_ticket_status_to_paid_in_kvrocks',
-                error=result.error_message or 'Unknown error',
-                retry_count=0,
+            Logger.base.info(
+                f'💰 [FINALIZE-{self.instance_id}] booking_id={booking_id} '
+                f'success={len(successful_seats)}, failed={len(failed_seats)}'
             )
-            return {'success': False, 'error': result.error_message, 'sent_to_dlq': True}
+
+            return {
+                'success': len(failed_seats) == 0,
+                'successful_seats': successful_seats,
+                'failed_seats': failed_seats,
+            }
 
         except Exception as e:
             Logger.base.error(f'❌ [FINALIZE] {e}')
-            # Send to DLQ
             self._send_to_dlq(
                 message=message,
                 original_topic='finalize_ticket_status_to_paid_in_kvrocks',
@@ -410,12 +429,7 @@ class SeatReservationConsumer:
             return None
 
     def _create_reservation_command(self, event_data: Dict) -> Dict:
-        """Create reservation command
-
-        Note: publish_domain_event spreads event fields with **event.__dict__
-        and removes 'aggregate_id' to avoid duplication. All fields including
-        booking_id, buyer_id, event_id are at top level.
-        """
+        """Create reservation command from event data."""
         booking_id = event_data.get('booking_id')
         buyer_id = event_data.get('buyer_id')
         event_id = event_data.get('event_id')

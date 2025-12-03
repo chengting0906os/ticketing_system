@@ -2,20 +2,23 @@
 Domain Event Publisher
 
 Simplified event publishing interface - using Quix Streams directly
+Uses Protocol Buffers for efficient serialization
 """
 
-from datetime import datetime
 from typing import Any, Literal
 
-import attrs
 from opentelemetry import trace
 from quixstreams import Application
 from quixstreams.kafka import Producer
 from quixstreams.models import Topic
-from uuid_utils import UUID
+from quixstreams.models.serializers.protobuf import ProtobufSerializer
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.protobuf_serializer import (
+    convert_domain_event_to_proto,
+    get_proto_class_by_event_type,
+)
 from src.platform.observability.tracing import inject_trace_context
 from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
@@ -34,23 +37,6 @@ def _get_global_producer() -> Producer:
         app = _get_quix_app()
         _global_producer = app.get_producer()
     return _global_producer
-
-
-def _serialize_value(inst: type, field: attrs.Attribute, value: object) -> object:
-    """
-    Custom serializer - convert datetime and UUID to JSON-serializable types
-
-    Used as value_serializer parameter for attrs.asdict
-
-    Handles:
-    - datetime -> Unix timestamp (int)
-    - UUID -> str (includes UUID7)
-    """
-    if isinstance(value, datetime):
-        return int(value.timestamp())
-    if isinstance(value, UUID):
-        return str(value)
-    return value
 
 
 def _get_quix_app() -> Application:
@@ -85,21 +71,25 @@ def _get_quix_app() -> Application:
     return _quix_app
 
 
-def _get_or_create_quix_topic_with_cache(topic_name: str) -> Topic:
+def _get_or_create_quix_topic_with_cache(topic_name: str, event_type: str) -> Topic:
     """
-    Get cached topic object to avoid repeated list_topics calls.
+    Get cached topic object with native ProtobufSerializer.
 
     Performance optimization: app.topic() internally calls list_topics() which
     queries Kafka cluster metadata. Caching topics eliminates ~20% CPU overhead.
+
+    Cache key includes event_type since each topic needs the correct protobuf serializer.
     """
-    if topic_name not in _quix_topic_object_cache:
+    cache_key = f'{topic_name}:{event_type}'
+    if cache_key not in _quix_topic_object_cache:
         app = _get_quix_app()
-        _quix_topic_object_cache[topic_name] = app.topic(
+        proto_class = get_proto_class_by_event_type(event_type)
+        _quix_topic_object_cache[cache_key] = app.topic(
             name=topic_name,
             key_serializer='str',
-            value_serializer='json',
+            value_serializer=ProtobufSerializer(msg_type=proto_class),
         )
-    return _quix_topic_object_cache[topic_name]
+    return _quix_topic_object_cache[cache_key]
 
 
 async def publish_domain_event(
@@ -108,16 +98,6 @@ async def publish_domain_event(
     partition_key: str,
 ) -> Literal[True]:
     """
-    Publish domain event to Kafka with distributed tracing support
-
-    Args:
-        event: Domain event object
-        topic: Kafka topic name
-        partition_key: Partition key (ensures ordered processing for same entity)
-
-    Returns:
-        True (always succeeds, failures raise exceptions)
-
     Example:
         await publish_domain_event(
             event=BookingCreated(booking_id=123, ...),
@@ -135,31 +115,17 @@ async def publish_domain_event(
             'messaging.destination_kind': 'topic',
             'messaging.kafka.partition_key': partition_key,
             'event.type': event.__class__.__name__,
-            'event.aggregate_id': str(event.aggregate_id),
         },
     ):
-        # Get cached topic object (avoids expensive list_topics call on every publish)
-        kafka_topic = _get_or_create_quix_topic_with_cache(topic)
-
-        # Prepare event data - convert attrs object to dict, excluding metadata fields
-        event_dict = attrs.asdict(event, value_serializer=_serialize_value)
-        event_dict.pop('aggregate_id', None)
-        event_dict.pop('occurred_at', None)
-
-        event_data = {
-            'event_type': event.__class__.__name__,
-            **event_dict,
-        }
-
-        # Inject trace context into event data for distributed tracing
+        # Get event type for protobuf serialization
+        event_type = event.__class__.__name__
+        kafka_topic = _get_or_create_quix_topic_with_cache(topic, event_type)
         trace_headers = inject_trace_context()
-        event_data['_trace_headers'] = trace_headers
-
-        # Publish event - use global producer instance
+        proto_msg = convert_domain_event_to_proto(event, trace_context=trace_headers)
         producer = _get_global_producer()
         message = kafka_topic.serialize(
             key=partition_key,
-            value=event_data,
+            value=proto_msg,  # Pass protobuf message, serializer converts to bytes
         )
 
         producer.produce(
@@ -169,9 +135,6 @@ async def publish_domain_event(
         )
 
         # No flush here - let Kafka batch messages automatically
-        # Messages will be sent when batch.size or linger.ms threshold is reached
-        # This significantly improves throughput for high-frequency events
-
         Logger.base.info(
             f'📤 Published {event.__class__.__name__} to {topic} (key: {partition_key})'
         )

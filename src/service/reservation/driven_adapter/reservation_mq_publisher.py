@@ -13,19 +13,17 @@ from datetime import datetime, timezone
 from typing import List
 
 import attrs
-from src.service.reservation.app.interface.i_reservation_event_publisher import (
-    ISeatReservationEventPublisher,
-)
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
+from src.service.reservation.app.interface.i_reservation_event_publisher import (
+    ISeatReservationEventPublisher,
+)
 
 
 @attrs.define
 class SeatsReservedEvent:
-    """Seat reservation success event"""
-
     booking_id: str
     buyer_id: int
     event_id: int
@@ -34,29 +32,18 @@ class SeatsReservedEvent:
     seat_selection_mode: str
     reserved_seats: List[str]
     total_price: int
-    # Subsection stats from Kvrocks (for SSE broadcasting to frontend)
-    # Check subsection_stats['available'] == 0 to know if subsection is sold out
     subsection_stats: dict[str, int] = attrs.Factory(
         dict
     )  # {'available': 95, 'reserved': 5, 'sold': 0, 'total': 100}
-    # Event-level stats from Kvrocks (for SSE broadcasting to frontend)
-    # Check event_stats['available'] == 0 to know if entire event is sold out
     event_stats: dict[str, int] = attrs.Factory(
         dict
     )  # {'available': 49950, 'reserved': 50, 'sold': 0, 'total': 50000}
-    # Note: event_state removed - cache updates now via Redis Pub/Sub, not Kafka
     status: str = 'seats_reserved'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
-
-    @property
-    def aggregate_id(self) -> str:
-        return self.booking_id
 
 
 @attrs.define
 class SeatReservationFailedEvent:
-    """Seat reservation failure event - includes full booking info for direct FAILED booking creation"""
-
     booking_id: str
     buyer_id: int
     event_id: int
@@ -69,14 +56,8 @@ class SeatReservationFailedEvent:
     status: str = 'reservation_failed'
     occurred_at: datetime = attrs.Factory(lambda: datetime.now(timezone.utc))
 
-    @property
-    def aggregate_id(self) -> str:
-        return self.booking_id
-
 
 class SeatReservationEventPublisher(ISeatReservationEventPublisher):
-    """Seat reservation event publisher implementation"""
-
     async def publish_seats_reserved(
         self,
         *,
@@ -91,7 +72,6 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         subsection_stats: dict[str, int],
         event_stats: dict[str, int],
     ) -> None:
-        """Publish seat reservation success event (cache updates via Redis Pub/Sub separately)"""
         event = SeatsReservedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
@@ -130,7 +110,6 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
         seat_positions: List[str],
         error_message: str,
     ) -> None:
-        """Publish seat reservation failure event with full booking info"""
         event = SeatReservationFailedEvent(
             booking_id=booking_id,
             buyer_id=buyer_id,
