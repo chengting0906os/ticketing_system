@@ -68,9 +68,9 @@ migrate-history:  ## 📜 Show migration history
 
 re-seed:  ## 🔄 Reset and re-seed database (default: 500 seats, usage: make re-seed SEATS=5k)
 	@echo "🗑️  Resetting database..."
-	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost uv run python -m script.reset_database
+	@uv run python -m script.reset_database
 	@echo "🌱 Seeding database with SEATS=$(SEATS)..."
-	@POSTGRES_SERVER=localhost KVROCKS_HOST=localhost SEATS=$(SEATS) uv run python -m script.seed_data
+	@SEATS=$(SEATS) uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
 
 re-seed-500:  ## 🔄 Reset and seed with 500 seats
