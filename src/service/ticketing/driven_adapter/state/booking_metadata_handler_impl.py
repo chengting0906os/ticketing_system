@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from opentelemetry import trace
 import orjson
+from redis.exceptions import NoScriptError
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -119,7 +120,13 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
                 args.append(self.BOOKING_TTL)
 
                 # Execute Lua script (atomic HSET + EXPIRE in single round-trip)
-                await self._hset_expire_script(keys=[key], args=args)
+                # Retry once on NoScriptError (happens after Kvrocks restart)
+                try:
+                    await self._hset_expire_script(keys=[key], args=args)
+                except NoScriptError:
+                    Logger.base.warning('⚠️ [BOOKING-META] Script not found, re-registering...')
+                    self._hset_expire_script = client.register_script(self.LUA_HSET_EXPIRE)
+                    await self._hset_expire_script(keys=[key], args=args)
 
             except Exception as e:
                 Logger.base.error(f'❌ [BOOKING-META] Failed to save metadata: {e}')

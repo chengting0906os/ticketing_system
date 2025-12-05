@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import NoScriptError
 
 from src.platform.logging.loguru_io import Logger
 
@@ -18,6 +19,8 @@ class LuaScripts:
     def __init__(self) -> None:
         self._find_consecutive_seats_script: Any = None
         self._verify_manual_seats_script: Any = None
+        self._find_consecutive_seats_source: str = ''
+        self._verify_manual_seats_source: str = ''
         self._initialized: bool = False
 
     async def initialize(self, *, client: Redis) -> None:
@@ -38,8 +41,9 @@ class LuaScripts:
         # Load find_consecutive_seats.lua
         find_seats_path = lua_scripts_dir / 'find_consecutive_seats.lua'
         if find_seats_path.exists():
+            self._find_consecutive_seats_source = find_seats_path.read_text()
             self._find_consecutive_seats_script = client.register_script(
-                find_seats_path.read_text()
+                self._find_consecutive_seats_source
             )
         else:
             Logger.base.warning(f'⚠️ [LUA] Script not found: {find_seats_path}')
@@ -47,7 +51,10 @@ class LuaScripts:
         # Load verify_manual_seats.lua
         verify_seats_path = lua_scripts_dir / 'verify_manual_seats.lua'
         if verify_seats_path.exists():
-            self._verify_manual_seats_script = client.register_script(verify_seats_path.read_text())
+            self._verify_manual_seats_source = verify_seats_path.read_text()
+            self._verify_manual_seats_script = client.register_script(
+                self._verify_manual_seats_source
+            )
         else:
             Logger.base.warning(f'⚠️ [LUA] Script not found: {verify_seats_path}')
 
@@ -56,20 +63,36 @@ class LuaScripts:
     async def find_consecutive_seats(
         self, *, client: Redis, keys: list[str], args: list[str]
     ) -> bytes | None:
-        """Execute find_consecutive_seats Lua script"""
+        """Execute find_consecutive_seats Lua script with auto-retry on NoScriptError"""
         if self._find_consecutive_seats_script is None:
             raise RuntimeError('Lua scripts not initialized')
 
-        return await self._find_consecutive_seats_script(keys=keys, args=args, client=client)
+        try:
+            return await self._find_consecutive_seats_script(keys=keys, args=args, client=client)
+        except NoScriptError:
+            Logger.base.warning('⚠️ [LUA] find_consecutive_seats not found, re-registering...')
+            self._find_consecutive_seats_script = client.register_script(
+                self._find_consecutive_seats_source
+            )
+            result = await self._find_consecutive_seats_script(keys=keys, args=args, client=client)
+            return result  # pyrefly: ignore
 
     async def verify_manual_seats(
         self, *, client: Redis, keys: list[str], args: list[str]
     ) -> bytes | None:
-        """Execute verify_manual_seats Lua script"""
+        """Execute verify_manual_seats Lua script with auto-retry on NoScriptError"""
         if self._verify_manual_seats_script is None:
             raise RuntimeError('Lua scripts not initialized')
 
-        return await self._verify_manual_seats_script(keys=keys, args=args, client=client)
+        try:
+            return await self._verify_manual_seats_script(keys=keys, args=args, client=client)
+        except NoScriptError:
+            Logger.base.warning('⚠️ [LUA] verify_manual_seats not found, re-registering...')
+            self._verify_manual_seats_script = client.register_script(
+                self._verify_manual_seats_source
+            )
+            result = await self._verify_manual_seats_script(keys=keys, args=args, client=client)
+            return result  # pyrefly: ignore
 
 
 # Global singleton
