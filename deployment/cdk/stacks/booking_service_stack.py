@@ -126,7 +126,7 @@ class BookingServiceStack(Stack):
             command=[
                 'sh',
                 '-c',
-                'uv run python -m src.service.ticketing.driving_adapter.mq_consumer.start_booking_consumer',
+                'uv run python -m src.service.booking.driving_adapter.mq_consumer.start_booking_consumer',
             ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='booking-consumer', log_retention=logs.RetentionDays.ONE_WEEK

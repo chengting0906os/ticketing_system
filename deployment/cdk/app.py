@@ -144,6 +144,7 @@ reservation_service_stack = ReservationServiceStack(
     vpc=aurora_stack.vpc,
     ecs_cluster=aurora_stack.ecs_cluster,
     aurora_cluster_secret=aurora_stack.cluster.secret,
+    aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
     app_secrets=aurora_stack.app_secrets,
     namespace=aurora_stack.namespace,
     kafka_bootstrap_servers=kafka_stack.bootstrap_servers,

@@ -21,6 +21,7 @@ class ReservationServiceStack(Stack):
         vpc: ec2.IVpc,
         ecs_cluster: ecs.ICluster,
         aurora_cluster_secret: secretsmanager.ISecret,
+        aurora_cluster_endpoint: str,
         app_secrets: secretsmanager.ISecret,
         namespace: servicediscovery.IPrivateDnsNamespace,
         kafka_bootstrap_servers: str,
@@ -36,6 +37,7 @@ class ReservationServiceStack(Stack):
             vpc: VPC for ECS tasks
             ecs_cluster: Shared ECS cluster
             aurora_cluster_secret: Aurora credentials (for Settings model requirement)
+            aurora_cluster_endpoint: Aurora cluster endpoint
             app_secrets: Shared JWT secrets from Aurora Stack
             namespace: Service Discovery namespace
             kafka_bootstrap_servers: Kafka endpoints
@@ -46,6 +48,11 @@ class ReservationServiceStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # Note: app_secrets is now passed from Aurora Stack (shared by all services)
+
+        # Parse Aurora endpoint to get host and port
+        aurora_parts = aurora_cluster_endpoint.split(':')
+        aurora_host = aurora_parts[0]
+        aurora_port = aurora_parts[1] if len(aurora_parts) > 1 else '5432'
 
         # Parse Kvrocks endpoint (format: "host:port")
         kvrocks_host, kvrocks_port = kvrocks_endpoint.split(':')
@@ -129,11 +136,10 @@ class ReservationServiceStack(Stack):
                 'SERVICE_NAME': 'seat-reservation-consumer',
                 'DEBUG': str(config.get('debug', False)).lower(),
                 'LOG_LEVEL': config['log_level'],
-                # No database needed for seat-reservation-consumer (stateless, uses Kvrocks only)
-                # But Settings model requires POSTGRES_* env vars to be set
-                'POSTGRES_SERVER': 'dummy',  # Not used, but required by Settings
-                'POSTGRES_DB': 'ticketing_system_db',  # Not used, but must match actual DB name
-                'POSTGRES_PORT': '5432',
+                # PostgreSQL (Aurora Serverless v2) - Required for booking_command_repo
+                'POSTGRES_SERVER': aurora_host,
+                'POSTGRES_DB': 'ticketing_system_db',
+                'POSTGRES_PORT': aurora_port,
                 # Kvrocks (EC2 instance) - Primary data store
                 'KVROCKS_HOST': kvrocks_host,
                 'KVROCKS_PORT': kvrocks_port,

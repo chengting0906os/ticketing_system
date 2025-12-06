@@ -48,10 +48,10 @@ _shared:
     memory_threshold: 60
 
   # Consumer task resources (booking & reservation)
-  # task_cpu: ECS CPU units (256, 512, 1024), task_memory: MB (512, 1024, 2048)
+  # task_cpu: ECS CPU units (256, 512, 1024, 2048), task_memory: MB (512, 1024, 2048, 4096)
   consumer_task: &consumer_task
-    task_cpu: 256       # 0.25 vCPU
-    task_memory: 512    # 0.5 GB
+    task_cpu: 2048      # 2 vCPU
+    task_memory: 4096   # 4 GB (minimum for 2 vCPU on Fargate)
 
   performance: &performance
     rate_limit_per_minute: 100000
@@ -175,10 +175,11 @@ development:
     reservation:
       min_tasks: 1
       max_tasks: 20
-      <<: *consumer_task
+      task_cpu: 4096     # 4 vCPU
+      task_memory: 8192  # 8 GB
 
   aurora:
-    min_acu: 0.5
+    min_acu: 1
     max_acu: 8
 
   kafka: *kafka
