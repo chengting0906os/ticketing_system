@@ -72,8 +72,8 @@ production:
     ticketing:
       min_tasks: 100
       max_tasks: 100
-      task_cpu: 512      # 0.5 vCPU
-      task_memory: 1024  # 1 GB
+      task_cpu: 1024     # 1 vCPU
+      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
       workers: 1
       <<: *scaling
 
@@ -117,8 +117,8 @@ staging:
     ticketing:
       min_tasks: 50
       max_tasks: 50
-      task_cpu: 512      # 0.5 vCPU
-      task_memory: 1024  # 1 GB
+      task_cpu: 1024     # 1 vCPU
+      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
       workers: 1
       <<: *scaling
 
@@ -160,20 +160,20 @@ development:
 
   services:
     ticketing:
-      min_tasks: 5
+      min_tasks: 1
       max_tasks: 20
-      task_cpu: 512      # 0.5 vCPU
-      task_memory: 1024  # 1 GB
+      task_cpu: 1024     # 1 vCPU
+      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
       workers: 1
       <<: *scaling
 
     booking:
-      min_tasks: 5
+      min_tasks: 1
       max_tasks: 20
       <<: *consumer_task
 
     reservation:
-      min_tasks: 5
+      min_tasks: 1
       max_tasks: 20
       <<: *consumer_task
 
