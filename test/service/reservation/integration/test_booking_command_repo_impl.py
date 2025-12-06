@@ -30,9 +30,28 @@ async def booking_repo() -> BookingCommandRepoImpl:
 
 @pytest.fixture
 async def test_event_with_tickets() -> AsyncGenerator[None, None]:
-    """Create test tickets for event_id=1 (assumes event already exists)"""
     pool = await get_asyncpg_pool()
     async with pool.acquire() as conn:
+        # Create test user for foreign key constraint
+        user_id = await conn.fetchval(
+            """
+            INSERT INTO "user" (name, email, hashed_password, role, is_active, is_superuser, is_verified)
+            VALUES ('Test Seller', 'test_booking_seller@example.com', 'hashed_password', 'seller', true, false, true)
+            ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+            RETURNING id
+            """
+        )
+
+        # Create test event with event_id=1
+        await conn.execute(
+            """
+            INSERT INTO event (id, name, description, seller_id, is_active, status, venue_name, seating_config)
+            VALUES (1, 'Test Event', 'Test Description', $1, true, 'available', 'Test Venue', '{}')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            user_id,
+        )
+
         # Create test tickets in section TEST, subsection 1
         for row in range(1, 7):  # Rows 1-6
             for seat in range(1, 5):  # Seats 1-4
@@ -52,6 +71,7 @@ async def test_event_with_tickets() -> AsyncGenerator[None, None]:
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM booking WHERE section = 'TEST' AND event_id = 1")
         await conn.execute("DELETE FROM ticket WHERE section = 'TEST' AND event_id = 1")
+        await conn.execute('DELETE FROM event WHERE id = 1')
 
 
 class TestBookingPostgreSQLOperations:

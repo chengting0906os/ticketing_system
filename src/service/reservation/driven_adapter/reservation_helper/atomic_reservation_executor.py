@@ -162,25 +162,8 @@ class AtomicReservationExecutor:
                 reserved_seats.append(seat_id)
 
             # ========== STEP 2: Update JSON statistics ==========
-            section_name = section_id.split('-')[0]
-            subsection_num = section_id.split('-')[1]
             event_state_key = make_event_state_key(event_id=event_id)
 
-            # Update subsection stats in JSON
-            pipe.execute_command(
-                'JSON.NUMINCRBY',
-                event_state_key,
-                f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.available",
-                -num_seats,
-            )
-            pipe.execute_command(
-                'JSON.NUMINCRBY',
-                event_state_key,
-                f"$.sections['{section_name}'].subsections['{subsection_num}'].stats.reserved",
-                num_seats,
-            )
-
-            # Update event-level stats in JSON
             pipe.execute_command(
                 'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
             )
@@ -207,8 +190,10 @@ class AtomicReservationExecutor:
             results = await pipe.execute()
 
             # ========== Parse statistics from pipeline results ==========
-            # Pipeline order: [BITFIELD×num_seats, JSON.NUMINCRBY×4, JSON.GET, HSET]
-            event_state_idx = num_seats + 4  # Skip BITFIELD results + 4 JSON.NUMINCRBY
+            # Pipeline order: [BITFIELD×num_seats, JSON.NUMINCRBY×2, JSON.GET, HSET]
+            event_state_idx = (
+                num_seats + 2
+            )  # Skip BITFIELD results + 2 JSON.NUMINCRBY (event-level only)
             json_state_result = results[event_state_idx]
             event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
             subsection_stats = self._extract_subsection_stats(event_state, section_id)

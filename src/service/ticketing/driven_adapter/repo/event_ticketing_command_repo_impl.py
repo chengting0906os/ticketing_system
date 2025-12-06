@@ -122,6 +122,10 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
 
         Note: This method assumes Event already exists and has an ID.
         Only batch creates tickets, does not recreate event.
+
+        Performance optimization: Temporarily disables trigger during batch insert
+        and manually calculates stats to avoid 50k+ trigger executions.
+        Triggers are for normal ticketing operations, not initialization.
         """
         # Check if Event already has an ID (already persisted)
         if not event_aggregate.event.id:
@@ -132,25 +136,103 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
 
         # Use asyncpg connection pool for COPY operation
         async with (await get_asyncpg_pool()).acquire() as conn:
-            # COPY operation
-            copy_start = time.time()
-            await conn.copy_records_to_table(
-                'ticket',
-                records=actual_tuples,
-                columns=[
-                    'event_id',
-                    'section',
-                    'subsection',
-                    'row_number',
-                    'seat_number',
-                    'price',
-                    'status',
-                ],
-            )
-            copy_time = time.time() - copy_start
-            Logger.base.info(f'  📦 [BATCH_CREATE] COPY completed ({copy_time:.3f}s)')
+            async with conn.transaction():
+                # Temporarily disable trigger to avoid overhead during batch insert
+                await conn.execute(
+                    'ALTER TABLE ticket DISABLE TRIGGER ticket_status_change_trigger'
+                )
 
-            # Fetch inserted tickets
+                # COPY operation
+                copy_start = time.time()
+                await conn.copy_records_to_table(
+                    'ticket',
+                    records=actual_tuples,
+                    columns=[
+                        'event_id',
+                        'section',
+                        'subsection',
+                        'row_number',
+                        'seat_number',
+                        'price',
+                        'status',
+                    ],
+                    timeout=120.0,
+                )
+                copy_time = time.time() - copy_start
+                Logger.base.info(f'  📦 [BATCH_CREATE] COPY completed ({copy_time:.3f}s)')
+
+                # Re-enable trigger
+                await conn.execute('ALTER TABLE ticket ENABLE TRIGGER ticket_status_change_trigger')
+
+                # Directly calculate and insert stats based on inserted tickets
+                stats_start = time.time()
+
+                # Calculate event-level stats
+                event_stats = await conn.fetchrow(
+                    """
+                    SELECT 
+                        COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0) AS available,
+                        COALESCE(SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END), 0) AS reserved,
+                        COALESCE(SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END), 0) AS sold,
+                        COALESCE(COUNT(*), 0) AS total
+                    FROM ticket
+                    WHERE event_id = $1
+                    """,
+                    event_aggregate.event.id,
+                )
+
+                # Update event.stats
+                await conn.execute(
+                    """
+                    UPDATE event
+                    SET stats = jsonb_build_object(
+                        'available', $2::int,
+                        'reserved', $3::int,
+                        'sold', $4::int,
+                        'total', $5::int,
+                        'updated_at', EXTRACT(EPOCH FROM NOW())::bigint
+                    )
+                    WHERE id = $1
+                    """,
+                    event_aggregate.event.id,
+                    event_stats['available'],
+                    event_stats['reserved'],
+                    event_stats['sold'],
+                    event_stats['total'],
+                )
+
+                # Calculate and insert subsection-level stats
+                await conn.execute(
+                    """
+                    INSERT INTO subsection_stats (event_id, section, subsection, price, available, reserved, sold, updated_at)
+                    SELECT
+                        t.event_id,
+                        t.section,
+                        t.subsection,
+                        MAX(t.price) AS price,
+                        SUM(CASE WHEN t.status = 'available' THEN 1 ELSE 0 END) AS available,
+                        SUM(CASE WHEN t.status = 'reserved' THEN 1 ELSE 0 END) AS reserved,
+                        SUM(CASE WHEN t.status = 'sold' THEN 1 ELSE 0 END) AS sold,
+                        EXTRACT(EPOCH FROM NOW())::bigint AS updated_at
+                    FROM ticket t
+                    WHERE t.event_id = $1
+                    GROUP BY t.event_id, t.section, t.subsection
+                    ON CONFLICT (event_id, section, subsection) DO UPDATE
+                    SET
+                        available = EXCLUDED.available,
+                        reserved = EXCLUDED.reserved,
+                        sold = EXCLUDED.sold,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    event_aggregate.event.id,
+                )
+
+                stats_time = time.time() - stats_start
+                Logger.base.info(
+                    f'  📊 [BATCH_CREATE] Stats calculation completed ({stats_time:.3f}s)'
+                )
+
+            # Fetch inserted tickets (outside transaction for better performance)
             fetch_start = time.time()
             rows = await conn.fetch(
                 """
@@ -181,7 +263,7 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                 f'📊 [BATCH_CREATE] Performance: {len(event_aggregate.tickets) / total_time:.0f} tickets/sec'
             )
             Logger.base.info(
-                f'⚡ [BATCH_CREATE] Breakdown: COPY={copy_time:.3f}s, Fetch={fetch_time:.3f}s, Convert={convert_time:.3f}s'
+                f'⚡ [BATCH_CREATE] Breakdown: COPY={copy_time:.3f}s, Stats={stats_time:.3f}s, Fetch={fetch_time:.3f}s, Convert={convert_time:.3f}s'
             )
 
         return event_aggregate

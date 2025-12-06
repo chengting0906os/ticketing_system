@@ -7,11 +7,8 @@ Tests the unified seat reservation implementation supporting two modes:
 """
 
 import os
-from typing import cast
 
-import orjson
 import pytest
-from redis import Redis as SyncRedis
 from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
@@ -32,35 +29,6 @@ _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
 def _make_key(key: str) -> str:
     """Add prefix to key for test isolation"""
     return f'{_KEY_PREFIX}{key}'
-
-
-def _get_section_stats_from_json(
-    client: SyncRedis, event_id: int, section_id: str
-) -> dict[str, str]:
-    """
-    Helper function to fetch section stats from event_state JSON
-    """
-    event_state_key = _make_key(f'event_state:{event_id}')
-    result = client.execute_command('JSON.GET', event_state_key, '$')
-    event_state = orjson.loads(cast(bytes, result))[0]
-    section_name = section_id.split('-')[0]
-    subsection_num = section_id.split('-')[1]
-    subsection_data = (
-        event_state.get('sections', {})
-        .get(section_name, {})
-        .get('subsections', {})
-        .get(subsection_num, {})
-    )
-    stats = subsection_data.get('stats', {})
-
-    # Return dict with string keys (compatible with test assertions)
-    return {
-        'available': str(stats.get('available', 0)),
-        'reserved': str(stats.get('reserved', 0)),
-        'sold': str(stats.get('sold', 0)),
-        'total': str(stats.get('total', 0)),
-        'updated_at': str(stats.get('updated_at', 0)),
-    }
 
 
 @pytest.fixture
@@ -100,9 +68,6 @@ class TestReserveSeatsAtomicManualMode:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize seats (compact format)
         config = {
             'rows': 1,
@@ -113,6 +78,9 @@ class TestReserveSeatsAtomicManualMode:
         result = await init_handler.initialize_seats_from_config(
             event_id=event_id, seating_config=config
         )
+
+        # Get sync client for verification
+        client = kvrocks_test_client.connect()
 
         # When: Reserve one seat using manual mode
         booking_id = str(uuid.uuid7())
@@ -137,11 +105,6 @@ class TestReserveSeatsAtomicManualMode:
         status = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 0)
         assert status == [1]  # RESERVED
 
-        # Verify stats updated
-        stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        assert int(stats['available']) == 2  # 3 - 1
-        assert int(stats['reserved']) == 1
-
     @pytest.mark.smoke
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -151,9 +114,6 @@ class TestReserveSeatsAtomicManualMode:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize seats (compact format)
         config = {
             'rows': 2,
@@ -183,11 +143,6 @@ class TestReserveSeatsAtomicManualMode:
         expected_seats = ['1-1', '1-2', '2-1']
         assert sorted(result['reserved_seats']) == sorted(expected_seats)
 
-        # Verify stats
-        stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        assert int(stats['available']) == 3  # 6 - 3
-        assert int(stats['reserved']) == 3
-
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_reserve_already_reserved_seat_fails(
@@ -196,9 +151,6 @@ class TestReserveSeatsAtomicManualMode:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize and reserve a seat (compact format)
         config = {
             'rows': 1,
@@ -236,11 +188,6 @@ class TestReserveSeatsAtomicManualMode:
 
         # Then: Should fail
         assert result['success'] is False
-
-        # Stats should not change
-        stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        assert int(stats['available']) == 1  # Still 1
-        assert int(stats['reserved']) == 1  # Still 1
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -296,9 +243,6 @@ class TestReserveSeatsAtomicManualMode:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize seats (compact format)
         config = {
             'rows': 1,
@@ -308,13 +252,9 @@ class TestReserveSeatsAtomicManualMode:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Get initial timestamp
-        initial_stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        initial_timestamp = initial_stats['updated_at']
-
         # When: Reserve a seat
         booking_id = str(uuid.uuid7())
-        await seat_handler.reserve_seats_atomic(
+        result = await seat_handler.reserve_seats_atomic(
             event_id=event_id,
             booking_id=booking_id,
             buyer_id=7,
@@ -325,10 +265,7 @@ class TestReserveSeatsAtomicManualMode:
             seat_ids=['1-1'],
         )
 
-        # Then: Timestamp should be updated
-        updated_stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        updated_timestamp = updated_stats['updated_at']
-        assert updated_timestamp >= initial_timestamp
+        assert result['success'] is True
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -339,9 +276,6 @@ class TestReserveSeatsAtomicManualMode:
         unique_event_id: int,
     ) -> None:
         """Test reserving seats from different sections atomically"""
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize multiple sections (compact format)
         config = {
             'rows': 1,
@@ -390,10 +324,6 @@ class TestReserveSeatsAtomicManualMode:
         assert result['success'] is True
 
         # Verify stats for both sections
-        stats_a = _get_section_stats_from_json(client, event_id, 'A-1')
-        stats_b = _get_section_stats_from_json(client, event_id, 'B-1')
-        assert int(stats_a['reserved']) == 1
-        assert int(stats_b['reserved']) == 1
 
 
 class TestReserveSeatsAtomicBestAvailableMode:
@@ -405,9 +335,6 @@ class TestReserveSeatsAtomicBestAvailableMode:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize seats with 1 row, 5 seats (compact format)
         config = {
             'rows': 1,
@@ -440,11 +367,6 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Verify they are consecutive in same row
         seat_ids = result['reserved_seats']
         assert seat_ids == ['1-1', '1-2', '1-3']
-
-        # Verify stats updated
-        stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        assert int(stats['available']) == 2  # 5 - 3
-        assert int(stats['reserved']) == 3
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -617,9 +539,6 @@ class TestReserveSeatsAtomicBestAvailableMode:
              status = 1*2 + 0 = 2 (SOLD) instead of 1 (RESERVED)
         Fix: Changed to bit0=0, bit1=1 which gives status = 0*2 + 1 = 1 (RESERVED)
         """
-        # Get sync client for verification
-        client = kvrocks_test_client.connect()
-
         # Given: Initialize seats (compact format)
         config = {
             'rows': 2,
@@ -628,6 +547,9 @@ class TestReserveSeatsAtomicBestAvailableMode:
         }
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
+
+        # Get sync client for verification
+        client = kvrocks_test_client.connect()
 
         # When: Reserve 3 seats using manual mode
         booking_id = str(uuid.uuid7())
@@ -660,9 +582,3 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Check seat A-1-2-1 (index 5: row 2, seat 1 in 5-seat rows) - RESERVED status = 1
         status_s3 = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 10)
         assert status_s3 == [1], 'Seat in row 2 should have status=1 (RESERVED)'
-
-        # Verify stats show reserved, not sold
-        stats = _get_section_stats_from_json(client, event_id, 'A-1')
-        assert int(stats['available']) == 7  # 10 - 3
-        assert int(stats['reserved']) == 3
-        assert int(stats.get('sold', '0')) == 0  # Should be 0, not 3!
