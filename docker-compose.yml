@@ -244,7 +244,7 @@ services:
   ticketing-service:
     build:
       context: .
-      target: development
+      target: development # Multi-stage build: stops at 'development' stage (not 'production')
     # Note: No container_name to allow scaling with --scale
     # No ports mapping - access via nginx load balancer on port 80
     expose:
@@ -318,6 +318,100 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
+
+  # =============================================================================
+  # Seat Reservation Service (Kafka Consumer)
+  # =============================================================================
+  # Handles:
+  # - Seat reservation in Kvrocks (atomic operations)
+  # - PostgreSQL writes (booking + tickets)
+  # - SSE broadcast for real-time UI updates
+  # =============================================================================
+  reservation-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # Multi-stage build: stops at 'development' stage (not 'production')
+      args:
+        SERVICE_TYPE: consumer
+    image: reservation-service:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export KAFKA_CONSUMER_INSTANCE_ID="reservation-service-consumer-$$(hostname)"
+        export KAFKA_PRODUCER_INSTANCE_ID="reservation-service-producer-$$(hostname)"
+        /app/.venv/bin/python src/service/reservation/driving_adapter/start_reservation_consumer.py
+    environment:
+      # Python
+      PYTHONPATH: /app
+
+      # Application (can override .env values)
+      EVENT_ID: "${EVENT_ID:-1}"
+      DEBUG: "${DEBUG:-False}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      TZ: "Asia/Taipei"
+
+      # Database (for PostgreSQL writes)
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-ticketing_system_db}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+
+      # Kvrocks
+      KVROCKS_HOST: kvrocks
+      KVROCKS_PORT: "6666"
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+
+      # OpenTelemetry
+      OTEL_SERVICE_NAME: reservation-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka1:
+        condition: service_started
+      kafka2:
+        condition: service_started
+      kafka3:
+        condition: service_started
+      kvrocks:
+        condition: service_started
+      jaeger:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: "local"
+      options:
+        max-size: "100m"
+        max-file: "100"
+        mode: "non-blocking"
+        max-buffer-size: "4m"
+    labels:
+      - "service.type=consumer"
+      - "service.name=reservation-service"
 
   # =============================================================================
   # NGINX Load Balancer (Simulates AWS ALB for local development)

@@ -125,9 +125,7 @@ class UpdateBookingToCancelledUseCase:
             )
             partition = global_index % settings.KAFKA_TOTAL_PARTITIONS
 
-            topic_name = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
-                event_id=booking.event_id
-            )
+            topic_name = KafkaTopicBuilder.ticket_release_seats(event_id=booking.event_id)
             await publish_domain_event(
                 event=cancelled_event,
                 topic=topic_name,

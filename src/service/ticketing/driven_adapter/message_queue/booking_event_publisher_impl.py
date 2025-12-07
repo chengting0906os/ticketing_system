@@ -42,7 +42,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
-        topic = KafkaTopicBuilder.ticketing_to_booking_create_metadata(event_id=event.event_id)
+        topic = KafkaTopicBuilder.ticketing_to_reservation_reserve_seats(event_id=event.event_id)
 
         # Calculate partition explicitly to avoid hash collision hotspots
         partition = self._calculate_partition(

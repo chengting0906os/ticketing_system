@@ -16,11 +16,8 @@ from src.platform.message_queue.proto import domain_event_pb2 as pb
 
 _EVENT_TYPE_TO_PROTO: dict[str, type] = {
     'BookingCreatedDomainEvent': pb.BookingCreatedDomainEvent,
-    'SeatsReservedEvent': pb.SeatsReservedEvent,
-    'SeatReservationFailedEvent': pb.SeatReservationFailedEvent,
     'BookingPaidEvent': pb.BookingPaidEvent,
     'BookingCancelledEvent': pb.BookingCancelledEvent,
-    'ReservationRequestEvent': pb.ReservationRequestEvent,
 }
 
 

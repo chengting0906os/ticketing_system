@@ -3,14 +3,15 @@ Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL wri
 """
 
 from opentelemetry import trace
-from uuid_utils import UUID
 
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
+)
+from src.service.reservation.app.interface.i_booking_result_broadcaster import (
+    IBookingResultBroadcaster,
 )
 from src.service.reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
@@ -27,19 +28,15 @@ class ReserveSeatsUseCase:
     Flow:
     1. Reserve seats in Kvrocks (atomic operation, returns prices)
     2. Write to PostgreSQL directly (booking + tickets)
-    3. Broadcast via SSE for real-time updates
-    4. Return result
-
-    Design Principles:
-    - Unified writes: Kvrocks + PostgreSQL in one service
-    - Single Responsibility: Handles complete reservation flow
-    - Minimal latency: No Kafka hop for PostgreSQL writes
+    3. Broadcast event_state via Redis Pub/Sub for cache updates
+    4. Broadcast booking result via Redis Pub/Sub for SSE
+    5. Return result
 
     Dependencies:
     - seat_state_handler: For Kvrocks seat reservation
     - booking_command_repo: For PostgreSQL writes
     - event_state_broadcaster: For Redis Pub/Sub cache updates
-    - sse_broadcaster: For SSE real-time notifications
+    - booking_result_broadcaster: For Redis Pub/Sub SSE notifications
     """
 
     def __init__(
@@ -47,12 +44,12 @@ class ReserveSeatsUseCase:
         seat_state_handler: ISeatStateCommandHandler,
         booking_command_repo: IBookingCommandRepo,
         event_state_broadcaster: IEventStateBroadcaster,
-        sse_broadcaster: IInMemoryEventBroadcaster,
+        booking_result_broadcaster: IBookingResultBroadcaster,
     ) -> None:
         self.seat_state_handler = seat_state_handler
         self.booking_command_repo = booking_command_repo
         self.event_state_broadcaster = event_state_broadcaster
-        self.sse_broadcaster = sse_broadcaster
+        self.booking_result_broadcaster = booking_result_broadcaster
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
@@ -64,19 +61,9 @@ class ReserveSeatsUseCase:
         1. Validate request
         2. Reserve seats in Kvrocks (atomic operation, returns prices)
         3. Write to PostgreSQL directly (booking + tickets)
-        4. Broadcast via SSE for real-time updates
-        5. Return result
-
-        Design Rationale:
-        - Unified writes: Kvrocks + PostgreSQL in one service
-        - No Kafka hop: Faster end-to-end latency
-        - SSE broadcast: Real-time UI updates
-
-        Args:
-            request: Reservation request
-
-        Returns:
-            Reservation result with booking and ticket info
+        4. Broadcast event_state via Redis Pub/Sub
+        5. Broadcast booking result via Redis Pub/Sub (for SSE)
+        6. Return result
         """
         with self.tracer.start_as_current_span(
             'use_case.reserve_seats',
@@ -98,7 +85,6 @@ class ReserveSeatsUseCase:
                 self._validate_request(request)
 
                 # Step 2: Reserve seats in Kvrocks (Pipeline, returns prices)
-                # Pass config from upstream to avoid redundant Kvrocks lookups in Lua scripts
                 result = await self.seat_state_handler.reserve_seats_atomic(
                     event_id=request.event_id,
                     booking_id=request.booking_id,
@@ -117,16 +103,11 @@ class ReserveSeatsUseCase:
                 if result['success']:
                     reserved_seats = result['reserved_seats']
                     total_price = result['total_price']
-                    subsection_stats = result.get('subsection_stats', {})
-                    event_stats = result.get('event_stats', {})
                     event_state = result.get('event_state', {})
 
                     # Step 4a: Broadcast event_state update via Redis Pub/Sub (real-time cache)
                     await self.event_state_broadcaster.broadcast_event_state(
                         event_id=request.event_id, event_state=event_state
-                    )
-                    Logger.base.debug(
-                        f'📤 [RESERVE] Broadcasted event_state to Redis Pub/Sub for event {request.event_id}'
                     )
 
                     # Step 4b: Write to PostgreSQL directly (booking + tickets)
@@ -145,18 +126,15 @@ class ReserveSeatsUseCase:
                         f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
                     )
 
-                    # Step 4c: Broadcast SSE for real-time UI updates
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
-                        event_data={
-                            'event_type': 'booking_updated',
-                            'event_id': request.event_id,
-                            'booking_id': request.booking_id,
-                            'status': 'PENDING_PAYMENT',
-                            'tickets': pg_result.get('tickets', []),
-                            'subsection_stats': subsection_stats,
-                            'event_stats': event_stats,
-                        },
+                    # Step 4c: Broadcast booking result via Redis Pub/Sub (for SSE)
+                    booking = pg_result['booking']
+                    await self.booking_result_broadcaster.broadcast_booking_result(
+                        buyer_id=request.buyer_id,
+                        event_id=request.event_id,
+                        booking_id=request.booking_id,
+                        status=booking.status.value,
+                        tickets=pg_result.get('tickets', []),
+                        total_price=total_price,
                     )
 
                     return ReservationResult(
@@ -190,17 +168,14 @@ class ReserveSeatsUseCase:
                         quantity=request.quantity or len(request.seat_positions or []),
                     )
 
-                    # Broadcast SSE failure notification
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
-                        event_data={
-                            'event_type': 'booking_updated',
-                            'event_id': request.event_id,
-                            'booking_id': request.booking_id,
-                            'status': 'FAILED',
-                            'tickets': [],
-                            'error_message': error_msg,
-                        },
+                    # Broadcast failure via Redis Pub/Sub (for SSE)
+                    await self.booking_result_broadcaster.broadcast_booking_result(
+                        buyer_id=request.buyer_id,
+                        event_id=request.event_id,
+                        booking_id=request.booking_id,
+                        status='FAILED',
+                        tickets=[],
+                        error_message=error_msg,
                     )
 
                     return ReservationResult(
@@ -233,17 +208,14 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
-                    event_data={
-                        'event_type': 'booking_updated',
-                        'event_id': request.event_id,
-                        'booking_id': request.booking_id,
-                        'status': 'FAILED',
-                        'tickets': [],
-                        'error_message': error_msg,
-                    },
+                # Broadcast failure via Redis Pub/Sub (for SSE)
+                await self.booking_result_broadcaster.broadcast_booking_result(
+                    buyer_id=request.buyer_id,
+                    event_id=request.event_id,
+                    booking_id=request.booking_id,
+                    status='FAILED',
+                    tickets=[],
+                    error_message=error_msg,
                 )
 
                 return ReservationResult(
@@ -275,17 +247,14 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
-                    event_data={
-                        'event_type': 'booking_updated',
-                        'event_id': request.event_id,
-                        'booking_id': request.booking_id,
-                        'status': 'FAILED',
-                        'tickets': [],
-                        'error_message': error_msg,
-                    },
+                # Broadcast failure via Redis Pub/Sub (for SSE)
+                await self.booking_result_broadcaster.broadcast_booking_result(
+                    buyer_id=request.buyer_id,
+                    event_id=request.event_id,
+                    booking_id=request.booking_id,
+                    status='FAILED',
+                    tickets=[],
+                    error_message=error_msg,
                 )
 
                 return ReservationResult(

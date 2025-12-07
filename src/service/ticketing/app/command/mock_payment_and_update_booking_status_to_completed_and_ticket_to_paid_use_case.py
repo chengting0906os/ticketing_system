@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import random
 import string
 from typing import Any, Dict, Self
@@ -84,9 +85,6 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             )
 
             if ticket_ids:
-                # Create and publish BookingPaidEvent
-                from datetime import datetime, timezone
-
                 paid_event = BookingPaidEvent(
                     booking_id=booking_id,
                     buyer_id=buyer_id,
@@ -106,9 +104,7 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
                 partition = global_index % settings.KAFKA_TOTAL_PARTITIONS
 
                 # Publish to reservation service to finalize payment in Kvrocks
-                topic_name = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
-                    event_id=booking.event_id
-                )
+                topic_name = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=booking.event_id)
                 await publish_domain_event(
                     event=paid_event,
                     topic=topic_name,

@@ -33,12 +33,12 @@ from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
 class SeatReservationConsumer(BaseKafkaConsumer):
     """
-    Seat Reservation Consumer - Stateless Router
+    Seat Reservation Consumer - Handles KVRocks state + PostgreSQL writes
 
-    Listens to 3 Topics:
-    1. booking_to_reservation_reserve_seats - Reservation requests
-    2. release_ticket_status_to_available_in_kvrocks - Release seats
-    3. finalize_ticket_status_to_paid_in_kvrocks - Finalize payment
+    Listens to 3 Topics (direct from Ticketing):
+    1. ticketing_to_reservation_reserve_seats - Reserve seats
+    2. ticket_release_seats - Release seats back to available
+    3. ticket_reserved_to_paid - Finalize payment (mark as sold)
 
     Uses confluent-kafka AIOConsumer for async message processing.
     """
@@ -63,16 +63,12 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         self.release_seat_use_case: Any = None
         self.finalize_seat_payment_use_case: Any = None
 
-        # Topic names
-        self.reservation_topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(
+        # Topic names (direct from Ticketing)
+        self.reservation_topic = KafkaTopicBuilder.ticketing_to_reservation_reserve_seats(
             event_id=event_id
         )
-        self.release_topic = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
-            event_id=event_id
-        )
-        self.finalize_topic = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
-            event_id=event_id
-        )
+        self.release_topic = KafkaTopicBuilder.ticket_release_seats(event_id=event_id)
+        self.finalize_topic = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=event_id)
 
     async def _initialize_dependencies(self) -> None:
         """Initialize use cases from DI container."""
@@ -86,7 +82,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         """Return topic to async handler mapping."""
         return {
             self.reservation_topic: (
-                pb.ReservationRequestEvent,
+                pb.BookingCreatedDomainEvent,  # Direct from Ticketing
                 self._handle_reservation,
             ),
             self.release_topic: (

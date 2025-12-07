@@ -29,44 +29,7 @@ message BookingCreatedDomainEvent {
   string tracestate = 14;
 }
 
-// 2. Reservation → Ticketing: Seats reserved successfully
-message SeatsReservedEvent {
-  string booking_id = 1;
-  int32 buyer_id = 2;
-  int32 event_id = 3;
-  string section = 4;
-  int32 subsection = 5;
-  string seat_selection_mode = 6;
-  repeated string reserved_seats = 7;
-  int32 total_price = 8;
-  map<string, int32> subsection_stats = 9;  // available, reserved, sold, total
-  map<string, int32> event_stats = 10;  // available, reserved, sold, total
-  string status = 11;
-  int64 occurred_at = 12;  // Unix timestamp ms
-  // OpenTelemetry W3C Trace Context
-  string traceparent = 13;
-  string tracestate = 14;
-}
-
-// 3. Reservation → Ticketing: Seat reservation failed
-message SeatReservationFailedEvent {
-  string booking_id = 1;
-  int32 buyer_id = 2;
-  int32 event_id = 3;
-  string section = 4;
-  int32 subsection = 5;
-  int32 quantity = 6;
-  string seat_selection_mode = 7;
-  repeated string seat_positions = 8;
-  string error_message = 9;
-  string status = 10;
-  int64 occurred_at = 11;  // Unix timestamp ms
-  // OpenTelemetry W3C Trace Context
-  string traceparent = 12;
-  string tracestate = 13;
-}
-
-// 4. Ticketing → Reservation: Booking paid
+// 2. Ticketing → Reservation: Booking paid
 message BookingPaidEvent {
   string booking_id = 1;
   int32 buyer_id = 2;
@@ -82,7 +45,7 @@ message BookingPaidEvent {
   string tracestate = 9;
 }
 
-// 5. Ticketing → Reservation: Booking cancelled
+// 3. Ticketing → Reservation: Booking cancelled
 message BookingCancelledEvent {
   string booking_id = 1;
   int32 buyer_id = 2;
@@ -95,21 +58,4 @@ message BookingCancelledEvent {
   // OpenTelemetry W3C Trace Context
   string traceparent = 7;
   string tracestate = 8;
-}
-
-// 6. Booking → Reservation: Reservation request (metadata saved)
-message ReservationRequestEvent {
-  string booking_id = 1;
-  int32 buyer_id = 2;
-  int32 event_id = 3;
-  string section = 4;
-  int32 subsection = 5;
-  int32 quantity = 6;
-  string seat_selection_mode = 7;
-  repeated string seat_positions = 8;
-  int64 occurred_at = 9;  // Unix timestamp ms
-  SubsectionConfig config = 10;  // Optional config for downstream
-  // OpenTelemetry W3C Trace Context
-  string traceparent = 11;
-  string tracestate = 12;
 }
