@@ -9,6 +9,7 @@ import zoneinfo
 
 from loguru import logger as loguru_logger
 
+
 if TYPE_CHECKING:
     from loguru import Logger as LoguruLogger
 
@@ -164,7 +165,7 @@ custom_logger = loguru_logger.bind(
 min_log_level = 'DEBUG' if settings.DEBUG else 'INFO'
 
 # Add console output with custom format
-custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level)
+custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level, enqueue=True)
 
 # Add file output only in DEBUG mode or when explicitly enabled
 # Production uses stdout only (collected by CloudWatch/Loki)

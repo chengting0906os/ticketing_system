@@ -6,11 +6,12 @@ This module provides auto-creation of Kafka topics during consumer startup,
 ensuring topics exist before subscription to prevent UNKNOWN_TOPIC_OR_PART errors.
 """
 
-from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka import KafkaException
+from confluent_kafka.admin import AdminClient, NewTopic
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+
 from .kafka_constant_builder import KafkaTopicBuilder
 
 
@@ -62,7 +63,7 @@ class KafkaTopicInitializer:
                 NewTopic(
                     topic=topic,
                     num_partitions=self.total_partitions,
-                    replication_factor=3,
+                    replication_factor=1,
                     config={
                         'cleanup.policy': 'delete',
                         'retention.ms': '604800000',  # 7 days
