@@ -9,6 +9,9 @@ from src.service.reservation.app.command.finalize_seat_payment_use_case import (
 )
 from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.reservation.driven_adapter.booking_result_broadcaster_impl import (
+    BookingResultBroadcasterImpl,
+)
 from src.service.reservation.driven_adapter.event_state_broadcaster_impl import (
     EventStateBroadcasterImpl,
 )
@@ -33,7 +36,6 @@ from src.service.reservation.driven_adapter.seat_state_query_handler_impl import
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
-from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
@@ -53,9 +55,6 @@ from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl i
 )
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
-from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
-    BookingMetadataHandlerImpl,
-)
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -101,9 +100,6 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
-    # In-memory Event Broadcaster for SSE (Singleton for shared state)
-    booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
-
     # Message Queue Publishers
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
 
@@ -113,11 +109,11 @@ class Container(containers.DeclarativeContainer):
     # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
     event_state_broadcaster = providers.Factory(EventStateBroadcasterImpl)
 
+    # Booking Result Broadcaster (Redis Pub/Sub for SSE cross-service communication)
+    booking_result_broadcaster = providers.Factory(BookingResultBroadcasterImpl)
+
     # Seat Reservation Use Cases (CQRS)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
-
-    # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler
-    booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)
 
     # Seat Reservation Executors (stateless, can be Factory or Singleton)
     atomic_reservation_executor = providers.Singleton(AtomicReservationExecutor)
@@ -126,7 +122,6 @@ class Container(containers.DeclarativeContainer):
 
     seat_state_command_handler = providers.Singleton(
         SeatStateCommandHandlerImpl,
-        booking_metadata_handler=booking_metadata_handler,
         reservation_executor=atomic_reservation_executor,
         release_executor=release_executor,
         payment_finalizer=payment_finalizer,
@@ -155,7 +150,7 @@ class Container(containers.DeclarativeContainer):
         seat_state_handler=seat_state_command_handler,
         booking_command_repo=reservation_booking_command_repo,
         event_state_broadcaster=event_state_broadcaster,
-        sse_broadcaster=booking_event_broadcaster,
+        booking_result_broadcaster=booking_result_broadcaster,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

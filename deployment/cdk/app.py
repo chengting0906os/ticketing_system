@@ -11,7 +11,6 @@ import aws_cdk as cdk
 import yaml
 
 from stacks.aurora_stack import AuroraStack
-from stacks.booking_service_stack import BookingServiceStack
 from stacks.ec2_kafka_stack import EC2KafkaStack
 from stacks.ec2_kvrocks_stack import EC2KvrocksStack
 from stacks.loadtest_stack import LoadTestStack
@@ -112,32 +111,7 @@ ticketing_service_stack.add_dependency(aurora_stack)
 ticketing_service_stack.add_dependency(kvrocks_stack)
 ticketing_service_stack.add_dependency(kafka_stack)
 
-# 5. Booking Consumer Service Stack (Background Kafka consumer)
-# Processes booking confirmations and seat allocations from Kafka topics
-# - Reads from Kafka topics: seat.reserved.confirmed
-# - Updates PostgreSQL with booking confirmations
-# - Independent scaling from API service
-booking_service_stack = BookingServiceStack(
-    app,
-    'BookingServiceStack',
-    vpc=aurora_stack.vpc,
-    ecs_cluster=aurora_stack.ecs_cluster,
-    aurora_cluster_secret=aurora_stack.cluster.secret,
-    aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
-    app_secrets=aurora_stack.app_secrets,
-    namespace=aurora_stack.namespace,
-    kafka_bootstrap_servers=kafka_stack.bootstrap_servers,
-    kvrocks_endpoint=kvrocks_stack.kvrocks_endpoint,
-    kvrocks_security_group=kvrocks_stack.security_group,
-    config=config,
-    env=env,
-    description=f'Booking Consumer Service on ECS Fargate ({config["services"]["booking"]["min_tasks"]}-{config["services"]["booking"]["max_tasks"]} tasks)',
-)
-booking_service_stack.add_dependency(aurora_stack)
-booking_service_stack.add_dependency(kafka_stack)
-booking_service_stack.add_dependency(kvrocks_stack)
-
-# 6. Reservation Service Stack (Background Kafka consumer + Kvrocks polling)
+# 5. Reservation Service Stack (KVRocks state + PostgreSQL writes)
 reservation_service_stack = ReservationServiceStack(
     app,
     'ReservationServiceStack',
@@ -158,7 +132,7 @@ reservation_service_stack.add_dependency(aurora_stack)
 reservation_service_stack.add_dependency(kvrocks_stack)
 reservation_service_stack.add_dependency(kafka_stack)
 
-# 7. Load Test Stack (optional - for performance testing + interactive operations)
+# 6. Load Test Stack (optional - for performance testing + interactive operations)
 # EC2 instance with Docker for direct SSH access and manual operations
 loadtest_config = config.get('loadtest', {})
 loadtest_instance = loadtest_config.get('instance_type', 'c7i.xlarge')

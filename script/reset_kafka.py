@@ -4,29 +4,32 @@ Kafka Reset Script
 Clears all Kafka topics and consumer groups
 
 Features:
-- Deletes topics not containing event-id-1
-- Deletes consumer groups not containing event-id-1
-- Protects event-id-1 related resources (for development environment)
+- Only protects topics defined in KafkaTopicBuilder.get_all_topics()
+- Deletes ALL other topics (including old/stale topics)
+- Protects consumer groups for event-id-1
 
 Note: This script does not affect Kvrocks state (reservation and event_ticketing)
 """
 
 import time
-from typing import List
+from typing import List, Set
 
 from confluent_kafka import KafkaException
 from confluent_kafka.admin import AdminClient
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 
 
 class KafkaReset:
     """Kafka reset tool (using AdminClient API)"""
 
-    def __init__(self):
+    def __init__(self, *, event_id: int = 1):
         self.bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
         self.admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})
+        self.event_id = event_id
+        self.protected_topics: Set[str] = set(KafkaTopicBuilder.get_all_topics(event_id=event_id))
         Logger.base.info(f'🔍 [Kafka Reset] Connected to: {self.bootstrap_servers}')
 
     def list_topics(self) -> List[str]:
@@ -43,9 +46,9 @@ class KafkaReset:
 
     def delete_topic(self, topic: str) -> bool:
         """Delete specified topic"""
-        # Protect topics containing "event-id-1"
-        if 'event-id-1' in topic:
-            Logger.base.info(f'🛡️ Protecting topic: {topic} (contains event-id-1)')
+        # Only protect topics defined in KafkaTopicBuilder
+        if topic in self.protected_topics:
+            Logger.base.info(f'🛡️ Protecting topic: {topic} (in KafkaTopicBuilder)')
             return True
 
         try:
@@ -120,13 +123,13 @@ class KafkaReset:
         topics = self.list_topics()
 
         if topics:
-            # Separate protected and deletable topics
-            protected_topics = [t for t in topics if 'event-id-1' in t]
-            deletable_topics = [t for t in topics if 'event-id-1' not in t]
+            # Separate protected and deletable topics (only protect KafkaTopicBuilder topics)
+            protected_topics = [t for t in topics if t in self.protected_topics]
+            deletable_topics = [t for t in topics if t not in self.protected_topics]
 
             Logger.base.info(f'Found {len(topics)} total topics')
             if protected_topics:
-                Logger.base.info(f'🛡️ Protected topics (event-id-1): {len(protected_topics)}')
+                Logger.base.info(f'🛡️ Protected topics (KafkaTopicBuilder): {len(protected_topics)}')
                 for topic in protected_topics:
                     Logger.base.info(f'   🔒 {topic}')
 
@@ -172,8 +175,8 @@ class KafkaReset:
         remaining_groups = self.list_consumer_groups()
 
         # Separate protected and unexpected topics/groups
-        protected_topics = [t for t in remaining_topics if 'event-id-1' in t]
-        unexpected_topics = [t for t in remaining_topics if 'event-id-1' not in t]
+        protected_topics = [t for t in remaining_topics if t in self.protected_topics]
+        unexpected_topics = [t for t in remaining_topics if t not in self.protected_topics]
 
         protected_groups = [g for g in remaining_groups if 'event-id-1' in g]
         unexpected_groups = [g for g in remaining_groups if 'event-id-1' not in g]

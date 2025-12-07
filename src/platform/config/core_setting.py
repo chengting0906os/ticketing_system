@@ -183,7 +183,7 @@ class KafkaConfig:
         """
         Args:
             event_id: Event ID
-            service: Service name ('ticketing', 'booking', or 'reservation')
+            service: Service name ('ticketing' or 'reservation')
 
         Note: instance_id is obtained from settings at runtime to avoid fork issues
         """
@@ -200,10 +200,6 @@ class KafkaConfig:
     def transactional_id(self) -> str:
         if self.service == 'ticketing':
             return self._transactional_id_builder.ticketing_service(
-                event_id=self.event_id, instance_id=self.instance_id
-            )
-        elif self.service == 'booking':
-            return self._transactional_id_builder.booking_service(
                 event_id=self.event_id, instance_id=self.instance_id
             )
         elif self.service == 'reservation':

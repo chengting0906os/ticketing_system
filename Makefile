@@ -19,7 +19,6 @@ DEPLOY_ENV ?= local_dev
 # Service scaling defaults (can be overridden via .env or environment variables)
 SCALE_TICKETING ?= 10
 SCALE_RESERVATION ?= 10
-SCALE_BOOKING ?= 10
 
 # Default seats for seeding
 SEATS ?= 500
@@ -28,28 +27,24 @@ SEATS ?= 500
 # 📨 KAFKA CONSUMERS
 # ==============================================================================
 
-.PHONY: c-d-build c-start c-stop c-restart rs c-tail c-status
-c-d-build:  ## 🔨 Build consumer images
-	@docker-compose -f docker-compose.consumers.yml build
-
-c-start:  ## 🚀 Start all services (API + reservation-service + booking-service)
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
+.PHONY: c-start c-stop c-restart rs c-tail c-status
+c-start:  ## 🚀 Start all services (API + reservation-service)
+	@docker-compose up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
 
 c-stop:  ## 🛑 Stop consumer containers
-	@docker-compose -f docker-compose.consumers.yml stop
-	@docker-compose -f docker-compose.consumers.yml rm -f
+	@docker-compose stop reservation-service
+	@docker-compose rm -f reservation-service
 
 c-restart:  ## 🔄 Restart consumer containers (hot reload code changes)
 	@echo "🔄 Restarting consumers to reload code changes..."
-	@docker-compose -f docker-compose.consumers.yml restart
+	@docker-compose restart reservation-service
 	@echo "✅ Consumers restarted"
 
 rs:  ## 🔄 Restart app services only (keep Kafka/Postgres/Kvrocks running)
 	@echo "🔄 Restarting application services..."
 	@echo "   📊 Ticketing: $(SCALE_TICKETING) instances"
 	@echo "   📊 Reservation: $(SCALE_RESERVATION) instances"
-	@echo "   📊 Booking: $(SCALE_BOOKING) instances"
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --force-recreate --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
+	@docker-compose up -d --force-recreate --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
 	@echo "✅ Application services restarted (Kafka/Postgres/Kvrocks untouched)"
 
 
@@ -162,9 +157,9 @@ d-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → res
 	@echo "Continue? (y/N)"
 	@read -r confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
 	@echo "🛑 Stopping everything..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml down -v
-	@echo "🚀 Starting all services (API + reservation + booking)..."
-	@docker-compose -f docker-compose.yml -f docker-compose.consumers.yml up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION) --scale booking-service=$(SCALE_BOOKING)
+	@docker-compose down -v
+	@echo "🚀 Starting all services (API + reservation)..."
+	@docker-compose up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
 	@echo "⏳ Waiting for services to be healthy..."
 	@for i in 1 2 3 4 5 6; do \
 		if docker ps --filter "name=ticketing-service" --format "{{.Status}}" | grep -q "healthy"; then \

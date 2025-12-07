@@ -33,7 +33,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         self.tracer = trace.get_tracer(__name__)
         self.total_partitions = settings.KAFKA_TOTAL_PARTITIONS
 
-    def _calculate_partition(
+    def _calculate_partition_by_section_and_subsection(
         self, *, section: str, subsection: int, subsections_per_section: int = 10
     ) -> int:
         """
@@ -47,11 +47,11 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
-        """Publish BookingCreated event to Booking Service for metadata creation"""
-        topic = KafkaTopicBuilder.ticketing_to_booking_create_metadata(event_id=event.event_id)
+        """Publish BookingCreated event directly to Reservation Service"""
+        topic = KafkaTopicBuilder.ticketing_to_reservation_reserve_seats(event_id=event.event_id)
 
         # Calculate partition explicitly to avoid hash collision hotspots
-        partition = self._calculate_partition(
+        partition = self._calculate_partition_by_section_and_subsection(
             section=event.section,
             subsection=event.subsection,
         )
@@ -60,12 +60,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         partition_key = f'{event.event_id}:{event.section}-{event.subsection}'
 
         Logger.base.info(
-            f'\033[92m📤 [TICKETING→BOOKING] Publishing BookingCreated to Topic: {topic} Partition: {partition}\033[0m'
-        )
-        Logger.base.info(
-            f'\033[92m📦 [TICKETING→BOOKING] Event content: event_id={event.event_id}, '
-            f'buyer_id={event.buyer_id}, seat_mode={event.seat_selection_mode}, '
-            f'partition={partition}\033[0m'
+            f'\033[92m📤 [TICKETING→RESERVATION] Publishing BookingCreated to Topic: {topic} Partition: {partition}\033[0m'
         )
 
         await publish_domain_event(
@@ -76,44 +71,45 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         )
 
         Logger.base.info(
-            '\033[92m✅ [TICKETING→BOOKING] BookingCreated event published successfully\033[0m'
+            '\033[92m✅ [TICKETING→RESERVATION] BookingCreated event published successfully\033[0m'
         )
 
     @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
-        """Publish BookingPaidEvent to ticket completion topic"""
-        # pyrefly: ignore  # missing-attribute
+        """Publish BookingPaidEvent to finalize payment in Reservation Service"""
         topic = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=event.event_id)
+        partition = self._calculate_partition_by_section_and_subsection(
+            section=event.section,
+            subsection=event.subsection,
+        )
 
         Logger.base.info(
-            f'💳 [PAYMENT Publisher] Publishing BookingPaidEvent for booking {event.booking_id} '
-            f'with {len(event.ticket_ids)} tickets'
+            f'💳 [TICKETING→RESERVATION] Publishing BookingPaidEvent for booking {event.booking_id}'
         )
 
         await publish_domain_event(
             event=event,
             topic=topic,
             partition_key=str(event.booking_id),
+            partition=partition,
         )
 
-        Logger.base.info(
-            f'✅ [PAYMENT Publisher] BookingPaidEvent published successfully to {topic}'
-        )
+        Logger.base.info(f'✅ [TICKETING→RESERVATION] BookingPaidEvent published to {topic}')
 
     @Logger.io
     async def publish_booking_cancelled(self, *, event: BookingCancelledEvent) -> None:
-        """Publish BookingCancelledEvent to seat release topic"""
-        # pyrefly: ignore  # missing-attribute
+        """Publish BookingCancelledEvent to release seats in Reservation Service"""
         topic = KafkaTopicBuilder.ticket_release_seats(event_id=event.event_id)
-
-        Logger.base.info(
-            f'🗑️ [CANCELLATION Publisher] Publishing BookingCancelledEvent for booking {event.booking_id}'
+        partition = self._calculate_partition_by_section_and_subsection(
+            section=event.section,
+            subsection=event.subsection,
         )
 
         await publish_domain_event(
             event=event,
             topic=topic,
             partition_key=str(event.booking_id),
+            partition=partition,
         )
 
-        Logger.base.info(f'✅ [CANCELLATION Publisher] BookingCancelledEvent published to {topic}')
+        Logger.base.info(f'✅ [TICKETING→RESERVATION] BookingCancelledEvent published to {topic}')

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import random
 import string
 from typing import Any, Dict, Self
@@ -83,13 +84,12 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             )
 
             if ticket_ids:
-                # Create and publish BookingPaidEvent
-                from datetime import datetime, timezone
-
                 paid_event = BookingPaidEvent(
                     booking_id=booking_id,
                     buyer_id=buyer_id,
                     event_id=booking.event_id,
+                    section=booking.section,
+                    subsection=booking.subsection,
                     ticket_ids=ticket_ids,
                     paid_at=updated_booking.paid_at or datetime.now(timezone.utc),
                     total_amount=float(sum(ticket.price for ticket in reserved_tickets)),

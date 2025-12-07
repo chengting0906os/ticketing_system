@@ -110,6 +110,8 @@ class UpdateBookingToCancelledUseCase:
                 booking_id=booking_id,
                 buyer_id=buyer_id,
                 event_id=booking.event_id,
+                section=booking.section,
+                subsection=booking.subsection,
                 ticket_ids=ticket_ids,
                 seat_positions=seat_positions,
                 cancelled_at=datetime.now(timezone.utc),

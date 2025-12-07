@@ -10,9 +10,6 @@ from opentelemetry import trace
 from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
 )
-from src.service.reservation.driven_adapter.reservation_helper.booking_status_manager import (
-    BookingStatusManager,
-)
 from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer import (
     PaymentFinalizer,
 )
@@ -22,9 +19,6 @@ from src.service.reservation.driven_adapter.reservation_helper.release_executor 
 
 from src.platform.logging.loguru_io import Logger
 from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
-from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
-    IBookingMetadataHandler,
-)
 
 
 class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
@@ -38,7 +32,6 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     def __init__(
         self,
         *,
-        booking_metadata_handler: IBookingMetadataHandler,
         reservation_executor: AtomicReservationExecutor,
         release_executor: ReleaseExecutor,
         payment_finalizer: PaymentFinalizer,
@@ -47,15 +40,10 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         Initialize Seat State Command Handler.
 
         Args:
-            booking_metadata_handler: Required. Injected via DI container.
             reservation_executor: Handles atomic seat reservation operations.
             release_executor: Handles seat release operations.
             payment_finalizer: Handles payment finalization operations.
         """
-        self.booking_metadata_handler = booking_metadata_handler
-        self.status_manager = BookingStatusManager(
-            booking_metadata_handler=booking_metadata_handler
-        )
         self.reservation_executor = reservation_executor
         self.release_executor = release_executor
         self.payment_finalizer = payment_finalizer
@@ -146,34 +134,14 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 'booking.id': booking_id,
             },
         ):
-            # Check idempotency first
-            existing = await self.status_manager.check_booking_status(booking_id=booking_id)
-            if existing:
-                return existing
-
-            try:
-                # Execute verify + reserve (Lua fetches config, generates bf_key internally)
-                result = await self.reservation_executor.execute_manual_reservation(
-                    event_id=event_id,
-                    section=section,
-                    subsection=subsection,
-                    booking_id=booking_id,
-                    seat_ids=seat_ids,
-                )
-
-                if not result['success']:
-                    await self.status_manager.save_reservation_failure(
-                        booking_id=booking_id, error_message=result['error_message']
-                    )
-
-                return result
-
-            except Exception as e:
-                error_msg = f'Reservation error: {str(e)}'
-                await self.status_manager.save_reservation_failure(
-                    booking_id=booking_id, error_message=error_msg
-                )
-                raise
+            # Execute verify + reserve (Lua fetches config, generates bf_key internally)
+            return await self.reservation_executor.execute_manual_reservation(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                booking_id=booking_id,
+                seat_ids=seat_ids,
+            )
 
     async def _reserve_best_available_seats(
         self,
@@ -199,37 +167,17 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             if rows is None or cols is None or price is None:
                 return self._error_result('Missing config: rows, cols, price required')
 
-            # Check idempotency first
-            existing = await self.status_manager.check_booking_status(booking_id=booking_id)
-            if existing:
-                return existing
-
-            try:
-                # Execute find + reserve (config passed via ARGV to Lua script)
-                result = await self.reservation_executor.execute_find_and_reserve(
-                    event_id=event_id,
-                    section=section,
-                    subsection=subsection,
-                    booking_id=booking_id,
-                    quantity=quantity,
-                    rows=rows,
-                    cols=cols,
-                    price=price,
-                )
-
-                if not result['success']:
-                    await self.status_manager.save_reservation_failure(
-                        booking_id=booking_id, error_message=result['error_message']
-                    )
-
-                return result
-
-            except Exception as e:
-                error_msg = f'Reservation error: {str(e)}'
-                await self.status_manager.save_reservation_failure(
-                    booking_id=booking_id, error_message=error_msg
-                )
-                raise
+            # Execute find + reserve (config passed via ARGV to Lua script)
+            return await self.reservation_executor.execute_find_and_reserve(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                booking_id=booking_id,
+                quantity=quantity,
+                rows=rows,
+                cols=cols,
+                price=price,
+            )
 
     # ========== Other Command Methods ==========
 
