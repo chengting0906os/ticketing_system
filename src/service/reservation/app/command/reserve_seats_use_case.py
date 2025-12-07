@@ -3,9 +3,8 @@ Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL wri
 """
 
 from opentelemetry import trace
-from uuid_utils import UUID
 
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
+from src.platform.event.redis_booking_broadcaster import redis_booking_broadcaster
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
@@ -47,12 +46,10 @@ class ReserveSeatsUseCase:
         seat_state_handler: ISeatStateCommandHandler,
         booking_command_repo: IBookingCommandRepo,
         event_state_broadcaster: IEventStateBroadcaster,
-        sse_broadcaster: IInMemoryEventBroadcaster,
     ) -> None:
         self.seat_state_handler = seat_state_handler
         self.booking_command_repo = booking_command_repo
         self.event_state_broadcaster = event_state_broadcaster
-        self.sse_broadcaster = sse_broadcaster
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
@@ -145,15 +142,30 @@ class ReserveSeatsUseCase:
                         f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
                     )
 
-                    # Step 4c: Broadcast SSE for real-time UI updates
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
+                    # Step 4c: Broadcast SSE for real-time UI updates (via Redis Pub/Sub)
+                    # Convert TicketRef objects to JSON-serializable dicts
+                    tickets_data = [
+                        {
+                            'id': t.id,
+                            'section': t.section,
+                            'subsection': t.subsection,
+                            'row': t.row,
+                            'seat_num': t.seat,
+                            'price': t.price,
+                            'status': t.status.value,
+                            'seat_identifier': f'{t.row}-{t.seat}',
+                        }
+                        for t in pg_result.get('tickets', [])
+                    ]
+                    await redis_booking_broadcaster.broadcast(
+                        buyer_id=request.buyer_id,
+                        event_id=request.event_id,
                         event_data={
                             'event_type': 'booking_updated',
                             'event_id': request.event_id,
                             'booking_id': request.booking_id,
                             'status': 'PENDING_PAYMENT',
-                            'tickets': pg_result.get('tickets', []),
+                            'tickets': tickets_data,
                             'subsection_stats': subsection_stats,
                             'event_stats': event_stats,
                         },
@@ -174,7 +186,6 @@ class ReserveSeatsUseCase:
                     # Set error attributes on span
                     span = trace.get_current_span()
                     span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
-                    span.set_attribute('error', True)
                     span.set_attribute('error.type', 'reservation_failed')
                     span.set_attribute('error.message', error_msg)
 
@@ -190,9 +201,10 @@ class ReserveSeatsUseCase:
                         quantity=request.quantity or len(request.seat_positions or []),
                     )
 
-                    # Broadcast SSE failure notification
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
+                    # Broadcast SSE failure notification via Redis Pub/Sub
+                    await redis_booking_broadcaster.broadcast(
+                        buyer_id=request.buyer_id,
+                        event_id=request.event_id,
                         event_data={
                             'event_type': 'booking_updated',
                             'event_id': request.event_id,
@@ -218,7 +230,6 @@ class ReserveSeatsUseCase:
                 span = trace.get_current_span()
                 span.record_exception(e)
                 span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
-                span.set_attribute('error', True)
                 span.set_attribute('error.type', 'domain_error')
 
                 # Write FAILED booking directly to PostgreSQL
@@ -233,9 +244,10 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
+                # Broadcast SSE failure notification via Redis Pub/Sub
+                await redis_booking_broadcaster.broadcast(
+                    buyer_id=request.buyer_id,
+                    event_id=request.event_id,
                     event_data={
                         'event_type': 'booking_updated',
                         'event_id': request.event_id,
@@ -260,7 +272,6 @@ class ReserveSeatsUseCase:
                 span = trace.get_current_span()
                 span.record_exception(e)
                 span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
-                span.set_attribute('error', True)
                 span.set_attribute('error.type', 'unexpected_error')
 
                 # Write FAILED booking directly to PostgreSQL
@@ -275,9 +286,10 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
+                # Broadcast SSE failure notification via Redis Pub/Sub
+                await redis_booking_broadcaster.broadcast(
+                    buyer_id=request.buyer_id,
+                    event_id=request.event_id,
                     event_data={
                         'event_type': 'booking_updated',
                         'event_id': request.event_id,

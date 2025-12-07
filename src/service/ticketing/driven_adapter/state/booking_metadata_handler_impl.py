@@ -54,18 +54,23 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
 
     BOOKING_TTL = 3600  # 1 hour
 
-    # Lua script for atomic HSET + EXPIRE
-    # More efficient than pipeline: single network round-trip, executes by SHA1
-    LUA_HSET_EXPIRE = """
+    # Lua script for atomic idempotent HSET + EXPIRE
+    # Returns 1 if newly created, 0 if already exists (idempotency protection)
+    LUA_HSETNX_EXPIRE = """
+    -- Check if key already exists (idempotency check)
+    if redis.call('EXISTS', KEYS[1]) == 1 then
+        return 0  -- Already exists, don't overwrite
+    end
+    -- Key doesn't exist, create it atomically
     redis.call('HSET', KEYS[1], unpack(ARGV, 1, #ARGV - 1))
     redis.call('EXPIRE', KEYS[1], tonumber(ARGV[#ARGV]))
-    return 1
+    return 1  -- Newly created
     """
 
     def __init__(self) -> None:
         """Initialize tracer and register Lua scripts"""
         self.tracer = trace.get_tracer(__name__)
-        self._hset_expire_script: Any = None  # Lazy registration on first use
+        self._hsetnx_expire_script: Any = None  # Lazy registration on first use
 
     async def save_booking_metadata(
         self,
@@ -78,14 +83,19 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
         quantity: int,
         seat_selection_mode: str,
         seat_positions: list[str],
-    ) -> None:
-        """Save booking metadata to Kvrocks with TTL"""
+    ) -> bool:
+        """
+        Save booking metadata to Kvrocks with TTL (idempotent).
+
+        Returns:
+            True if newly created, False if already exists (idempotency protection)
+        """
         with self.tracer.start_as_current_span(
             'use_case.booking_meta.save',
             attributes={
                 'booking.id': booking_id,
                 'cache.system': 'kvrocks',
-                'cache.operation': 'hset_expire',
+                'cache.operation': 'hsetnx_expire',
             },
         ):
             try:
@@ -109,8 +119,8 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
                 }
 
                 # Lazy register Lua script on first use
-                if self._hset_expire_script is None:
-                    self._hset_expire_script = client.register_script(self.LUA_HSET_EXPIRE)
+                if self._hsetnx_expire_script is None:
+                    self._hsetnx_expire_script = client.register_script(self.LUA_HSETNX_EXPIRE)
 
                 # Build args for Lua script: field1, value1, field2, value2, ..., TTL
                 args: List[Any] = []
@@ -119,14 +129,22 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
                     args.append(v)
                 args.append(self.BOOKING_TTL)
 
-                # Execute Lua script (atomic HSET + EXPIRE in single round-trip)
+                # Execute Lua script (atomic EXISTS check + HSET + EXPIRE)
                 # Retry once on NoScriptError (happens after Kvrocks restart)
                 try:
-                    await self._hset_expire_script(keys=[key], args=args)
+                    result = await self._hsetnx_expire_script(keys=[key], args=args)
                 except NoScriptError:
                     Logger.base.warning('⚠️ [BOOKING-META] Script not found, re-registering...')
-                    self._hset_expire_script = client.register_script(self.LUA_HSET_EXPIRE)
-                    await self._hset_expire_script(keys=[key], args=args)
+                    self._hsetnx_expire_script = client.register_script(self.LUA_HSETNX_EXPIRE)
+                    result = await self._hsetnx_expire_script(keys=[key], args=args)
+
+                is_new = result == 1
+                if not is_new:
+                    Logger.base.warning(
+                        f'⚠️ [BOOKING-META] Booking {booking_id} already exists (idempotency protection)'
+                    )
+
+                return is_new
 
             except Exception as e:
                 Logger.base.error(f'❌ [BOOKING-META] Failed to save metadata: {e}')

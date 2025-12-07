@@ -4,15 +4,13 @@ from datetime import datetime, timezone
 from typing import Any, List
 
 import anyio
-from dependency_injector.wiring import Provide
 from fastapi import APIRouter, Depends, HTTPException, status
 from opentelemetry import trace
 import orjson
 from sse_starlette.sse import EventSourceResponse
 import uuid_utils
 
-from src.platform.config.di import Container
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
+from src.platform.event.redis_booking_subscriber import redis_booking_subscriber
 from src.platform.logging.loguru_io import Logger
 from src.platform.types import UtilsUUID7
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
@@ -160,20 +158,19 @@ async def stream_booking_status(
     booking_id: UtilsUUID7,
     current_user: UserEntity = Depends(get_current_user),
     use_case: GetBookingUseCase = Depends(GetBookingUseCase.depends),
-    event_broadcaster: IInMemoryEventBroadcaster = Depends(
-        Provide[Container.booking_event_broadcaster]
-    ),
 ) -> EventSourceResponse:
     """
-    SSE real-time booking status updates (event-driven via Kafka → Broadcaster)
+    SSE real-time booking status updates (event-driven via Redis Pub/Sub)
 
-    Architecture: Kafka Consumer → Use Case → Broadcaster → SSE Endpoint → Client
+    Architecture: Reservation Service → Redis Pub/Sub → SSE Endpoint → Client
 
     Flow:
-    1. Client connects → SSE endpoint subscribes to broadcaster
+    1. Client connects → SSE endpoint subscribes to Redis Pub/Sub channel
     2. Initial status sent from PostgreSQL query
-    3. Subsequent updates pushed from Kafka consumer via broadcaster (<100ms latency)
+    3. Subsequent updates pushed from Reservation Service via Redis Pub/Sub (<100ms latency)
     4. Auto-close when booking reaches final state (completed/failed/cancelled)
+
+    Channel format: booking_status:{buyer_id}:{event_id}
     """
     # Convert Pydantic UUID to uuid_utils.UUID for use case
     booking_id_uuid = uuid_utils.UUID(str(booking_id))
@@ -193,9 +190,12 @@ async def stream_booking_status(
         Logger.base.error(f'❌ [SSE] Booking {booking_id} not found or access denied: {e}')
         raise HTTPException(status_code=404, detail='Booking not found')
 
-    # Subscribe to broadcaster for real-time updates
-    queue = await event_broadcaster.subscribe(booking_id=booking_id_uuid)
-    Logger.base.info(f'📡 [SSE] Client subscribed to booking {booking_id}')
+    # Get buyer_id and event_id for Redis Pub/Sub channel
+    buyer_id = initial_booking['buyer_id']
+    event_id = initial_booking['event_id']
+    Logger.base.info(
+        f'📡 [SSE] Client connecting to booking {booking_id} (buyer={buyer_id}, event={event_id})'
+    )
 
     async def event_generator() -> AsyncIterator[dict[str, str]]:
         """Generate SSE event stream for booking status updates (event-driven)"""
@@ -245,55 +245,54 @@ async def stream_booking_status(
                 }
                 return
 
-            # Event-driven loop: wait for broadcasts from Kafka consumer
-            while True:
-                try:
-                    # Wait for event from broadcaster (30s timeout for heartbeat)
-                    event_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+            # Subscribe to Redis Pub/Sub for real-time updates from Reservation Service
+            async with redis_booking_subscriber.subscribe(
+                buyer_id=buyer_id, event_id=event_id
+            ) as queue:
+                # Event-driven loop: wait for broadcasts from Reservation Service
+                while True:
+                    try:
+                        # Wait for event from Redis Pub/Sub (30s timeout for heartbeat)
+                        event_data = await asyncio.wait_for(queue.get(), timeout=30.0)
 
-                    # Send SSE event
-                    yield {'event': 'status_update', 'data': orjson.dumps(event_data).decode()}
+                        # Send SSE event
+                        yield {'event': 'status_update', 'data': orjson.dumps(event_data).decode()}
 
-                    Logger.base.debug(
-                        f'📡 [SSE] Sent event to client: booking_id={booking_id}, status={event_data.get("status")}'
-                    )
-
-                    # Auto-close connection if booking reaches final state
-                    if event_data.get('status') in final_states:
-                        Logger.base.info(
-                            f'✅ [SSE] Booking {booking_id} reached final state: {event_data.get("status")}'
+                        Logger.base.debug(
+                            f'📡 [SSE] Sent event to client: booking_id={booking_id}, status={event_data.get("status")}'
                         )
+
+                        # Auto-close connection if booking reaches final state
+                        if event_data.get('status') in final_states:
+                            Logger.base.info(
+                                f'✅ [SSE] Booking {booking_id} reached final state: {event_data.get("status")}'
+                            )
+                            yield {
+                                'event': 'close',
+                                'data': orjson.dumps(
+                                    {
+                                        'message': f'Booking reached final state: {event_data.get("status")}'
+                                    }
+                                ).decode(),
+                            }
+                            break
+
+                    except asyncio.TimeoutError:
+                        # Heartbeat: Send keepalive to prevent connection timeout
                         yield {
-                            'event': 'close',
+                            'event': 'heartbeat',
                             'data': orjson.dumps(
-                                {
-                                    'message': f'Booking reached final state: {event_data.get("status")}'
-                                }
+                                {'timestamp': datetime.now(timezone.utc).isoformat()}
                             ).decode(),
                         }
+
+                    except Exception as e:
+                        Logger.base.error(f'❌ [SSE] Error streaming booking {booking_id}: {e}')
+                        yield {'data': orjson.dumps({'error': str(e)}).decode()}
                         break
-
-                except asyncio.TimeoutError:
-                    # Heartbeat: Send keepalive to prevent connection timeout
-                    yield {
-                        'event': 'heartbeat',
-                        'data': orjson.dumps(
-                            {'timestamp': datetime.now(timezone.utc).isoformat()}
-                        ).decode(),
-                    }
-
-                except Exception as e:
-                    Logger.base.error(f'❌ [SSE] Error streaming booking {booking_id}: {e}')
-                    yield {'data': orjson.dumps({'error': str(e)}).decode()}
-                    break
 
         except anyio.get_cancelled_exc_class():
             Logger.base.info(f'🔌 [SSE] Client disconnected from booking {booking_id}')
             raise
-
-        finally:
-            # Cleanup: unsubscribe from broadcaster
-            await event_broadcaster.unsubscribe(booking_id=booking_id_uuid, queue=queue)
-            Logger.base.info(f'🔌 [SSE] Unsubscribed from booking {booking_id}')
 
     return EventSourceResponse(event_generator())

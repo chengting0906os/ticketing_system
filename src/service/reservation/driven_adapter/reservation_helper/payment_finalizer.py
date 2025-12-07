@@ -32,7 +32,6 @@ class PaymentFinalizer:
             return False
 
         section, subsection, row, seat_num = parts
-        section_id = f'{section}-{subsection}'
 
         # Fetch config from Kvrocks
         client = kvrocks_client.get_client()
@@ -46,7 +45,7 @@ class PaymentFinalizer:
         cols = orjson.loads(result)[0]
         seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
 
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        bf_key = make_seats_bf_key(event_id=event_id, section=section, subsection=int(subsection))
         offset = seat_index * 2
 
         # Set to SOLD (10)

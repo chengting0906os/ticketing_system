@@ -6,6 +6,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import Depends
 from uuid_utils import UUID
 
+from src.platform.config.core_setting import settings
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
@@ -14,6 +15,13 @@ from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
+
+
+def _calculate_partition(section: str, subsection: int, subsections_per_section: int = 10) -> int:
+    """Calculate partition based on section-subsection for even distribution."""
+    section_index = ord(section.upper()) - ord('A')
+    global_index = section_index * subsections_per_section + (subsection - 1)
+    return global_index % settings.KAFKA_TOTAL_PARTITIONS
 
 
 class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
@@ -90,6 +98,8 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
                     booking_id=booking_id,
                     buyer_id=buyer_id,
                     event_id=booking.event_id,
+                    section=booking.section,
+                    subsection=booking.subsection,
                     ticket_ids=ticket_ids,
                     paid_at=updated_booking.paid_at or datetime.now(timezone.utc),
                     total_amount=float(sum(ticket.price for ticket in reserved_tickets)),
@@ -99,14 +109,18 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
                 topic_name = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
                     event_id=booking.event_id
                 )
-                partition_key = f'event-{booking.event_id}'
+                partition = _calculate_partition(booking.section, booking.subsection)
+                partition_key = f'{booking.event_id}:{booking.section}-{booking.subsection}'
 
                 await publish_domain_event(
-                    event=paid_event, topic=topic_name, partition_key=partition_key
+                    event=paid_event,
+                    topic=topic_name,
+                    partition_key=partition_key,
+                    partition=partition,
                 )
 
                 Logger.base.info(
-                    f'✅ [PAYMENT] Published BookingPaidEvent to finalize in Kvrocks: {topic_name}'
+                    f'✅ [PAYMENT] Published BookingPaidEvent to {topic_name} partition={partition}'
                 )
 
         # Generate mock payment ID

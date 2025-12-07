@@ -160,21 +160,21 @@ async def drop_and_recreate_database():
 
 
 async def flush_kvrocks():
-    """清空 Kvrocks 所有資料"""
+    """清空 Kvrocks 所有資料（支援 Cluster 模式）"""
     try:
-        import redis.asyncio as aioredis
+        from src.platform.state.kvrocks_client import get_kvrocks_client
 
         print('🗑️  Flushing Kvrocks...')
-        client = await aioredis.from_url(
-            f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
-            password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
-            decode_responses=True,
-        )
+        client = await get_kvrocks_client()
 
-        # 清空所有資料
-        await client.flushdb()
+        # Cluster 模式需要對每個節點執行 FLUSHDB
+        if settings.KVROCKS_CLUSTER_MODE:
+            # 對所有 master 節點執行 flushdb
+            await client.flushdb(target_nodes='primaries')
+        else:
+            await client.flushdb()
+
         await client.aclose()
-
         print('✅ Kvrocks flushed successfully!')
 
     except Exception as e:

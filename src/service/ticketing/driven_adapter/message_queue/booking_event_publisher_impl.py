@@ -85,19 +85,23 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         # pyrefly: ignore  # missing-attribute
         topic = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=event.event_id)
 
+        partition = self._calculate_partition(section=event.section, subsection=event.subsection)
+        partition_key = f'{event.event_id}:{event.section}-{event.subsection}'
+
         Logger.base.info(
             f'💳 [PAYMENT Publisher] Publishing BookingPaidEvent for booking {event.booking_id} '
-            f'with {len(event.ticket_ids)} tickets'
+            f'partition={partition}'
         )
 
         await publish_domain_event(
             event=event,
             topic=topic,
-            partition_key=str(event.booking_id),
+            partition_key=partition_key,
+            partition=partition,
         )
 
         Logger.base.info(
-            f'✅ [PAYMENT Publisher] BookingPaidEvent published successfully to {topic}'
+            f'✅ [PAYMENT Publisher] BookingPaidEvent published to {topic} partition={partition}'
         )
 
     @Logger.io
@@ -106,14 +110,21 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
         # pyrefly: ignore  # missing-attribute
         topic = KafkaTopicBuilder.ticket_release_seats(event_id=event.event_id)
 
+        partition = self._calculate_partition(section=event.section, subsection=event.subsection)
+        partition_key = f'{event.event_id}:{event.section}-{event.subsection}'
+
         Logger.base.info(
-            f'🗑️ [CANCELLATION Publisher] Publishing BookingCancelledEvent for booking {event.booking_id}'
+            f'🗑️ [CANCELLATION Publisher] Publishing BookingCancelledEvent for booking {event.booking_id} '
+            f'partition={partition}'
         )
 
         await publish_domain_event(
             event=event,
             topic=topic,
-            partition_key=str(event.booking_id),
+            partition_key=partition_key,
+            partition=partition,
         )
 
-        Logger.base.info(f'✅ [CANCELLATION Publisher] BookingCancelledEvent published to {topic}')
+        Logger.base.info(
+            f'✅ [CANCELLATION Publisher] BookingCancelledEvent published to {topic} partition={partition}'
+        )

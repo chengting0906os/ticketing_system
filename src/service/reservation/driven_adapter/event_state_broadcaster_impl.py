@@ -3,6 +3,8 @@
 import time
 
 import orjson
+from redis.asyncio.cluster import RedisCluster
+
 from src.service.reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
 )
@@ -57,7 +59,14 @@ class EventStateBroadcasterImpl(IEventStateBroadcaster):
                 {'event_id': event_id, 'event_state': event_state, 'timestamp': current_time}
             )
 
-            await client.publish(channel, message)
+            # Publish to Redis/Kvrocks
+            if isinstance(client, RedisCluster):
+                # Cluster mode: PUBLISH needs a target node (use random node)
+                node = client.get_random_node()
+                await client.execute_command('PUBLISH', channel, message, target_nodes=node)
+            else:
+                # Standalone mode
+                await client.publish(channel, message)
             self._last_broadcast_time[event_id] = current_time
 
             Logger.base.debug(f'📤 [Broadcaster] Published update for event={event_id}')

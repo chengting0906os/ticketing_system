@@ -1,32 +1,31 @@
 ---@diagnostic disable: undefined-global, deprecated
 --[[
-Verify Manual Seats Selection (Lua Script)
+Verify and Reserve Manual Seats Selection (Lua Script) - ATOMIC VERSION
 
-Fetches config and verifies specified seats are available.
-Returns validated seat data with config for atomic reservation.
+Verifies specified seats are available and reserves them atomically.
+Config (rows, cols, price) is passed as ARGV to avoid cross-slot key access.
 
-KEYS[1]: Bitfield key (e.g., 'seats_bf:1:A-1')
-KEYS[2]: Event state key (e.g., 'event_state:1')
+KEYS[1]: Bitfield key (e.g., '{e:1:s:A-1}:seats_bf')
 
-ARGV[1]: event_id (e.g., '1')
-ARGV[2]: section (e.g., 'A')
-ARGV[3]: subsection (e.g., '1')
-ARGV[4+]: seat_ids in "row-seat" format (e.g., '1-5', '1-6', '1-7')
+ARGV[1]: cols (seats per row, e.g., '20')
+ARGV[2]: price (section price, e.g., '1800')
+ARGV[3+]: seat_ids in "row-seat" format (e.g., '1-5', '1-6', '1-7')
 
 Returns:
 - Success: JSON {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
 - Failure: Error string with reason
+
+Note: Redis Cluster requires all KEYS to have same hash tag.
+      This script uses only KEYS[1] to avoid cross-slot errors.
 --]]
 
 local bf_key = KEYS[1]
-local event_state_key = KEYS[2]
-local event_id = ARGV[1]
-local section = ARGV[2]
-local subsection = ARGV[3]
+local cols = tonumber(ARGV[1])
+local price = tonumber(ARGV[2])
 
--- Collect seat_ids from ARGV[4] onwards
+-- Collect seat_ids from ARGV[3] onwards
 local seat_ids = {}
-for i = 4, #ARGV do
+for i = 3, #ARGV do
     table.insert(seat_ids, ARGV[i])
 end
 
@@ -40,28 +39,12 @@ if #seat_ids > MAX_TICKETS then
     return redis.error_reply('INVALID_QUANTITY: Maximum ' .. MAX_TICKETS .. ' tickets allowed')
 end
 
--- ========== STEP 1: Fetch config from event_state JSON ==========
-local json_path = '$.sections.' .. section .. '.subsections.' .. subsection
-
-local subsection_result = redis.call('JSON.GET', event_state_key, json_path)
-if not subsection_result then
-    return redis.error_reply('CONFIG_NOT_FOUND: No config for event=' .. event_id .. ' section=' .. section .. '-' .. subsection)
+-- Validate cols is provided
+if not cols or cols <= 0 then
+    return redis.error_reply('INVALID_CONFIG: cols must be provided and positive')
 end
 
-local subsection_array = cjson.decode(subsection_result)
-local subsection_config = subsection_array[1]
-local cols = subsection_config.cols
-
--- Fetch section price
-local price_path = '$.sections.' .. section .. '.price'
-local price_result = redis.call('JSON.GET', event_state_key, price_path)
-local price = 0
-if price_result then
-    local price_array = cjson.decode(price_result)
-    price = price_array[1]
-end
-
--- ========== STEP 2: Parse seat IDs and calculate indices ==========
+-- ========== STEP 1: Parse seat IDs and calculate indices ==========
 local function calculate_seat_index(row, seat_num, spr)
     return (row - 1) * spr + (seat_num - 1)
 end
@@ -87,7 +70,7 @@ for _, seat_id in ipairs(seat_ids) do
     table.insert(seats_to_reserve, {row, seat_num, seat_index, full_seat_id})
 end
 
--- ========== STEP 3: Verify all seats are available ==========
+-- ========== STEP 2: Verify all seats are available ==========
 -- Build BITFIELD command for batch verification
 local bitfield_args = { 'BITFIELD', bf_key }
 for _, seat in ipairs(seats_to_reserve) do
@@ -110,9 +93,23 @@ for i, status in ipairs(statuses) do
     end
 end
 
--- ========== SUCCESS: Return validated seats with config ==========
+-- ========== STEP 3: ATOMIC RESERVE - Set all seats to RESERVED ==========
+-- Build BITFIELD SET command
+local reserve_args = { 'BITFIELD', bf_key }
+for _, seat in ipairs(seats_to_reserve) do
+    local seat_index = seat[3]
+    local offset = seat_index * 2
+    table.insert(reserve_args, 'SET')
+    table.insert(reserve_args, 'u2')
+    table.insert(reserve_args, offset)
+    table.insert(reserve_args, 1)  -- 1 = RESERVED
+end
+
+redis.call(unpack(reserve_args))
+
+-- ========== SUCCESS: Return reserved seats with config ==========
 return cjson.encode({
     seats = seats_to_reserve,
     cols = cols,
-    price = price
+    price = price or 0
 })

@@ -5,6 +5,7 @@ from dependency_injector.wiring import Provide, inject
 from uuid_utils import UUID
 from fastapi import Depends
 
+from src.platform.config.core_setting import settings
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
@@ -18,6 +19,13 @@ from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
 )
 from src.service.ticketing.domain.entity.booking_entity import Booking
+
+
+def _calculate_partition(section: str, subsection: int, subsections_per_section: int = 10) -> int:
+    """Calculate partition based on section-subsection for even distribution."""
+    section_index = ord(section.upper()) - ord('A')
+    global_index = section_index * subsections_per_section + (subsection - 1)
+    return global_index % settings.KAFKA_TOTAL_PARTITIONS
 
 
 class UpdateBookingToCancelledUseCase:
@@ -110,6 +118,8 @@ class UpdateBookingToCancelledUseCase:
                 booking_id=booking_id,
                 buyer_id=buyer_id,
                 event_id=booking.event_id,
+                section=booking.section,
+                subsection=booking.subsection,
                 ticket_ids=ticket_ids,
                 seat_positions=seat_positions,
                 cancelled_at=datetime.now(timezone.utc),
@@ -118,13 +128,19 @@ class UpdateBookingToCancelledUseCase:
             topic_name = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
                 event_id=booking.event_id
             )
-            partition_key = f'event-{booking.event_id}'
+            partition = _calculate_partition(booking.section, booking.subsection)
+            partition_key = f'{booking.event_id}:{booking.section}-{booking.subsection}'
 
             await publish_domain_event(
-                event=cancelled_event, topic=topic_name, partition_key=partition_key
+                event=cancelled_event,
+                topic=topic_name,
+                partition_key=partition_key,
+                partition=partition,
             )
 
-            Logger.base.info(f'✅ [CANCEL] Published BookingCancelledEvent to {topic_name}')
+            Logger.base.info(
+                f'✅ [CANCEL] Published BookingCancelledEvent to {topic_name} partition={partition}'
+            )
 
         Logger.base.info(f'🎯 [CANCEL] Booking {booking_id} cancelled successfully')
         return updated_booking

@@ -104,6 +104,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 # Validate manual mode parameters
                 if not seat_ids:
                     return self._error_result('Manual mode requires seat_ids')
+                if cols is None or price is None:
+                    return self._error_result('Manual mode requires cols and price from config')
 
                 return await self._reserve_manual_seats(
                     event_id=event_id,
@@ -112,6 +114,8 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     section=section,
                     subsection=subsection,
                     seat_ids=seat_ids,
+                    cols=cols,
+                    price=price,
                 )
             elif mode == 'best_available':
                 return await self._reserve_best_available_seats(
@@ -138,8 +142,10 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         section: str,
         subsection: int,
         seat_ids: List[str],
+        cols: int,
+        price: int,
     ) -> Dict:
-        """Reserve specified seats - Manual Mode (Lua fetches config + validates)"""
+        """Reserve specified seats - Manual Mode (config passed as params for cluster compatibility)"""
         with self.tracer.start_as_current_span(
             'seat_handler.reserve_manual',
             attributes={
@@ -152,13 +158,15 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 return existing
 
             try:
-                # Execute verify + reserve (Lua fetches config, generates bf_key internally)
+                # Execute verify + reserve (config passed for cluster compatibility)
                 result = await self.reservation_executor.execute_manual_reservation(
                     event_id=event_id,
                     section=section,
                     subsection=subsection,
                     booking_id=booking_id,
                     seat_ids=seat_ids,
+                    cols=cols,
+                    price=price,
                 )
 
                 if not result['success']:

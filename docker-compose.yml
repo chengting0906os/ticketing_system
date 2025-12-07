@@ -180,23 +180,99 @@ services:
     networks:
       - ticketing-network
 
-  # Kvrocks - Redis-compatible cache with RocksDB backend
-  kvrocks:
+  # =============================================================================
+  # KVRocks Cluster (4 nodes, 16384 slots)
+  # Slot distribution: Node1=0-4095, Node2=4096-8191, Node3=8192-12287, Node4=12288-16383
+  # =============================================================================
+
+  # KVRocks Cluster (4 nodes with cluster-announce-ip for host access)
+  kvrocks-1:
     image: apache/kvrocks:latest
-    container_name: kvrocks
+    container_name: kvrocks-1
     ports:
       - "6666:6666"
-    command: [ "-c", "/etc/kvrocks/kvrocks.conf" ]
+    command: ["-c", "/etc/kvrocks/kvrocks.conf"]
     volumes:
-      - kvrocks_data:/var/lib/kvrocks
-      - ./deployment/kvrocks/kvrocks.conf:/etc/kvrocks/kvrocks.conf:ro
+      - kvrocks_1_data:/var/lib/kvrocks
+      - ./deployment/kvrocks/kvrocks-node1.conf:/etc/kvrocks/kvrocks.conf:ro
     healthcheck:
-      test: [ "CMD", "redis-cli", "-p", "6666", "ping" ]
+      test: ["CMD", "redis-cli", "-p", "6666", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
     networks:
       - ticketing-network
+
+  kvrocks-2:
+    image: apache/kvrocks:latest
+    container_name: kvrocks-2
+    ports:
+      - "6667:6666"
+    command: ["-c", "/etc/kvrocks/kvrocks.conf"]
+    volumes:
+      - kvrocks_2_data:/var/lib/kvrocks
+      - ./deployment/kvrocks/kvrocks-node2.conf:/etc/kvrocks/kvrocks.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6666", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ticketing-network
+
+  kvrocks-3:
+    image: apache/kvrocks:latest
+    container_name: kvrocks-3
+    ports:
+      - "6668:6666"
+    command: ["-c", "/etc/kvrocks/kvrocks.conf"]
+    volumes:
+      - kvrocks_3_data:/var/lib/kvrocks
+      - ./deployment/kvrocks/kvrocks-node3.conf:/etc/kvrocks/kvrocks.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6666", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ticketing-network
+
+  kvrocks-4:
+    image: apache/kvrocks:latest
+    container_name: kvrocks-4
+    ports:
+      - "6669:6666"
+    command: ["-c", "/etc/kvrocks/kvrocks.conf"]
+    volumes:
+      - kvrocks_4_data:/var/lib/kvrocks
+      - ./deployment/kvrocks/kvrocks-node4.conf:/etc/kvrocks/kvrocks.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6666", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ticketing-network
+
+  # KVRocks Cluster Initializer
+  kvrocks-init:
+    image: redis:alpine
+    container_name: kvrocks-init
+    volumes:
+      - ./deployment/kvrocks/init-cluster.sh:/init-cluster.sh:ro
+    command: ["/bin/sh", "/init-cluster.sh"]
+    depends_on:
+      kvrocks-1:
+        condition: service_healthy
+      kvrocks-2:
+        condition: service_healthy
+      kvrocks-3:
+        condition: service_healthy
+      kvrocks-4:
+        condition: service_healthy
+    networks:
+      - ticketing-network
+    restart: "no"
 
   # Prometheus monitoring
   prometheus:
@@ -262,8 +338,10 @@ services:
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
       # Note: KAFKA_*_INSTANCE_ID uses default value from core_setting.py (hostname-pid)
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
+      # KVRocks Cluster (all services run in Docker network)
+      KVROCKS_CLUSTER_MODE: "true"
+      KVROCKS_CLUSTER_NODES: "kvrocks-1:6666,kvrocks-2:6666,kvrocks-3:6666,kvrocks-4:6666"
+      KVROCKS_HOST: kvrocks-1
       KVROCKS_PORT: 6666
       # Event selection (default to event 1, can override)
       EVENT_ID: "${EVENT_ID:-1}"
@@ -293,8 +371,8 @@ services:
         condition: service_started
       kafka3:
         condition: service_started
-      kvrocks:
-        condition: service_healthy
+      kvrocks-init:
+        condition: service_completed_successfully
     networks:
       - ticketing-network
     healthcheck:
@@ -373,12 +451,57 @@ services:
       - ticketing-network
     restart: unless-stopped
 
+  # =============================================================================
+  # MANAGEMENT CONTAINER (For running scripts: seed, migrate, etc.)
+  # =============================================================================
+  # Usage: docker compose run --rm management python -m script.seed_data
+  #        docker compose run --rm management uv run alembic upgrade head
+  # =============================================================================
+
+  management:
+    build:
+      context: .
+      target: development
+    container_name: ticketing-management
+    profiles:
+      - management  # Only started explicitly with --profile management or 'docker compose run'
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ticketing_system_db
+      POSTGRES_PORT: 5432
+      # KVRocks Cluster (all services run in Docker network)
+      KVROCKS_CLUSTER_MODE: "true"
+      KVROCKS_CLUSTER_NODES: "kvrocks-1:6666,kvrocks-2:6666,kvrocks-3:6666,kvrocks-4:6666"
+      KVROCKS_HOST: kvrocks-1
+      KVROCKS_PORT: 6666
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      # Application
+      ENVIRONMENT: "${ENVIRONMENT:-local_dev}"
+      DEBUG: "${DEBUG:-false}"
+      TZ: "Asia/Taipei"
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src:ro
+      - ./script:/app/script:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+    networks:
+      - ticketing-network
+
 volumes:
   postgres_data:
   kafka1_data:
   kafka2_data:
   kafka3_data:
-  kvrocks_data:
+  kvrocks_1_data:
+  kvrocks_2_data:
+  kvrocks_3_data:
+  kvrocks_4_data:
   prometheus_data:
   grafana_data:
 

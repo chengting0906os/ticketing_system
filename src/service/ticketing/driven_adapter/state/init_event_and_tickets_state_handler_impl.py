@@ -194,15 +194,24 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                     'updated_at'
                 ] = timestamp
 
-            # Step 4: Use Pipeline to batch write all operations
-            pipe = client.pipeline()
-
+            # Step 4: Group seats by subsection (for Redis Cluster slot compatibility)
+            # In cluster mode, pipeline commands must go to the same hash slot
+            seats_by_subsection: Dict[str, list] = defaultdict(list)
             for seat in all_seats:
-                section_id = f'{seat["section"]}-{seat["subsection"]}'
-                bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
-                offset = seat['seat_index'] * 2
-                pipe.setbit(bf_key, offset, 0)
-                pipe.setbit(bf_key, offset + 1, 0)
+                subsection_key = f'{seat["section"]}-{seat["subsection"]}'
+                seats_by_subsection[subsection_key].append(seat)
+
+            # Execute pipeline per subsection (each subsection = one hash slot)
+            for _, subsection_seats in seats_by_subsection.items():
+                pipe = client.pipeline()
+                for seat in subsection_seats:
+                    bf_key = make_seats_bf_key(
+                        event_id=event_id, section=seat['section'], subsection=seat['subsection']
+                    )
+                    offset = seat['seat_index'] * 2
+                    pipe.setbit(bf_key, offset, 0)
+                    pipe.setbit(bf_key, offset + 1, 0)
+                await pipe.execute()
 
             event_total_seats = sum(section_stats.values())
             event_state['event_stats']['available'] = event_total_seats
@@ -210,8 +219,6 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             event_state['event_stats']['sold'] = 0
             event_state['event_stats']['total'] = event_total_seats
             event_state['event_stats']['updated_at'] = timestamp
-
-            await pipe.execute()
 
             # Step 5: Write unified event config as JSON (single key per event)
             config_key = make_event_state_key(event_id=event_id)

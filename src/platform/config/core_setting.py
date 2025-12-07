@@ -146,6 +146,10 @@ class Settings(BaseSettings):
     KVROCKS_PASSWORD: str = ''
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks also uses Redis protocol
 
+    # Kvrocks Cluster Configuration
+    KVROCKS_CLUSTER_MODE: bool = False  # Enable cluster mode
+    KVROCKS_CLUSTER_NODES: str = ''  # Comma-separated nodes: "host1:port1,host2:port2,..."
+
     # Kvrocks Connection Pool Configuration
     KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool
     KVROCKS_POOL_SOCKET_TIMEOUT: int = (

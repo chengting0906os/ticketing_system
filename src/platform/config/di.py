@@ -33,7 +33,6 @@ from src.service.reservation.driven_adapter.seat_state_query_handler_impl import
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
-from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
@@ -101,9 +100,6 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
-    # In-memory Event Broadcaster for SSE (Singleton for shared state)
-    booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
-
     # Message Queue Publishers
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
 
@@ -155,7 +151,6 @@ class Container(containers.DeclarativeContainer):
         seat_state_handler=seat_state_command_handler,
         booking_command_repo=reservation_booking_command_repo,
         event_state_broadcaster=event_state_broadcaster,
-        sse_broadcaster=booking_event_broadcaster,
     )
     release_seat_use_case = providers.Factory(
         ReleaseSeatUseCase,

@@ -98,8 +98,9 @@ class CreateBookingMetadataUseCase:
                 f'(event={event_id}, section={section}-{subsection}, qty={quantity})'
             )
 
-            # Step 1: Save booking metadata to Kvrocks
-            await self.booking_metadata_handler.save_booking_metadata(
+            # Step 1: Save booking metadata to Kvrocks (idempotent)
+            # Returns False if booking already exists (duplicate message)
+            is_new = await self.booking_metadata_handler.save_booking_metadata(
                 booking_id=booking_id,
                 buyer_id=buyer_id,
                 event_id=event_id,
@@ -109,6 +110,11 @@ class CreateBookingMetadataUseCase:
                 seat_selection_mode=seat_selection_mode,
                 seat_positions=seat_positions,
             )
+
+            if not is_new:
+                # Duplicate message - booking already being processed
+                Logger.base.warning(f'⚠️ [BOOKING] Skipping duplicate: {booking_id} already exists')
+                return
 
             Logger.base.info(f'✅ [BOOKING] Saved metadata to Kvrocks: {booking_id}')
 

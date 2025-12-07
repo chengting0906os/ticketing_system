@@ -50,8 +50,10 @@ class MockBookingMetadataHandler(IBookingMetadataHandler):
         quantity: int,
         seat_selection_mode: str,
         seat_positions: list[str],
-    ) -> None:
-        """Save booking metadata"""
+    ) -> bool:
+        """Save booking metadata. Returns True if newly created, False if already exists."""
+        if booking_id in self.metadata:
+            return False  # Already exists (idempotency)
         self.metadata[booking_id] = {
             'booking_id': booking_id,
             'buyer_id': str(buyer_id),
@@ -63,6 +65,7 @@ class MockBookingMetadataHandler(IBookingMetadataHandler):
             'seat_positions': str(seat_positions),
             'status': 'PENDING_RESERVATION',
         }
+        return True
 
     async def delete_booking_metadata(self, *, booking_id: str) -> None:
         """Delete booking metadata"""

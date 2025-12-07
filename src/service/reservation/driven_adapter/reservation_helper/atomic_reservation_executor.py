@@ -3,19 +3,18 @@ from typing import Any, Awaitable, Dict, List, cast
 
 from opentelemetry import trace
 import orjson
-from redis.asyncio import Redis
+
+from src.platform.database.asyncpg_setting import get_asyncpg_pool
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import KvrocksClientType, kvrocks_client
+from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
     make_booking_key,
     make_event_state_key,
     make_seats_bf_key,
     make_sellout_timer_key,
 )
-
-from src.platform.database.asyncpg_setting import get_asyncpg_pool
-from src.platform.exception.exceptions import DomainError
-from src.platform.logging.loguru_io import Logger
-from src.platform.state.kvrocks_client import kvrocks_client
-from src.platform.state.lua_script_executor import lua_script_executor
 
 
 class AtomicReservationExecutor:
@@ -91,7 +90,8 @@ class AtomicReservationExecutor:
         self,
         *,
         event_id: int,
-        section_id: str,
+        section: str,
+        subsection: int,
         booking_id: str,
         bf_key: str,
         seats_to_reserve: List[tuple],
@@ -107,9 +107,10 @@ class AtomicReservationExecutor:
 
         Args:
             event_id: Event identifier (e.g., 123)
-            section_id: Section identifier (e.g., 'A-1')
+            section: Section name (e.g., 'A', 'B')
+            subsection: Subsection number (e.g., 1, 2)
             booking_id: Booking identifier
-            bf_key: Bitfield key for seat states (e.g., 'seats_bf:123:A-1')
+            bf_key: Bitfield key for seat states (e.g., '{e:1:ss:A-1}:seats_bf')
             seats_to_reserve: List of (row, seat_num, seat_index, seat_id) tuples
             section_price: Pre-calculated section price (from config). Required.
 
@@ -150,32 +151,22 @@ class AtomicReservationExecutor:
             num_seats = len(seats_to_reserve)
             total_price = section_price * num_seats
             reserved_seats = []
-            pipe = client.pipeline(
-                transaction=True
-            )  # Create pipeline with MULTI/EXEC for isolation
 
-            # ========== STEP 1: Reserve seats in bitfield ==========
-            # Update each seat's status from AVAILABLE (00) to RESERVED (01)
+            # ========== STEP 1: Atomic transaction for subsection slot ==========
+            # Redis Cluster: All keys in transaction must be in same slot
+            # bf_key and booking_key share subsection hash tag: {e:EVENT_ID:ss:SECTION-SUBSECTION}
+            pipe = client.pipeline(transaction=True)
+
+            # Reserve seats in bitfield (AVAILABLE=00 → RESERVED=01)
             for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
                 offset = seat_index * 2
-                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 1)  # 01 = RESERVED
+                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 1)
                 reserved_seats.append(seat_id)
 
-            # ========== STEP 2: Update JSON statistics ==========
-            event_state_key = make_event_state_key(event_id=event_id)
-
-            pipe.execute_command(
-                'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
+            # Save booking metadata (same slot as bf_key)
+            booking_key = make_booking_key(
+                booking_id=booking_id, event_id=event_id, section=section, subsection=subsection
             )
-            pipe.execute_command(
-                'JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats
-            )
-
-            # ========== STEP 3: Fetch updated statistics ==========
-            pipe.execute_command('JSON.GET', event_state_key, '$')
-
-            # ========== STEP 4: Save booking metadata ==========
-            booking_key = make_booking_key(booking_id=booking_id)
             pipe.hset(
                 booking_key,
                 mapping={
@@ -186,16 +177,19 @@ class AtomicReservationExecutor:
                 },
             )
 
-            # ========== Execute pipeline (batch all commands) ==========
-            results = await pipe.execute()
+            # Execute subsection transaction
+            await pipe.execute()
 
-            # ========== Parse statistics from pipeline results ==========
-            # Pipeline order: [BITFIELD×num_seats, JSON.NUMINCRBY×2, JSON.GET, HSET]
-            event_state_idx = (
-                num_seats + 2
-            )  # Skip BITFIELD results + 2 JSON.NUMINCRBY (event-level only)
-            json_state_result = results[event_state_idx]
+            # ========== STEP 2: Update event_state stats (different slot) ==========
+            # event_state_key uses event hash tag: {e:EVENT_ID}
+            # Cannot be in same transaction as subsection keys
+
+            # ========== STEP 3: Fetch updated statistics ==========
+            json_state_result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if not json_state_result:
+                raise DomainError('Failed to fetch updated event_state')
             event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
+            section_id = f'{section}-{subsection}'
             subsection_stats = self._extract_subsection_stats(event_state, section_id)
             event_stats = self._extract_event_stats(event_state)
 
@@ -266,11 +260,10 @@ class AtomicReservationExecutor:
 
         If config is 0 (cache miss upstream), fetches from Kvrocks here.
 
-        Combines find_consecutive_seats (Lua) + execute_atomic_reservation (Pipeline).
+        ATOMIC: Lua script finds AND reserves seats atomically to prevent race conditions.
         """
         tracer = trace.get_tracer(__name__)
-        section_id = f'{section}-{subsection}'
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        bf_key = make_seats_bf_key(event_id=event_id, section=section, subsection=subsection)
 
         with tracer.start_as_current_span(
             'executor.find_and_reserve',
@@ -321,24 +314,93 @@ class AtomicReservationExecutor:
                 }
 
             # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
+            # NOTE: Lua script already reserved seats atomically in bitfield
             lua_data = orjson.loads(lua_result)
             found_seats = lua_data['seats']
 
             # ========== STEP 2: Convert to reservation format ==========
-            seats_to_reserve = [
-                (row, seat_num, seat_index, f'{row}-{seat_num}')
-                for row, seat_num, seat_index in found_seats
-            ]
+            reserved_seats = [f'{row}-{seat_num}' for row, seat_num, _seat_index in found_seats]
+            num_seats = len(reserved_seats)
+            total_price = price * num_seats
 
-            # ========== STEP 3: Execute atomic reservation ==========
-            return await self.execute_atomic_reservation(
-                event_id=event_id,
-                section_id=section_id,
-                booking_id=booking_id,
-                bf_key=bf_key,
-                seats_to_reserve=seats_to_reserve,
-                section_price=price,
+            # ========== STEP 3: Save booking metadata to Kvrocks ==========
+            # (Lua already reserved bitfield, we just save metadata + update stats)
+            event_state_key = make_event_state_key(event_id=event_id)
+            booking_key = make_booking_key(
+                booking_id=booking_id, event_id=event_id, section=section, subsection=subsection
             )
+
+            # Read current stats for sellout tracking
+            result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if result:
+                event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+                current_stats = event_state_dict.get('event_stats', {})
+            else:
+                raise DomainError('event_state cannot be empty')
+
+            current_reserved_count = int(current_stats.get('reserved', 0))
+            current_total_seats = int(current_stats.get('total', 0))
+
+            # Save booking metadata
+            await client.execute_command(
+                'HSET',
+                booking_key,
+                'status',
+                'RESERVE_SUCCESS',
+                'reserved_seats',
+                orjson.dumps(reserved_seats).decode(),
+                'total_price',
+                str(total_price),
+                'config_key',
+                event_state_key,
+            )
+
+            # ========== STEP 4: Update event_state stats ==========
+            await client.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
+            )
+            await client.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats
+            )
+
+            # ========== STEP 5: Fetch updated statistics ==========
+            json_state_result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if not json_state_result:
+                raise DomainError('Failed to fetch updated event_state')
+            event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
+            section_id = f'{section}-{subsection}'
+            subsection_stats = self._extract_subsection_stats(event_state, section_id)
+            event_stats = self._extract_event_stats(event_state)
+
+            # ========== STEP 6: Track sellout timing ==========
+            try:
+                await self._track_first_ticket(
+                    client=client,
+                    event_id=event_id,
+                    current_reserved_count=current_reserved_count,
+                )
+            except Exception as e:
+                Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track first ticket: {e}')
+
+            try:
+                await self._track_all_reserved(
+                    client=client,
+                    event_id=event_id,
+                    new_available_count=event_stats.get('available', 0),
+                    total_seats=current_total_seats,
+                )
+            except Exception as e:
+                Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track full reservation: {e}')
+
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'total_price': total_price,
+                'subsection_stats': subsection_stats,
+                'event_stats': event_stats,
+                'event_state': event_state,
+                'error_message': None,
+            }
 
     async def execute_manual_reservation(
         self,
@@ -348,16 +410,18 @@ class AtomicReservationExecutor:
         subsection: int,
         booking_id: str,
         seat_ids: List[str],
+        cols: int,
+        price: int,
     ) -> Dict:
         """
         Verify and reserve manually selected seats (manual mode).
 
-        Lua script fetches config, validates seats, returns verified data.
-        Then execute_atomic_reservation does the actual reservation.
+        Config (cols, price) is passed as parameters for Redis Cluster compatibility.
+
+        ATOMIC: Lua script verifies AND reserves seats atomically to prevent race conditions.
         """
         tracer = trace.get_tracer(__name__)
-        section_id = f'{section}-{subsection}'
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        bf_key = make_seats_bf_key(event_id=event_id, section=section, subsection=subsection)
 
         with tracer.start_as_current_span(
             'executor.manual_reservation',
@@ -366,14 +430,14 @@ class AtomicReservationExecutor:
             },
         ):
             client = kvrocks_client.get_client()
-            event_state_key = make_event_state_key(event_id=event_id)
 
-            # ========== STEP 1: Verify seats via Lua (fetches config + validates) ==========
+            # ========== STEP 1: Verify seats via Lua (config passed as ARGV) ==========
+            # Note: Only bf_key as KEYS[1] for Redis Cluster compatibility (single slot)
             try:
                 lua_result = await lua_script_executor.verify_manual_seats(
                     client=client,
-                    keys=[bf_key, event_state_key],
-                    args=[str(event_id), section, str(subsection)] + seat_ids,
+                    keys=[bf_key],
+                    args=[str(cols), str(price)] + seat_ids,
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -402,30 +466,99 @@ class AtomicReservationExecutor:
                 }
 
             # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
+            # NOTE: Lua script already reserved seats atomically in bitfield
             lua_data = orjson.loads(lua_result)
             verified_seats = lua_data['seats']
             section_price = lua_data['price']
 
             # ========== STEP 2: Convert to reservation format ==========
-            seats_to_reserve = [
-                (row, seat_num, seat_index, seat_id)
-                for row, seat_num, seat_index, seat_id in verified_seats
-            ]
+            reserved_seats = [seat_id for _row, _seat_num, _seat_index, seat_id in verified_seats]
+            num_seats = len(reserved_seats)
+            total_price = section_price * num_seats
 
-            # ========== STEP 3: Execute atomic reservation ==========
-            return await self.execute_atomic_reservation(
-                event_id=event_id,
-                section_id=section_id,
-                booking_id=booking_id,
-                bf_key=bf_key,
-                seats_to_reserve=seats_to_reserve,
-                section_price=section_price,
+            # ========== STEP 3: Save booking metadata to Kvrocks ==========
+            # (Lua already reserved bitfield, we just save metadata + update stats)
+            event_state_key = make_event_state_key(event_id=event_id)
+            booking_key = make_booking_key(
+                booking_id=booking_id, event_id=event_id, section=section, subsection=subsection
             )
+
+            # Read current stats for sellout tracking
+            result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if result:
+                event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+                current_stats = event_state_dict.get('event_stats', {})
+            else:
+                raise DomainError('event_state cannot be empty')
+
+            current_reserved_count = int(current_stats.get('reserved', 0))
+            current_total_seats = int(current_stats.get('total', 0))
+
+            # Save booking metadata
+            await client.execute_command(
+                'HSET',
+                booking_key,
+                'status',
+                'RESERVE_SUCCESS',
+                'reserved_seats',
+                orjson.dumps(reserved_seats).decode(),
+                'total_price',
+                str(total_price),
+                'config_key',
+                event_state_key,
+            )
+
+            # ========== STEP 4: Update event_state stats ==========
+            await client.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
+            )
+            await client.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats
+            )
+
+            # ========== STEP 5: Fetch updated statistics ==========
+            json_state_result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if not json_state_result:
+                raise DomainError('Failed to fetch updated event_state')
+            event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
+            section_id = f'{section}-{subsection}'
+            subsection_stats = self._extract_subsection_stats(event_state, section_id)
+            event_stats = self._extract_event_stats(event_state)
+
+            # ========== STEP 6: Track sellout timing ==========
+            try:
+                await self._track_first_ticket(
+                    client=client,
+                    event_id=event_id,
+                    current_reserved_count=current_reserved_count,
+                )
+            except Exception as e:
+                Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track first ticket: {e}')
+
+            try:
+                await self._track_all_reserved(
+                    client=client,
+                    event_id=event_id,
+                    new_available_count=event_stats.get('available', 0),
+                    total_seats=current_total_seats,
+                )
+            except Exception as e:
+                Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track full reservation: {e}')
+
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'total_price': total_price,
+                'subsection_stats': subsection_stats,
+                'event_stats': event_stats,
+                'event_state': event_state,
+                'error_message': None,
+            }
 
     @staticmethod
     async def _track_first_ticket(
         *,
-        client: Redis,
+        client: KvrocksClientType,
         event_id: int,
         current_reserved_count: int,
     ) -> None:
@@ -446,7 +579,7 @@ class AtomicReservationExecutor:
     @staticmethod
     async def _track_all_reserved(
         *,
-        client: Redis,
+        client: KvrocksClientType,
         event_id: int,
         new_available_count: int,
         total_seats: int,

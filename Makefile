@@ -57,28 +57,31 @@ rs:  ## 🔄 Restart app services only (keep Kafka/Postgres/Kvrocks running)
 # 🗄️ DATABASE
 # ==============================================================================
 
-.PHONY: migrate-up migrate-down migrate-new migrate-history re-seed psql
-migrate-up:  ## ⬆️ Run database migrations
-	@uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
+# Compose files for management commands
+COMPOSE_FILES := -f docker-compose.yml -f docker-compose.consumers.yml
 
-migrate-down:  ## ⬇️ Rollback one migration
-	@uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
+.PHONY: migrate-up migrate-down migrate-new migrate-history re-seed psql
+migrate-up:  ## ⬆️ Run database migrations (in Docker)
+	@docker compose $(COMPOSE_FILES) run --rm management uv run alembic -c $(ALEMBIC_CONFIG) upgrade head
+
+migrate-down:  ## ⬇️ Rollback one migration (in Docker)
+	@docker compose $(COMPOSE_FILES) run --rm management uv run alembic -c $(ALEMBIC_CONFIG) downgrade -1
 
 migrate-new:  ## ✨ Create new migration (usage: make migrate-new MSG='message')
 	@if [ -z "$(MSG)" ]; then \
 		echo "Error: MSG required. Usage: make migrate-new MSG='your message'"; \
 		exit 1; \
 	fi
-	@uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
+	@docker compose $(COMPOSE_FILES) run --rm management uv run alembic -c $(ALEMBIC_CONFIG) revision --autogenerate -m "$(MSG)"
 
 migrate-history:  ## 📜 Show migration history
-	@uv run alembic -c $(ALEMBIC_CONFIG) history
+	@docker compose $(COMPOSE_FILES) run --rm management uv run alembic -c $(ALEMBIC_CONFIG) history
 
-re-seed:  ## 🔄 Reset and re-seed database (default: 500 seats, usage: make re-seed SEATS=5k)
+re-seed:  ## 🔄 Reset and re-seed database in Docker (default: 500 seats, usage: make re-seed SEATS=5k)
 	@echo "🗑️  Resetting database..."
-	@uv run python -m script.reset_database
+	@docker compose $(COMPOSE_FILES) run --rm management uv run python -m script.reset_database
 	@echo "🌱 Seeding database with SEATS=$(SEATS)..."
-	@SEATS=$(SEATS) uv run python -m script.seed_data
+	@docker compose $(COMPOSE_FILES) run --rm -e SEATS=$(SEATS) management uv run python -m script.seed_data
 	@echo "✅ Database reset and seeded successfully"
 
 re-seed-500:  ## 🔄 Reset and seed with 500 seats

@@ -61,8 +61,10 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
 
-      # Kvrocks
-      KVROCKS_HOST: kvrocks
+      # KVRocks Cluster (all services run in Docker network)
+      KVROCKS_CLUSTER_MODE: "true"
+      KVROCKS_CLUSTER_NODES: "kvrocks-1:6666,kvrocks-2:6666,kvrocks-3:6666,kvrocks-4:6666"
+      KVROCKS_HOST: kvrocks-1
       KVROCKS_PORT: "6666"
 
       # Kafka
@@ -90,8 +92,8 @@ services:
         condition: service_started
       kafka3:
         condition: service_started
-      kvrocks:
-        condition: service_started
+      kvrocks-init:
+        condition: service_completed_successfully
       jaeger:
         condition: service_healthy
     networks:
@@ -149,8 +151,10 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       TZ: "Asia/Taipei"
 
-      # Kvrocks (for booking metadata storage)
-      KVROCKS_HOST: kvrocks
+      # KVRocks Cluster (all services run in Docker network)
+      KVROCKS_CLUSTER_MODE: "true"
+      KVROCKS_CLUSTER_NODES: "kvrocks-1:6666,kvrocks-2:6666,kvrocks-3:6666,kvrocks-4:6666"
+      KVROCKS_HOST: kvrocks-1
       KVROCKS_PORT: "6666"
 
       # Kafka
@@ -175,8 +179,8 @@ services:
         condition: service_started
       kafka3:
         condition: service_started
-      kvrocks:
-        condition: service_started
+      kvrocks-init:
+        condition: service_completed_successfully
       jaeger:
         condition: service_healthy
     networks:

@@ -53,7 +53,9 @@ class ReleaseExecutor:
 
             cols = config_cache[section_id]
             seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
-            bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+            bf_key = make_seats_bf_key(
+                event_id=event_id, section=section, subsection=int(subsection)
+            )
             offset = seat_index * 2
 
             # Set to AVAILABLE (00)

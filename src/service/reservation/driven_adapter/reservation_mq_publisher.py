@@ -14,6 +14,7 @@ from typing import List
 
 import attrs
 
+from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.event_publisher import publish_domain_event
 from src.platform.message_queue.kafka_constant_builder import KafkaTopicBuilder
@@ -58,6 +59,17 @@ class SeatReservationFailedEvent:
 
 
 class SeatReservationEventPublisher(ISeatReservationEventPublisher):
+    def __init__(self) -> None:
+        self.total_partitions = settings.KAFKA_TOTAL_PARTITIONS
+
+    def _calculate_partition(
+        self, *, section: str, subsection: int, subsections_per_section: int = 10
+    ) -> int:
+        """Calculate partition based on section-subsection for even distribution."""
+        section_index = ord(section.upper()) - ord('A')
+        global_index = section_index * subsections_per_section + (subsection - 1)
+        return global_index % self.total_partitions
+
     async def publish_seats_reserved(
         self,
         *,
@@ -85,16 +97,21 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             event_stats=event_stats,
         )
 
+        partition = self._calculate_partition(section=section, subsection=subsection)
+        partition_key = f'{event_id}:{section}-{subsection}'
+
         await publish_domain_event(
             event=event,
             topic=KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
                 event_id=event_id
             ),
-            partition_key=str(booking_id),
+            partition_key=partition_key,
+            partition=partition,
         )
 
         Logger.base.info(
-            '\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved event published successfully\033[0m'
+            f'\033[94m✅ [SEAT-RESERVATION Publisher] SeatsReserved event published '
+            f'partition={partition}\033[0m'
         )
 
     async def publish_reservation_failed(
@@ -122,12 +139,17 @@ class SeatReservationEventPublisher(ISeatReservationEventPublisher):
             error_message=error_message,
         )
 
+        partition = self._calculate_partition(section=section, subsection=subsection)
+        partition_key = f'{event_id}:{section}-{subsection}'
+
         await publish_domain_event(
             event=event,
             topic=KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
-            partition_key=str(booking_id),
+            partition_key=partition_key,
+            partition=partition,
         )
 
         Logger.base.info(
-            '\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed event published\033[0m'
+            f'\033[91m❌ [SEAT-RESERVATION Publisher] ReservationFailed event published '
+            f'partition={partition}\033[0m'
         )

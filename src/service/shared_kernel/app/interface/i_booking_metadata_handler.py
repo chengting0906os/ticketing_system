@@ -32,9 +32,12 @@ class IBookingMetadataHandler(ABC):
         quantity: int,
         seat_selection_mode: str,
         seat_positions: list[str],
-    ) -> None:
+    ) -> bool:
         """
-        Save booking metadata to Kvrocks.
+        Save booking metadata to Kvrocks (idempotent).
+
+        Uses atomic HSETNX to prevent duplicate processing.
+        If booking already exists, returns False without modifying existing data.
 
         Args:
             booking_id: UUID7 booking identifier
@@ -45,6 +48,9 @@ class IBookingMetadataHandler(ABC):
             quantity: Number of seats to reserve
             seat_selection_mode: 'manual' or 'best_available'
             seat_positions: List of seat positions (for manual mode)
+
+        Returns:
+            True if newly created, False if already exists (idempotency protection)
 
         Raises:
             StateError: If save operation fails
