@@ -1,19 +1,20 @@
 """
 Domain Event Publisher
 
-High-performance event publishing using confluent-kafka directly.
+High-performance event publishing using confluent-kafka's experimental AsyncIO Producer.
 Uses Protocol Buffers for efficient serialization.
 
 Features:
-- Global producer instance for connection reuse
+- Global async producer instance for connection reuse
 - Idempotent producer with acks=all for reliability
 - Batching with linger.ms=50 for throughput
 - Snappy compression
+- True async - doesn't block event loop
 """
 
 from typing import Literal
 
-from confluent_kafka import Producer
+from confluent_kafka.experimental.aio import AIOProducer
 from opentelemetry import trace
 
 from src.platform.config.core_setting import settings
@@ -23,15 +24,15 @@ from src.platform.observability.tracing import inject_trace_context
 from src.service.shared_kernel.domain.domain_event import MqDomainEvent
 
 
-# Global producer instance
-_global_producer: Producer | None = None
+# Global async producer instance
+_global_producer: AIOProducer | None = None
 
 
-def _get_global_producer() -> Producer:
-    """Get global producer instance - avoid creating new producer on every publish"""
+async def _get_global_producer() -> AIOProducer:
+    """Get global async producer instance - avoid creating new producer on every publish"""
     global _global_producer
     if _global_producer is None:
-        _global_producer = Producer(
+        _global_producer = AIOProducer(
             {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
                 # === Reliability Settings ===
@@ -57,7 +58,7 @@ async def publish_domain_event(
     partition: int,
 ) -> Literal[True]:
     """
-    Publish domain event to Kafka topic.
+    Publish domain event to Kafka topic (async, non-blocking).
 
     Args:
         event: Domain event to publish
@@ -90,36 +91,28 @@ async def publish_domain_event(
         # Serialize protobuf to bytes
         value_bytes = proto_msg.SerializeToString()
 
-        # Get producer and send
-        producer = _get_global_producer()
-        producer.produce(
-            topic=topic,
-            value=value_bytes,
-            partition=partition,
-        )
-        producer.poll(0)  # Trigger delivery callbacks (non-blocking)
+        # Get async producer and send (fire-and-forget)
+        producer = await _get_global_producer()
+        # produce() returns a coroutine that yields a Future
+        # We don't await the Future to keep it fire-and-forget
+        await producer.produce(topic=topic, value=value_bytes, partition=partition)
 
         Logger.base.info(f'Published {event.__class__.__name__} to {topic} (partition={partition})')
 
         return True
 
 
-def flush_all_messages(timeout: float = 10.0) -> int:
-    """
-    Flush all pending messages.
+async def flush_all_messages() -> None:
+    global _global_producer
+    if _global_producer is not None:
+        await _global_producer.flush()
+        Logger.base.info('Flushed async producer')
 
-    Returns:
-        Number of messages still pending after timeout
 
-    Example:
-        # In FastAPI shutdown event
-        @app.on_event("shutdown")
-        async def shutdown_event():
-            remaining = flush_all_messages(timeout=5.0)
-            if remaining > 0:
-                logger.warning(f"{remaining} messages not delivered")
-    """
-    producer = _get_global_producer()
-    remaining = producer.flush(timeout=timeout)
-    Logger.base.info(f'Flushed producer, {remaining} messages remaining')
-    return remaining
+async def close_producer() -> None:
+    global _global_producer
+    if _global_producer is not None:
+        await _global_producer.flush()
+        await _global_producer.close()
+        _global_producer = None
+        Logger.base.info('Closed async producer')

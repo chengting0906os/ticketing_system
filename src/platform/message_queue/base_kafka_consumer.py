@@ -1,19 +1,27 @@
-from abc import ABC, abstractmethod
-from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime, timezone
-from threading import Event
-import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+"""
+Base Kafka Consumer using AIOConsumer (experimental)
 
-from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer, TopicPartition
+Fully async consumer that runs in the same event loop as FastAPI.
+Uses anyio.create_task_group for parallel message processing.
+
+Key differences from sync version:
+- No ThreadPoolExecutor needed (uses async tasks)
+- No BlockingPortal needed (same event loop)
+- Handlers must be async
+"""
+
+from abc import ABC, abstractmethod
+import time
+from typing import Any, Awaitable, Callable, Dict, Optional
+
+import anyio
+from anyio import CancelScope, create_task_group
+from confluent_kafka import KafkaError, KafkaException, Message, TopicPartition
+from confluent_kafka.experimental.aio import AIOConsumer, AIOProducer
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
 from opentelemetry import trace
 import orjson
-
-
-if TYPE_CHECKING:
-    from anyio.from_thread import BlockingPortal
 
 from src.platform.config.core_setting import KafkaConfig, settings
 from src.platform.logging.loguru_io import Logger
@@ -21,35 +29,39 @@ from src.platform.observability.tracing import extract_trace_context
 
 
 class BaseKafkaConsumer(ABC):
-    # === Tuning Parameters (subclasses can override) ===
-    #
-    # POLL_TIMEOUT_SECONDS: Max time poll() waits for messages
-    #   - Default: 0.05s (50ms)
-    #   - Too long → high latency; Too short → CPU spin
-    #
-    # COMMIT_INTERVAL_SECONDS: How often to batch commit offsets
-    #   - Default: 0.1s (100ms)
-    #   - Too long → more reprocessing on restart; Too short → broker overhead
-    #
-    # MAX_WORKERS: ThreadPool concurrent worker count
-    #   - Default: 4
-    #   - Adjust based on CPU cores and IO intensity
-    #
-    # MAX_PENDING_COMMITS: Force commit after this many messages
-    #   - Default: 100
-    #   - Works with COMMIT_INTERVAL_SECONDS to control commit frequency
-    #
-    POLL_TIMEOUT_SECONDS: float = 0.05
-    COMMIT_INTERVAL_SECONDS: float = 0.1
-    MAX_WORKERS: int = 4
+    """
+    Async Kafka Consumer base class.
+
+    Tuning Parameters (subclasses can override):
+
+    POLL_TIMEOUT_SECONDS: Max time poll() waits for messages
+      - Default: 0.1s (100ms)
+      - Too long → high latency; Too short → CPU spin
+
+    COMMIT_INTERVAL_SECONDS: How often to batch commit offsets
+      - Default: 0.5s (500ms)
+      - Too long → more reprocessing on restart; Too short → broker overhead
+
+    MAX_CONCURRENT_TASKS: Max concurrent message processing tasks
+      - Default: 10
+      - Adjust based on CPU cores and IO intensity
+
+    MAX_PENDING_COMMITS: Force commit after this many messages
+      - Default: 100
+      - Works with COMMIT_INTERVAL_SECONDS to control commit frequency
+    """
+
+    POLL_TIMEOUT_SECONDS: float = 0.1
+    COMMIT_INTERVAL_SECONDS: float = 0.5
+    MAX_CONCURRENT_TASKS: int = 1
     MAX_PENDING_COMMITS: int = 100
 
     def __init__(
         self,
         *,
         service_name: str,
-        consumer_group_id: str,
         event_id: int,
+        consumer_group_id: str,
         dlq_topic: str,
     ) -> None:
         self.service_name = service_name
@@ -59,33 +71,34 @@ class BaseKafkaConsumer(ABC):
         self.instance_id = settings.KAFKA_CONSUMER_INSTANCE_ID
         self.kafka_config = KafkaConfig(event_id=event_id, service=service_name)
 
-        # Kafka clients
-        self.consumer: Optional[Consumer] = None
-        self.producer: Optional[Producer] = None  # For sending to DLQ
-        self.executor: Optional[ThreadPoolExecutor] = None
-        self.portal: Optional['BlockingPortal'] = None  # anyio cross-thread bridge
+        # Kafka clients (async)
+        self.consumer: Optional[AIOConsumer] = None
+        self.producer: Optional[AIOProducer] = None  # For sending to DLQ
         self.tracer = trace.get_tracer(__name__)
 
         # Running state control
         self.running = False
-        self.stop_event = Event()
-        # Offset tracking (for batch commit) # Structure: { topic_name: { partition_id: next_offset_to_commit } }
+        self._cancel_scope: Optional[CancelScope] = None
+
+        # Offset tracking (for batch commit)
+        # Structure: { topic_name: { partition_id: next_offset_to_commit } }
         self._pending_offsets: Dict[str, Dict[int, int]] = {}
         self._pending_count = 0  # Messages pending commit
         self._last_commit_time = time.monotonic()
-        self._in_flight_futures: List[Future] = []  # Track in-flight tasks (for graceful shutdown)
 
-    def set_portal(self, portal: 'BlockingPortal') -> None:
-        self.portal = portal
+        # Semaphore to limit concurrent tasks
+        self._semaphore: Optional[anyio.Semaphore] = None
 
     @abstractmethod
-    def _get_topic_handlers(self) -> Dict[str, tuple[type, Callable[[Dict], Any]]]:
+    def _get_topic_handlers(
+        self,
+    ) -> Dict[str, tuple[type, Callable[[Dict], Awaitable[Any]]]]:
         """
-        Return topic name to handler mapping.
+        Return topic name to async handler mapping.
 
         Returns:
             {
-                'topic-name': (ProtobufClass, handler_function),
+                'topic-name': (ProtobufClass, async_handler_function),
                 ...
             }
 
@@ -94,17 +107,19 @@ class BaseKafkaConsumer(ABC):
                 'booking-created': (pb.BookingCreatedEvent, self._handle_booking_created),
                 'booking-cancelled': (pb.BookingCancelledEvent, self._handle_cancelled),
             }
+
+        Note: Handlers MUST be async functions.
         """
         pass
 
     @abstractmethod
-    def _initialize_dependencies(self) -> None:
+    async def _initialize_dependencies(self) -> None:
         """Initialize use cases and dependencies before consumer starts."""
         pass
 
-    def _create_consumer(self) -> Consumer:
+    def _create_consumer(self) -> AIOConsumer:
         """
-        Create Kafka Consumer with optimized settings.
+        Create async Kafka Consumer with optimized settings.
 
         Key settings explained:
         - group.id: Consumer group name, consumers in same group share topic
@@ -134,13 +149,14 @@ class BaseKafkaConsumer(ABC):
         for key, value in extra_config.items():
             base_config[key] = value
 
-        return Consumer(base_config)
+        return AIOConsumer(base_config)
 
-    def _create_producer(self) -> Producer:
-        return Producer(
+    def _create_producer(self) -> AIOProducer:
+        """Create async producer for DLQ."""
+        return AIOProducer(
             {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
-                'acks': 'all',  # Wait for all replicas to acknowledge
+                'acks': 'all',
                 'retries': 3,
             }
         )
@@ -150,7 +166,7 @@ class BaseKafkaConsumer(ABC):
         proto_msg.ParseFromString(msg.value())
         return MessageToDict(proto_msg, preserving_proto_field_name=True)
 
-    def _send_to_dlq(
+    async def _send_to_dlq(
         self,
         *,
         message: Dict,
@@ -158,6 +174,7 @@ class BaseKafkaConsumer(ABC):
         error: str,
         retry_count: int = 0,
     ) -> None:
+        """Send failed message to Dead Letter Queue (async)."""
         if not self.producer:
             Logger.base.error('DLQ producer not initialized')
             return
@@ -172,12 +189,11 @@ class BaseKafkaConsumer(ABC):
                 'instance_id': self.instance_id,
             }
 
-            self.producer.produce(
+            await self.producer.produce(
                 topic=self.dlq_topic,
                 key=str(message.get('booking_id', 'unknown')).encode('utf-8'),
                 value=orjson.dumps(dlq_message),
             )
-            self.producer.poll(0)
 
             Logger.base.warning(f'[DLQ] Sent: {message.get("booking_id")} - {error}')
 
@@ -201,9 +217,9 @@ class BaseKafkaConsumer(ABC):
             self._pending_offsets[topic][partition] = offset
             self._pending_count += 1
 
-    def _maybe_commit_offsets(self, *, force: bool = False) -> None:
+    async def _maybe_commit_offsets(self, *, force: bool = False) -> None:
         """
-        Batch commit offsets.
+        Batch commit offsets (async).
 
         Why batch? Committing every message = network round-trip overhead.
         Batch commit reduces broker load.
@@ -233,7 +249,7 @@ class BaseKafkaConsumer(ABC):
             ]
 
             if offsets_to_commit and self.consumer:
-                self.consumer.commit(offsets=offsets_to_commit, asynchronous=False)
+                await self.consumer.commit(offsets=offsets_to_commit, asynchronous=False)
                 Logger.base.debug(f'[{self.service_name}] Committed {self._pending_count} offsets')
 
             self._pending_offsets.clear()
@@ -243,27 +259,20 @@ class BaseKafkaConsumer(ABC):
         except Exception as e:
             Logger.base.error(f'[{self.service_name}] Commit failed: {e}')
 
-    def _process_message(
+    async def _process_message(
         self,
         msg: Message,
         proto_class: type,
-        handler: Callable[[Dict], Any],
+        handler: Callable[[Dict], Awaitable[Any]],
         topic: str,
     ) -> None:
         """
-        Process message in ThreadPool.
+        Process message asynchronously.
 
-        Flow: deserialize → extract trace → call handler → track offset
+        Flow: deserialize → extract trace → call async handler → track offset
         On error → send to DLQ
         """
         try:
-            # Log slow messages (>100ms from produce to consume)
-            ts = msg.timestamp()
-            if ts and ts[0] == 1:  # CreateTime
-                age_ms = int(datetime.now(timezone.utc).timestamp() * 1000) - ts[1]
-                if age_ms > 100:
-                    Logger.base.warning(f'[SLOW] {topic} p={msg.partition()} age={age_ms}ms')
-
             data = self._deserialize_protobuf(msg, proto_class)
 
             extract_trace_context(
@@ -281,7 +290,7 @@ class BaseKafkaConsumer(ABC):
                     'booking.id': data.get('booking_id', 'unknown'),
                 },
             ):
-                handler(data)
+                await handler(data)  # Async handler
                 self._track_offset(msg)
 
         except Exception as e:
@@ -292,35 +301,46 @@ class BaseKafkaConsumer(ABC):
             except Exception:
                 data = {'raw': msg.value().hex() if msg.value() else 'empty'}
 
-            self._send_to_dlq(message=data, original_topic=topic, error=str(e))
+            await self._send_to_dlq(message=data, original_topic=topic, error=str(e))
             self._track_offset(msg)  # Still track to avoid reprocessing
 
-    def start(self) -> None:
-        """Start consumer with retry for topic creation."""
+    async def _process_with_semaphore(
+        self,
+        msg: Message,
+        proto_class: type,
+        handler: Callable[[Dict], Awaitable[Any]],
+        topic: str,
+    ) -> None:
+        """Process message with semaphore-limited concurrency."""
+        assert self._semaphore is not None
+        async with self._semaphore:
+            await self._process_message(msg, proto_class, handler, topic)
+
+    async def start(self) -> None:
+        """Start async consumer with retry for topic creation."""
         max_retries, delay = 5, 2
 
         for attempt in range(1, max_retries + 1):
             try:
-                self._initialize_dependencies()
-                self.consumer = self._create_consumer()
-                self.producer = self._create_producer()
+                await self._initialize_dependencies()
 
                 handlers = self._get_topic_handlers()
-                self.consumer.subscribe(list(handlers.keys()))
+                topics = list(handlers.keys())
+
+                self.consumer = self._create_consumer()
+                self.producer = self._create_producer()
+                self._semaphore = anyio.Semaphore(self.MAX_CONCURRENT_TASKS)
+
+                await self.consumer.subscribe(topics)
 
                 Logger.base.info(
-                    f'[{self.service_name}-{self.instance_id}] Started | '
+                    f'[{self.service_name}] Started async consumer: '
                     f'event={self.event_id} group={self.consumer_group_id} '
-                    f'topics={list(handlers.keys())} workers={self.MAX_WORKERS}'
-                )
-
-                self.executor = ThreadPoolExecutor(
-                    max_workers=self.MAX_WORKERS,
-                    thread_name_prefix=f'{self.service_name}-worker',
+                    f'topics={topics} max_tasks={self.MAX_CONCURRENT_TASKS}'
                 )
 
                 self.running = True
-                self._run_loop(handlers)
+                await self._run_loop(handlers)
                 break
 
             except KafkaException as e:
@@ -328,97 +348,90 @@ class BaseKafkaConsumer(ABC):
                     Logger.base.warning(
                         f'[{self.service_name}] {attempt}/{max_retries}: Topic not ready, retry in {delay}s'
                     )
-                    time.sleep(delay)
+                    await anyio.sleep(delay)
                     delay *= 2
                 else:
                     Logger.base.error(f'[{self.service_name}] Start failed: {e}')
                     raise
 
-    def _run_loop(self, handlers: Dict[str, tuple[type, Callable[[Dict], Any]]]) -> None:
+    async def _run_loop(
+        self, handlers: Dict[str, tuple[type, Callable[[Dict], Awaitable[Any]]]]
+    ) -> None:
         """
-        Main consumer loop.
+        Main async consumer loop.
 
-        1. poll() fetches next message (non-blocking, max POLL_TIMEOUT_SECONDS)
+        1. poll() fetches next message (async, max POLL_TIMEOUT_SECONDS)
         2. No message → check if commit needed
-        3. Has message → submit to ThreadPool for parallel processing
+        3. Has message → spawn task for parallel processing (limited by semaphore)
         """
-        while self.running and not self.stop_event.is_set():
-            try:
-                msg = self.consumer.poll(timeout=self.POLL_TIMEOUT_SECONDS)
+        async with create_task_group() as tg:
+            self._cancel_scope = tg.cancel_scope
 
-                if msg is None:
-                    self._maybe_commit_offsets()
-                    self._in_flight_futures = [f for f in self._in_flight_futures if not f.done()]
-                    continue
+            while self.running:
+                try:
+                    msg = await self.consumer.poll(timeout=self.POLL_TIMEOUT_SECONDS)
 
-                if msg.error():
-                    if msg.error().code() != KafkaError._PARTITION_EOF:
-                        Logger.base.error(f'[{self.service_name}] Kafka error: {msg.error()}')
-                    continue
+                    if msg is None:
+                        await self._maybe_commit_offsets()
+                        continue
 
-                topic = msg.topic()
-                if topic not in handlers:
-                    continue
+                    if msg.error():
+                        if msg.error().code() != KafkaError._PARTITION_EOF:
+                            Logger.base.error(f'[{self.service_name}] Kafka error: {msg.error()}')
+                        continue
 
-                proto_class, handler = handlers[topic]
-                future = self.executor.submit(
-                    self._process_message, msg, proto_class, handler, topic
-                )
-                self._in_flight_futures.append(future)
+                    topic = msg.topic()
+                    if topic not in handlers:
+                        continue
 
-                self._maybe_commit_offsets()
+                    proto_class, handler = handlers[topic]
 
-            except Exception as e:
-                Logger.base.error(f'[{self.service_name}] Loop error: {e}')
-                time.sleep(0.1)
+                    # Spawn task with semaphore to limit concurrency
+                    tg.start_soon(self._process_with_semaphore, msg, proto_class, handler, topic)
 
-    def stop(self) -> None:
+                    await self._maybe_commit_offsets()
+
+                except Exception as e:
+                    if not self.running:
+                        break
+                    Logger.base.error(f'[{self.service_name}] Loop error: {e}')
+                    await anyio.sleep(0.1)
+
+    async def stop(self) -> None:
         """
-        Graceful shutdown.
+        Graceful async shutdown.
 
         Steps:
         1. Set stop flag
-        2. Wait for in-flight messages to complete
+        2. Cancel task group (waits for in-flight tasks)
         3. Final offset commit
-        4. Shutdown ThreadPool
-        5. Close Kafka consumer (triggers rebalance)
-        6. Flush DLQ producer
+        4. Close Kafka consumer
+        5. Close DLQ producer
         """
         if not self.running:
             return
 
-        Logger.base.info(f'[{self.service_name}] Stopping...')
+        Logger.base.info(f'[{self.service_name}] Stopping async consumer...')
 
         self.running = False
-        self.stop_event.set()
 
-        # Wait for in-flight messages
-        if self._in_flight_futures:
-            Logger.base.info(
-                f'[{self.service_name}] Waiting for {len(self._in_flight_futures)} in-flight messages'
-            )
-            for future in self._in_flight_futures:
-                try:
-                    future.result(timeout=5.0)
-                except Exception as e:
-                    Logger.base.warning(f'[{self.service_name}] Future error: {e}')
+        # Cancel task group to stop accepting new tasks
+        if self._cancel_scope:
+            self._cancel_scope.cancel()
 
         # Final commit
-        self._maybe_commit_offsets(force=True)
+        await self._maybe_commit_offsets(force=True)
 
-        # Shutdown ThreadPool
-        if self.executor:
-            self.executor.shutdown(wait=True, cancel_futures=False)
-
-        # Close consumer (triggers rebalance, other consumers take over partitions)
+        # Close consumer
         if self.consumer:
             try:
-                self.consumer.close()
+                await self.consumer.close()
             except Exception as e:
                 Logger.base.warning(f'[{self.service_name}] Close error: {e}')
 
-        # Flush DLQ producer
+        # Close DLQ producer
         if self.producer:
-            self.producer.flush(timeout=5.0)
+            await self.producer.flush()
+            await self.producer.close()
 
-        Logger.base.info(f'[{self.service_name}] Stopped')
+        Logger.base.info(f'[{self.service_name}] Async consumer stopped')
