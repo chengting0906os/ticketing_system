@@ -42,7 +42,8 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
-        topic = KafkaTopicBuilder.ticketing_to_booking_create_metadata(event_id=event.event_id)
+        # NOTE: booking-service was removed, publish directly to reservation-service
+        topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(event_id=event.event_id)
 
         # Calculate partition explicitly to avoid hash collision hotspots
         partition = self._calculate_partition(
@@ -59,7 +60,7 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
-        topic = KafkaTopicBuilder.ticket_reserved_to_paid(event_id=event.event_id)
+        topic = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event.event_id)
 
         partition = self._calculate_partition(
             section=event.section,
@@ -75,7 +76,9 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_cancelled(self, *, event: BookingCancelledEvent) -> None:
-        topic = KafkaTopicBuilder.ticket_release_seats(event_id=event.event_id)
+        topic = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
+            event_id=event.event_id
+        )
 
         partition = self._calculate_partition(
             section=event.section,

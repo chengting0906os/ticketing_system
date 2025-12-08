@@ -1,17 +1,19 @@
 """
-Standalone Booking Service Consumer Entry Point
+Standalone Booking Service Consumer Entry Point (Async)
 
 Usage:
     PYTHONPATH=$PWD uv run python src/service/booking/driving_adapter/mq_consumer/start_booking_consumer.py
+
+Uses confluent-kafka experimental AIOConsumer for fully async message processing.
 """
 
 import os
 import signal
-import types
 
-from anyio.from_thread import start_blocking_portal
+import anyio
 
 from src.platform.logging.loguru_io import Logger
+from src.platform.message_queue.event_publisher import close_producer
 from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -20,7 +22,8 @@ from src.service.booking.driving_adapter.mq_consumer.booking_mq_consumer import 
 )
 
 
-def main() -> None:
+async def main() -> None:
+    """Main async entry point for Booking Service Consumer."""
     Logger.base.info('🚀 [Booking Service Consumer] Starting...')
 
     # Setup OpenTelemetry tracing
@@ -36,46 +39,64 @@ def main() -> None:
     topic_initializer.ensure_topics_exist(event_id=event_id)
     Logger.base.info(f'📝 [Booking Service Consumer] Topics ensured for EVENT_ID={event_id}')
 
+    # Initialize Kvrocks
+    try:
+        await kvrocks_client.initialize()
+        Logger.base.info('📡 [Booking Service Consumer] Kvrocks initialized')
+    except Exception as e:
+        Logger.base.error(f'❌ [Booking Service Consumer] Failed to initialize Kvrocks: {e}')
+        raise
+
     consumer = BookingConsumer()
 
-    def run_with_portal() -> None:
-        """Run consumer in thread with BlockingPortal for async-to-sync calls"""
-        with start_blocking_portal() as portal:
-            consumer.set_portal(portal)
+    # Setup signal handlers for graceful shutdown
+    shutdown_event = anyio.Event()
 
-            # Initialize Kvrocks for consumer event loop
-            try:
-                portal.call(kvrocks_client.initialize)  # type: ignore
-                Logger.base.info('📡 [Booking Service Consumer] Kvrocks initialized')
-            except Exception as e:
-                Logger.base.error(
-                    f'❌ [Booking Service Consumer] Failed to initialize Kvrocks: {e}'
-                )
-                raise
+    def shutdown_handler(signum: int) -> None:
+        Logger.base.info(f'🛑 [Booking Service Consumer] Received signal {signum}')
+        shutdown_event.set()
 
-            # Setup signal handlers
-            def shutdown_handler(signum: int, frame: types.FrameType | None) -> None:
-                Logger.base.info(f'🛑 [Booking Service Consumer] Received signal {signum}')
-                consumer.running = False
+    try:
+        # Register signal handlers
+        with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
 
-            signal.signal(signal.SIGINT, shutdown_handler)
-            signal.signal(signal.SIGTERM, shutdown_handler)
+            async def signal_watcher() -> None:
+                async for signum in signals:
+                    shutdown_handler(signum)
+                    break
 
-            try:
-                Logger.base.info('✅ [Booking Service Consumer] Starting consumer...')
-                consumer.start()
-            finally:
-                try:
-                    portal.call(kvrocks_client.disconnect)  # type: ignore
-                    Logger.base.info('📡 [Booking Service Consumer] Kvrocks disconnected')
-                except Exception:
-                    pass
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(signal_watcher)  # type: ignore[arg-type]
+                tg.start_soon(consumer.start)  # type: ignore[arg-type]
 
-                tracing.shutdown()
-                Logger.base.info('📊 [Booking Service Consumer] Tracing shutdown complete')
+                # Wait for shutdown signal
+                await shutdown_event.wait()
 
-    run_with_portal()
+                # Stop consumer gracefully
+                Logger.base.info('🛑 [Booking Service Consumer] Initiating graceful shutdown...')
+                await consumer.stop()
+                tg.cancel_scope.cancel()
+
+    finally:
+        # Close Kafka producer
+        try:
+            await close_producer()
+            Logger.base.info('📤 [Booking Service Consumer] Kafka producer closed')
+        except Exception as e:
+            Logger.base.warning(f'⚠️ [Booking Service Consumer] Error closing producer: {e}')
+
+        # Disconnect Kvrocks
+        try:
+            await kvrocks_client.disconnect()
+            Logger.base.info('📡 [Booking Service Consumer] Kvrocks disconnected')
+        except Exception:
+            pass
+
+        # Shutdown tracing
+        tracing.shutdown()
+        Logger.base.info('📊 [Booking Service Consumer] Tracing shutdown complete')
+        Logger.base.info('👋 [Booking Service Consumer] Shutdown complete')
 
 
 if __name__ == '__main__':
-    main()
+    anyio.run(main)  # type: ignore[arg-type]

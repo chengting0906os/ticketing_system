@@ -18,20 +18,19 @@ from src.service.ticketing.domain.entity.booking_entity import Booking
 
 class CreateBookingUseCase:
     """
-    Create booking use case - Simplified flow (Ticketing → Booking → Reservation)
+    Create booking use case - Direct flow (Ticketing → Reservation)
 
-    Flow (Simplified):
+    Flow:
     1. Generate UUID7 booking_id
     2. Validate seat availability (Fail Fast)
-    3. Publish event to Booking Service (Kafka)
+    3. Publish event directly to Reservation Service (Kafka)
     4. Return booking_id immediately to frontend (can start SSE subscription)
 
-    Downstream Services:
-    - Booking Service: Receives event → saves metadata to Kvrocks → publishes to Reservation
+    Downstream:
     - Reservation Service: Reserves seats in Kvrocks → writes to PostgreSQL → SSE broadcast
 
     Dependencies:
-    - event_publisher: For publishing domain events to Booking Service
+    - event_publisher: For publishing domain events to Reservation Service
     - seat_availability_handler: For checking seat availability (Fail Fast)
     """
 
@@ -74,16 +73,15 @@ class CreateBookingUseCase:
         quantity: int,
     ) -> Booking:
         """
-        Create booking - Simplified flow (Ticketing → Booking → Reservation)
+        Create booking - Direct flow (Ticketing → Reservation)
 
         Flow:
         1. Generate UUID7 as booking_id
         2. Validate seat availability (Fail Fast)
-        3. Publish BookingCreated event to Booking Service
+        3. Publish BookingCreated event directly to Reservation Service
         4. Return booking with UUID7 id (frontend can start SSE subscription)
 
-        Downstream processing:
-        - Booking Service: saves metadata → publishes to Reservation Service
+        Downstream:
         - Reservation Service: reserves seats → writes to PostgreSQL → SSE broadcast
 
         Args:
@@ -150,7 +148,7 @@ class CreateBookingUseCase:
 
             await self.event_publisher.publish_booking_created(event=booking_created_event)
             Logger.base.info(
-                f'🚀 [TICKETING→BOOKING] Published BookingCreated event for {booking_id_str}'
+                f'🚀 [TICKETING→RESERVATION] Published BookingCreated event for {booking_id_str}'
             )
 
             # Step 4: Return booking (downstream services handle metadata + reservation + PostgreSQL)
