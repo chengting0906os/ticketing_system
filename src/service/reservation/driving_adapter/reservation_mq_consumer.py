@@ -3,15 +3,15 @@ Seat Reservation Consumer - Seat Selection Router
 Responsibility: Manage Kvrocks seat state and handle reservation requests
 
 Features:
-- Multi-threaded concurrent processing via confluent-kafka
+- Fully async concurrent processing via AIOConsumer
 - Retry mechanism: Exponential backoff
 - Dead Letter Queue: Failed messages sent to DLQ
 
-Uses confluent-kafka for high-performance concurrent message processing.
+Uses confluent-kafka experimental AIOConsumer for async message processing.
 """
 
 import os
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 import orjson
 
@@ -36,11 +36,11 @@ class SeatReservationConsumer(BaseKafkaConsumer):
     Seat Reservation Consumer - Stateless Router
 
     Listens to 3 Topics:
-    1. ticket_reserving_request_to_reserved_in_kvrocks - Reservation requests
+    1. booking_to_reservation_reserve_seats - Reservation requests
     2. release_ticket_status_to_available_in_kvrocks - Release seats
     3. finalize_ticket_status_to_paid_in_kvrocks - Finalize payment
 
-    Uses confluent-kafka with ThreadPoolExecutor for concurrent message processing.
+    Uses confluent-kafka AIOConsumer for async message processing.
     """
 
     def __init__(self) -> None:
@@ -74,12 +74,16 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             event_id=event_id
         )
 
-    def _initialize_dependencies(self) -> None:
+    async def _initialize_dependencies(self) -> None:
+        """Initialize use cases from DI container."""
         self.reserve_seats_use_case = container.reserve_seats_use_case()
         self.release_seat_use_case = container.release_seat_use_case()
         self.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
 
-    def _get_topic_handlers(self) -> Dict[str, tuple[type, Callable[[Dict], Any]]]:
+    def _get_topic_handlers(
+        self,
+    ) -> Dict[str, tuple[type, Callable[[Dict], Awaitable[Any]]]]:
+        """Return topic to async handler mapping."""
         return {
             self.reservation_topic: (
                 pb.ReservationRequestEvent,
@@ -95,19 +99,21 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             ),
         }
 
-    # ========== Message Handlers ==========
+    # ========== Async Message Handlers ==========
 
-    def _handle_reservation(self, message: Dict) -> Dict:
+    async def _handle_reservation(self, message: Dict) -> Dict:
+        """Handle reservation request (async)."""
         booking_id = message.get('booking_id', 'unknown')
 
         Logger.base.info(
             f'\033[94m[RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}\033[0m'
         )
 
-        result = self.portal.call(self._handle_reservation_async, message)
-        return {'success': True, 'result': result}
+        await self._handle_reservation_async(message)
+        return {'success': True}
 
-    def _handle_release(self, message: Dict) -> Dict:
+    async def _handle_release(self, message: Dict) -> Dict:
+        """Handle seat release request (async)."""
         seat_positions = message.get('seat_positions', [])
 
         if not seat_positions:
@@ -123,7 +129,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         )
 
         batch_request = ReleaseSeatsBatchRequest(seat_ids=seat_positions, event_id=event_id)
-        result = self.portal.call(self.release_seat_use_case.execute_batch, batch_request)
+        result = await self.release_seat_use_case.execute_batch(batch_request)
 
         return {
             'success': True,
@@ -132,7 +138,8 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             'total_released': result.total_released,
         }
 
-    def _handle_finalize(self, message: Dict) -> Dict:
+    async def _handle_finalize(self, message: Dict) -> Dict:
+        """Handle payment finalization request (async)."""
         seat_positions = message.get('seat_positions', [])
 
         if not seat_positions:
@@ -150,7 +157,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
                 seat_id=seat_id,
                 event_id=event_id,
             )
-            result = self.portal.call(self.finalize_seat_payment_use_case.execute, request)
+            result = await self.finalize_seat_payment_use_case.execute(request)
             if result.success:
                 successful_seats.append(seat_id)
             else:
@@ -170,6 +177,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
     # ========== Reservation Logic ==========
 
     async def _handle_reservation_async(self, event_data: object) -> bool:
+        """Process reservation request."""
         parsed = self._parse_event_data(event_data)
         if not parsed:
             error_msg = 'Failed to parse event data'
@@ -182,6 +190,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         return True
 
     def _parse_event_data(self, event_data: object) -> Optional[Dict]:
+        """Parse event data to dictionary."""
         try:
             if isinstance(event_data, dict):
                 return event_data
@@ -198,6 +207,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             return None
 
     def _create_reservation_command(self, event_data: Dict) -> Dict:
+        """Create reservation command from event data."""
         booking_id = event_data.get('booking_id')
         buyer_id = event_data.get('buyer_id')
         event_id = event_data.get('event_id')
@@ -221,6 +231,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         }
 
     async def _execute_reservation(self, command: Dict) -> bool:
+        """Execute reservation use case."""
         config = SubsectionConfig(
             rows=command['rows'],
             cols=command['cols'],

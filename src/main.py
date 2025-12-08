@@ -22,7 +22,7 @@ from src.platform.database.asyncpg_setting import (
 from src.platform.database.orm_db_setting import get_engine
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.logging.loguru_io import Logger
-from src.platform.message_queue.event_publisher import flush_all_messages
+from src.platform.message_queue.event_publisher import close_producer
 from src.platform.message_queue.kafka_topic_initializer import KafkaTopicInitializer
 from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -159,15 +159,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Logger.base.info('🛑 [Unified Service] Shutting down...')
         tg.cancel_scope.cancel()
 
-    # Flush all pending Kafka messages before shutdown
+    # Flush and close Kafka producer before shutdown
     try:
-        remaining = flush_all_messages(timeout=5.0)
-        if remaining > 0:
-            Logger.base.warning(
-                f'⚠️  [Unified Service] {remaining} messages not delivered before shutdown'
-            )
+        await close_producer()
+        Logger.base.info('📤 [Unified Service] Kafka producer closed')
     except Exception as e:
-        Logger.base.error(f'❌ [Unified Service] Failed to flush Kafka messages: {e}')
+        Logger.base.error(f'❌ [Unified Service] Failed to close Kafka producer: {e}')
 
     # Close asyncpg pools
     await close_all_asyncpg_pools()
