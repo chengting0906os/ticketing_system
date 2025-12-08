@@ -21,7 +21,7 @@ dependencies = [
     "pydantic-settings",
     "email-validator>=2.3.0",
     # Messaging & Streaming
-    "quixstreams[protobuf]>=3.23.0",
+    "confluent-kafka>=2.12.2",
     "grpcio-tools>=1.0.0",
     # Cache
     "redis>=6.4.0",

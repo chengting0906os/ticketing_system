@@ -4,10 +4,12 @@ from enum import StrEnum
 import logging
 import os
 import sys
+from types import FrameType
 from typing import TYPE_CHECKING
 import zoneinfo
 
 from loguru import logger as loguru_logger
+
 
 if TYPE_CHECKING:
     from loguru import Logger as LoguruLogger
@@ -126,9 +128,10 @@ class InterceptHandler(logging.Handler):
                 level = record.levelno
 
         # Find caller from where originated the logged message
-        frame, depth = logging.currentframe(), 2
+        frame: FrameType | None = logging.currentframe()
+        depth = 2
         while frame and frame.f_code.co_filename == logging.__file__:
-            frame = frame.f_back  # type: ignore
+            frame = frame.f_back
             depth += 1
 
         # Use cached bound logger
@@ -164,7 +167,7 @@ custom_logger = loguru_logger.bind(
 min_log_level = 'DEBUG' if settings.DEBUG else 'INFO'
 
 # Add console output with custom format
-custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level)
+custom_logger.add(sys.stdout, format=io_log_format, level=min_log_level, enqueue=True)
 
 # Add file output only in DEBUG mode or when explicitly enabled
 # Production uses stdout only (collected by CloudWatch/Loki)

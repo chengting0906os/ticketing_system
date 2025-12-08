@@ -61,6 +61,8 @@ class BookingPaidEvent:
     booking_id: UUID
     buyer_id: int
     event_id: int
+    section: str
+    subsection: int
     ticket_ids: List[int]
     paid_at: datetime
     total_amount: float
@@ -75,8 +77,10 @@ class BookingCancelledEvent:
     booking_id: UUID
     buyer_id: int
     event_id: int
+    section: str
+    subsection: int
     ticket_ids: List[int]
-    seat_positions: List[str]  # Added for seat release
+    seat_positions: List[str]
     cancelled_at: datetime
 
     @property

@@ -1,9 +1,14 @@
+from collections import defaultdict
 from collections.abc import Generator
+from datetime import datetime, timezone
+import os
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import orjson
 import pytest
+
+from test.kvrocks_test_client import kvrocks_test_client
 
 
 # Patch paths - extracted to avoid hardcoding
@@ -12,7 +17,6 @@ PATCH_SEAT_INITIALIZER = (
     '.InitEventAndTicketsStateHandlerImpl.initialize_seats_from_config'
 )
 PATCH_EVENT_PUBLISHER = 'src.platform.message_queue.event_publisher.publish_domain_event'
-PATCH_QUIX_APP = 'src.platform.message_queue.event_publisher._get_quix_app'
 
 
 @pytest.fixture
@@ -50,14 +54,9 @@ def mock_kafka_infrastructure(
     """
     Auto-mock MQ infrastructure to avoid starting real Kafka consumers in tests.
 
-    Mocks the IMqInfraOrchestrator interface instead of implementation details.
-    This follows clean architecture - tests depend on abstractions.
-
-    Only enabled for feature tests and tests using 'client' fixture.
-    Skips unit tests in test/service/*/unit/ directories.
+    Skips unit tests (marked with @pytest.mark.unit).
     """
-    # Skip for unit tests - they should test implementation directly
-    if '/unit/' in str(request.fspath):
+    if request.node.get_closest_marker('unit'):
         yield {}
         return
 
@@ -68,11 +67,6 @@ def mock_kafka_infrastructure(
         Test implementation: Direct Kvrocks writes via Pipeline.
         Bypasses async Kafka processing for faster, deterministic tests.
         """
-        from collections import defaultdict
-        from datetime import datetime, timezone
-        import os
-
-        from test.kvrocks_test_client import kvrocks_test_client
 
         # Get key prefix
         _KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
@@ -202,22 +196,13 @@ def mock_kafka_infrastructure(
             'sections_count': len(seating_config.get('sections', [])),
         }
 
-    async def mock_publish_domain_event(event: object, topic: str, partition_key: str) -> bool:
+    async def mock_publish_domain_event(*, event: object, topic: str, partition: int) -> bool:
         """Mock publishing domain events - bypasses Kafka completely"""
         return True
-
-    def mock_get_quix_app() -> MagicMock:
-        """Mock Quix Application - returns a mock app that doesn't connect to Kafka"""
-        mock_app = MagicMock()
-        mock_topic = MagicMock()
-        mock_topic.name = 'mock_topic'
-        mock_app.topic.return_value = mock_topic
-        return mock_app
 
     with (
         patch(PATCH_SEAT_INITIALIZER, new=mock_initialize_seats),
         patch(PATCH_EVENT_PUBLISHER, side_effect=mock_publish_domain_event),
-        patch(PATCH_QUIX_APP, side_effect=mock_get_quix_app),
     ):
         yield {
             'seat_initializer': mock_initialize_seats,

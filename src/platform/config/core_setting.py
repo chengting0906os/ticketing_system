@@ -60,10 +60,8 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True  # Verify connection health before use
 
     # Database Connection Pool Configuration (asyncpg - for bulk operations)
-    # Per worker: 10-50 connections (conservative for Aurora 0.5 ACU)
-    # 2 workers × 10 = 20 startup, 2 workers × 50 = 100 max (within Aurora limit)
-    ASYNCPG_POOL_MIN_SIZE: int = 10  # Minimum connections in pool (per worker)
-    ASYNCPG_POOL_MAX_SIZE: int = 50  # Maximum connections in pool (per worker)
+    ASYNCPG_POOL_MIN_SIZE: int = 2  # Minimum connections in pool (per container)
+    ASYNCPG_POOL_MAX_SIZE: int = 15  # Maximum connections in pool (per container)
     ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
     ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
     ASYNCPG_POOL_TIMEOUT: float = 2.0  # Connection acquire timeout (2s - fail fast)
@@ -161,6 +159,10 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = 'localhost:9092'
     KAFKA_PRODUCER_RETRIES: int = 3
     KAFKA_CONSUMER_AUTO_OFFSET_RESET: str = 'latest'
+    KAFKA_TOTAL_PARTITIONS: int = 100  # Total partitions per topic for even distribution
+    SUBSECTIONS_PER_SECTION: int = (
+        10  # Number of subsections per section (for partition calculation)
+    )
 
     @property
     def KAFKA_PRODUCER_INSTANCE_ID(self) -> str:
@@ -234,4 +236,6 @@ class KafkaConfig:
             # Consumer group settings
             'session.timeout.ms': 45000,  # Session timeout (45s)
             'heartbeat.interval.ms': 15000,  # Heartbeat interval (15s)
+            # Fetch latency optimization
+            'fetch.wait.max.ms': 50,  # Reduce from default 500ms to 50ms
         }

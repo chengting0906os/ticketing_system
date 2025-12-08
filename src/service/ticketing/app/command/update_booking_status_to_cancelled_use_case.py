@@ -5,6 +5,7 @@ from dependency_injector.wiring import Provide, inject
 from uuid_utils import UUID
 from fastapi import Depends
 
+from src.platform.config.core_setting import settings
 from src.platform.config.di import Container
 from src.platform.exception.exceptions import ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
@@ -110,18 +111,27 @@ class UpdateBookingToCancelledUseCase:
                 booking_id=booking_id,
                 buyer_id=buyer_id,
                 event_id=booking.event_id,
+                section=booking.section,
+                subsection=booking.subsection,
                 ticket_ids=ticket_ids,
                 seat_positions=seat_positions,
                 cancelled_at=datetime.now(timezone.utc),
             )
 
+            # Calculate partition based on section/subsection
+            section_index = ord(booking.section.upper()) - ord('A')
+            global_index = section_index * settings.SUBSECTIONS_PER_SECTION + (
+                booking.subsection - 1
+            )
+            partition = global_index % settings.KAFKA_TOTAL_PARTITIONS
+
             topic_name = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
                 event_id=booking.event_id
             )
-            partition_key = f'event-{booking.event_id}'
-
             await publish_domain_event(
-                event=cancelled_event, topic=topic_name, partition_key=partition_key
+                event=cancelled_event,
+                topic=topic_name,
+                partition=partition,
             )
 
             Logger.base.info(f'✅ [CANCEL] Published BookingCancelledEvent to {topic_name}')

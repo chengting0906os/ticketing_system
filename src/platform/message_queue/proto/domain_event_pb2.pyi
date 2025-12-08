@@ -224,6 +224,8 @@ class BookingPaidEvent(_message.Message):
         'booking_id',
         'buyer_id',
         'event_id',
+        'section',
+        'subsection',
         'ticket_ids',
         'seat_positions',
         'paid_at',
@@ -234,6 +236,8 @@ class BookingPaidEvent(_message.Message):
     BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
     BUYER_ID_FIELD_NUMBER: _ClassVar[int]
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
     TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
     SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
     PAID_AT_FIELD_NUMBER: _ClassVar[int]
@@ -243,6 +247,8 @@ class BookingPaidEvent(_message.Message):
     booking_id: str
     buyer_id: int
     event_id: int
+    section: str
+    subsection: int
     ticket_ids: _containers.RepeatedScalarFieldContainer[int]
     seat_positions: _containers.RepeatedScalarFieldContainer[str]
     paid_at: int
@@ -254,6 +260,8 @@ class BookingPaidEvent(_message.Message):
         booking_id: _Optional[str] = ...,
         buyer_id: _Optional[int] = ...,
         event_id: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
         ticket_ids: _Optional[_Iterable[int]] = ...,
         seat_positions: _Optional[_Iterable[str]] = ...,
         paid_at: _Optional[int] = ...,
@@ -267,6 +275,8 @@ class BookingCancelledEvent(_message.Message):
         'booking_id',
         'buyer_id',
         'event_id',
+        'section',
+        'subsection',
         'ticket_ids',
         'seat_positions',
         'cancelled_at',
@@ -276,6 +286,8 @@ class BookingCancelledEvent(_message.Message):
     BOOKING_ID_FIELD_NUMBER: _ClassVar[int]
     BUYER_ID_FIELD_NUMBER: _ClassVar[int]
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
+    SECTION_FIELD_NUMBER: _ClassVar[int]
+    SUBSECTION_FIELD_NUMBER: _ClassVar[int]
     TICKET_IDS_FIELD_NUMBER: _ClassVar[int]
     SEAT_POSITIONS_FIELD_NUMBER: _ClassVar[int]
     CANCELLED_AT_FIELD_NUMBER: _ClassVar[int]
@@ -284,6 +296,8 @@ class BookingCancelledEvent(_message.Message):
     booking_id: str
     buyer_id: int
     event_id: int
+    section: str
+    subsection: int
     ticket_ids: _containers.RepeatedScalarFieldContainer[int]
     seat_positions: _containers.RepeatedScalarFieldContainer[str]
     cancelled_at: int
@@ -294,6 +308,8 @@ class BookingCancelledEvent(_message.Message):
         booking_id: _Optional[str] = ...,
         buyer_id: _Optional[int] = ...,
         event_id: _Optional[int] = ...,
+        section: _Optional[str] = ...,
+        subsection: _Optional[int] = ...,
         ticket_ids: _Optional[_Iterable[int]] = ...,
         seat_positions: _Optional[_Iterable[str]] = ...,
         cancelled_at: _Optional[int] = ...,

@@ -137,7 +137,7 @@ class KafkaConfigService(IKafkaConfigService):
             NewTopic(
                 topic=topic,
                 num_partitions=self.total_partitions,
-                replication_factor=3,
+                replication_factor=1,
                 config={
                     'cleanup.policy': 'delete',
                     'retention.ms': '604800000',  # 7 days

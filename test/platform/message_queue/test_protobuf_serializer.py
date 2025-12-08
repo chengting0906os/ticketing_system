@@ -33,7 +33,7 @@ from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 
 
 def deserialize_domain_event(*, data: bytes, event_type: str) -> dict:
-    """Deserialize using MessageToDict (same as Quix ProtobufDeserializer internally)"""
+    """Deserialize protobuf bytes to dict using MessageToDict"""
     proto_class = get_proto_class_by_event_type(event_type)
     proto_msg = proto_class()
     proto_msg.ParseFromString(data)
@@ -257,6 +257,8 @@ class TestBookingPaidEventSerialization:
             booking_id=uuid_utils.uuid7(),
             buyer_id=42,
             event_id=1,
+            section='A',
+            subsection=1,
             ticket_ids=[101, 102, 103],
             paid_at=paid_at,
             total_amount=7500.0,
@@ -266,6 +268,8 @@ class TestBookingPaidEventSerialization:
         result = deserialize_domain_event(data=data, event_type='BookingPaidEvent')
 
         assert result['booking_id'] == str(event.booking_id)
+        assert result['section'] == 'A'
+        assert result['subsection'] == 1
         assert result['ticket_ids'] == [101, 102, 103]
         assert result['total_amount'] == 7500.0
 
@@ -278,6 +282,8 @@ class TestBookingCancelledEventSerialization:
             booking_id=uuid_utils.uuid7(),
             buyer_id=42,
             event_id=1,
+            section='A',
+            subsection=1,
             ticket_ids=[101, 102],
             seat_positions=['A1-1-1', 'A1-1-2'],
             cancelled_at=cancelled_at,
@@ -287,5 +293,7 @@ class TestBookingCancelledEventSerialization:
         result = deserialize_domain_event(data=data, event_type='BookingCancelledEvent')
 
         assert result['booking_id'] == str(event.booking_id)
+        assert result['section'] == 'A'
+        assert result['subsection'] == 1
         assert result['ticket_ids'] == [101, 102]
         assert result['seat_positions'] == ['A1-1-1', 'A1-1-2']

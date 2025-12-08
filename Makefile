@@ -89,6 +89,9 @@ re-seed-1k:  ## 🔄 Reset and seed with 1,000 seats
 
 re-seed-2k:  ## 🔄 Reset and seed with 2,000 seats
 	@$(MAKE) re-seed SEATS=2k
+	
+re-seed-3k:  ## 🔄 Reset and seed with 3,000 seats
+	@$(MAKE) re-seed SEATS=3k
 
 re-seed-5k:  ## 🔄 Reset and seed with 5,000 seats
 	@$(MAKE) re-seed SEATS=5k
@@ -183,7 +186,7 @@ d-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → res
 	@$(MAKE) d-seed
 	@echo ""
 	@echo "✅ ==================== SETUP COMPLETE ===================="
-	@echo "   🌐 API :  http://localhost:8100/docs#
+	@echo "   🌐 API:  http://localhost:8100/docs#"
 	@echo "   📊 Kafka UI:     http://localhost:8080"
 	@echo "   📈 Grafana:      http://localhost:3000"
 	@echo "   🔍 Jaeger:       http://localhost:16686"
@@ -300,7 +303,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-{500,1k,2k,5k,50k,200k} - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,3k,5k,50k,200k} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
