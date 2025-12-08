@@ -10,6 +10,12 @@ from src.service.reservation.driven_adapter.reservation_helper.key_str_generator
     make_seats_bf_key,
     make_sellout_timer_key,
 )
+from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+    row_block_manager,
+)
+from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
+    seat_finder,
+)
 
 from src.platform.database.asyncpg_setting import get_asyncpg_pool
 from src.platform.exception.exceptions import DomainError
@@ -199,6 +205,39 @@ class AtomicReservationExecutor:
             subsection_stats = self._extract_subsection_stats(event_state, section_id)
             event_stats = self._extract_event_stats(event_state)
 
+            # ========== STEP 4.5: Update row_blocks for Python seat finder ==========
+            # Extract cols from event_state (already fetched in STEP 0)
+            section_name, subsection_num = section_id.split('-')
+            cols = (
+                event_state_dict.get('sections', {})
+                .get(section_name, {})
+                .get('subsections', {})
+                .get(subsection_num, {})
+                .get('cols', 0)
+            )
+            if cols > 0:
+                # Group reserved seats by row: {row: [seat_index_in_row, ...]}
+                seats_by_row: Dict[int, List[int]] = {}
+                for row, seat_num, _seat_index, _seat_id in seats_to_reserve:
+                    seat_index_in_row = seat_num - 1  # Convert to 0-indexed
+                    if row not in seats_by_row:
+                        seats_by_row[row] = []
+                    seats_by_row[row].append(seat_index_in_row)
+
+                # Update row_blocks for each affected row
+                for row, seat_indices in seats_by_row.items():
+                    try:
+                        await row_block_manager.remove_seats_from_blocks(
+                            event_id=event_id,
+                            section=section_name,
+                            subsection=int(subsection_num),
+                            row=row,
+                            seat_indices=seat_indices,
+                            cols=cols,
+                        )
+                    except Exception as e:
+                        Logger.base.warning(f'[ROW-BLOCKS] Failed to update blocks: {e}')
+
             # ========== STEP 5: Track sellout timing (AFTER pipeline) ==========
             try:
                 await self._track_first_ticket(
@@ -278,8 +317,6 @@ class AtomicReservationExecutor:
                 'booking.id': booking_id,
             },
         ):
-            client = kvrocks_client.get_client()
-
             # ========== STEP 0: Fetch config if missing (cache miss upstream) ==========
             # Query PostgreSQL to distribute load (instead of Kvrocks)
             if rows == 0 or cols == 0:
@@ -302,14 +339,19 @@ class AtomicReservationExecutor:
                                 break
 
             # ========== STEP 1: Find consecutive seats ==========
-            # Config passed via ARGV (avoids Kvrocks fetch in Lua)
-            lua_result = await lua_script_executor.find_consecutive_seats(
-                client=client,
-                keys=[bf_key],
-                args=[str(rows), str(cols), str(quantity)],
+            # Uses A/B strategy switch (SEAT_FINDER_STRATEGY env var)
+            found_seats = await seat_finder.find_consecutive_seats(
+                bf_key=bf_key,
+                rows=rows,
+                cols=cols,
+                quantity=quantity,
+                # For Python strategy
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
             )
 
-            if lua_result is None:
+            if found_seats is None:
                 return {
                     'success': False,
                     'reserved_seats': [],
@@ -320,11 +362,8 @@ class AtomicReservationExecutor:
                     'error_message': f'No {quantity} consecutive seats available',
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
-            lua_data = orjson.loads(lua_result)
-            found_seats = lua_data['seats']
-
             # ========== STEP 2: Convert to reservation format ==========
+            # found_seats: List[(row, seat_num, seat_index)]
             seats_to_reserve = [
                 (row, seat_num, seat_index, f'{row}-{seat_num}')
                 for row, seat_num, seat_index in found_seats

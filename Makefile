@@ -85,6 +85,9 @@ re-seed-1k:  ## 🔄 Reset and seed with 1,000 seats
 re-seed-2k:  ## 🔄 Reset and seed with 2,000 seats
 	@$(MAKE) re-seed SEATS=2k
 
+re-seed-3k:  ## 🔄 Reset and seed with 3,000 seats
+	@$(MAKE) re-seed SEATS=3k
+
 re-seed-5k:  ## 🔄 Reset and seed with 5,000 seats
 	@$(MAKE) re-seed SEATS=5k
 
@@ -112,8 +115,8 @@ t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
 t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
 	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/ticketing/integration/features test/service/reservation/integration/features -m "smoke or quick" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
 
-t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
+t-unit:  ## 🎯 Run unit tests only (fast, no external deps needed)
+	@SKIP_DB_SETUP=1 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
 
 t-e2e:  ## 🧪 Run E2E tests
 	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
@@ -238,7 +241,7 @@ k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS)
 # ==============================================================================
 # Usage: make go-<target>
 #   make go-clt-t/s/m/l/f      # Concurrent load test (tiny → full)
-#   make go-frlt-{500,5k,50k,200k}  # Full reserved load test (default: 500)
+#   make go-frlt-{500,1k,2k,3k,5k,50k,200k}  # Full reserved load test (default: 500)
 #   make go-help               # Show all go_client commands
 # ==============================================================================
 
@@ -295,7 +298,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-{500,1k,2k,5k,50k,200k} - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,3k,5k,50k,200k} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
@@ -308,7 +311,7 @@ help:
 	@echo ""
 	@echo "⚡ LOAD TESTING"
 	@echo "  go-clt-t/s/m/l/f  - Concurrent load test (tiny → full)"
-	@echo "  go-frlt-{500,5k,50k,200k} - Full reserved load test"
+	@echo "  go-frlt-{500,1k,2k,3k,5k,50k,200k} - Full reserved load test"
 	@echo "  k6-dev-load / k6-dev-stress / k6-dev-spike / k6-prod-load / k6-prod-stress / k6-prod-spike"
 	@echo ""
 	@echo "☁️  AWS (make -f deployment/Makefile help)"

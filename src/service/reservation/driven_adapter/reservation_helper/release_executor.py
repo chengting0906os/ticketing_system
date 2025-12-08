@@ -11,7 +11,11 @@ from src.service.reservation.driven_adapter.reservation_helper.key_str_generator
     make_event_state_key,
     make_seats_bf_key,
 )
+from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+    row_block_manager,
+)
 
+from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 
 
@@ -59,5 +63,18 @@ class ReleaseExecutor:
             # Set to AVAILABLE (00)
             await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 0)
             results[seat_id] = True
+
+            # Update row_blocks for Python seat finder
+            try:
+                seat_index_in_row = int(seat_num) - 1  # Convert to 0-indexed
+                await row_block_manager.add_seats_to_blocks(
+                    event_id=event_id,
+                    section=section,
+                    subsection=int(subsection),
+                    row=int(row),
+                    seat_indices=[seat_index_in_row],
+                )
+            except Exception as e:
+                Logger.base.warning(f'[ROW-BLOCKS] Failed to add seat back: {e}')
 
         return results

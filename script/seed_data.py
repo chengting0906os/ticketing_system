@@ -42,7 +42,7 @@ def get_seating_config() -> dict:
     Returns:
         dict: Seating configuration for the current environment (expanded to full format)
 
-    Available seat configs: 500, 1k, 2k, 5k, 25k, 50k, 200k
+    Available seat configs: 500, 1k, 2k, 3k, 5k, 50k, 200k
     """
     seats = os.getenv('SEATS', '500')
 

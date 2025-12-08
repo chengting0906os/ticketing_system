@@ -14,6 +14,9 @@ from src.service.reservation.driven_adapter.reservation_helper.key_str_generator
     make_event_state_key,
     make_seats_bf_key,
 )
+from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+    row_block_manager,
+)
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
@@ -212,6 +215,20 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             event_state['event_stats']['updated_at'] = timestamp
 
             await pipe.execute()
+
+            # Step 4.5: Initialize row_blocks for Python seat finder (A/B test)
+            # Collect unique subsections and initialize each
+            rows = seating_config.get('rows', 1)
+            cols = seating_config.get('cols', 10)
+            for section_name, section_data in event_state['sections'].items():
+                for subsection_num in section_data['subsections']:
+                    await row_block_manager.initialize_subsection(
+                        event_id=event_id,
+                        section=section_name,
+                        subsection=int(subsection_num),
+                        rows=rows,
+                        cols=cols,
+                    )
 
             # Step 5: Write unified event config as JSON (single key per event)
             config_key = make_event_state_key(event_id=event_id)

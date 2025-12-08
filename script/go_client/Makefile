@@ -90,9 +90,9 @@ clt-f: clt-full
 # ==============================================================================
 # 🚀 FULL RESERVED LOAD TEST (Sellout Testing)
 # ==============================================================================
-# Environments: 500, 1k, 2k, 5k, 50k, 200k
+# Environments: 500, 1k, 2k, 3k, 5k, 50k, 200k
 
-.PHONY: frlt frlt-500 frlt-1k frlt-2k frlt-5k frlt-50k frlt-200k
+.PHONY: frlt frlt-500 frlt-1k frlt-2k frlt-3k frlt-5k frlt-50k frlt-200k
 
 frlt: build-full-reserved  ## 🚀 Full Reserved Load Test (SEATS=500 WORKERS=100 BATCH=1)
 	@WORKERS=$${WORKERS:-100}; \
@@ -109,6 +109,9 @@ frlt-1k: build-full-reserved  ## 🚀 1,000 seats
 
 frlt-2k: build-full-reserved  ## 🚀 2,000 seats
 	@./$(FULL_RESERVED_BIN) -env 2k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+
+frlt-3k: build-full-reserved  ## 🚀 3,000 seats
+	@./$(FULL_RESERVED_BIN) -env 3k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
 
 frlt-5k: build-full-reserved  ## 🚀 5,000 seats
 	@./$(FULL_RESERVED_BIN) -env 5k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
@@ -158,6 +161,7 @@ help:  ## 📖 Show this help
 	@echo "  frlt-500           500 seats"
 	@echo "  frlt-1k            1,000 seats"
 	@echo "  frlt-2k            2,000 seats"
+	@echo "  frlt-3k            3,000 seats"
 	@echo "  frlt-5k            5,000 seats"
 	@echo "  frlt-50k           50,000 seats"
 	@echo "  frlt-200k          200,000 seats"

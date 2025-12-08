@@ -228,25 +228,44 @@ async def clean_all_tables() -> None:
 # =============================================================================
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Setup database in master process (runs once before workers spawn)"""
+    # Skip DB setup for unit-only tests (set SKIP_DB_SETUP=1)
+    if os.environ.get('SKIP_DB_SETUP') == '1':
+        return
     if os.environ.get('PYTEST_XDIST_WORKER', 'master') == 'master':
         asyncio.run(setup_test_database())
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Setup database in each worker process"""
+    # Skip DB setup for unit-only tests
+    if os.environ.get('SKIP_DB_SETUP') == '1':
+        return
     if os.environ.get('PYTEST_XDIST_WORKER', 'master') != 'master':
         asyncio.run(setup_test_database())
 
 
 # =============================================================================
-# Auto-use Fixtures for Test Isolation
+# Pytest Hook: Auto-apply integration fixtures to non-unit tests
 # =============================================================================
-@pytest.fixture(autouse=True, scope='function')
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Apply integration fixtures to tests without @pytest.mark.unit"""
+    for item in items:
+        markers = [m.name for m in item.iter_markers()]
+        if 'unit' not in markers:
+            # Add integration fixtures to non-unit tests
+            item.fixturenames.extend(['clean_kvrocks', 'clean_database'])
+
+
+# =============================================================================
+# Integration Test Fixtures (auto-applied via pytest hook)
+# =============================================================================
+@pytest.fixture(scope='function')
 async def clean_kvrocks() -> AsyncGenerator[None, None]:
     """
     Clean Kvrocks before and after each test
 
     Uses the monkey-patched kvrocks_client (async version).
+    Auto-applied to non-unit tests via pytest_collection_modifyitems hook.
     """
     from src.platform.state.kvrocks_client import kvrocks_client
 
@@ -268,7 +287,7 @@ async def clean_kvrocks() -> AsyncGenerator[None, None]:
         await client.delete(*keys_after)
 
 
-@pytest.fixture(autouse=True, scope='function')
+@pytest.fixture(scope='function')
 async def clean_database() -> AsyncGenerator[None, None]:
     """
     Clean all database tables and dispose DB engines after each test
@@ -277,6 +296,8 @@ async def clean_database() -> AsyncGenerator[None, None]:
     1. Cleaning tables before test
     2. Disposing SQLAlchemy engines after test (releases all connections)
     3. Closing asyncpg pool after test
+
+    Auto-applied to non-unit tests via pytest_collection_modifyitems hook.
     """
     await clean_all_tables()
     yield
