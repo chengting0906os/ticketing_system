@@ -9,7 +9,7 @@ import time
 import orjson
 
 from src.platform.logging.loguru_io import Logger
-from src.platform.state import kvrocks_client
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.reservation.app.interface.i_booking_result_broadcaster import (
     IBookingResultBroadcaster,
 )

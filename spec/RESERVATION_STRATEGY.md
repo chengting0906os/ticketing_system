@@ -354,10 +354,10 @@ Kafka retries, idempotency prevents duplicates.
 
 ## Implementation Files
 
-- **Lua:** `src/platform/state/lua_scripts/find_consecutive_seats.lua`
 - **Executor:** `src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py`
 - **Handler:** `src/service/reservation/driven_adapter/seat_state_command_handler_impl.py`
 - **Finder:** `src/service/reservation/driven_adapter/reservation_helper/seat_finder.py`
+- **Row Blocks:** `src/service/reservation/driven_adapter/reservation_helper/row_block_manager.py`
 
 ---
 
@@ -366,4 +366,3 @@ Kafka retries, idempotency prevents duplicates.
 - [Kvrocks Documentation](https://kvrocks.apache.org/)
 - [Redis Bitfields](https://redis.io/commands/bitfield/)
 - [RedisJSON Commands](https://redis.io/docs/data-types/json/)
-- [Lua Scripting](https://redis.io/docs/interact/programmability/eval-intro/)

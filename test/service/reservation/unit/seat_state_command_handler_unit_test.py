@@ -9,7 +9,7 @@ import pytest
 from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
     SeatFinder,
 )
-from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
 

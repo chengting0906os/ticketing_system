@@ -16,7 +16,7 @@ from src.service.reservation.app.interface.i_booking_result_broadcaster import (
 from src.service.reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
 )
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.service.reservation.app.interface import ISeatStateCommandHandler
 
 
 class ReserveSeatsUseCase:
@@ -128,12 +128,24 @@ class ReserveSeatsUseCase:
 
                     # Step 4c: Broadcast booking result via Redis Pub/Sub (for SSE)
                     booking = pg_result['booking']
+                    # Convert TicketRef objects to serializable dicts
+                    ticket_dicts = [
+                        {
+                            'section': t.section,
+                            'subsection': t.subsection,
+                            'row': t.row,
+                            'seat': t.seat,
+                            'price': t.price,
+                            'status': t.status.value,
+                        }
+                        for t in pg_result.get('tickets', [])
+                    ]
                     await self.booking_result_broadcaster.broadcast_booking_result(
                         buyer_id=request.buyer_id,
                         event_id=request.event_id,
                         booking_id=request.booking_id,
                         status=booking.status.value,
-                        tickets=pg_result.get('tickets', []),
+                        tickets=ticket_dicts,
                         total_price=total_price,
                     )
 

@@ -4,10 +4,19 @@ Unit tests for SeatFinder
 Tests consecutive seat finding logic using bitfield operations.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
+
 from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
     SeatFinder,
 )
+
+
+def _create_seat_finder() -> SeatFinder:
+    """Create SeatFinder with mock RowBlockManager."""
+    mock_row_block_manager = MagicMock()
+    return SeatFinder(row_block_manager=mock_row_block_manager)
 
 
 # =============================================================================
@@ -16,7 +25,7 @@ from src.service.reservation.driven_adapter.reservation_helper.seat_finder impor
 class TestSeatFinderCalculations:
     @pytest.mark.unit
     def test_calculate_seat_index(self) -> None:
-        finder = SeatFinder()
+        finder = _create_seat_finder()
 
         # Row 1, Seat 1, 5 seats per row → index 0
         assert finder._calculate_seat_index(1, 1, 5) == 0

@@ -4,7 +4,7 @@ Get real-time seat status from Kvrocks, combined with basic information from Pos
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.reservation.app.interface import ISeatStateQueryHandler
 
 
 class ListAllSubSectionStatusUseCase:

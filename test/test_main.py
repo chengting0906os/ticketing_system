@@ -35,7 +35,6 @@ from src.platform.observability.tracing import TracingConfig
 
 # Use monkey-patched test client from conftest.py
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.platform.state.lua_script_executor import lua_script_executor
 
 # Ticketing Service imports
 from src.service.ticketing.app.command import (
@@ -102,11 +101,6 @@ async def lifespan_for_tests(app: FastAPI) -> AsyncIterator[None]:
     # Initialize Kvrocks connection pool (fail-fast)
     await kvrocks_client.initialize()
     Logger.base.info('📡 [Test App] Kvrocks initialized')
-
-    # Initialize Lua scripts
-    client = kvrocks_client.get_client()
-    await lua_script_executor.initialize(client=client)
-    Logger.base.info('🔧 [Test App] Lua scripts initialized')
 
     # Initialize asyncpg connection pool (skip warmup for faster test startup)
     await get_asyncpg_pool()

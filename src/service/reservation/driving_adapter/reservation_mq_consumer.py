@@ -25,9 +25,9 @@ from src.platform.message_queue.kafka_constant_builder import (
 from src.platform.message_queue.proto import domain_event_pb2 as pb
 from src.service.reservation.app.dto import (
     FinalizeSeatPaymentRequest,
+    ReleaseSeatsBatchRequest,
     ReservationRequest,
 )
-from src.service.shared_kernel.app.dto import ReleaseSeatsBatchRequest
 from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
 

@@ -61,10 +61,12 @@ class Settings(BaseSettings):
 
     # Database Connection Pool Configuration (asyncpg - for bulk operations)
     ASYNCPG_POOL_MIN_SIZE: int = 2  # Minimum connections in pool (per container)
-    ASYNCPG_POOL_MAX_SIZE: int = 15  # Maximum connections in pool (per container)
+    ASYNCPG_POOL_MAX_SIZE: int = 10  # Maximum connections in pool (per container)
     ASYNCPG_POOL_COMMAND_TIMEOUT: int = 60  # Command timeout in seconds
     ASYNCPG_POOL_MAX_INACTIVE_LIFETIME: float = 300.0  # Max idle time (5 min)
-    ASYNCPG_POOL_TIMEOUT: float = 2.0  # Connection acquire timeout (2s - fail fast)
+    ASYNCPG_POOL_TIMEOUT: float = (
+        30.0  # Connection acquire timeout (30s - allow for high concurrency)
+    )
     ASYNCPG_POOL_MAX_QUERIES: int = 50000  # Max queries per connection
 
     @property
@@ -145,7 +147,7 @@ class Settings(BaseSettings):
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks also uses Redis protocol
 
     # Kvrocks Connection Pool Configuration
-    KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool
+    KVROCKS_POOL_MAX_CONNECTIONS: int = 50  # Max connections in pool
     KVROCKS_POOL_SOCKET_TIMEOUT: int = (
         30  # Socket read/write timeout (seconds) - AWS VPC can be slower
     )

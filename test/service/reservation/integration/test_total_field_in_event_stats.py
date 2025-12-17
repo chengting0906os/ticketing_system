@@ -16,8 +16,11 @@ from src.platform.database.asyncpg_setting import get_asyncpg_pool
 
 
 @pytest.fixture
-async def test_user() -> AsyncGenerator[int, None]:
-    """Create a test user for foreign key constraint"""
+async def test_user(clean_database: None) -> AsyncGenerator[int, None]:
+    """Create a test user for foreign key constraint.
+
+    Depends on clean_database to ensure tables are cleaned before user creation.
+    """
     pool = await get_asyncpg_pool()
     async with pool.acquire() as conn:
         user_id = await conn.fetchval(

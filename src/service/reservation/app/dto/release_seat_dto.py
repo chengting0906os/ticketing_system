@@ -1,14 +1,10 @@
 """
-Seat Command DTOs - Shared Kernel
+Seat Release DTOs
 
-Seat Command DTOs - Defines domain contracts for seat state change operations
-Includes: Request/Result for seat release, payment completion, and other command operations
+Request/Result DTOs for seat release operations.
 """
 
 import attrs
-
-
-# ========== Release Seat ==========
 
 
 @attrs.define
@@ -28,19 +24,19 @@ class ReleaseSeatResult:
     error_message: str = ''
 
     @classmethod
-    def success_result(cls, seat_id: str) -> 'ReleaseSeatResult':
+    def success_result(cls, *, seat_id: str) -> 'ReleaseSeatResult':
         """Create success result"""
         return cls(success=True, seat_id=seat_id)
 
     @classmethod
-    def failure_result(cls, seat_id: str, error: str) -> 'ReleaseSeatResult':
+    def failure_result(cls, *, seat_id: str, error: str) -> 'ReleaseSeatResult':
         """Create failure result"""
         return cls(success=False, seat_id=seat_id, error_message=error)
 
 
 @attrs.define
 class ReleaseSeatsBatchRequest:
-    """Batch seat release request - Performance optimization for releasing multiple seats"""
+    """Batch seat release request"""
 
     seat_ids: list[str]
     event_id: int
@@ -56,7 +52,7 @@ class ReleaseSeatsBatchResult:
     error_messages: dict[str, str]  # seat_id -> error_message
 
     @classmethod
-    def success_result(cls, seat_ids: list[str]) -> 'ReleaseSeatsBatchResult':
+    def success_result(cls, *, seat_ids: list[str]) -> 'ReleaseSeatsBatchResult':
         """Create all-success result"""
         return cls(
             successful_seats=seat_ids,
@@ -67,7 +63,11 @@ class ReleaseSeatsBatchResult:
 
     @classmethod
     def partial_result(
-        cls, successful_seats: list[str], failed_seats: list[str], error_messages: dict[str, str]
+        cls,
+        *,
+        successful_seats: list[str],
+        failed_seats: list[str],
+        error_messages: dict[str, str],
     ) -> 'ReleaseSeatsBatchResult':
         """Create partial success result"""
         return cls(

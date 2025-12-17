@@ -29,7 +29,7 @@ class TestCreateBookingWithTicketsDirectly:
         return uuid.uuid7()
 
     @pytest.fixture
-    def test_event_with_tickets(self, client: TestClient) -> dict[str, int]:
+    def test_event_with_tickets(self, client: TestClient, clean_database: None) -> dict[str, int]:
         # Create seller user
         create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
         login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)

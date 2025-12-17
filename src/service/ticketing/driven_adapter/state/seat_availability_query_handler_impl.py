@@ -21,11 +21,13 @@ class CacheEntry(TypedDict):
     timestamp: float
 
 
-_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+def _get_key_prefix() -> str:
+    """Get key prefix dynamically from environment for test isolation."""
+    return os.getenv('KVROCKS_KEY_PREFIX', '')
 
 
 def _make_key(key: str) -> str:
-    return f'{_KEY_PREFIX}{key}'
+    return f'{_get_key_prefix()}{key}'
 
 
 class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):

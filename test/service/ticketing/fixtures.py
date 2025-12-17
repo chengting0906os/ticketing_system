@@ -8,15 +8,18 @@ from unittest.mock import patch
 import orjson
 import pytest
 
-from test.kvrocks_test_client import kvrocks_test_client
-
-
-# Patch paths - extracted to avoid hardcoding
-PATCH_SEAT_INITIALIZER = (
-    'src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl'
-    '.InitEventAndTicketsStateHandlerImpl.initialize_seats_from_config'
+from src.platform.message_queue.event_publisher import publish_domain_event
+from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
+    InitEventAndTicketsStateHandlerImpl,
 )
-PATCH_EVENT_PUBLISHER = 'src.platform.message_queue.event_publisher.publish_domain_event'
+
+# Patch paths - dynamically constructed for IDE refactoring support
+PATCH_SEAT_INITIALIZER = (
+    f'{InitEventAndTicketsStateHandlerImpl.__module__}'
+    f'.{InitEventAndTicketsStateHandlerImpl.__name__}'
+    '.initialize_seats_from_config'
+)
+PATCH_EVENT_PUBLISHER = f'{publish_domain_event.__module__}.{publish_domain_event.__name__}'
 
 
 @pytest.fixture
@@ -104,7 +107,16 @@ def mock_kafka_infrastructure(
 
         # Prepare section statistics and unified event config (JSON - hierarchical)
         section_stats = defaultdict(int)
-        event_state = {'sections': {}}  # Unified JSON structure
+        event_state: dict[str, Any] = {
+            'event_stats': {
+                'available': 0,
+                'reserved': 0,
+                'sold': 0,
+                'total': 0,
+                'updated_at': 0,
+            },
+            'sections': {},
+        }  # Unified JSON structure
 
         for seat in all_seats:
             section_id = f'{seat["section"]}-{seat["subsection"]}'
@@ -136,6 +148,9 @@ def mock_kafka_infrastructure(
                 }
 
         # Use Pipeline to batch write all operations (sync version)
+        # Import inside function to defer loading until after pytest_configure sets env vars
+        from test.kvrocks_test_client import kvrocks_test_client
+
         client = kvrocks_test_client.connect()
         pipe = client.pipeline()
         timestamp = str(int(datetime.now(timezone.utc).timestamp()))
@@ -150,15 +165,9 @@ def mock_kafka_infrastructure(
             pipe.setbit(bf_key, offset, 0)
             pipe.setbit(bf_key, offset + 1, 0)
 
-            # ✨ REMOVED: seat_meta Hash (prices now in JSON)
-
         # Update stats with actual counts (before writing JSON)
         for section_id, total_seats in section_stats.items():
-            # Add section to event's section index
             pipe.zadd(_make_key(f'event_sections:{event_id}'), {section_id: 0})
-
-            # ✨ Update stats in event_state JSON structure (navigate hierarchical structure)
-            # Parse section_id (e.g., "A-1" -> section="A", subsection="1")
             parts = section_id.split('-')
             section_name = parts[0]
             subsection_num = parts[1]
@@ -173,22 +182,40 @@ def mock_kafka_infrastructure(
                 'updated_at'
             ] = int(timestamp)
 
-            # ✨ REMOVED: section_stats Hash (stats now in event_state JSON)
-            # ✨ REMOVED: section_config Hash (config now in JSON)
-
         # Execute pipeline
         pipe.execute()
+
+        # Update event_stats with totals
+        event_total_seats = sum(section_stats.values())
+        event_state['event_stats']['available'] = event_total_seats
+        event_state['event_stats']['total'] = event_total_seats
+        event_state['event_stats']['updated_at'] = int(timestamp)
 
         # Write unified event config as JSON (single key per event)
         config_key = _make_key(f'event_state:{event_id}')
         event_state_json = orjson.dumps(event_state).decode()
 
         try:
-            # Try JSON.SET first (Kvrocks native JSON support)
             client.execute_command('JSON.SET', config_key, '$', event_state_json)
         except Exception:
-            # Fallback: Store as regular string if JSON commands not supported
             client.set(config_key, event_state_json)
+
+        # Initialize row_blocks for Python seat finder (Step 4.5 equivalent)
+        from src.platform.config.di import container
+
+        row_block_mgr = container.row_block_manager()
+        rows = seating_config.get('rows', 10)
+        cols = seating_config.get('cols', 10)
+
+        for section_name, section_data in event_state['sections'].items():
+            for subsection_num in section_data['subsections']:
+                await row_block_mgr.initialize_subsection(
+                    event_id=event_id,
+                    section=section_name,
+                    subsection=int(subsection_num),
+                    rows=rows,
+                    cols=cols,
+                )
 
         return {
             'success': True,

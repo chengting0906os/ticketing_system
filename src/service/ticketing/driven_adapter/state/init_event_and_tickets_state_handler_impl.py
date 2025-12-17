@@ -7,19 +7,25 @@ JSON-optimized: Config data stored as single JSON per event
 
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, TypedDict
+from typing import TYPE_CHECKING, Dict, TypedDict
 
 import orjson
+
+from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import KvrocksClient
 from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
     make_event_state_key,
     make_seats_bf_key,
 )
-
-from src.platform.logging.loguru_io import Logger
-from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler import (
     IInitEventAndTicketsStateHandler,
 )
+
+
+if TYPE_CHECKING:
+    from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+        RowBlockManager,
+    )
 
 
 class SectionStats(TypedDict):
@@ -73,6 +79,12 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     - Batch write to Kvrocks using Pipeline
     - Create unified event_state JSON with sections and event_stats
     """
+
+    def __init__(
+        self, *, kvrocks_client: KvrocksClient, row_block_manager: 'RowBlockManager'
+    ) -> None:
+        self._kvrocks_client = kvrocks_client
+        self._row_block_manager = row_block_manager
 
     @Logger.io
     def _generate_all_seats_from_config(self, seating_config: dict, event_id: int) -> list[dict]:
@@ -133,7 +145,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                 }
 
             # Step 2: Get Kvrocks client
-            client = kvrocks_client.get_client()
+            client = self._kvrocks_client.get_client()
 
             # Step 3: Prepare section statistics and unified event config (JSON)
             section_stats: Dict[str, int] = defaultdict(int)
@@ -199,7 +211,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
 
             for seat in all_seats:
                 section_id = f'{seat["section"]}-{seat["subsection"]}'
-                bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+                bf_key = make_seats_bf_key(event_id=event_id, zone_id=section_id)
                 offset = seat['seat_index'] * 2
                 pipe.setbit(bf_key, offset, 0)
                 pipe.setbit(bf_key, offset + 1, 0)
@@ -212,6 +224,29 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             event_state['event_stats']['updated_at'] = timestamp
 
             await pipe.execute()
+
+            # Step 4.5: Initialize row_blocks for Python seat finder (A/B test)
+            # Collect unique subsections and initialize each
+            rows = seating_config.get('rows', 1)
+            cols = seating_config.get('cols', 10)
+            Logger.base.info(
+                f'[INIT-HANDLER] Step 4.5: sections={list(event_state["sections"].keys())}'
+            )
+            for section_name, section_data in event_state['sections'].items():
+                Logger.base.info(
+                    f'[INIT-HANDLER] Section {section_name}: subsections={section_data.get("subsections", {})}'
+                )
+                for subsection_num in section_data['subsections']:
+                    try:
+                        await self._row_block_manager.initialize_subsection(
+                            event_id=event_id,
+                            section=section_name,
+                            subsection=int(subsection_num),
+                            rows=rows,
+                            cols=cols,
+                        )
+                    except Exception as e:
+                        Logger.base.error(f'[INIT-HANDLER] Failed to init row_blocks: {e}')
 
             # Step 5: Write unified event config as JSON (single key per event)
             config_key = make_event_state_key(event_id=event_id)

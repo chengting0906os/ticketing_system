@@ -8,6 +8,10 @@ from collections.abc import AsyncGenerator
 import anyio
 from fastapi import APIRouter, HTTPException, status
 import orjson
+from sse_starlette.sse import EventSourceResponse
+
+from src.platform.config.di import container
+from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.query.list_all_subsection_status_use_case import (
     ListAllSubSectionStatusUseCase,
 )
@@ -18,13 +22,9 @@ from src.service.reservation.driving_adapter.seat_schema import (
     SeatResponse,
     SectionStatsResponse,
 )
-from sse_starlette.sse import EventSourceResponse
-
-from src.platform.config.di import container
-from src.platform.logging.loguru_io import Logger
 
 
-router = APIRouter(prefix='/api/reservation', tags=['seat-reservation'])
+router = APIRouter(prefix='/api/reservation', tags=['reservation'])
 
 
 @router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)

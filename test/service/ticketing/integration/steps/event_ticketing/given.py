@@ -13,7 +13,6 @@ from src.platform.constant.route_constant import (
     EVENT_BASE,
 )
 from test.event_test_constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME
-from test.kvrocks_test_client import kvrocks_test_client
 from test.shared.utils import create_user, extract_table_data, login_user, parse_seating_config
 from test.util_constant import (
     DEFAULT_PASSWORD,
@@ -282,6 +281,9 @@ def event_exists(
                     )
 
     # Initialize Redis configuration for each subsection (critical for SSE test)
+    # Import inside function to defer loading until after pytest_configure sets env vars
+    from test.kvrocks_test_client import kvrocks_test_client
+
     client = kvrocks_test_client.connect()
 
     # Get key prefix for test isolation (same as SeatStateHandlerImpl)

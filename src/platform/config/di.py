@@ -9,10 +9,8 @@ from src.service.reservation.app.command.finalize_seat_payment_use_case import (
 )
 from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.reservation.driven_adapter.booking_result_broadcaster_impl import (
+from src.service.reservation.driven_adapter.broadcaster import (
     BookingResultBroadcasterImpl,
-)
-from src.service.reservation.driven_adapter.event_state_broadcaster_impl import (
     EventStateBroadcasterImpl,
 )
 from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
@@ -24,13 +22,18 @@ from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer
 from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
     ReleaseExecutor,
 )
-from src.service.reservation.driven_adapter.executor.atomic_reservation.repo import (
+from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+    RowBlockManager,
+)
+from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
+    SeatFinder,
+)
+from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.reservation.driven_adapter.repo import (
     BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
-from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.reservation.driven_adapter.state import (
     SeatStateCommandHandlerImpl,
-)
-from src.service.reservation.driven_adapter.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
 
@@ -75,6 +78,15 @@ class Container(containers.DeclarativeContainer):
     # Infrastructure services
     kafka_service = providers.Singleton(KafkaConfigService)
 
+    # Kvrocks client (global singleton, initialized in main.py)
+    kvrocks = providers.Object(kvrocks_client)
+
+    # Row Block Manager (for seat finding)
+    row_block_manager = providers.Singleton(RowBlockManager, kvrocks_client=kvrocks)
+
+    # Seat Finder (uses row_block_manager for finding consecutive seats)
+    seat_finder = providers.Singleton(SeatFinder, row_block_manager=row_block_manager)
+
     # Background task group (set by main.py lifespan)
     # Used for fire-and-forget tasks like event publishing
     task_group = providers.Object(None)
@@ -116,9 +128,18 @@ class Container(containers.DeclarativeContainer):
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
 
     # Seat Reservation Executors (stateless, can be Factory or Singleton)
-    atomic_reservation_executor = providers.Singleton(AtomicReservationExecutor)
-    release_executor = providers.Singleton(ReleaseExecutor)
-    payment_finalizer = providers.Singleton(PaymentFinalizer)
+    atomic_reservation_executor = providers.Singleton(
+        AtomicReservationExecutor,
+        kvrocks_client=kvrocks,
+        row_block_manager=row_block_manager,
+        seat_finder=seat_finder,
+    )
+    release_executor = providers.Singleton(
+        ReleaseExecutor,
+        kvrocks_client=kvrocks,
+        row_block_manager=row_block_manager,
+    )
+    payment_finalizer = providers.Singleton(PaymentFinalizer, kvrocks_client=kvrocks)
 
     seat_state_command_handler = providers.Singleton(
         SeatStateCommandHandlerImpl,
@@ -130,6 +151,8 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Factory(
         InitEventAndTicketsStateHandlerImpl,
+        kvrocks_client=kvrocks,
+        row_block_manager=row_block_manager,
     )
 
     # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)

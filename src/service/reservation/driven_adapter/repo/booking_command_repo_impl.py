@@ -98,7 +98,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                         WHERE event_id = $3
                           AND section = $4
                           AND subsection = $5
-                          AND (row_number || '-' || seat_number) = ANY($9::text[])
+                          AND (row_number::text || '-' || seat_number::text) = ANY($9::text[])
                           AND status = 'available'
                         RETURNING id, event_id, section, subsection, row_number, seat_number,
                                   price, status, buyer_id, created_at, updated_at, reserved_at
@@ -519,7 +519,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                 WHERE event_id = $1
                   AND section = $2
                   AND subsection = $3
-                  AND (row_number || '-' || seat_number) = ANY($4::text[])
+                  AND (row_number::text || '-' || seat_number::text) = ANY($4::text[])
                 """,
                 booking_row['event_id'],
                 booking_row['section'],

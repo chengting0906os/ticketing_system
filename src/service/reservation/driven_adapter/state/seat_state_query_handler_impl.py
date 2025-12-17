@@ -17,16 +17,17 @@ import orjson
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.reservation.app.interface import ISeatStateQueryHandler
 
 
-# Get key prefix from environment for test isolation
-_KEY_PREFIX = os.getenv('KVROCKS_KEY_PREFIX', '')
+def _get_key_prefix() -> str:
+    """Get key prefix dynamically from environment for test isolation."""
+    return os.getenv('KVROCKS_KEY_PREFIX', '')
 
 
 def _make_key(key: str) -> str:
     """Add prefix to key for test isolation"""
-    return f'{_KEY_PREFIX}{key}'
+    return f'{_get_key_prefix()}{key}'
 
 
 # Bitfield to status mapping

@@ -9,13 +9,13 @@ Tests the unified seat reservation implementation supporting two modes:
 import os
 
 import pytest
-from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
 import uuid_utils as uuid
 
 from src.platform.config.di import container
-from src.platform.state.kvrocks_client import kvrocks_client
+import src.platform.state.kvrocks_client as kvrocks_module
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -34,15 +34,15 @@ def _make_key(key: str) -> str:
 @pytest.fixture
 async def seat_handler() -> SeatStateCommandHandlerImpl:
     """Create seat state command handler with proper DI"""
-    await kvrocks_client.initialize()
+    await kvrocks_module.kvrocks_client.initialize()
     return container.seat_state_command_handler()
 
 
 @pytest.fixture
 async def init_handler() -> InitEventAndTicketsStateHandlerImpl:
-    """Create seat initialization handler"""
-    await kvrocks_client.initialize()
-    return InitEventAndTicketsStateHandlerImpl()
+    """Create seat initialization handler via DI container"""
+    await kvrocks_module.kvrocks_client.initialize()
+    return container.init_event_and_tickets_state_handler()
 
 
 @pytest.fixture(scope='function')

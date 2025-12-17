@@ -4,7 +4,7 @@ Get all seat details for a specified section/subsection
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
+from src.service.reservation.app.interface import ISeatStateQueryHandler
 
 
 class ListSectionSeatsDetailUseCase:

@@ -4,13 +4,13 @@ Seat release use case
 """
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
-from src.service.shared_kernel.app.dto import (
+from src.service.reservation.app.dto import (
     ReleaseSeatRequest,
     ReleaseSeatResult,
     ReleaseSeatsBatchRequest,
     ReleaseSeatsBatchResult,
 )
+from src.service.reservation.app.interface import ISeatStateCommandHandler
 
 
 class ReleaseSeatUseCase:

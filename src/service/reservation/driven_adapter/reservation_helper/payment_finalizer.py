@@ -5,16 +5,19 @@ Handles finalizing seat payment (RESERVED -> SOLD).
 """
 
 import orjson
+
+from src.platform.state.kvrocks_client import KvrocksClient
 from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
     make_event_state_key,
     make_seats_bf_key,
 )
 
-from src.platform.state.kvrocks_client import kvrocks_client
-
 
 class PaymentFinalizer:
     """Executes seat payment finalization (RESERVED -> SOLD)"""
+
+    def __init__(self, *, kvrocks_client: KvrocksClient) -> None:
+        self._kvrocks_client = kvrocks_client
 
     @staticmethod
     def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
@@ -35,7 +38,7 @@ class PaymentFinalizer:
         section_id = f'{section}-{subsection}'
 
         # Fetch config from Kvrocks
-        client = kvrocks_client.get_client()
+        client = self._kvrocks_client.get_client()
         event_state_key = make_event_state_key(event_id=event_id)
         json_path = f"$.sections['{section}'].subsections['{subsection}'].cols"
         result = await client.execute_command('JSON.GET', event_state_key, json_path)
@@ -46,7 +49,7 @@ class PaymentFinalizer:
         cols = orjson.loads(result)[0]
         seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
 
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        bf_key = make_seats_bf_key(event_id=event_id, zone_id=section_id)
         offset = seat_index * 2
 
         # Set to SOLD (10)

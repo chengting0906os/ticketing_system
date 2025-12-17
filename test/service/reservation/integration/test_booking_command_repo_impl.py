@@ -15,7 +15,7 @@ import pytest
 import uuid_utils as uuid
 
 from src.platform.database.asyncpg_setting import get_asyncpg_pool
-from src.service.reservation.driven_adapter.executor.atomic_reservation.repo.booking_command_repo_impl import (
+from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
@@ -29,7 +29,11 @@ async def booking_repo() -> BookingCommandRepoImpl:
 
 
 @pytest.fixture
-async def test_event_with_tickets() -> AsyncGenerator[None, None]:
+async def test_event_with_tickets(clean_database: None) -> AsyncGenerator[None, None]:
+    """Create test event with tickets.
+
+    Depends on clean_database to ensure tables are cleaned before setup.
+    """
     pool = await get_asyncpg_pool()
     async with pool.acquire() as conn:
         # Create test user for foreign key constraint

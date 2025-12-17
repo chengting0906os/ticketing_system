@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Dict, List, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Dict, List, cast
 
 from opentelemetry import trace
 import orjson
 from redis.asyncio import Redis
+
+from src.platform.database.asyncpg_setting import get_asyncpg_pool
+from src.platform.exception.exceptions import DomainError
+from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import KvrocksClient
 from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
     make_booking_key,
     make_event_state_key,
@@ -11,14 +16,28 @@ from src.service.reservation.driven_adapter.reservation_helper.key_str_generator
     make_sellout_timer_key,
 )
 
-from src.platform.database.asyncpg_setting import get_asyncpg_pool
-from src.platform.exception.exceptions import DomainError
-from src.platform.logging.loguru_io import Logger
-from src.platform.state.kvrocks_client import kvrocks_client
-from src.platform.state.lua_script_executor import lua_script_executor
+
+if TYPE_CHECKING:
+    from src.service.reservation.driven_adapter.reservation_helper.row_block_manager import (
+        RowBlockManager,
+    )
+    from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
+        SeatFinder,
+    )
 
 
 class AtomicReservationExecutor:
+    def __init__(
+        self,
+        *,
+        kvrocks_client: KvrocksClient,
+        row_block_manager: 'RowBlockManager',
+        seat_finder: 'SeatFinder',
+    ) -> None:
+        self._kvrocks_client = kvrocks_client
+        self._row_block_manager = row_block_manager
+        self._seat_finder = seat_finder
+
     @staticmethod
     def _extract_subsection_stats(event_state: Dict[str, Any], section_id: str) -> Dict[str, int]:
         """
@@ -134,7 +153,7 @@ class AtomicReservationExecutor:
             },
         ):
             # Get Redis client (lightweight dict lookup)
-            client = kvrocks_client.get_client()
+            client = self._kvrocks_client.get_client()
 
             # ========== STEP 0: Read current stats (for sellout tracking) ==========
             event_state_key = make_event_state_key(event_id=event_id)
@@ -158,7 +177,9 @@ class AtomicReservationExecutor:
             # Update each seat's status from AVAILABLE (00) to RESERVED (01)
             for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
                 offset = seat_index * 2
-                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 1)  # 01 = RESERVED
+                pipe.execute_command(
+                    'BITFIELD', bf_key, 'SET', 'u2', offset, 1
+                )  # 01 = RESERVED # u2 = unsigned 2-bit integer
                 reserved_seats.append(seat_id)
 
             # ========== STEP 2: Update JSON statistics ==========
@@ -198,6 +219,39 @@ class AtomicReservationExecutor:
             event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
             subsection_stats = self._extract_subsection_stats(event_state, section_id)
             event_stats = self._extract_event_stats(event_state)
+
+            # ========== STEP 4.5: Update row_blocks for Python seat finder ==========
+            # Extract cols from event_state (already fetched in STEP 0)
+            section_name, subsection_num = section_id.split('-')
+            cols = (
+                event_state_dict.get('sections', {})
+                .get(section_name, {})
+                .get('subsections', {})
+                .get(subsection_num, {})
+                .get('cols', 0)
+            )
+            if cols > 0:
+                # Group reserved seats by row: {row: [seat_index_in_row, ...]}
+                seats_by_row: Dict[int, List[int]] = {}
+                for row, seat_num, _seat_index, _seat_id in seats_to_reserve:
+                    seat_index_in_row = seat_num - 1  # Convert to 0-indexed
+                    if row not in seats_by_row:
+                        seats_by_row[row] = []
+                    seats_by_row[row].append(seat_index_in_row)
+
+                # Update row_blocks for each affected row
+                for row, seat_indices in seats_by_row.items():
+                    try:
+                        await self._row_block_manager.remove_seats_from_blocks(
+                            event_id=event_id,
+                            section=section_name,
+                            subsection=int(subsection_num),
+                            row=row,
+                            seat_indices=seat_indices,
+                            cols=cols,
+                        )
+                    except Exception as e:
+                        Logger.base.warning(f'[ROW-BLOCKS] Failed to update blocks: {e}')
 
             # ========== STEP 5: Track sellout timing (AFTER pipeline) ==========
             try:
@@ -269,8 +323,8 @@ class AtomicReservationExecutor:
         Combines find_consecutive_seats (Lua) + execute_atomic_reservation (Pipeline).
         """
         tracer = trace.get_tracer(__name__)
-        section_id = f'{section}-{subsection}'
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        zone_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, zone_id=zone_id)
 
         with tracer.start_as_current_span(
             'executor.find_and_reserve',
@@ -278,8 +332,6 @@ class AtomicReservationExecutor:
                 'booking.id': booking_id,
             },
         ):
-            client = kvrocks_client.get_client()
-
             # ========== STEP 0: Fetch config if missing (cache miss upstream) ==========
             # Query PostgreSQL to distribute load (instead of Kvrocks)
             if rows == 0 or cols == 0:
@@ -302,14 +354,16 @@ class AtomicReservationExecutor:
                                 break
 
             # ========== STEP 1: Find consecutive seats ==========
-            # Config passed via ARGV (avoids Kvrocks fetch in Lua)
-            lua_result = await lua_script_executor.find_consecutive_seats(
-                client=client,
-                keys=[bf_key],
-                args=[str(rows), str(cols), str(quantity)],
+            found_seats = await self._seat_finder.find_consecutive_seats(
+                rows=rows,
+                cols=cols,
+                quantity=quantity,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
             )
 
-            if lua_result is None:
+            if found_seats is None:
                 return {
                     'success': False,
                     'reserved_seats': [],
@@ -320,11 +374,8 @@ class AtomicReservationExecutor:
                     'error_message': f'No {quantity} consecutive seats available',
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
-            lua_data = orjson.loads(lua_result)
-            found_seats = lua_data['seats']
-
             # ========== STEP 2: Convert to reservation format ==========
+            # found_seats: List[(row, seat_num, seat_index)]
             seats_to_reserve = [
                 (row, seat_num, seat_index, f'{row}-{seat_num}')
                 for row, seat_num, seat_index in found_seats
@@ -333,7 +384,7 @@ class AtomicReservationExecutor:
             # ========== STEP 3: Execute atomic reservation ==========
             return await self.execute_atomic_reservation(
                 event_id=event_id,
-                section_id=section_id,
+                section_id=zone_id,
                 booking_id=booking_id,
                 bf_key=bf_key,
                 seats_to_reserve=seats_to_reserve,
@@ -352,12 +403,11 @@ class AtomicReservationExecutor:
         """
         Verify and reserve manually selected seats (manual mode).
 
-        Lua script fetches config, validates seats, returns verified data.
-        Then execute_atomic_reservation does the actual reservation.
+        Python implementation: fetches config, validates seats, then reserves.
         """
         tracer = trace.get_tracer(__name__)
-        section_id = f'{section}-{subsection}'
-        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        zone_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, zone_id=zone_id)
 
         with tracer.start_as_current_span(
             'executor.manual_reservation',
@@ -365,21 +415,43 @@ class AtomicReservationExecutor:
                 'booking.id': booking_id,
             },
         ):
-            client = kvrocks_client.get_client()
+            # ========== STEP 1: Validate quantity ==========
+            MAX_TICKETS = 4
+            if len(seat_ids) > MAX_TICKETS:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'total_price': 0,
+                    'subsection_stats': {},
+                    'event_stats': {},
+                    'event_state': {},
+                    'error_message': f'Maximum {MAX_TICKETS} tickets allowed',
+                }
+
+            if not seat_ids:
+                return {
+                    'success': False,
+                    'reserved_seats': [],
+                    'total_price': 0,
+                    'subsection_stats': {},
+                    'event_stats': {},
+                    'event_state': {},
+                    'error_message': 'No seat IDs provided',
+                }
+
+            client = self._kvrocks_client.get_client()
             event_state_key = make_event_state_key(event_id=event_id)
 
-            # ========== STEP 1: Verify seats via Lua (fetches config + validates) ==========
+            # ========== STEP 2: Fetch config from event_state ==========
+            subsection_path = f'$.sections.{section}.subsections.{subsection}'
+            price_path = f'$.sections.{section}.price'
+
             try:
-                lua_result = await lua_script_executor.verify_manual_seats(
-                    client=client,
-                    keys=[bf_key, event_state_key],
-                    args=[str(event_id), section, str(subsection)] + seat_ids,
+                subsection_result = await client.execute_command(
+                    'JSON.GET', event_state_key, subsection_path
                 )
-            except Exception as e:
-                error_msg = str(e)
-                # Parse Lua error format: "SEAT_UNAVAILABLE: Seat A-1-1-5 is already RESERVED"
-                if ':' in error_msg:
-                    error_msg = error_msg.split(':', 1)[1].strip()
+                price_result = await client.execute_command('JSON.GET', event_state_key, price_path)
+            except Exception:
                 return {
                     'success': False,
                     'reserved_seats': [],
@@ -387,10 +459,10 @@ class AtomicReservationExecutor:
                     'subsection_stats': {},
                     'event_stats': {},
                     'event_state': {},
-                    'error_message': error_msg,
+                    'error_message': f'Config not found for event={event_id} section={zone_id}',
                 }
 
-            if lua_result is None:
+            if not subsection_result:
                 return {
                     'success': False,
                     'reserved_seats': [],
@@ -398,24 +470,71 @@ class AtomicReservationExecutor:
                     'subsection_stats': {},
                     'event_stats': {},
                     'event_state': {},
-                    'error_message': 'Lua verification returned no data',
+                    'error_message': f'Config not found for event={event_id} section={zone_id}',
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
-            lua_data = orjson.loads(lua_result)
-            verified_seats = lua_data['seats']
-            section_price = lua_data['price']
+            subsection_config = orjson.loads(subsection_result)[0]
+            cols = subsection_config['cols']
+            section_price = orjson.loads(price_result)[0] if price_result else 0
 
-            # ========== STEP 2: Convert to reservation format ==========
-            seats_to_reserve = [
-                (row, seat_num, seat_index, seat_id)
-                for row, seat_num, seat_index, seat_id in verified_seats
-            ]
+            # ========== STEP 3: Parse seat IDs and calculate indices ==========
+            seats_to_reserve: List[tuple] = []
+            for seat_id in seat_ids:
+                if '-' not in seat_id:
+                    return {
+                        'success': False,
+                        'reserved_seats': [],
+                        'total_price': 0,
+                        'subsection_stats': {},
+                        'event_stats': {},
+                        'event_state': {},
+                        'error_message': f'Invalid seat_id format: {seat_id}',
+                    }
 
-            # ========== STEP 3: Execute atomic reservation ==========
+                parts = seat_id.split('-')
+                try:
+                    row = int(parts[0])
+                    seat_num = int(parts[1])
+                except ValueError:
+                    return {
+                        'success': False,
+                        'reserved_seats': [],
+                        'total_price': 0,
+                        'subsection_stats': {},
+                        'event_stats': {},
+                        'event_state': {},
+                        'error_message': f'Cannot parse seat_id: {seat_id}',
+                    }
+
+                seat_index = (row - 1) * cols + (seat_num - 1)
+                seats_to_reserve.append((row, seat_num, seat_index, seat_id))
+
+            # ========== STEP 4: Verify all seats are available via BITFIELD ==========
+            bitfield_args = ['BITFIELD', bf_key]
+            for _, _, seat_index, _ in seats_to_reserve:
+                offset = seat_index * 2
+                bitfield_args.extend(['GET', 'u2', str(offset)])
+
+            statuses: List[int] = await client.execute_command(*bitfield_args) or []
+
+            for i, status in enumerate(statuses):
+                if status != 0:
+                    seat_id = seats_to_reserve[i][3]
+                    status_name = 'RESERVED' if status == 1 else 'SOLD'
+                    return {
+                        'success': False,
+                        'reserved_seats': [],
+                        'total_price': 0,
+                        'subsection_stats': {},
+                        'event_stats': {},
+                        'event_state': {},
+                        'error_message': f'Seat {seat_id} is already {status_name}',
+                    }
+
+            # ========== STEP 5: Execute atomic reservation ==========
             return await self.execute_atomic_reservation(
                 event_id=event_id,
-                section_id=section_id,
+                section_id=zone_id,
                 booking_id=booking_id,
                 bf_key=bf_key,
                 seats_to_reserve=seats_to_reserve,

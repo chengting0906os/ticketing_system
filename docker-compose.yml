@@ -22,7 +22,7 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "max_connections=600"
+      - "max_connections=1000"
       - "-c"
       - "shared_buffers=512MB"
       - "-c"
@@ -397,11 +397,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.25'
-          memory: 512M
+          cpus: '1'
+          memory: 1024M
         reservations:
-          cpus: '0.1'
-          memory: 128M
+          cpus: '0.5'
+          memory: 512M
     logging:
       driver: "local"
       options:

@@ -257,11 +257,10 @@ async def stream_booking_result(
                     break
 
         except anyio.get_cancelled_exc_class():
+            # Client disconnected - don't re-raise, let generator end gracefully
             Logger.base.info(f'🔌 [SSE] Client disconnected: buyer={buyer_id}, event={event_id}')
-            raise
 
         finally:
-            # Cleanup: unsubscribe from Redis channel
             if pubsub is not None:
                 await pubsub.unsubscribe(channel)
                 await pubsub.close()

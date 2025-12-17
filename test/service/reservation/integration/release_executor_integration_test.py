@@ -12,7 +12,7 @@ import pytest
 from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
     ReleaseExecutor,
 )
-from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
 import uuid_utils as uuid
@@ -48,9 +48,9 @@ async def seat_handler() -> SeatStateCommandHandlerImpl:
 
 @pytest.fixture
 async def init_handler() -> InitEventAndTicketsStateHandlerImpl:
-    """Create seat initialization handler"""
+    """Create seat initialization handler via DI container"""
     await kvrocks_client.initialize()
-    return InitEventAndTicketsStateHandlerImpl()
+    return container.init_event_and_tickets_state_handler()
 
 
 @pytest.fixture(scope='function')
