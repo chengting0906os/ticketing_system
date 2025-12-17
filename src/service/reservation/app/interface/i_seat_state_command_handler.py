@@ -1,8 +1,7 @@
 """
-Seat State Command Handler Interface - Shared Kernel
+Seat State Command Handler Interface
 
-CQRS Command Side
-Used by both Ticketing and Seat Reservation bounded contexts
+CQRS Command Side - Write operations for seat state changes.
 """
 
 from abc import ABC, abstractmethod

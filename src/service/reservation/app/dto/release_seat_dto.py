@@ -1,8 +1,7 @@
 """
-Seat Command DTOs - Shared Kernel
+Release Seat DTOs
 
-Seat Command DTOs - Defines domain contracts for seat state change operations
-Includes: Request/Result for seat release, payment completion, and other command operations
+Request/Result DTOs for seat release operations.
 """
 
 import attrs

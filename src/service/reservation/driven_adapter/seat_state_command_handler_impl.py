@@ -21,7 +21,7 @@ from src.service.reservation.driven_adapter.reservation_helper.release_executor 
 )
 
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.service.reservation.app.interface import ISeatStateCommandHandler
 from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
     IBookingMetadataHandler,
 )

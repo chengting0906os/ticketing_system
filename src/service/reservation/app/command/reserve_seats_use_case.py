@@ -15,7 +15,7 @@ from src.service.reservation.app.interface.i_booking_command_repo import (
 from src.service.reservation.app.interface.i_event_state_broadcaster import (
     IEventStateBroadcaster,
 )
-from src.service.shared_kernel.app.interface import ISeatStateCommandHandler
+from src.service.reservation.app.interface import ISeatStateCommandHandler
 
 
 class ReserveSeatsUseCase:
