@@ -7,12 +7,12 @@
 #
 # Arguments:
 #   environment: production | development
-#   service: ticketing | booking | reservation | all (default: all)
+#   service: ticketing | reservation | all (default: all)
 #
 # Examples:
 #   ./ecr-push.sh production all           # Push all services
 #   ./ecr-push.sh development ticketing    # Push only ticketing service
-#   ./ecr-push.sh production booking       # Push only booking service
+#   ./ecr-push.sh production reservation   # Push only reservation service
 #
 # Prerequisites:
 #   - AWS CLI configured (aws configure)
@@ -43,7 +43,6 @@ AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
 # Service Configuration (list of repository names)
 REPOSITORIES=(
     "ticketing-service"
-    "booking-service"
     "reservation-service"
 )
 
@@ -65,12 +64,12 @@ print_usage() {
     echo ""
     echo "Arguments:"
     echo "  environment: production | development"
-    echo "  service: ticketing | booking | reservation | all (default: all)"
+    echo "  service: ticketing | reservation | all (default: all)"
     echo ""
     echo "Examples:"
     echo "  $0 production all"
     echo "  $0 development ticketing"
-    echo "  $0 production booking"
+    echo "  $0 production reservation"
     exit 1
 }
 
@@ -88,7 +87,7 @@ if [[ ! "$ENVIRONMENT" =~ ^(production|development)$ ]]; then
     print_usage
 fi
 
-if [[ ! "$SERVICE" =~ ^(ticketing|booking|reservation|all)$ ]]; then
+if [[ ! "$SERVICE" =~ ^(ticketing|reservation|all)$ ]]; then
     log_error "Invalid service: $SERVICE"
     print_usage
 fi
@@ -224,14 +223,10 @@ cd "$(dirname "$0")/../.."
 case "$SERVICE" in
     all)
         build_and_push "ticketing-service" "ticketing-service"
-        build_and_push "booking-service" "booking-service"
         build_and_push "reservation-service" "reservation-service"
         ;;
     ticketing)
         build_and_push "ticketing-service" "ticketing-service"
-        ;;
-    booking)
-        build_and_push "booking-service" "booking-service"
         ;;
     reservation)
         build_and_push "reservation-service" "reservation-service"

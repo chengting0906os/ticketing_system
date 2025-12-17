@@ -47,7 +47,7 @@ _shared:
     cpu_threshold: 60
     memory_threshold: 60
 
-  # Consumer task resources (booking & reservation)
+  # Consumer task resources (reservation)
   # task_cpu: ECS CPU units (256, 512, 1024, 2048), task_memory: MB (512, 1024, 2048, 4096)
   consumer_task: &consumer_task
     task_cpu: 2048      # 2 vCPU
@@ -76,11 +76,6 @@ production:
       task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
       workers: 1
       <<: *scaling
-
-    booking:
-      min_tasks: 100
-      max_tasks: 100
-      <<: *consumer_task
 
     reservation:
       min_tasks: 100
@@ -122,11 +117,6 @@ staging:
       workers: 1
       <<: *scaling
 
-    booking:
-      min_tasks: 50
-      max_tasks: 50
-      <<: *consumer_task
-
     reservation:
       min_tasks: 50
       max_tasks: 50
@@ -166,11 +156,6 @@ development:
       task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
       workers: 1
       <<: *scaling
-
-    booking:
-      min_tasks: 1
-      max_tasks: 20
-      <<: *consumer_task
 
     reservation:
       min_tasks: 1

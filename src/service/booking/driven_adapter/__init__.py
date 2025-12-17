@@ -1,1 +1,0 @@
-# Booking Service Driven Adapters

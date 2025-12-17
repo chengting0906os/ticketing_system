@@ -31,7 +31,6 @@ aws-start:  ## ▶️ Start all AWS services
 	@sleep 60
 	@# Scale ECS services
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-ticketing-service --desired-count 1 >/dev/null 2>&1 || true
-	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-booking-service --desired-count 2 >/dev/null 2>&1 || true
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-reservation-service --desired-count 2 >/dev/null 2>&1 || true
 	@echo "✅ All services started"
 
@@ -39,7 +38,6 @@ aws-stop:  ## 🛑 Stop all AWS services (save cost)
 	@echo "🛑 Stopping all services..."
 	@# Scale ECS to 0
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-ticketing-service --desired-count 0 >/dev/null 2>&1 || true
-	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-booking-service --desired-count 0 >/dev/null 2>&1 || true
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-reservation-service --desired-count 0 >/dev/null 2>&1 || true
 	@# Stop Kafka EC2s
 	@aws ec2 stop-instances --instance-ids \
@@ -56,7 +54,7 @@ aws-stop:  ## 🛑 Stop all AWS services (save cost)
 aws-status:  ## 📊 Check service status
 	@echo "📊 ECS Services:"
 	@aws ecs describe-services --cluster ticketing-cluster \
-		--services ticketing-development-ticketing-service ticketing-development-booking-service ticketing-development-reservation-service \
+		--services ticketing-development-ticketing-service ticketing-development-reservation-service \
 		--query 'services[].[serviceName,runningCount,desiredCount]' --output table 2>/dev/null || echo "No services found"
 	@echo ""
 	@echo "📊 Kafka EC2:"
@@ -74,11 +72,10 @@ aws-logs:  ## 🔍 Tail API logs
 aws-restart:  ## 🔄 Restart ECS services (pull latest images)
 	@echo "🔄 Restarting ECS services..."
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-ticketing-service --force-new-deployment >/dev/null
-	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-booking-service --force-new-deployment >/dev/null
 	@aws ecs update-service --cluster ticketing-cluster --service ticketing-development-reservation-service --force-new-deployment >/dev/null
 	@echo "✅ Restart triggered, waiting for stable..."
 	@aws ecs wait services-stable --cluster ticketing-cluster \
-		--services ticketing-development-ticketing-service ticketing-development-booking-service ticketing-development-reservation-service
+		--services ticketing-development-ticketing-service ticketing-development-reservation-service
 	@echo "✅ All services stable"
 
 # ==============================================================================
