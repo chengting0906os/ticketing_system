@@ -116,11 +116,8 @@ spec/
 cookies.txt
 credentials.json
 
-# Go binaries (will be compiled in container for correct architecture)
-script/go_client/reserved_loadtest
-script/go_client/concurrent_loadtest
-script/go_client/sequential_sellout
-script/go_client/concurrent_sellout
+# Go binaries and artifacts
+script/go_client/full_reserved_spike_test
 script/go_client/*.prof
 script/go_client/trace.out
 script/go_client/report/
