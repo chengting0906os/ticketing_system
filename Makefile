@@ -23,33 +23,6 @@ SCALE_RESERVATION ?= 10
 # Default seats for seeding
 SEATS ?= 500
 
-# ==============================================================================
-# 📨 KAFKA CONSUMERS
-# ==============================================================================
-
-.PHONY: c-d-build c-start c-stop c-restart rs c-tail c-status
-c-d-build:  ## 🔨 Build service images
-	@docker-compose build ticketing-service reservation-service
-
-c-start:  ## 🚀 Start all services (API + reservation-service)
-	@docker-compose up -d --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
-
-c-stop:  ## 🛑 Stop service containers
-	@docker-compose stop ticketing-service reservation-service
-	@docker-compose rm -f ticketing-service reservation-service
-
-c-restart:  ## 🔄 Restart service containers (hot reload code changes)
-	@echo "🔄 Restarting services to reload code changes..."
-	@docker-compose restart ticketing-service reservation-service
-	@echo "✅ Services restarted"
-
-rs:  ## 🔄 Restart app services only (keep Kafka/Postgres/Kvrocks running)
-	@echo "🔄 Restarting application services..."
-	@echo "   📊 Ticketing: $(SCALE_TICKETING) instances"
-	@echo "   📊 Reservation: $(SCALE_RESERVATION) instances"
-	@docker-compose up -d --force-recreate --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
-	@echo "✅ Application services restarted (Kafka/Postgres/Kvrocks untouched)"
-
 
 # ==============================================================================
 # 🗄️ DATABASE
@@ -103,34 +76,7 @@ re-seed-200k:  ## 🔄 Reset and seed with 200,000 seats
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U postgres -d ticketing_system_db
 
-# ==============================================================================
-# 🧪 TESTING
-# ==============================================================================
-
-.PHONY: test t-smoke t-quick t-unit t-e2e t-bdd test-cdk
-# Usage: make pytest [path] or make pytest ARGS="-k test_name"
-pytest:  ## 🧪 Run pytest (usage: make pytest test/path/ or make pytest ARGS="-k test_name")
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest --ignore=test/service/e2e -m "not cdk" -v $(ARGS) $(filter-out $@,$(MAKECMDGOALS))
-
-t-smoke:  ## 🔥 Run smoke tests only (quick validation - integration features)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest  -m "smoke" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
-
-t-quick:  ## ⚡ Run quick tests (smoke + quick tags for rapid feedback)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/ticketing/integration/features test/service/reservation/integration/features -m "smoke or quick" -v -n 6 --dist loadscope $(filter-out $@,$(MAKECMDGOALS))
-
-t-unit:  ## 🎯 Run unit tests only (fast, no integration/e2e)
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest -m unit -v $(filter-out $@,$(MAKECMDGOALS))
-
-t-e2e:  ## 🧪 Run E2E tests
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/service/e2e -v $(filter-out $@,$(MAKECMDGOALS))
-
-test-cdk:  ## 🏗️ Run CDK infrastructure tests (slow, CPU intensive)
-	@echo "⚠️  Warning: CDK tests are CPU intensive and may take 1-2 minutes"
-	@POSTGRES_SERVER=localhost POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_PORT=5432 KVROCKS_HOST=localhost KVROCKS_PORT=6666 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093,localhost:9094 uv run pytest test/deployment/ -m "cdk" -v $(filter-out $@,$(MAKECMDGOALS))
-
-%:
-	@:
-
+# 
 # ==============================================================================
 # 🔧 CODE QUALITY
 # ==============================================================================
@@ -156,7 +102,14 @@ clean:  ## 🧹 Remove cache files
 # 🐳 DOCKER RESET
 # ==============================================================================
 
-.PHONY: d-reset-all dra
+.PHONY: d-reset-all dra rs
+d-rs:  ## 🔄 Restart app services only (keep Kafka/Postgres/Kvrocks running)
+	@echo "🔄 Restarting application services..."
+	@echo "   📊 Ticketing: $(SCALE_TICKETING) instances"
+	@echo "   📊 Reservation: $(SCALE_RESERVATION) instances"
+	@docker-compose up -d --force-recreate --scale ticketing-service=$(SCALE_TICKETING) --scale reservation-service=$(SCALE_RESERVATION)
+	@echo "✅ Application services restarted (Kafka/Postgres/Kvrocks untouched)"
+
 d-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → reset-kafka → seed)
 	@echo "🚀 ==================== DOCKER COMPLETE RESET ===================="
 	@echo "⚠️  This will stop all containers and remove volumes"
@@ -204,13 +157,12 @@ d-reset-kafka:  ## 🌊 Reset Kafka in Docker
 	@docker-compose exec ticketing-service sh -c "PYTHONPATH=/app uv run python script/reset_kafka.py"
 	@echo "✅ Kafka reset completed"
 
-tdt:  ## 🧪 Run tests in Docker (excludes E2E, deployment, SSE slow tests)
-	@docker-compose exec ticketing-service uv run pytest test/ \
-		-n 4\
-		--ignore=test/service/e2e \
-		--ignore=test/deployment \
-		--ignore=test/service/reservation/integration/features/seat_status_sse_stream.feature \
-		-v
+.PHONY: tp t
+tp:  ## 🧪 Run tests in Docker (parallel, -n 4)
+	@docker-compose exec ticketing-service uv run pytest -v -n 4 $(ARGS) $(filter-out $@,$(MAKECMDGOALS))
+
+t:  ## 🧪 Run tests in Docker (single process, -n 0)
+	@docker-compose exec ticketing-service uv run pytest -v -n 0 $(ARGS) $(filter-out $@,$(MAKECMDGOALS))
 
 
 
@@ -243,8 +195,7 @@ k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS)
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
 # ==============================================================================
 # Usage: make go-<target>
-#   make go-clt-t/s/m/l/f      # Concurrent load test (tiny → full)
-#   make go-frlt-{500,5k,50k,200k}  # Full reserved load test (default: 500)
+#   make go-frst-{500,1k,2k,3k,5k,50k,200k}  # Full reserved spike test
 #   make go-help               # Show all go_client commands
 # ==============================================================================
 
@@ -313,8 +264,7 @@ help:
 	@echo "  format / lint / pyre / clean"
 	@echo ""
 	@echo "⚡ LOAD TESTING"
-	@echo "  go-clt-t/s/m/l/f  - Concurrent load test (tiny → full)"
-	@echo "  go-frlt-{500,5k,50k,200k} - Full reserved load test"
+	@echo "  go-frst-{500,1k,2k,3k,5k,50k,200k} - Full reserved spike test"
 	@echo "  k6-dev-load / k6-dev-stress / k6-dev-spike / k6-prod-load / k6-prod-stress / k6-prod-spike"
 	@echo ""
 	@echo "☁️  AWS (make -f deployment/Makefile help)"

@@ -120,29 +120,7 @@ aws-api-exec:  ## 🔧 Exec into API container
 	@TASK_ARN=$$(aws ecs list-tasks --cluster ticketing-cluster --service-name ticketing-development-ticketing-service --desired-status RUNNING --query 'taskArns[0]' --output text); \
 	aws ecs execute-command --cluster ticketing-cluster --task $$TASK_ARN --container Container --interactive --command "/bin/bash"
 
-# ==============================================================================
-# 🖥️ EC2 LOADTEST
-# ==============================================================================
 
-.PHONY: aws-lt-exec aws-lt-start aws-lt-stop
-
-aws-lt-exec:  ## 🔧 Connect to LoadTest EC2
-	@INSTANCE_ID=$$(aws ec2 describe-instances --filters "Name=tag:Name,Values=LoadTest-Instance" "Name=instance-state-name,Values=running" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	echo "📡 Connecting to $$INSTANCE_ID..."; \
-	echo "🎯 Run: cd ~/app/script/go_client && ./reserved_loadtest -env development -event 1 -workers 50"; \
-	aws ssm start-session --target $$INSTANCE_ID
-
-aws-lt-start:  ## 🚀 Start LoadTest EC2
-	@INSTANCE_ID=$$(aws ec2 describe-instances --filters "Name=tag:Name,Values=LoadTest-Instance" --query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	aws ec2 start-instances --instance-ids $$INSTANCE_ID >/dev/null; \
-	echo "✅ LoadTest instance starting"
-
-aws-lt-stop:  ## 🛑 Stop LoadTest EC2
-	@INSTANCE_ID=$$(aws ec2 describe-instances --filters "Name=tag:Name,Values=LoadTest-Instance" "Name=instance-state-name,Values=running" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	aws ec2 stop-instances --instance-ids $$INSTANCE_ID >/dev/null 2>&1 || true; \
-	echo "✅ LoadTest instance stopped"
 
 # ==============================================================================
 # 🚀 DEPLOYMENT
@@ -163,27 +141,6 @@ dev-deploy-full:  ## 🎯 Build + Push + Deploy (complete)
 	@DEPLOY_ENV=development uv run cdk deploy --all --require-approval never
 	@echo "✅ Deployment complete"
 
-# ==============================================================================
-# 🔴 KVROCKS
-# ==============================================================================
-
-.PHONY: aws-kvrocks-timer aws-kvrocks-keys
-
-aws-kvrocks-timer:  ## ⏱️ Check event_sellout_timer:1
-	@INSTANCE_ID=$$(aws ec2 describe-instances --filters "Name=tag:aws:autoscaling:groupName,Values=*KvrocksASG*" "Name=instance-state-name,Values=running" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	CMD_ID=$$(aws ssm send-command --instance-ids $$INSTANCE_ID --document-name "AWS-RunShellScript" \
-		--parameters 'commands=["redis-cli -h localhost -p 6666 HGETALL event_sellout_timer:1"]' --query 'Command.CommandId' --output text); \
-	sleep 3; \
-	aws ssm get-command-invocation --command-id $$CMD_ID --instance-id $$INSTANCE_ID --query 'StandardOutputContent' --output text
-
-aws-kvrocks-keys:  ## 🔍 List Kvrocks keys
-	@INSTANCE_ID=$$(aws ec2 describe-instances --filters "Name=tag:aws:autoscaling:groupName,Values=*KvrocksASG*" "Name=instance-state-name,Values=running" \
-		--query 'Reservations[0].Instances[0].InstanceId' --output text); \
-	CMD_ID=$$(aws ssm send-command --instance-ids $$INSTANCE_ID --document-name "AWS-RunShellScript" \
-		--parameters 'commands=["redis-cli -h localhost -p 6666 KEYS \"*\" | head -30"]' --query 'Command.CommandId' --output text); \
-	sleep 3; \
-	aws ssm get-command-invocation --command-id $$CMD_ID --instance-id $$INSTANCE_ID --query 'StandardOutputContent' --output text
 
 .DEFAULT_GOAL := help
 
