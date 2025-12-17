@@ -64,6 +64,7 @@ script/go_client/report/*
 # CDK
 cdk.out/
 cdk.out.*/
+cdk.context.json
 deployment/cdk/cdk.out/
 deployment/cdk/cdk.out.*/
 deployment/cdk/cdk-outputs.json
