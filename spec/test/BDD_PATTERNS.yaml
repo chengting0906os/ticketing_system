@@ -1,14 +1,26 @@
-# ASDR Backend - BDD Test Pattern Configuration
+# Ticketing System - BDD Test Pattern Configuration
 # This document defines the standard patterns for pytest-bdd tests in this project.
 #
 # Architecture Overview:
-#   tests/
-#   ├── conftest.py              # Global fixtures (SessionTestAsyncClient, AsyncCSRFClient)
-#   ├── glue_conftest.py         # Shared BDD step definitions (import with *)
-#   └── {module}/
-#       ├── conftest.py          # Module-specific fixtures
-#       ├── *_test.feature       # Gherkin scenarios
-#       └── *_test.py            # Scenario bindings + module-specific steps
+#   test/
+#   ├── conftest.py                    # Global fixtures (TestClient, execute_sql_statement)
+#   ├── loader.py                      # Imports all BDD step definitions
+#   ├── constants.py                   # Test constants (emails, passwords, seating configs)
+#   ├── bdd_conftest/                  # Shared BDD step definitions
+#   │   ├── shared_step_utils.py       # Utility functions for steps
+#   │   ├── given_step_conftest.py     # Common Given steps
+#   │   ├── when_step_conftest.py      # Common When steps (HTTP actions)
+#   │   └── then_step_conftest.py      # Common Then steps (assertions)
+#   └── service/ticketing/
+#       ├── booking/
+#       │   ├── conftest.py            # Booking-specific steps
+#       │   └── *.feature              # Booking scenarios
+#       ├── event_ticketing/
+#       │   ├── conftest.py            # Event-specific steps
+#       │   └── *.feature              # Event scenarios
+#       └── reservation/
+#           ├── conftest.py            # Reservation-specific steps
+#           └── *.feature              # Reservation scenarios
 
 # =============================================================================
 # GIVEN PATTERNS - Setup test preconditions
@@ -17,152 +29,149 @@
 given_patterns:
   # --- Authentication ---
   authentication:
-    superuser:
-      pattern: 'I am logged in as superuser'
-      target_fixture: client
-      description: Login as superuser using SessionTestAsyncClient
+    seller_simple:
+      pattern: 'I am logged in as a seller'
+      location: bdd_conftest/given_step_conftest.py
+      description: Login as default seller (creates if not exists)
       example: |
-        Given I am logged in as superuser
+        Given I am logged in as a seller
 
-    normal_user:
-      pattern: 'I am logged in as normal user'
-      target_fixture: client
-      description: Login as normal (non-superuser) user
+    buyer_simple:
+      pattern: 'I am logged in as a buyer'
+      location: bdd_conftest/given_step_conftest.py
+      description: Login as default buyer (creates if not exists)
       example: |
-        Given I am logged in as normal user
+        Given I am logged in as a buyer
 
-    specific_user:
-      pattern: 'I am logged in as user "{username}"'
-      target_fixture: client
-      description: Login as a previously created user by username
+    seller_with_table:
+      pattern: 'I am logged in as a seller with'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create and login as seller with specified credentials
       example: |
-        Given I am logged in as user "pwduser"
+        Given I am logged in as a seller with
+          | email           | password | name        |
+          | seller@test.com | P@ssw0rd | Test Seller |
 
-    with_password:
-      pattern: 'I am logged in as "{username}" with password "{password}"'
-      target_fixture: client
-      location: glue_conftest.py
+    buyer_with_table:
+      pattern: 'I am logged in as a buyer with'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create and login as buyer with specified credentials
       example: |
-        Given I am logged in as "testuser" with password "P@ssw0rd1"
+        Given I am logged in as a buyer with
+          | email          | password | name       |
+          | buyer@test.com | P@ssw0rd | Test Buyer |
 
-  # --- API Authentication (httpx client) ---
-  api_authentication:
-    superuser:
-      pattern: 'I am logged in as superuser via API'
-      target_fixture: client
-      description: Login using httpx.AsyncClient with session cookie
+    role_parameterized:
+      pattern: 'I am logged in as "{role}"'
+      location: bdd_conftest/given_step_conftest.py
+      description: Login as specified role with default credentials
       example: |
-        Given I am logged in as superuser via API
+        Given I am logged in as "seller"
+        Given I am logged in as "buyer"
 
-    normal_user:
-      pattern: 'I am logged in as normal user via API'
-      target_fixture: client
+    role_with_table:
+      pattern: 'I am logged in as "{role}" with'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create and login as specified role with table credentials
       example: |
-        Given I am logged in as normal user via API
+        Given I am logged in as "seller" with
+          | email           | password | name        |
+          | seller@test.com | P@ssw0rd | Test Seller |
 
-  # --- Entity Creation ---
-  entity_creation:
-    single_user:
-      pattern: 'a user exists with username "{username}"'
-      location: glue_conftest.py
-      description: Create user via API as superuser, stores in context['users']
+  # --- User Creation (without login) ---
+  user_creation:
+    seller_exists:
+      pattern: 'a seller exists'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create a seller with default credentials (no login)
       example: |
-        Given a user exists with username "existinguser"
+        Given a seller exists
 
-    single_user_api:
-      pattern: 'a user "{username}" exists via API'
-      description: Create user via httpx API client
+    buyer_exists:
+      pattern: 'a buyer exists'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create a buyer with default credentials (no login)
       example: |
-        Given a user "usertodelete" exists via API
+        Given a buyer exists
 
-    multiple_users:
-      pattern: 'users exist with'
-      location: glue_conftest.py
-      description: Create multiple users from datatable
+  # --- Event Creation ---
+  event_creation:
+    event_with_table:
+      pattern: 'an event exists with:'
+      location: bdd_conftest/given_step_conftest.py
+      description: Create event via API with specified attributes
       example: |
-        Given users exist with
-          | username | password  |
-          | user1    | P@ssw0rd1 |
-          | user2    | P@ssw0rd2 |
-
-    test_user_with_password:
-      pattern: 'a test user exists with username "{username}" and password "{password}"'
-      location: glue_conftest.py
-      description: Create user directly in DB with specific password
-      example: |
-        Given a test user exists with username "testuser" and password "P@ssw0rd1"
+        Given an event exists with:
+          | name         | description | is_active | status    | venue_name   | seating_config |
+          | Test Concert | Test event  | true      | available | Taipei Arena | {...}          |
 
 # =============================================================================
-# WHEN PATTERNS - Execute actions
+# WHEN PATTERNS - Execute HTTP actions
 # =============================================================================
 
 when_patterns:
-  # --- HTTP Methods (SessionTestAsyncClient) ---
+  # --- HTTP Methods ---
   http_actions:
-    post:
+    post_with_data:
       pattern: 'I call POST "{endpoint}" with'
-      location: glue_conftest.py
-      description: POST request with datatable body
+      location: bdd_conftest/when_step_conftest.py
+      description: POST request with datatable body, supports variable substitution
       example: |
-        When I call POST "/api/user/" with
-          | username   | password  |
-          | testuser01 | P@ssw0rd1 |
+        When I call POST "/api/user/register" with
+          | email            | password | name     | role  |
+          | test@example.com | P@ssw0rd | TestUser | buyer |
+
+        When I call POST "/api/booking" with
+          | event_id   | section | quantity |
+          | {event_id} | A       | 2        |
+
+    post_no_data:
+      pattern: 'I call POST "{endpoint}"'
+      location: bdd_conftest/when_step_conftest.py
+      description: POST request without body (e.g., refresh actions)
+      example: |
+        When I call POST "/api/auth/refresh"
 
     get:
       pattern: 'I call GET "{endpoint}"'
-      location: glue_conftest.py
+      location: bdd_conftest/when_step_conftest.py
+      description: GET request, supports variable substitution in endpoint
       example: |
-        When I call GET "/api/user/"
+        When I call GET "/api/event/1"
+        When I call GET "/api/event/{event_id}"
 
-    put:
+    put_with_data:
       pattern: 'I call PUT "{endpoint}" with'
-      location: glue_conftest.py
-      description: PUT request with datatable body, supports {username.id} substitution
+      location: bdd_conftest/when_step_conftest.py
+      description: PUT request with datatable body
       example: |
-        When I call PUT "/api/user/{pwduser.id}" with
-          | password     |
-          | NewP@ssw0rd2 |
+        When I call PUT "/api/event/1" with
+          | name     | description |
+          | New Name | New Desc    |
 
-    patch:
+    patch_with_data:
       pattern: 'I call PATCH "{endpoint}" with'
-      location: glue_conftest.py
+      location: bdd_conftest/when_step_conftest.py
+      description: PATCH request with datatable body
       example: |
-        When I call PATCH "/api/user/{user.id}" with
-          | email |
-          | new@example.com |
+        When I call PATCH "/api/event/1" with
+          | is_active |
+          | false     |
+
+    patch_no_data:
+      pattern: 'I call PATCH "{endpoint}"'
+      location: bdd_conftest/when_step_conftest.py
+      description: PATCH request without body (e.g., cancel actions)
+      example: |
+        When I call PATCH "/api/booking/{booking.id}/cancel"
 
     delete:
       pattern: 'I call DELETE "{endpoint}"'
-      location: glue_conftest.py
+      location: bdd_conftest/when_step_conftest.py
+      description: DELETE request
       example: |
-        When I call DELETE "/api/user/{usertodelete.id}"
-
-  # --- API Actions (httpx client) ---
-  api_actions:
-    create_user:
-      pattern: 'I create a user via API with'
-      description: Create user using httpx AsyncClient
-      example: |
-        When I create a user via API with
-          | username    | password  |
-          | apitestuser | P@ssw0rd1 |
-
-    delete_user:
-      pattern: 'I delete user "{username}" via API'
-      example: |
-        When I delete user "usertodelete" via API
-
-    list_users:
-      pattern: 'I list users via API'
-      example: |
-        When I list users via API
-
-    login:
-      pattern: 'I login via API with'
-      example: |
-        When I login via API with
-          | username    | password  |
-          | apitestuser | P@ssw0rd1 |
+        When I call DELETE "/api/event/1"
+        When I call DELETE "/api/event/{event_id}"
 
 # =============================================================================
 # THEN PATTERNS - Verify results
@@ -172,69 +181,82 @@ then_patterns:
   # --- Status Code Validation ---
   status_validation:
     pattern: 'the response status code should be {status_code}'
-    location: glue_conftest.py
+    location: bdd_conftest/then_step_conftest.py
     example: |
+      Then the response status code should be 200
       Then the response status code should be 201
-      Then the response status code should be 403
-      Then the response status code should be 204
+      Then the response status code should be 400
+      Then the response status code should be 404
 
   # --- Error Validation ---
   error_validation:
-    pattern: 'the error message should contain "{message}"'
-    location: glue_conftest.py
+    pattern: 'the error message should contain "{text}"'
+    location: bdd_conftest/then_step_conftest.py
+    description: Case-insensitive check for error message
     example: |
-      Then the error message should contain "Account has been existed"
-      Then the error message should contain "Login Failed"
+      Then the error message should contain "not found"
+      Then the error message should contain "Invalid"
 
-  # --- Response Data Validation ---
-  response_data:
-    key_value:
-      pattern: 'the response data "{key}" should be "{value}"'
-      location: glue_conftest.py
+  # --- Response Body Validation ---
+  response_body:
+    contains_field:
+      pattern: 'the response should contain "{field}"'
+      location: bdd_conftest/then_step_conftest.py
       example: |
-        Then the response data "username" should be "apitestuser"
+        Then the response should contain "id"
+        Then the response should contain "status"
 
-    is_list:
-      pattern: 'the response data should be a list'
-      location: glue_conftest.py
+    field_equals:
+      pattern: 'the response field "{field}" should be "{value}"'
+      location: bdd_conftest/then_step_conftest.py
+      description: Verify single field value with type conversion
       example: |
-        Then the response data should be a list
+        Then the response field "status" should be "pending"
+        Then the response field "role" should be "buyer"
 
-    count:
-      pattern: 'the response data should have {count} items'
-      location: glue_conftest.py
+    empty:
+      pattern: 'the response should be empty'
+      location: bdd_conftest/then_step_conftest.py
       example: |
-        Then the response data should have 5 items
+        Then the response should be empty
 
-    min_count:
-      pattern: 'the response data should have at least {count} items'
-      location: glue_conftest.py
+    list_count:
+      pattern: 'the response should have {count} items'
+      location: bdd_conftest/then_step_conftest.py
       example: |
-        Then the response data should have at least 1 items
+        Then the response should have 5 items
+        Then the response should have 0 items
 
-    contains_item:
-      pattern: 'the response data should contain an item with "{key}" equal to "{value}"'
-      location: glue_conftest.py
+    data_include:
+      pattern: 'the response data should include:'
+      location: bdd_conftest/then_step_conftest.py
+      description: Verify multiple field-value pairs with special value support
       example: |
-        Then the response data should contain an item with "is_superuser" equal to "1"
-        Then the response data should contain an item with "username" equal to "admin"
+        Then the response data should include:
+          | status     | id       |
+          | processing | not_null |
 
-  # --- Entity State Validation ---
-  entity_validation:
-    user_created:
-      pattern: 'the user should be created with'
-      location: user_integration_test.py
-      description: Validate created user fields with datatable
-      example: |
-        Then the user should be created with
-          | id        | username   | is_superuser |
-          | {any_int} | testuser01 | false        |
+        And the response data should include:
+          | name         | venue_name   | is_active |
+          | Rock Concert | Taipei Arena | true      |
 
-    user_logged_in:
-      pattern: 'the user should be logged in with username "{username}"'
-      location: glue_conftest.py
+  # --- Database Verification ---
+  database_validation:
+    row_count:
+      pattern: 'the database "{table}" should have {count} rows where "{column}" is "{value}"'
+      location: bdd_conftest/then_step_conftest.py
       example: |
-        Then the user should be logged in with username "testuser"
+        Then the database "ticket" should have 10 rows where "status" is "available"
+        Then the database "booking" should have 0 rows where "status" is "cancelled"
+
+    row_match:
+      pattern: 'the database row should match:'
+      location: bdd_conftest/then_step_conftest.py
+      description: Verify database row exists with specified conditions
+      example: |
+        Then the database row should match:
+          | table  | status    | buyer_id |
+          | ticket | available | not_null |
 
 # =============================================================================
 # DATATABLE FORMATS
@@ -250,10 +272,10 @@ datatable_formats:
       - Entity creation (POST body)
       - Login credentials
       - Update data (PUT/PATCH body)
-      - Single entity validation
+      - Response validation
     example: |
-      | username   | password  |
-      | testuser01 | P@ssw0rd1 |
+      | email           | password | name        |
+      | seller@test.com | P@ssw0rd | Test Seller |
 
   # Multi-row for batch operations
   multi_row:
@@ -263,37 +285,64 @@ datatable_formats:
       | val2a  | val2b  |
     used_for:
       - Batch user creation
-      - Multiple entity setup
+      - Multiple bookings setup
+      - Ticket lists
     example: |
-      | username | password  |
-      | user1    | P@ssw0rd1 |
-      | user2    | P@ssw0rd2 |
+      | id | buyer_id | event_id | status  |
+      | 1  | 6        | 1        | pending |
+      | 2  | 7        | 1        | paid    |
 
-  # Validation datatable with special values
-  validation:
+  # Single value table
+  single_value:
     format: |
-      | field     | expected_value |
-      | id        | {any_int}      |
-      | is_active | true           |
-    special_values:
-      '{any_int}': Matches any integer value
-      'true': Boolean true (also matches 1)
-      'false': Boolean false (also matches 0)
+      | value |
+    used_for:
+      - Simple count checks
+      - Single status verification
+    example: |
+      | 10 |
 
 # =============================================================================
 # SPECIAL VALUES & PLACEHOLDERS
 # =============================================================================
 
 special_values:
+  # Endpoint variable substitution
   endpoint_variables:
-    pattern: '{username.id}'
-    description: Resolved from context['users'][username].pk
-    example: '/api/user/{pwduser.id}' → '/api/user/123'
+    pattern: '{key}' or '{object.field}'
+    description: Resolved from context dictionary
+    examples:
+      '{event_id}': 'context["event_id"]'
+      '{booking.id}': 'context["booking"]["id"]'
+      '{user_id}': 'context["user_id"]'
+    example: |
+      /api/event/{event_id}         -> /api/event/123
+      /api/booking/{booking.id}     -> /api/booking/abc-def-123
 
+  # Table value substitution (same as endpoint)
+  table_variables:
+    description: Variables in table values are also resolved
+    example: |
+      | event_id   | section |
+      | {event_id} | A       |
+
+  # Validation placeholders
   validation_placeholders:
-    '{any_int}': Asserts value is an integer (any value)
-    'true': Asserts boolean True or integer 1
-    'false': Asserts boolean False or integer 0
+    not_null: Asserts value is not None
+    null: Asserts value is None
+    '{any_int}': Asserts value is any integer
+    'PREFIX_*': Asserts string starts with PREFIX_ (wildcard)
+    true: Boolean True (case-insensitive)
+    false: Boolean False (case-insensitive)
+
+  # Type conversion in table values
+  type_conversion:
+    integers: '123' -> 123 (only if <= 10 digits)
+    booleans: 'true'/'false' -> True/False
+    null: 'none'/'null' -> None
+    json_array: '["a","b"]' -> ["a", "b"]
+    json_object: '{"key":"value"}' -> {"key": "value"}
+    long_numbers: '1234567890123' -> kept as string (card numbers, etc.)
 
 # =============================================================================
 # CONTEXT DICTIONARY
@@ -302,43 +351,72 @@ special_values:
 context_structure:
   description: Shared state between BDD steps via context fixture
   keys:
+    # Response data
     response: Current HTTP response object
-    client: Current test client (SessionTestAsyncClient or httpx.AsyncClient)
-    users: Dict[username, User] - Created users mapped by username
+    response_data: Parsed JSON response body
+    request_data: Data sent in the request
+
+    # User data
+    current_user: Currently logged-in user
+    current_user_id: ID of current user
+    seller: Seller user data
+    seller_id: Seller user ID
+    buyer: Buyer user data
+    buyer_id: Buyer user ID
+
+    # Entity data
+    event: Current event data
+    event_id: Current event ID
+    booking: Current booking data
+    booking.id: Current booking ID (UUID string)
+    updated_booking: Updated booking after action
+    updated_event: Updated event after action
+
+    # Collections
+    users: Dict of created users by ID
+    events: Dict of created events by ID
+    bookings: Dict of created bookings by ID
+
   example: |
     context = {
         'response': <Response>,
-        'client': <SessionTestAsyncClient>,
-        'users': {
-            'testuser': <User pk=1>,
-            'admin': <User pk=2>
-        }
+        'response_data': {'id': 1, 'status': 'available'},
+        'current_user': {'id': 1, 'email': 'seller@test.com'},
+        'seller_id': 1,
+        'event': {'id': 1, 'name': 'Concert'},
+        'event_id': 1,
+        'booking': {'id': 'abc-123', 'status': 'pending'},
     }
 
 # =============================================================================
-# TEST CLIENT TYPES
+# TEST CLIENT & FIXTURES
 # =============================================================================
 
-test_clients:
-  SessionTestAsyncClient:
-    location: tests/conftest.py
-    description: Django Ninja TestAsyncClient with session support
-    features:
-      - Direct user assignment (no DB queries in async)
-      - Session management
-      - auser() coroutine for AsyncSessionAuth
-    usage: Integration tests (default)
-    marker: '@pytest.mark.django_db'
+test_client:
+  type: FastAPI TestClient
+  location: test/conftest.py
+  description: Synchronous test client with session cookie support
+  features:
+    - Session-based authentication
+    - Cookie management (auto-cleared between tests)
+    - raise_server_exceptions=False for proper error testing
+  scope: session
 
-  AsyncCSRFClient:
-    location: tests/conftest.py
-    description: httpx.AsyncClient with automatic CSRF handling
-    features:
-      - Full HTTP request/response cycle
-      - Session cookie authentication
-      - Automatic X-CSRFToken header
-    usage: API endpoint tests
-    marker: '@pytest.mark.django_db(transaction=True)'
+fixtures:
+  global:
+    location: test/conftest.py
+    items:
+      client: FastAPI TestClient (session-scoped)
+      context: Dict for step communication (function-scoped)
+      execute_sql_statement: Direct SQL execution helper
+      seller_user: Pre-created seller user
+      buyer_user: Pre-created buyer user
+      clean_database: Auto-cleanup between tests
+      clean_kvrocks: Auto-cleanup Kvrocks between tests
+
+  module:
+    location: test/service/ticketing/{module}/conftest.py
+    description: Module-specific step definitions and fixtures
 
 # =============================================================================
 # CONVENTIONS & BEST PRACTICES
@@ -346,35 +424,32 @@ test_clients:
 
 conventions:
   file_naming:
-    feature_files: '{module}_{type}_test.feature'
-    test_files: '{module}_{type}_test.py'
-    types:
-      - integration: SessionTestAsyncClient tests
-      - api: httpx AsyncClient tests
+    feature_files: '{feature_name}_integration_test.feature'
+    step_files: 'conftest.py (in same directory as .feature files)'
 
   step_organization:
-    global_steps: tests/glue_conftest.py
-    module_steps: tests/{module}/{module}_*_test.py
-    rule: Prefer global steps; only create module-specific steps when necessary
-
-  fixtures:
-    global: tests/conftest.py
-    module: tests/{module}/conftest.py
-    naming:
-      - superuser: Superuser for permission tests
-      - normal_user: Non-superuser for permission denial tests
-      - session_client: SessionTestAsyncClient instance
-      - api_superuser_client: httpx client logged in as superuser
-      - api_normal_user_client: httpx client logged in as normal user
-      - context: Shared dict for step communication
+    global_steps: test/bdd_conftest/*_step_conftest.py
+    module_steps: test/service/ticketing/{module}/conftest.py
+    rule: |
+      1. Check if step exists in bdd_conftest/ first
+      2. Only create module-specific steps when truly unique to that module
+      3. Consider promoting to global if step is used in multiple modules
 
   markers:
-    '@pytest.mark.integration': All BDD tests
-    '@pytest.mark.django_db': Database access required
-    '@pytest.mark.django_db(transaction=True)': Full transaction support (API tests)
+    '@pytest.mark.integration': All BDD integration tests
 
-  password_standard: 'P@ssw0rd1'
-  description: Use this password for all test users for consistency
+  default_credentials:
+    password: 'P@ssw0rd'
+    seller_email: 'seller@test.com'
+    buyer_email: 'buyer@test.com'
+
+  context_naming:
+    description: Use consistent keys for entities
+    examples:
+      - 'event' for current event (not 'created_event')
+      - 'event_id' for event ID (not 'eventId')
+      - 'booking.id' for nested access
+      - '{role}_id' for user IDs (seller_id, buyer_id)
 
 # =============================================================================
 # ADDING NEW STEPS
@@ -382,17 +457,25 @@ conventions:
 
 adding_new_steps:
   checklist:
-    - Check if step already exists in glue_conftest.py
+    - Check if step already exists in bdd_conftest/
     - Determine if step is reusable (global) or module-specific
     - Use parsers.parse() for parameterized steps
-    - Add target_fixture if step produces a fixture
-    - Update context dict appropriately
-    - Document in this file
+    - Store results in context dict appropriately
+    - Add docstring with Example usage
+    - Update this file if adding global steps
 
   global_step_template: |
     @given(parsers.parse('pattern with "{param}"'))
-    def given_step_name(param: str, context: dict[str, Any]) -> None:
-        """Step description."""
+    def given_step_name(
+        param: str,
+        client: TestClient,
+        context: dict[str, Any],
+    ) -> None:
+        """Step description.
+
+        Example:
+            Given pattern with "value"
+        """
         # Implementation
         context['key'] = value
 
@@ -402,3 +485,50 @@ adding_new_steps:
         """Module-specific validation."""
         response = context['response']
         # Validation logic
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+utility_functions:
+  location: test/bdd_conftest/shared_step_utils.py
+  functions:
+    extract_table_data:
+      description: Extract first row of table data as dict
+      signature: 'extract_table_data(step: Step) -> dict[str, str]'
+
+    extract_single_value:
+      description: Extract single value from simple table
+      signature: 'extract_single_value(step: Step) -> str'
+
+    convert_table_values:
+      description: Convert string values to appropriate types
+      signature: 'convert_table_values(data: dict[str, str]) -> dict[str, Any]'
+
+    resolve_endpoint_vars:
+      description: Resolve {var} placeholders in endpoint from context
+      signature: 'resolve_endpoint_vars(endpoint: str, context: dict) -> str'
+
+    resolve_table_vars:
+      description: Resolve {var} placeholders in table values from context
+      signature: 'resolve_table_vars(data: dict, context: dict) -> dict'
+
+    create_user_if_not_exists:
+      description: Create user via API, returns None if exists
+      signature: 'create_user_if_not_exists(client, email, password, name, role) -> dict | None'
+
+    login_user:
+      description: Login user and return response data
+      signature: 'login_user(client, email, password) -> dict'
+
+    store_user_in_context:
+      description: Store user info in context with role
+      signature: 'store_user_in_context(user, role, context, set_as_current=True)'
+
+    assert_response_status:
+      description: Assert response has expected status code
+      signature: 'assert_response_status(response, expected_status, message=None)'
+
+    parse_seating_config:
+      description: Parse seating config JSON string
+      signature: 'parse_seating_config(seating_config_str: str | None) -> dict'
