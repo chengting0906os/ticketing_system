@@ -3,9 +3,10 @@ Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL wri
 """
 
 from opentelemetry import trace
-from uuid_utils import UUID
 
-from src.platform.event.i_in_memory_broadcaster import IInMemoryEventBroadcaster
+from src.service.reservation.app.interface.i_booking_event_broadcaster import (
+    IBookingEventBroadcaster,
+)
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
@@ -47,7 +48,7 @@ class ReserveSeatsUseCase:
         seat_state_handler: ISeatStateCommandHandler,
         booking_command_repo: IBookingCommandRepo,
         event_state_broadcaster: IEventStateBroadcaster,
-        sse_broadcaster: IInMemoryEventBroadcaster,
+        sse_broadcaster: IBookingEventBroadcaster,
     ) -> None:
         self.seat_state_handler = seat_state_handler
         self.booking_command_repo = booking_command_repo
@@ -117,8 +118,6 @@ class ReserveSeatsUseCase:
                 if result['success']:
                     reserved_seats = result['reserved_seats']
                     total_price = result['total_price']
-                    subsection_stats = result.get('subsection_stats', {})
-                    event_stats = result.get('event_stats', {})
                     event_state = result.get('event_state', {})
 
                     # Step 4a: Broadcast event_state update via Redis Pub/Sub (real-time cache)
@@ -145,17 +144,16 @@ class ReserveSeatsUseCase:
                         f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
                     )
 
-                    # Step 4c: Broadcast SSE for real-time UI updates
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
+                    # Step 4c: Publish SSE for real-time UI updates via Kvrocks pub/sub
+                    await self.sse_broadcaster.publish(
+                        user_id=request.buyer_id,
+                        event_id=request.event_id,
                         event_data={
                             'event_type': 'booking_updated',
                             'event_id': request.event_id,
                             'booking_id': request.booking_id,
                             'status': 'PENDING_PAYMENT',
                             'tickets': pg_result.get('tickets', []),
-                            'subsection_stats': subsection_stats,
-                            'event_stats': event_stats,
                         },
                     )
 
@@ -190,9 +188,10 @@ class ReserveSeatsUseCase:
                         quantity=request.quantity or len(request.seat_positions or []),
                     )
 
-                    # Broadcast SSE failure notification
-                    await self.sse_broadcaster.broadcast(
-                        booking_id=UUID(request.booking_id),
+                    # Publish SSE failure notification via Kvrocks pub/sub
+                    await self.sse_broadcaster.publish(
+                        user_id=request.buyer_id,
+                        event_id=request.event_id,
                         event_data={
                             'event_type': 'booking_updated',
                             'event_id': request.event_id,
@@ -233,9 +232,10 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
+                # Publish SSE failure notification via Kvrocks pub/sub
+                await self.sse_broadcaster.publish(
+                    user_id=request.buyer_id,
+                    event_id=request.event_id,
                     event_data={
                         'event_type': 'booking_updated',
                         'event_id': request.event_id,
@@ -275,9 +275,10 @@ class ReserveSeatsUseCase:
                     quantity=request.quantity or len(request.seat_positions or []),
                 )
 
-                # Broadcast SSE failure notification
-                await self.sse_broadcaster.broadcast(
-                    booking_id=UUID(request.booking_id),
+                # Publish SSE failure notification via Kvrocks pub/sub
+                await self.sse_broadcaster.publish(
+                    user_id=request.buyer_id,
+                    event_id=request.event_id,
                     event_data={
                         'event_type': 'booking_updated',
                         'event_id': request.event_id,

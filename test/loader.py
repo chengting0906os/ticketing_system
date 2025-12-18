@@ -30,3 +30,4 @@ from test.service.ticketing.fixtures import *  # noqa: F401, F403
 from test.bdd_conftest.given_step_conftest import *  # noqa: F401, F403
 from test.bdd_conftest.then_step_conftest import *  # noqa: F401, F403
 from test.bdd_conftest.when_step_conftest import *  # noqa: F401, F403
+from test.bdd_conftest.sse_step_conftest import *  # noqa: F401, F403

@@ -33,7 +33,10 @@ from src.service.reservation.driven_adapter.seat_state_query_handler_impl import
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
-from src.platform.event.in_memory_broadcaster import InMemoryEventBroadcasterImpl
+from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.reservation.driven_adapter.booking_event_broadcaster_impl import (
+    BookingEventBroadcasterImpl,
+)
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
     BookingEventPublisherImpl,
@@ -101,8 +104,12 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
-    # In-memory Event Broadcaster for SSE (Singleton for shared state)
-    booking_event_broadcaster = providers.Singleton(InMemoryEventBroadcasterImpl)
+    # Kvrocks Event Broadcaster for SSE (distributed pub/sub)
+    # Factory: creates with kvrocks_client.get_client() lazily at runtime
+    booking_event_broadcaster = providers.Factory(
+        BookingEventBroadcasterImpl,
+        redis_client=providers.Factory(kvrocks_client.get_client),
+    )
 
     # Message Queue Publishers
     booking_event_publisher = providers.Factory(BookingEventPublisherImpl)

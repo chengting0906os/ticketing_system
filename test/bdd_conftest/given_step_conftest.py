@@ -181,6 +181,16 @@ def given_logged_in_as_role_with_table(
 # ============ Given Steps - User Creation ============
 
 
+@given('I am not authenticated')
+def given_not_authenticated(client: TestClient) -> None:
+    """Clear authentication cookies to simulate unauthenticated user.
+
+    Example:
+        Given I am not authenticated
+    """
+    client.cookies.clear()
+
+
 @given('a seller exists')
 def given_seller_exists_simple(
     client: TestClient,

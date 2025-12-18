@@ -1,10 +1,16 @@
 """
 BDD Step Definitions for Booking Tests
 
-Contains Given/When/Then steps for:
-- Booking creation and payment
-- Booking list queries
-- Ticket verification
+Booking-specific steps that extend the shared BDD patterns.
+These steps handle complex booking scenarios that require:
+- Multi-user/multi-event test setup (booking_list tests)
+- Direct database setup for specific states
+- Booking-specific verification (tickets, seat_positions)
+
+Standard patterns from bdd_conftest/ are used where possible:
+- Given: I am logged in as a seller/buyer, an event exists with:
+- When: I call POST/GET/PATCH "{endpoint}" with
+- Then: the response status code should be, the response data should include:
 """
 
 from collections.abc import Callable
@@ -22,11 +28,6 @@ from src.platform.constant.route_constant import (
     BOOKING_GET,
     BOOKING_MY_BOOKINGS,
 )
-from test.constants import (
-    DEFAULT_PASSWORD,
-    DEFAULT_SEATING_CONFIG_JSON,
-    DEFAULT_VENUE_NAME,
-)
 from test.bdd_conftest.shared_step_utils import (
     assert_response_status,
     extract_single_value,
@@ -34,21 +35,29 @@ from test.bdd_conftest.shared_step_utils import (
     login_user,
     resolve_table_vars,
 )
+from test.constants import (
+    DEFAULT_PASSWORD,
+    DEFAULT_SEATING_CONFIG_JSON,
+    DEFAULT_VENUE_NAME,
+)
 
 
 # =============================================================================
-# Helper Functions
+# Helper Functions (Booking-specific)
 # =============================================================================
 
 
 def _store_response(context: dict[str, Any], response: Any) -> None:
-    """Store response and response_data in context."""
+    """Store response and response_data in context for verification steps."""
     context['response'] = response
     context['response_data'] = response.json() if response.content else None
 
 
 def get_user_email_by_id(user_id: int) -> str:
-    """Map user ID to email address based on test setup."""
+    """Map user ID to email for booking_list multi-user tests.
+
+    These IDs correspond to users created by 'users exist:' step.
+    """
     user_email_map = {
         4: 'seller1@test.com',
         5: 'seller2@test.com',
@@ -75,7 +84,7 @@ def get_booking_details(client: TestClient, booking_id: int) -> dict[str, Any]:
 
 
 # =============================================================================
-# Given Steps
+# Given Steps (Booking-specific - not in shared patterns)
 # =============================================================================
 
 
@@ -412,7 +421,7 @@ def create_bookings(
 
 
 # =============================================================================
-# When Steps
+# When Steps (Booking-specific - for multi-user booking_list tests)
 # =============================================================================
 
 
@@ -458,7 +467,7 @@ def buyer_requests_booking_details(
 
 
 # =============================================================================
-# Then Steps
+# Then Steps (Booking-specific verification)
 # =============================================================================
 
 

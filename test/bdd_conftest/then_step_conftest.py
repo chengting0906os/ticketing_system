@@ -45,6 +45,24 @@ def then_response_status_code(
     )
 
 
+@then(parsers.parse('the response content type should be "{content_type}"'))
+def then_response_content_type(
+    content_type: str,
+    context: dict[str, Any],
+) -> None:
+    """Verify response has expected content type.
+
+    Example:
+        Then the response content type should be "text/event-stream"
+        Then the response content type should be "application/json"
+    """
+    response = context['response']
+    actual_content_type = response.headers.get('content-type', '')
+    assert content_type in actual_content_type, (
+        f'Expected content type "{content_type}", got "{actual_content_type}"'
+    )
+
+
 @then(parsers.parse('the error message should contain "{text}"'))
 def then_error_message_contains(
     text: str,
