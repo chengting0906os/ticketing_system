@@ -5,22 +5,18 @@ This module provides:
 - Database setup and cleanup for parallel testing (pytest-xdist)
 - Kvrocks isolation with worker-specific key prefixes
 - Test fixtures for users, events, and tickets
-- BDD step definitions (imported from bdd_steps_loader.py)
-- Service fixtures (imported from fixture_loader.py)
+- BDD steps and service fixtures (imported from loader.py)
 
-Note: For adding new BDD steps or fixtures, update the respective loader modules
+Note: For adding new BDD steps or fixtures, update loader.py
 instead of this file to maintain a clean separation of concerns.
 """
 
 import asyncio
+from collections.abc import AsyncGenerator, Callable, Generator
 import contextlib
 import os
-from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
-
-from redis import Redis as SyncRedis
 
 from alembic import command
 from alembic.config import Config
@@ -50,41 +46,37 @@ test_log_dir.mkdir(exist_ok=True)
 os.environ['TEST_LOG_DIR'] = str(test_log_dir)
 
 # =============================================================================
-# Monkey-patch production kvrocks_client with test version
+# Replace production kvrocks client with test version
 # =============================================================================
-# Replace production client with test client that supports per-event-loop connections
+# Test client supports per-event-loop connections (pytest-asyncio creates new loop per test)
 # This must happen BEFORE any imports that use kvrocks_client
-import src.platform.state.kvrocks_client  # noqa: E402
-from test.kvrocks_test_client import kvrocks_test_client_async  # noqa: E402
+from src.platform.state.kvrocks_client import set_client  # noqa: E402
+from test.kvrocks_test_client import kvrocks_client_async_for_test  # noqa: E402
 
 
-src.platform.state.kvrocks_client.kvrocks_client = kvrocks_test_client_async
+set_client(kvrocks_client_async_for_test)
 
 # =============================================================================
 # Database Connection Pool Configuration for Tests
 # =============================================================================
-# Override pool settings to prevent connection exhaustion during parallel testing
-# With 10 workers × (1 write + 1 read) × (2 pool + 2 overflow) = 80 connections
-# Plus asyncpg: 10 workers × 5 min = 50 connections
-# Total: 130 connections (within PostgreSQL's 200 limit)
-os.environ['DB_POOL_SIZE_WRITE'] = '2'
-os.environ['DB_POOL_SIZE_READ'] = '2'
-os.environ['DB_POOL_MAX_OVERFLOW'] = '2'
-os.environ['ASYNCPG_POOL_MIN_SIZE'] = '5'
-os.environ['ASYNCPG_POOL_MAX_SIZE'] = '10'
+# Smaller pools to prevent connection exhaustion during parallel testing
+# 10 workers × (2 write + 2 read + 2 overflow) = 60 SQLAlchemy + 50 asyncpg = 110 connections
+os.environ.update(
+    {
+        'DB_POOL_SIZE_WRITE': '2',
+        'DB_POOL_SIZE_READ': '2',
+        'DB_POOL_MAX_OVERFLOW': '2',
+        'ASYNCPG_POOL_MIN_SIZE': '5',
+        'ASYNCPG_POOL_MAX_SIZE': '10',
+    }
+)
 
 # =============================================================================
 # Import Application and Test Components
 # =============================================================================
 # Import test-specific app (no Kafka consumers, no polling tasks)
-# Import all BDD steps and service fixtures through consolidated modules
-from test.bdd_steps_loader import *  # noqa: E402, F403
-from test.fixture_loader import *  # noqa: E402, F403
-
-# Explicit imports for commonly used test utilities
-from test.shared.utils import create_user  # noqa: E402
-from test.test_main import app  # noqa: E402
-from test.util_constant import (  # noqa: E402
+# Import all BDD steps and service fixtures through consolidated loader
+from test.constants import (  # noqa: E402
     ANOTHER_BUYER_EMAIL,
     ANOTHER_BUYER_NAME,
     DEFAULT_PASSWORD,
@@ -93,6 +85,9 @@ from test.util_constant import (  # noqa: E402
     TEST_SELLER_EMAIL,
     TEST_SELLER_NAME,
 )
+from test.loader import *  # noqa: E402, F403
+from test.bdd_conftest.shared_step_utils import create_user  # noqa: E402
+from test.test_main import app  # noqa: E402
 
 
 # =============================================================================
@@ -378,39 +373,8 @@ def another_buyer_user(client: TestClient) -> dict[str, Any]:
 
 
 # =============================================================================
-# Unit Test Fixtures
+# SQL Execution Fixture
 # =============================================================================
-@pytest.fixture
-def sample_event() -> Mock:
-    """Sample event for unit testing"""
-    return Mock(id=1, seller_id=1, name='Test Event')
-
-
-@pytest.fixture
-def available_tickets() -> list[Any]:
-    """Sample available tickets for unit testing"""
-    from datetime import datetime
-
-    from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
-        Ticket,
-        TicketStatus,
-    )
-
-    now = datetime.now()
-    return [
-        Ticket(
-            id=1,
-            event_id=1,
-            section='A',
-            subsection=1,
-            row=1,
-            seat=1,
-            price=1000,
-            status=TicketStatus.AVAILABLE,
-            created_at=now,
-            updated_at=now,
-        )
-    ]
 
 
 @pytest.fixture
@@ -432,32 +396,3 @@ def execute_sql_statement() -> Callable[..., list[dict[str, Any]] | None]:
         return asyncio.run(_run())
 
     return _execute
-
-
-# =============================================================================
-# Kvrocks Fixtures for Lua Script Tests
-# =============================================================================
-@pytest.fixture
-def kvrocks_client_sync_for_test() -> Generator[SyncRedis, None, None]:
-    """
-    Sync Kvrocks client for async tests to avoid event loop conflicts
-
-    Uses sync client in async test context to ensure test verification logic
-    is independent from the async operations being tested.
-    """
-    from test.kvrocks_test_client import kvrocks_test_client
-
-    key_prefix = os.getenv('KVROCKS_KEY_PREFIX', 'test_')
-
-    # Cleanup before test
-    client = kvrocks_test_client.connect()
-    keys_before: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
-    if keys_before:
-        client.delete(*keys_before)
-
-    yield client
-
-    # Cleanup after test
-    keys_after: list[str] = client.keys(f'{key_prefix}*')  # type: ignore
-    if keys_after:
-        client.delete(*keys_after)

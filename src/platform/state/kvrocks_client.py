@@ -60,4 +60,10 @@ class KvrocksClient:
 
 
 # Global singleton
-kvrocks_client = KvrocksClient()
+kvrocks_client: KvrocksClient = KvrocksClient()
+
+
+def set_client(client: KvrocksClient) -> None:
+    """Replace the global kvrocks client (for testing)."""
+    global kvrocks_client
+    kvrocks_client = client

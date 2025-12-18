@@ -118,5 +118,5 @@ class KvrocksTestClientSync:
 
 
 # Test-specific singletons
-kvrocks_test_client_async = KvrocksTestClientAsync()
+kvrocks_client_async_for_test = KvrocksTestClientAsync()
 kvrocks_test_client = KvrocksTestClientSync()

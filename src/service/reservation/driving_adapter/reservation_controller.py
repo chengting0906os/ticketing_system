@@ -24,7 +24,7 @@ from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
 
 
-router = APIRouter(prefix='/api/reservation', tags=['seat-reservation'])
+router = APIRouter(tags=['reservation'])
 
 
 @router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)

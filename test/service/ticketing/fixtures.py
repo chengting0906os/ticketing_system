@@ -8,6 +8,10 @@ from unittest.mock import patch
 import orjson
 import pytest
 
+from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
+    Ticket,
+    TicketStatus,
+)
 from test.kvrocks_test_client import kvrocks_test_client
 
 
@@ -20,31 +24,29 @@ PATCH_EVENT_PUBLISHER = 'src.platform.message_queue.event_publisher.publish_doma
 
 
 @pytest.fixture
-def user_state() -> dict[str, Any]:
-    return {'request_data': {}, 'response': None}
-
-
-@pytest.fixture
-def event_state() -> dict[str, Any]:
-    return {}
-
-
-@pytest.fixture
-def booking_state() -> dict[str, Any]:
-    return {}
-
-
-@pytest.fixture
 def context() -> dict[str, Any]:
+    """Unified state fixture for all BDD tests."""
     return {}
 
 
 @pytest.fixture
-def reservation_state() -> object:
-    class ReservationState:
-        pass
-
-    return ReservationState()
+def available_tickets() -> list[Ticket]:
+    """Sample available tickets for unit testing."""
+    now = datetime.now()
+    return [
+        Ticket(
+            id=1,
+            event_id=1,
+            section='A',
+            subsection=1,
+            row=1,
+            seat=1,
+            price=1000,
+            status=TicketStatus.AVAILABLE,
+            created_at=now,
+            updated_at=now,
+        )
+    ]
 
 
 @pytest.fixture(autouse=True, scope='function')

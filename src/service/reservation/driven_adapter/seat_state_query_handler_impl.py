@@ -242,12 +242,17 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         # OPTIMIZATION: Fetch entire bitfield in ONE call (instead of 2N getbit calls)
         # Each seat uses 2 bits, so we need (total_seats * 2) bits = (total_seats / 4) bytes
-        bytes_needed = (total_seats * 2 + 7) // 8  # Round up to nearest byte
-        bitfield_bytes = await client.getrange(bf_key, 0, bytes_needed - 1)  # type: ignore
+        # Note: Use GET instead of GETRANGE for Kvrocks bitmap type compatibility
+        raw_data = await client.get(bf_key)  # type: ignore
 
         # Handle case where bitfield doesn't exist yet (returns None or empty bytes)
-        if not bitfield_bytes:
+        if not raw_data:
             bitfield_bytes = b''  # Empty bytes, all seats will be 'available'
+        elif isinstance(raw_data, bytes):
+            bitfield_bytes = raw_data
+        else:
+            # Convert string to bytes if needed (Kvrocks may return string)
+            bitfield_bytes = raw_data.encode('latin-1')
 
         # ✨ REMOVED: Pipeline to batch fetch row metadata (prices now in section config)
 
