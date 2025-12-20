@@ -259,14 +259,15 @@ class AtomicReservationExecutor:
         price: int,
     ) -> Dict:
         """
-        Find and reserve seats in one method (best_available mode).
+        Find and reserve seats atomically (best_available mode).
+
+        IMPORTANT: Uses atomic Lua script to prevent race conditions.
+        The Lua script finds available seats AND reserves them in a single atomic operation.
 
         Config (rows, cols, price) is passed from upstream through the event chain,
         avoiding redundant Kvrocks lookups in Lua script.
 
-        If config is 0 (cache miss upstream), fetches from Kvrocks here.
-
-        Combines find_consecutive_seats (Lua) + execute_atomic_reservation (Pipeline).
+        If config is 0 (cache miss upstream), fetches from PostgreSQL here.
         """
         tracer = trace.get_tracer(__name__)
         section_id = f'{section}-{subsection}'
@@ -301,9 +302,9 @@ class AtomicReservationExecutor:
                                         break
                                 break
 
-            # ========== STEP 1: Find consecutive seats ==========
-            # Config passed via ARGV (avoids Kvrocks fetch in Lua)
-            lua_result = await lua_script_executor.find_consecutive_seats(
+            # ========== STEP 1: Find AND Reserve seats atomically (Lua script) ==========
+            # This prevents race conditions where multiple requests find the same seats
+            lua_result = await lua_script_executor.find_and_reserve_seats(
                 client=client,
                 keys=[bf_key],
                 args=[str(rows), str(cols), str(quantity)],
@@ -320,25 +321,91 @@ class AtomicReservationExecutor:
                     'error_message': f'No {quantity} consecutive seats available',
                 }
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20}
             lua_data = orjson.loads(lua_result)
             found_seats = lua_data['seats']
 
-            # ========== STEP 2: Convert to reservation format ==========
-            seats_to_reserve = [
-                (row, seat_num, seat_index, f'{row}-{seat_num}')
-                for row, seat_num, seat_index in found_seats
-            ]
+            # ========== STEP 2: Build reserved seats list ==========
+            reserved_seats = [f'{row}-{seat_num}' for row, seat_num, _seat_index in found_seats]
+            num_seats = len(reserved_seats)
+            total_price = price * num_seats
 
-            # ========== STEP 3: Execute atomic reservation ==========
-            return await self.execute_atomic_reservation(
-                event_id=event_id,
-                section_id=section_id,
-                booking_id=booking_id,
-                bf_key=bf_key,
-                seats_to_reserve=seats_to_reserve,
-                section_price=price,
+            # ========== STEP 3: Update JSON stats + save booking metadata (Pipeline) ==========
+            event_state_key = make_event_state_key(event_id=event_id)
+
+            # Read current stats for sellout tracking (before pipeline)
+            result = await client.execute_command('JSON.GET', event_state_key, '$')
+            if result:
+                event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+                current_stats = event_state_dict.get('event_stats', {})
+            else:
+                raise DomainError('event_state cannot be empty')
+
+            current_reserved_count = int(current_stats.get('reserved', 0))
+            current_total_seats = int(current_stats.get('total', 0))
+
+            # Pipeline: Update JSON stats + fetch updated state + save booking
+            pipe = client.pipeline(transaction=True)
+            pipe.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
             )
+            pipe.execute_command(
+                'JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats
+            )
+            pipe.execute_command('JSON.GET', event_state_key, '$')
+
+            booking_key = make_booking_key(booking_id=booking_id)
+            pipe.hset(
+                booking_key,
+                mapping={
+                    'status': 'RESERVE_SUCCESS',
+                    'reserved_seats': orjson.dumps(reserved_seats).decode(),
+                    'total_price': str(total_price),
+                    'config_key': event_state_key,
+                },
+            )
+
+            results = await pipe.execute()
+
+            # Parse results: [JSON.NUMINCRBY×2, JSON.GET, HSET]
+            json_state_result = results[2]
+            event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
+            subsection_stats = self._extract_subsection_stats(event_state, section_id)
+            event_stats = self._extract_event_stats(event_state)
+
+            # ========== STEP 4: Track sellout timing ==========
+            try:
+                await self._track_first_ticket(
+                    client=client,
+                    event_id=event_id,
+                    current_reserved_count=current_reserved_count,
+                )
+            except Exception as e:
+                Logger.base.warning(
+                    f'[SELLOUT-TRACKING] Failed to track first ticket | event_id={event_id} | error={e}'
+                )
+
+            try:
+                await self._track_all_reserved(
+                    client=client,
+                    event_id=event_id,
+                    new_available_count=event_stats.get('available', 0),
+                    total_seats=current_total_seats,
+                )
+            except Exception as e:
+                Logger.base.warning(
+                    f'[SELLOUT-TRACKING] Failed to track sellout | event_id={event_id} | error={e}'
+                )
+
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'total_price': total_price,
+                'subsection_stats': subsection_stats,
+                'event_stats': event_stats,
+                'event_state': event_state,
+                'error_message': None,
+            }
 
     async def execute_manual_reservation(
         self,

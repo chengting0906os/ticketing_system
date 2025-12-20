@@ -19,8 +19,10 @@ class LuaScripts:
     def __init__(self) -> None:
         self._find_consecutive_seats_script: Any = None
         self._verify_manual_seats_script: Any = None
+        self._find_and_reserve_seats_script: Any = None
         self._find_consecutive_seats_source: str = ''
         self._verify_manual_seats_source: str = ''
+        self._find_and_reserve_seats_source: str = ''
         self._initialized: bool = False
 
     async def initialize(self, *, client: Redis) -> None:
@@ -58,6 +60,16 @@ class LuaScripts:
         else:
             Logger.base.warning(f'⚠️ [LUA] Script not found: {verify_seats_path}')
 
+        # Load find_and_reserve_seats.lua (atomic find + reserve)
+        find_and_reserve_path = lua_scripts_dir / 'find_and_reserve_seats.lua'
+        if find_and_reserve_path.exists():
+            self._find_and_reserve_seats_source = find_and_reserve_path.read_text()
+            self._find_and_reserve_seats_script = client.register_script(
+                self._find_and_reserve_seats_source
+            )
+        else:
+            Logger.base.warning(f'⚠️ [LUA] Script not found: {find_and_reserve_path}')
+
         self._initialized = True
 
     async def find_consecutive_seats(
@@ -92,6 +104,23 @@ class LuaScripts:
                 self._verify_manual_seats_source
             )
             result = await self._verify_manual_seats_script(keys=keys, args=args, client=client)
+            return result  # pyrefly: ignore
+
+    async def find_and_reserve_seats(
+        self, *, client: Redis, keys: list[str], args: list[str]
+    ) -> bytes | None:
+        """Execute find_and_reserve_seats Lua script (atomic find + reserve) with auto-retry"""
+        if self._find_and_reserve_seats_script is None:
+            raise RuntimeError('Lua scripts not initialized')
+
+        try:
+            return await self._find_and_reserve_seats_script(keys=keys, args=args, client=client)
+        except NoScriptError:
+            Logger.base.warning('⚠️ [LUA] find_and_reserve_seats not found, re-registering...')
+            self._find_and_reserve_seats_script = client.register_script(
+                self._find_and_reserve_seats_source
+            )
+            result = await self._find_and_reserve_seats_script(keys=keys, args=args, client=client)
             return result  # pyrefly: ignore
 
 
