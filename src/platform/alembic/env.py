@@ -10,12 +10,15 @@ from sqlalchemy import engine_from_config, pool
 sys.path.append(str(Path(__file__).parents[3]))
 
 # Import your models and database configuration
-from src.service.ticketing.driven_adapter.model.booking_model import BookingModel  # noqa: F401
-from src.service.ticketing.driven_adapter.model.event_model import EventModel  # noqa: F401
-from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel  # noqa: F401
+from src.service.ticketing.driven_adapter.model import (  # noqa: F401
+    BookingModel,
+    EventModel,
+    SubsectionStatModel,
+    TicketModel,
+    UserModel,
+)
 from src.platform.config.core_setting import settings
 from src.platform.database.db_setting import Base
-from src.service.ticketing.driven_adapter.model.user_model import UserModel  # noqa: F401
 
 
 # this is the Alembic Config object, which provides
