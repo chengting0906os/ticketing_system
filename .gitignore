@@ -53,6 +53,7 @@ kvrocks_state/
 test_log/
 cpu.prof
 *.out
+.clarify
 
 # Load test reports
 script/go_client/report/*
