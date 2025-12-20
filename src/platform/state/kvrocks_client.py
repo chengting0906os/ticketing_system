@@ -58,6 +58,27 @@ class KvrocksClient:
             await self._client.aclose()
             self._client = None
 
+    async def create_pubsub_client(self) -> AsyncRedis:
+        """
+        Create dedicated Redis client for pub/sub with no timeout.
+
+        Pub/sub connections need to wait indefinitely for messages,
+        so we use socket_timeout=None instead of the default.
+
+        Note: Caller is responsible for closing this client.
+        """
+        pool = AsyncConnectionPool.from_url(
+            f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
+            password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
+            decode_responses=settings.REDIS_DECODE_RESPONSES,
+            max_connections=10,  # Fewer connections for pub/sub
+            socket_timeout=None,  # No timeout for pub/sub listener
+            socket_connect_timeout=settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT,
+            socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
+            health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
+        )
+        return AsyncRedis.from_pool(pool)
+
 
 # Global singleton
 kvrocks_client: KvrocksClient = KvrocksClient()

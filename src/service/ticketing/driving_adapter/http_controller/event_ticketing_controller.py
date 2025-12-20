@@ -5,11 +5,11 @@ from typing import Dict, List, Optional
 import anyio
 import orjson
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis.asyncio import ConnectionPool as AsyncConnectionPool, Redis as AsyncRedis
+from redis.asyncio import Redis as AsyncRedis
 from sse_starlette.sse import EventSourceResponse
 
-from src.platform.config.core_setting import settings
 from src.platform.config.di import container
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.query.list_all_subsection_status_use_case import (
@@ -265,21 +265,6 @@ async def list_subsection_seats(
 # ============================ SSE Endpoints (Pub/Sub Subscribe) ============================
 
 
-async def _create_pubsub_client() -> AsyncRedis:
-    """Create dedicated Redis client for pub/sub with no timeout."""
-    pool = AsyncConnectionPool.from_url(
-        f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
-        password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
-        decode_responses=settings.REDIS_DECODE_RESPONSES,
-        max_connections=10,
-        socket_timeout=None,  # No timeout for pub/sub listener
-        socket_connect_timeout=settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT,
-        socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
-        health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
-    )
-    return AsyncRedis.from_pool(pool)
-
-
 @router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
 @Logger.io
 async def stream_all_section_stats(event_id: int) -> EventSourceResponse:
@@ -304,7 +289,7 @@ async def stream_all_section_stats(event_id: int) -> EventSourceResponse:
             yield {'event': 'initial_status', 'data': orjson.dumps(response_data).decode()}
 
             # 2. Subscribe to pub/sub for updates
-            pubsub_client = await _create_pubsub_client()
+            pubsub_client = await kvrocks_client.create_pubsub_client()
             pubsub = pubsub_client.pubsub()
             channel = f'event_state_updates:{event_id}'
 

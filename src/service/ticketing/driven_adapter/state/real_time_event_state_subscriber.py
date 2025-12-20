@@ -4,10 +4,10 @@ import time
 import anyio
 from anyio.abc import TaskGroup
 import orjson
-from redis.asyncio import ConnectionPool as AsyncConnectionPool, Redis as AsyncRedis
+from redis.asyncio import Redis as AsyncRedis
 
-from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.interface.i_seat_availability_query_handler import (
     ISeatAvailabilityQueryHandler,
 )
@@ -37,32 +37,13 @@ class RealTimeEventStateSubscriber:
         task_group.start_soon(self._subscribe_loop)  # pyrefly: ignore[bad-argument-type]
         Logger.base.info(f'🔔 [Cache Subscriber] Started for event {self.event_id}')
 
-    async def _create_pubsub_client(self) -> AsyncRedis:
-        """
-        Create dedicated Redis client for pub/sub with no timeout.
-
-        Pub/sub connections need to wait indefinitely for messages,
-        so we use socket_timeout=None instead of the default 30s.
-        """
-        pool = AsyncConnectionPool.from_url(
-            f'redis://{settings.KVROCKS_HOST}:{settings.KVROCKS_PORT}/{settings.KVROCKS_DB}',
-            password=settings.KVROCKS_PASSWORD if settings.KVROCKS_PASSWORD else None,
-            decode_responses=settings.REDIS_DECODE_RESPONSES,
-            max_connections=10,  # Fewer connections needed for pub/sub
-            socket_timeout=None,  # No timeout for pub/sub listener
-            socket_connect_timeout=settings.KVROCKS_POOL_SOCKET_CONNECT_TIMEOUT,
-            socket_keepalive=settings.KVROCKS_POOL_SOCKET_KEEPALIVE,
-            health_check_interval=settings.KVROCKS_POOL_HEALTH_CHECK_INTERVAL,
-        )
-        return AsyncRedis.from_pool(pool)
-
     async def _subscribe_loop(self) -> None:
         """Main subscription loop with automatic reconnection"""
         while True:
             try:
                 # Create dedicated pub/sub client
                 if self._pubsub_client is None:
-                    self._pubsub_client = await self._create_pubsub_client()
+                    self._pubsub_client = await kvrocks_client.create_pubsub_client()
 
                 pubsub = self._pubsub_client.pubsub()
 
