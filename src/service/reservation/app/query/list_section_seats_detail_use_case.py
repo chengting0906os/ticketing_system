@@ -40,18 +40,12 @@ class ListSectionSeatsDetailUseCase:
                 "available": 80,
                 "reserved": 15,
                 "sold": 5,
-                "seats": [
-                    {
-                        "section": "A",
-                        "subsection": 1,
-                        "row": 1,
-                        "seat_num": 1,
-                        "price": 1000,
-                        "status": "AVAILABLE",
-                        "seat_position": "1-1"
-                    },
-                    ...
-                ]
+                "price": 1000,
+                "seats_by_status": {
+                    "available": ["1-1", "1-2", ...],
+                    "reserved": ["2-1", "2-2", ...],
+                    "sold": ["3-1", ...]
+                }
             }
         """
         from src.platform.exception.exceptions import NotFoundError
@@ -79,6 +73,18 @@ class ListSectionSeatsDetailUseCase:
             f'total={total_count}, available={available_count}, reserved={reserved_count}, sold={sold_count}'
         )
 
+        # Group seats by status
+        seats_by_status: dict[str, list[str]] = {}
+        price = 0
+        for seat in seats_data:
+            seat_position = seat['seat_position']
+            seat_status = seat['status']
+            if price == 0:
+                price = seat.get('price', 0)
+            if seat_status not in seats_by_status:
+                seats_by_status[seat_status] = []
+            seats_by_status[seat_status].append(seat_position)
+
         return {
             'section_id': section_id,
             'event_id': event_id,
@@ -88,5 +94,6 @@ class ListSectionSeatsDetailUseCase:
             'available': available_count,
             'reserved': reserved_count,
             'sold': sold_count,
-            'seats': seats_data,
+            'price': price,
+            'seats_by_status': seats_by_status,
         }

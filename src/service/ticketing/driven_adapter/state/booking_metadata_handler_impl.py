@@ -146,7 +146,6 @@ class BookingMetadataHandlerImpl(IBookingMetadataHandler):
             metadata = await client.hgetall(key)  # type: ignore
 
             if not metadata:
-                Logger.base.warning(f'⚠️ [BOOKING-META] Metadata not found: {booking_id}')
                 return None
 
             # Convert bytes to str if needed

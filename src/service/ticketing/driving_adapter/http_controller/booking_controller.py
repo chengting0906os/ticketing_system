@@ -2,18 +2,14 @@ from collections.abc import AsyncIterator
 from typing import Any, List
 
 import anyio
-from dependency_injector.wiring import Provide
 from fastapi import APIRouter, Depends, HTTPException, status
 from opentelemetry import trace
 import orjson
 from sse_starlette.sse import EventSourceResponse
 
-from src.platform.config.di import Container
+from src.platform.config.di import container
 from src.platform.logging.loguru_io import Logger
 from src.platform.types import UtilsUUID7
-from src.service.shared_kernel.app.interface.i_pubsub_handler import (
-    IPubSubHandler,
-)
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
@@ -158,7 +154,6 @@ async def pay_booking(
 async def stream_booking_status(
     event_id: int,
     current_user: UserEntity = Depends(get_current_user),
-    pubsub_handler: IPubSubHandler = Depends(Provide[Container.pubsub_handler]),
 ) -> EventSourceResponse:
     """
     SSE real-time booking status updates for user's bookings of an event
@@ -172,6 +167,7 @@ async def stream_booking_status(
 
     Channel: booking:status:{user_id}:{event_id}
     """
+    pubsub_handler = container.pubsub_handler()
     raw_user_id = current_user.id
     if raw_user_id is None:
         raise HTTPException(status_code=401, detail='User ID not found')
@@ -211,6 +207,11 @@ async def stream_booking_status(
 
         except anyio.get_cancelled_exc_class():
             Logger.base.info(f'🔌 [SSE] Client disconnected: user={user_id}, event={event_id}')
+            raise
+        except Exception as e:
+            Logger.base.error(
+                f'[SSE] Error in generator for user={user_id}, event={event_id}: {type(e).__name__}: {e}'
+            )
             raise
 
     return EventSourceResponse(event_generator())

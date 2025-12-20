@@ -100,15 +100,15 @@ class TestReserveSeatsExecutionOrder:
             call_order.append('postgres_write')
             return {'tickets': [{'id': 1}]}
 
-        async def track_broadcast(*args: Any, **kwargs: Any) -> None:
-            call_order.append('event_state_broadcast')
+        async def track_schedule_broadcast(*args: Any, **kwargs: Any) -> None:
+            call_order.append('schedule_stats_broadcast')
 
         async def track_sse(*args: Any, **kwargs: Any) -> None:
             call_order.append('sse_publish')
 
         mock_seat_state_handler.reserve_seats_atomic = track_kvrocks
         mock_booking_command_repo.create_booking_and_update_tickets_to_reserved = track_postgres
-        mock_pubsub_handler.broadcast_event_state = track_broadcast
+        mock_pubsub_handler.schedule_stats_broadcast = track_schedule_broadcast
         mock_pubsub_handler.publish_booking_update = track_sse
 
         # Act
@@ -119,9 +119,9 @@ class TestReserveSeatsExecutionOrder:
         assert call_order == [
             'kvrocks_reserve',
             'postgres_write',
-            'event_state_broadcast',
+            'schedule_stats_broadcast',
             'sse_publish',
-        ], f'Expected order: kvrocks -> postgres -> broadcast -> sse, got: {call_order}'
+        ], f'Expected order: kvrocks -> postgres -> schedule_broadcast -> sse, got: {call_order}'
 
     @pytest.mark.asyncio
     async def test_postgres_write_happens_before_broadcast(
@@ -144,13 +144,13 @@ class TestReserveSeatsExecutionOrder:
             postgres_called = True
             return {'tickets': [{'id': 1}]}
 
-        async def track_broadcast(*args: Any, **kwargs: Any) -> None:
+        async def track_schedule_broadcast(*args: Any, **kwargs: Any) -> None:
             nonlocal broadcast_when_postgres_not_called
             if not postgres_called:
                 broadcast_when_postgres_not_called = True
 
         mock_booking_command_repo.create_booking_and_update_tickets_to_reserved = track_postgres
-        mock_pubsub_handler.broadcast_event_state = track_broadcast
+        mock_pubsub_handler.schedule_stats_broadcast = track_schedule_broadcast
 
         # Act
         await use_case.reserve_seats(valid_request)
@@ -158,5 +158,5 @@ class TestReserveSeatsExecutionOrder:
         # Assert
         assert postgres_called, 'PostgreSQL write should have been called'
         assert not broadcast_when_postgres_not_called, (
-            'Broadcast was called before PostgreSQL write - this violates the invariant!'
+            'schedule_stats_broadcast was called before PostgreSQL write - this violates the invariant!'
         )

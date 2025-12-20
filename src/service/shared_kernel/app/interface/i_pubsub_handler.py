@@ -56,6 +56,20 @@ class IPubSubHandler(ABC):
         pass
 
     @abstractmethod
+    async def schedule_stats_broadcast(self, *, event_id: int) -> None:
+        """
+        Schedule a throttled stats broadcast for the event.
+
+        Uses throttle pattern: first call starts 1s timer,
+        timer expiry triggers DB query + Redis broadcast.
+        Subsequent calls within the timer window are ignored.
+
+        Args:
+            event_id: Event ID
+        """
+        pass
+
+    @abstractmethod
     async def broadcast_event_state(self, *, event_id: int, event_state: dict) -> None:
         """
         Broadcast event_state update for real-time seat status
@@ -65,3 +79,21 @@ class IPubSubHandler(ABC):
             event_state: Complete event state (sections + stats)
         """
         pass
+
+    @abstractmethod
+    def subscribe_event_state(
+        self,
+        *,
+        event_id: int,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        Subscribe to event seat state updates for all viewers
+
+        Args:
+            event_id: Event ID
+
+        Yields:
+            Event state dictionaries as they are published
+        """
+        if False:
+            yield {}

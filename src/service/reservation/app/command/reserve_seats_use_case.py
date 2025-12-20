@@ -2,10 +2,11 @@
 Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL writes
 """
 
+import attrs
 from opentelemetry import trace
 
-from src.service.shared_kernel.app.interface.i_pubsub_handler import (
-    IPubSubHandler,
+from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
+    PubSubHandlerImpl,
 )
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
@@ -43,7 +44,7 @@ class ReserveSeatsUseCase:
         self,
         seat_state_handler: ISeatStateCommandHandler,
         booking_command_repo: IBookingCommandRepo,
-        pubsub_handler: IPubSubHandler,
+        pubsub_handler: PubSubHandlerImpl,
     ) -> None:
         self.seat_state_handler = seat_state_handler
         self.booking_command_repo = booking_command_repo
@@ -111,7 +112,6 @@ class ReserveSeatsUseCase:
                 if result['success']:
                     reserved_seats = result['reserved_seats']
                     total_price = result['total_price']
-                    event_state = result.get('event_state', {})
 
                     # Step 3: Write to PostgreSQL (booking + tickets)
                     pg_result = await self.booking_command_repo.create_booking_and_update_tickets_to_reserved(
@@ -128,12 +128,15 @@ class ReserveSeatsUseCase:
                         f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
                     )
 
-                    # Step 4: Broadcast event_state update via Redis Pub/Sub
-                    await self.pubsub_handler.broadcast_event_state(
-                        event_id=request.event_id, event_state=event_state
-                    )
+                    # Step 4: Schedule throttled stats broadcast (1s delay)
+                    await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
 
                     # Step 5: Publish SSE for real-time UI updates
+                    # Convert TicketRef objects to dicts for JSON serialization
+                    tickets_data = [
+                        attrs.asdict(t) if attrs.has(type(t)) else t
+                        for t in pg_result.get('tickets', [])
+                    ]
                     await self.pubsub_handler.publish_booking_update(
                         user_id=request.buyer_id,
                         event_id=request.event_id,
@@ -142,7 +145,7 @@ class ReserveSeatsUseCase:
                             'event_id': request.event_id,
                             'booking_id': request.booking_id,
                             'status': 'PENDING_PAYMENT',
-                            'tickets': pg_result.get('tickets', []),
+                            'tickets': tickets_data,
                         },
                     )
 

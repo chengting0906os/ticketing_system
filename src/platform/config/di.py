@@ -31,6 +31,9 @@ from src.service.reservation.driven_adapter.seat_state_query_handler_impl import
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.shared_kernel.driven_adapter.event_stats_query_repo_impl import (
+    EventStatsQueryRepoImpl,
+)
 from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
     PubSubHandlerImpl,
 )
@@ -99,11 +102,15 @@ class Container(containers.DeclarativeContainer):
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
+    # Event Stats Query Repo (for throttled broadcast)
+    event_stats_query_repo = providers.Singleton(EventStatsQueryRepoImpl)
+
     # Kvrocks Pub/Sub Handler for SSE (distributed pub/sub)
-    # Singleton: throttle state must be shared across usages
-    pubsub_handler = providers.Singleton(
+    # Uses throttle pattern: schedule_stats_broadcast() triggers 1s delayed query+broadcast
+    pubsub_handler: providers.Provider[PubSubHandlerImpl] = providers.Singleton(
         PubSubHandlerImpl,
         redis_client=providers.Factory(kvrocks_client.get_client),
+        event_stats_query_repo=event_stats_query_repo,
     )
 
     # Message Queue Publishers

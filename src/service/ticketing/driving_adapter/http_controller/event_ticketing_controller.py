@@ -1,15 +1,11 @@
-import contextlib
 from collections.abc import AsyncGenerator
 from typing import Dict, List, Optional
 
 import anyio
-import orjson
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis.asyncio import Redis as AsyncRedis
 from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import container
-from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.query.list_all_subsection_status_use_case import (
@@ -29,6 +25,7 @@ from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import
 from src.service.ticketing.driving_adapter.schema.event_schema import (
     EventCreateWithTicketConfigRequest,
     EventResponse,
+    EventStateSseResponse,
     SeatResponse,
     SectionStatsResponse,
     TicketResponse,
@@ -226,27 +223,17 @@ async def list_subsection_seats(
 
     result = await use_case.execute(event_id=event_id, section=section, subsection=subsection)
 
-    # Group seats by status
-    seats_by_status: dict[str, list[str]] = {}
-    for seat in result['seats']:
-        seat_position = seat['seat_position']
-        seat_status = seat['status']
-        if seat_status not in seats_by_status:
-            seats_by_status[seat_status] = []
-        seats_by_status[seat_status].append(seat_position)
-
-    # Create SeatResponse for each status
-    price = result['seats'][0]['price'] if result['seats'] else 0
+    # Create SeatResponse for each status group
     seats = [
         SeatResponse(
             event_id=result['event_id'],
             section=result['section'],
             subsection=result['subsection'],
             seat_positions=positions,
-            price=price,
+            price=result['price'],
             status=seat_status,
         )
-        for seat_status, positions in seats_by_status.items()
+        for seat_status, positions in result['seats_by_status'].items()
     ]
 
     return SectionStatsResponse(
@@ -258,7 +245,7 @@ async def list_subsection_seats(
         section=result['section'],
         subsection=result['subsection'],
         tickets=seats,
-        total_count=len(result['seats']),
+        total_count=result['total'],
     )
 
 
@@ -267,59 +254,56 @@ async def list_subsection_seats(
 
 @router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
 @Logger.io
-async def stream_all_section_stats(event_id: int) -> EventSourceResponse:
+async def stream_all_section_stats(
+    event_id: int,
+) -> EventSourceResponse:
     """SSE real-time push of statistics for all sections (via Redis Pub/Sub subscribe)."""
+    # Check if event exists
+    repo = container.event_ticketing_query_repo()
+    event = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail=f'Event not found: {event_id}')
+
+    pubsub_handler = container.pubsub_handler()
     seat_state_handler = container.seat_state_query_handler()
     use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
     initial_result = await use_case.execute(event_id=event_id)
 
-    if initial_result['total_sections'] == 0:
-        raise HTTPException(status_code=404, detail='Event not found')
-
     async def event_generator() -> AsyncGenerator[dict, None]:
-        pubsub_client: AsyncRedis | None = None
         try:
             # 1. Send initial status
-            response_data = {
-                'event_type': 'initial_status',
-                'event_id': initial_result['event_id'],
-                'sections': initial_result['sections'],
-                'total_sections': initial_result['total_sections'],
+            initial_response = EventStateSseResponse(
+                event_type='initial_status',
+                event_id=initial_result['event_id'],
+                sections=initial_result['sections'],
+                total_sections=initial_result['total_sections'],
+            )
+            yield {
+                'event': 'initial_status',
+                'data': initial_response.model_dump_json(),
             }
-            yield {'event': 'initial_status', 'data': orjson.dumps(response_data).decode()}
 
             # 2. Subscribe to pub/sub for updates
-            pubsub_client = await kvrocks_client.create_pubsub_client()
-            pubsub = pubsub_client.pubsub()
-            channel = f'event_state_updates:{event_id}'
-
-            await pubsub.subscribe(channel)
-            Logger.base.info(f'[SSE] Subscribed to {channel}')
-
-            async for message in pubsub.listen():
-                if message['type'] == 'message':
-                    try:
-                        payload = orjson.loads(message['data'])
-                        event_state = payload.get('event_state', {})
-                        response_data = {
-                            'event_type': 'status_update',
-                            'event_id': payload.get('event_id', event_id),
-                            'sections': event_state.get('sections', []),
-                            'total_sections': event_state.get('total_sections', 0),
-                        }
-                        yield {
-                            'event': 'status_update',
-                            'data': orjson.dumps(response_data).decode(),
-                        }
-                    except Exception as e:
-                        Logger.base.error(f'[SSE] Error parsing message: {e}')
+            async for payload in pubsub_handler.subscribe_event_state(event_id=event_id):
+                event_state = payload.get('event_state', {})
+                update_response = EventStateSseResponse(
+                    event_type='status_update',
+                    event_id=payload.get('event_id', event_id),
+                    sections=event_state.get('sections', {}),
+                    total_sections=event_state.get('total_sections', 0),
+                )
+                yield {
+                    'event': 'status_update',
+                    'data': update_response.model_dump_json(),
+                }
 
         except anyio.get_cancelled_exc_class():
             Logger.base.info(f'[SSE] Client disconnected from event {event_id}')
             raise
-        finally:
-            if pubsub_client:
-                with contextlib.suppress(Exception):
-                    await pubsub_client.aclose()
+        except Exception as e:
+            Logger.base.error(
+                f'[SSE] Error in generator for event {event_id}: {type(e).__name__}: {e}'
+            )
+            raise
 
     return EventSourceResponse(event_generator())

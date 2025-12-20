@@ -75,6 +75,10 @@ class MockResponse:
     def json(self) -> dict[str, Any]:
         return self._json_data
 
+    @property
+    def text(self) -> str:
+        return orjson.dumps(self._json_data).decode()
+
 
 # =============================================================================
 # Helper Functions - Kvrocks Pub/Sub
