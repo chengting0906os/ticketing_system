@@ -1,5 +1,5 @@
 // Event Ticketing - Entity Relationship Model
-// Extracted from EVENT_TICKETING_SPEC.md
+// Extracted from EVENT_TICKETING_SPEC.md and BOOKING_SPEC.md
 
 // ============================================
 // Enums
@@ -30,6 +30,25 @@ Enum TicketStatus {
   - AVAILABLE -> RESERVED: On reservation
   - RESERVED -> SOLD: On payment confirmation
   - RESERVED -> AVAILABLE: On timeout or cancellation
+  '''
+}
+
+Enum BookingStatus {
+  PROCESSING [note: 'Processing (initial state, waiting for seat reservation confirmation)']
+  PENDING_PAYMENT [note: 'Pending payment (seats reserved successfully)']
+  COMPLETED [note: 'Completed (payment successful)']
+  CANCELLED [note: 'Cancelled']
+  FAILED [note: 'Failed (seat reservation failed)']
+
+  Note: '''
+  State Transitions:
+  - PROCESSING -> PENDING_PAYMENT: Automatic when seats reserved successfully
+  - PROCESSING -> FAILED: Automatic when seat reservation fails
+  - PROCESSING -> CANCELLED: Manual by buyer
+  - PENDING_PAYMENT -> COMPLETED: On payment confirmation
+  - PENDING_PAYMENT -> CANCELLED: Manual by buyer
+
+  Terminal States: COMPLETED, CANCELLED, FAILED (cannot be changed)
   '''
 }
 
@@ -106,10 +125,55 @@ Table User {
   '''
 }
 
+Table Booking {
+  id string [pk, note: 'Primary key, UUID7 format']
+  buyer_id int [not null, ref: > User.id, note: 'Buyer ID, FK to User']
+  event_id int [not null, ref: > Event.id, note: 'Event ID, FK to Event']
+  total_price int [not null, note: 'Total price in cents, >= 0']
+  section string [not null, note: 'Section name, e.g., "A"']
+  subsection int [not null, note: 'Subsection number, e.g., 1']
+  quantity int [not null, note: 'Number of tickets, 1-4']
+  seat_selection_mode string [not null, note: 'Selection mode: "manual" or "best_available"']
+  seat_positions string [note: 'Seat positions as JSON array, e.g., ["1-1", "1-2"]. Format: "row-seat"']
+  status BookingStatus [note: 'Booking status']
+  created_at string [note: 'Creation timestamp (UTC), auto']
+  updated_at string [note: 'Update timestamp (UTC), auto']
+  paid_at string [note: 'Payment timestamp (UTC), Nullable']
+
+  Note: '''
+  Booking Entity - Manages ticket booking creation, query, payment, and cancellation
+
+  Business Rules:
+  - Quantity limit: 1-4 tickets per booking
+  - seat_selection_mode:
+    - "manual": Must provide seat_positions, count must equal quantity
+    - "best_available": seat_positions must be empty array, system selects seats
+  - Fail Fast: Check seat availability before creating booking
+  - Only buyer can cancel or pay their own booking
+  - Only PROCESSING and PENDING_PAYMENT status can be cancelled
+  - Only PENDING_PAYMENT status can be paid
+  - COMPLETED, CANCELLED, FAILED are terminal states
+
+  Cross-Attribute Invariants:
+  - When seat_selection_mode = "manual": len(seat_positions) == quantity
+  - When seat_selection_mode = "best_available": seat_positions == []
+
+  Relationships:
+  - Booking N:1 User (buyer)
+  - Booking N:1 Event
+  - Booking 1:N Ticket (through reserved tickets)
+  '''
+}
+
 // ============================================
 // Relationships
 // ============================================
 
+// Event & Ticket relationships
 Ref: Ticket.event_id > Event.id [note: 'Event 1:N Ticket - One event has many tickets']
 Ref: Event.seller_id > User.id [note: 'User 1:N Event - One seller can have many events']
 Ref: Ticket.buyer_id > User.id [note: 'User 1:N Ticket - One buyer can purchase many tickets']
+
+// Booking relationships
+Ref: Booking.buyer_id > User.id [note: 'User 1:N Booking - One buyer can have many bookings']
+Ref: Booking.event_id > Event.id [note: 'Event 1:N Booking - One event can have many bookings']

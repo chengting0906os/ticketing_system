@@ -76,7 +76,7 @@ Used for Lua script optimization (skip full rows → 97% reduction)
 
 ```text
 status: "RESERVE_SUCCESS" | "RESERVE_FAILED"
-reserved_seats: ["A-1-1-1", "A-1-1-2"]
+reserved_seats: ["1-1", "1-2"]
 total_price: "6000"
 ```
 
@@ -180,12 +180,12 @@ All other rows (1, 4, 5) remain `00` (AVAILABLE 🟢)
 **Seat ID Format:**
 
 ```text
-{section}-{subsection}-{row}-{seat_num}
+{row}-{seat_num}
 
 Examples:
-- A-1-1-1  (Section A, Subsection 1, Row 1, Seat 1)
-- A-1-2-2  (Section A, Subsection 1, Row 2, Seat 2)
-- A-1-5-5  (Section A, Subsection 1, Row 5, Seat 5)
+- 1-1  (Row 1, Seat 1)
+- 2-2  (Row 2, Seat 2)
+- 5-5  (Row 5, Seat 5)
 ```
 
 ---
