@@ -70,8 +70,7 @@ Event Ticketing 模組負責管理活動（Event）與票券（Ticket）的建�
 
 - [event_creation.feature](../../test/service/ticketing/event_ticketing/event_creation.feature) - 活動建立
 - [event_list_validation.feature](../../test/service/ticketing/event_ticketing/event_list_validation.feature) - 活動列表
-- [event_get_with_tickets.feature](../../test/service/ticketing/event_ticketing/event_get_with_tickets.feature) - 活動詳情
-- [event_subsection_seats_list_integration_test.feature](../../test/service/ticketing/event_ticketing/event_subsection_seats_list_integration_test.feature) - 座位清單
+- [event_subsection_seats_list_integration_test.feature](../../test/service/ticketing/event_ticketing/event_subsection_seats_list_integration_test.feature) - 活動詳情 & 座位清單
 - [event_status_sse_stream_integration_test.feature](../../test/service/ticketing/event_ticketing/event_status_sse_stream_integration_test.feature) - SSE 即時更新
 
 ### Unit Tests
@@ -91,9 +90,9 @@ Event Ticketing 模組負責管理活動（Event）與票券（Ticket）的建�
 | POST   | `/api/event`                                                                 | 建立活動                     | Seller     | 201     | 400, 403 |
 | GET    | `/api/event`                                                                 | 列出所有可購買活動           | Public     | 200     | -        |
 | GET    | `/api/event?seller_id={id}`                                                  | 列出賣家所有活動             | Public     | 200     | -        |
-| GET    | `/api/event/{event_id}/all_subsection_status`                                | 取得所有子區域狀態統計       | Public     | 200     | -        |
+| GET    | `/api/event/{event_id}`                                                      | 取得活動詳情（含座位狀態）   | Public     | 200     | 404      |
 | GET    | `/api/event/{event_id}/sections/{section}/subsection/{subsection}/seats`     | 取得指定子區域座位清單       | Public     | 200     | 404      |
-| GET    | `/api/event/{event_id}/all_subsection_status/sse`                            | 訂閱所有子區域狀態更新 (SSE) | Public     | 200     | 404      |
+| GET    | `/api/event/{event_id}/sse`                                                  | 訂閱活動狀態更新 (SSE)       | Public     | 200     | 404      |
 
 ### 6.2 Model
 
