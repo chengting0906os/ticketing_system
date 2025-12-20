@@ -19,9 +19,6 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from src.platform.config.core_setting import settings
 from src.platform.exception.exception_handlers import register_exception_handlers
 from src.platform.observability.tracing import TracingConfig
-from src.service.reservation.driving_adapter.reservation_controller import (
-    router as reservation_router,
-)
 from src.service.ticketing.driving_adapter.http_controller.booking_controller import (
     router as booking_router,
 )
@@ -87,7 +84,6 @@ def create_app(
     app.include_router(auth_router, prefix='/api/user', tags=['user'])
     app.include_router(event_router, prefix='/api/event', tags=['event'])
     app.include_router(booking_router, prefix='/api/booking', tags=['booking'])
-    app.include_router(reservation_router, prefix='/api/reservation', tags=['reservation'])
 
     # Register common endpoints
     _register_common_endpoints(app)

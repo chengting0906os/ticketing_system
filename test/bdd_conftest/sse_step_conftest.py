@@ -37,9 +37,9 @@ import threading
 import time
 from typing import Any
 
+from fastapi.testclient import TestClient
 import httpx
 import orjson
-from fastapi.testclient import TestClient
 from pytest_bdd import given, parsers, then, when
 from pytest_bdd.model import Step
 from redis import Redis as SyncRedis
@@ -233,7 +233,7 @@ def when_subscribe_to_sse_endpoint(
 
     Example:
         When I subscribe to SSE endpoint "/api/booking/event/{event_id}/sse"
-        When I subscribe to SSE endpoint "/api/reservation/{event_id}/all_subsection_status/sse"
+        When I subscribe to SSE endpoint "/api/event/{event_id}/all_subsection_status/sse"
     """
     resolved_endpoint = resolve_endpoint_vars(endpoint, context)
     url = f'{http_server}{resolved_endpoint}'
@@ -386,7 +386,7 @@ def _connect_users_to_sse(
     for cookie in client.cookies.jar:
         cookies[cookie.name] = cookie.value
 
-    url = f'{http_server}/api/reservation/{event_id_int}/all_subsection_status/sse'
+    url = f'{http_server}/api/event/{event_id_int}/all_subsection_status/sse'
     headers = {'Accept': 'text/event-stream'}
 
     threads: list[tuple[threading.Thread, list[dict[str, Any]], dict[str, Any]]] = []
@@ -484,20 +484,23 @@ def when_section_stats_updated(step: Step, context: dict[str, Any]) -> None:
 
     Example:
         When section stats are updated with:
-          | section_id | available | reserved | sold |
-          | A-1        | 45        | 5        | 0    |
+          | section | subsection | available | reserved | sold |
+          | A       | 1          | 45        | 5        | 0    |
     """
     data = extract_table_data(step)
 
-    section_id = data['section_id']
+    section = data['section']
+    subsection = int(data['subsection'])
     available = int(data['available'])
     reserved = int(data.get('reserved', 0))
     sold = int(data.get('sold', 0))
     total = available + reserved + sold
 
+    key = f'{section}-{subsection}'
     context['updated_stats'] = {
-        section_id: {
-            'section_id': section_id,
+        key: {
+            'section': section,
+            'subsection': subsection,
             'total': total,
             'available': available,
             'reserved': reserved,
@@ -594,8 +597,8 @@ def then_section_stats_include(step: Step, context: dict[str, Any]) -> None:
 
     Example:
         Then section stats should include:
-          | section_id | total | available |
-          | A-1        | 50    | 50        |
+          | section | subsection | total | available |
+          | A       | 1          | 50    | 50        |
     """
     data = extract_table_data(step)
     events = context.get('sse_events', [])
@@ -612,15 +615,15 @@ def then_section_stats_include(step: Step, context: dict[str, Any]) -> None:
     assert sections_event is not None, 'No event with sections data found'
     sections = sections_event['data'].get('sections', {})
 
-    section_id = data['section_id']
-    assert section_id in sections, f'Section {section_id} not found in response'
+    key = f'{data["section"]}-{data["subsection"]}'
+    assert key in sections, f'Section {key} not found in response'
 
-    section = sections[section_id]
+    section = sections[key]
     assert section['total'] == int(data['total']), (
-        f'Total mismatch for {section_id}: got {section["total"]}, expected {data["total"]}'
+        f'Total mismatch for {key}: got {section["total"]}, expected {data["total"]}'
     )
     assert section['available'] == int(data['available']), (
-        f'Available mismatch for {section_id}: got {section["available"]}, expected {data["available"]}'
+        f'Available mismatch for {key}: got {section["available"]}, expected {data["available"]}'
     )
 
 
@@ -653,17 +656,17 @@ def then_updated_section_stats_show(step: Step, context: dict[str, Any]) -> None
 
     Example:
         Then updated section stats should show:
-          | section_id | total | available | reserved |
-          | A-1        | 50    | 45        | 5        |
+          | section | subsection | total | available | reserved |
+          | A       | 1          | 50    | 45        | 5        |
     """
     data = extract_table_data(step)
 
     updated_stats = context.get('updated_stats', {})
 
-    section_id = data['section_id']
-    assert section_id in updated_stats, f'Section {section_id} not found'
+    key = f'{data["section"]}-{data["subsection"]}'
+    assert key in updated_stats, f'Section {key} not found'
 
-    section = updated_stats[section_id]
+    section = updated_stats[key]
     assert section['total'] == int(data['total']), 'Total mismatch'
     assert section['available'] == int(data['available']), 'Available mismatch'
     assert section['reserved'] == int(data['reserved']), 'Reserved mismatch'
@@ -691,13 +694,13 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
 
     Example:
         Then all users should see same section stats:
-          | section_id | available | reserved |
-          | A-1        | 50        | 0        |
+          | section | subsection | available | reserved |
+          | A       | 1          | 50        | 0        |
     """
     data = extract_table_data(step)
     connections = context.get('user_connections', [])
 
-    section_id = data['section_id']
+    key = f'{data["section"]}-{data["subsection"]}'
     expected_available = int(data['available'])
     expected_reserved = int(data['reserved'])
 
@@ -715,12 +718,102 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
         assert latest_event is not None, f'No event with sections data for user {conn["user_id"]}'
         sections = latest_event['data'].get('sections', {})
 
-        assert section_id in sections, f'Section {section_id} not found for user {conn["user_id"]}'
+        assert key in sections, f'Section {key} not found for user {conn["user_id"]}'
 
-        section = sections[section_id]
+        section = sections[key]
         assert section['available'] == expected_available, (
             f'Available mismatch for user {conn["user_id"]}'
         )
         assert section['reserved'] == expected_reserved, (
             f'Reserved mismatch for user {conn["user_id"]}'
         )
+
+
+# =============================================================================
+# Subsection SSE Steps
+# =============================================================================
+
+
+@when(
+    parsers.parse(
+        'user connects to subsection SSE stream for event {event_id} section {section} subsection {subsection}'
+    )
+)
+def when_user_connects_to_subsection_sse(
+    event_id: str,
+    section: str,
+    subsection: str,
+    client: TestClient,
+    context: dict[str, Any],
+    http_server: str,
+) -> None:
+    resolved_id = resolve_endpoint_vars(str(event_id), context)
+    event_id_int = int(resolved_id)
+
+    login_user(client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+    cookies = {}
+    for cookie in client.cookies.jar:
+        cookies[cookie.name] = cookie.value
+
+    url = f'{http_server}/api/event/{event_id_int}/sections/{section}/subsection/{subsection}/seats/sse'
+    headers = {'Accept': 'text/event-stream'}
+
+    events_list: list[dict[str, Any]] = []
+    status_holder: dict[str, Any] = {'status_code': 0, 'content_type': ''}
+
+    thread = threading.Thread(
+        target=_read_sse_events_in_thread,
+        args=(url, headers, cookies, events_list, status_holder, 3, 5.0),
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout=6)
+
+    context['sse_events'] = events_list
+    context['event_id'] = event_id_int
+
+    status_code = status_holder.get('status_code', 0)
+    content_type = status_holder.get('content_type', '')
+
+    context['response'] = MockResponse(
+        status_code if status_code else 404,
+        {'content-type': content_type or 'text/event-stream; charset=utf-8'},
+        {} if status_code == 200 else {'detail': 'Event not found'},
+    )
+
+
+@then('initial subsection status event should be received with:')
+def then_initial_subsection_status_received(step: Step, context: dict[str, Any]) -> None:
+    """Verify initial subsection status event was received.
+
+    Example:
+        Then initial subsection status event should be received with:
+          | event_type     | total | available |
+          | initial_status | 50    | 50        |
+    """
+    data = extract_table_data(step)
+    events = context.get('sse_events', [])
+
+    assert len(events) > 0, 'No SSE events received'
+
+    initial_event = None
+    for event in events:
+        if event.get('event') == data['event_type']:
+            initial_event = event
+            break
+
+    assert initial_event is not None, (
+        f"Expected event type '{data['event_type']}', got events: {[e.get('event') for e in events]}"
+    )
+
+    event_data = initial_event.get('data', {})
+    expected_total = int(data['total'])
+    expected_available = int(data['available'])
+
+    assert event_data.get('total') == expected_total, (
+        f'Expected total={expected_total}, got {event_data.get("total")}'
+    )
+    assert event_data.get('available') == expected_available, (
+        f'Expected available={expected_available}, got {event_data.get("available")}'
+    )

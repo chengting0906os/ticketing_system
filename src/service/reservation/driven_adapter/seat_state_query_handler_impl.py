@@ -277,7 +277,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                     # Seat not initialized yet, default to available (00)
                     status_value = 0
 
-                seat_identifier = f'{section}-{subsection}-{row}-{seat_num}'
+                seat_position = f'{row}-{seat_num}'
                 all_seats.append(
                     {
                         'section': section,
@@ -286,7 +286,7 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                         'seat_num': seat_num,
                         'price': section_price,  # Same price for all seats in section
                         'status': BITFIELD_TO_STATUS.get(status_value, 'available'),
-                        'seat_identifier': seat_identifier,
+                        'seat_position': seat_position,
                     }
                 )
 

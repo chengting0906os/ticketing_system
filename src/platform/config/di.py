@@ -21,7 +21,7 @@ from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer
 from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
     ReleaseExecutor,
 )
-from src.service.reservation.driven_adapter.executor.atomic_reservation.repo import (
+from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
 from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (

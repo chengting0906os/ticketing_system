@@ -21,23 +21,36 @@ class PaymentFinalizer:
         """Calculate seat index in Bitfield"""
         return (row - 1) * cols + (seat_num - 1)
 
-    async def finalize_seat_payment(self, *, seat_id: str, event_id: int) -> bool:
+    async def finalize_seat_payment(
+        self,
+        *,
+        seat_position: str,
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> bool:
         """
         Finalize payment (RESERVED -> SOLD).
 
         Fetches cols from Kvrocks event_state config.
+
+        Args:
+            seat_position: Seat position (format: "row-seat", e.g., "1-5")
+            event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
         """
-        parts = seat_id.split('-')
-        if len(parts) != 4:
+        parts = seat_position.split('-')
+        if len(parts) != 2:
             return False
 
-        section, subsection, row, seat_num = parts
+        row, seat_num = parts
         section_id = f'{section}-{subsection}'
 
         # Fetch config from Kvrocks
         client = kvrocks_client.get_client()
         event_state_key = make_event_state_key(event_id=event_id)
-        json_path = f"$.sections['{section}'].subsections['{subsection}'].cols"
+        json_path = f"$.sections['{section}'].subsections['{str(subsection)}'].cols"
         result = await client.execute_command('JSON.GET', event_state_key, json_path)
 
         if not result:

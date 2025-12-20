@@ -15,7 +15,7 @@ import pytest
 import uuid_utils as uuid
 
 from src.platform.database.asyncpg_setting import get_asyncpg_pool
-from src.service.reservation.driven_adapter.executor.atomic_reservation.repo.booking_command_repo_impl import (
+from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus

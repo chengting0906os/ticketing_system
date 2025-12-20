@@ -28,8 +28,6 @@ class GetEventUseCase:
     @Logger.io
     async def get_by_id(self, event_id: int) -> Optional[EventTicketingAggregate]:
         """Get event aggregate root (excluding tickets for performance optimization)"""
-        Logger.base.info(f'🔍 [GET_EVENT] Loading event aggregate for event {event_id}')
-
         event_aggregate = (
             await self.event_ticketing_query_repo.get_event_aggregate_by_id_with_tickets(
                 event_id=event_id

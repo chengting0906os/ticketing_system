@@ -57,29 +57,46 @@ class ISeatStateCommandHandler(ABC):
         pass
 
     @abstractmethod
-    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(
+        self,
+        seat_positions: List[str],
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> Dict[str, bool]:
         """
         Release seats (RESERVED -> AVAILABLE)
 
         Args:
-            seat_ids: List of seat IDs
+            seat_positions: List of seat positions (format: "row-seat", e.g., "1-5")
             event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
 
         Returns:
-            Dict mapping seat_id to success status
+            Dict mapping seat_position to success status
         """
         pass
 
     @abstractmethod
-    async def finalize_payment(self, *, seat_id: str, event_id: int) -> bool:
+    async def finalize_payment(
+        self,
+        *,
+        seat_position: str,
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> bool:
         """
         Complete payment, change seat from RESERVED to SOLD
 
         Config (cols) is fetched from Kvrocks internally.
 
         Args:
-            seat_id: Seat ID (format: section-subsection-row-seat)
+            seat_position: Seat position (format: "row-seat", e.g., "1-5")
             event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
 
         Returns:
             Success status

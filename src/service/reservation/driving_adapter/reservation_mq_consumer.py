@@ -126,12 +126,19 @@ class SeatReservationConsumer(BaseKafkaConsumer):
 
         booking_id = message.get('booking_id', 'unknown')
         event_id = message.get('event_id', self.event_id)
+        section = message.get('section', '')
+        subsection = message.get('subsection', 0)
 
         Logger.base.info(
             f'[RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats for booking={booking_id}'
         )
 
-        batch_request = ReleaseSeatsBatchRequest(seat_ids=seat_positions, event_id=event_id)
+        batch_request = ReleaseSeatsBatchRequest(
+            seat_positions=seat_positions,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+        )
         result = await self.release_seat_use_case.execute_batch(batch_request)
 
         return {
@@ -152,19 +159,23 @@ class SeatReservationConsumer(BaseKafkaConsumer):
 
         booking_id = message.get('booking_id', 'unknown')
         event_id = message.get('event_id', self.event_id)
+        section = message.get('section', '')
+        subsection = message.get('subsection', 0)
         successful_seats = []
         failed_seats = []
 
-        for seat_id in seat_positions:
+        for seat_position in seat_positions:
             request = FinalizeSeatPaymentRequest(
-                seat_id=seat_id,
+                seat_position=seat_position,
                 event_id=event_id,
+                section=section,
+                subsection=subsection,
             )
             result = await self.finalize_seat_payment_use_case.execute(request)
             if result.success:
-                successful_seats.append(seat_id)
+                successful_seats.append(seat_position)
             else:
-                failed_seats.append(seat_id)
+                failed_seats.append(seat_position)
 
         Logger.base.info(
             f'[FINALIZE-{self.instance_id}] booking_id={booking_id} '

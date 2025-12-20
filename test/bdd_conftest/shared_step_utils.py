@@ -169,13 +169,20 @@ def create_user_if_not_exists(
     name: str,
     role: str,
 ) -> dict[str, Any] | None:
-    """Create user via API, returns None if user already exists."""
+    """Create user via API, returns None if user already exists.
+
+    Returns:
+        User data dict if created successfully (201),
+        None if user already exists (409) or other non-201 status.
+    """
     response = client.post(
         USER_CREATE,
         json={'email': email, 'password': password, 'name': name, 'role': role},
     )
     if response.status_code == 201:
         return response.json()
+    # 409 Conflict = user already exists, which is fine
+    # Any other error is also silently ignored (caller will try login)
     return None
 
 

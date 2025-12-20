@@ -9,7 +9,7 @@ Performance: Using raw SQL with asyncpg for maximum performance
 
 from datetime import datetime, timezone
 import time
-from typing import List, Optional
+from typing import List
 
 import orjson
 
@@ -20,8 +20,6 @@ from src.service.ticketing.app.interface.i_event_ticketing_command_repo import (
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
-    Ticket,
-    TicketStatus,
 )
 
 
@@ -345,94 +343,6 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
             )
 
             return event_aggregate
-
-    @Logger.io
-    async def update_tickets_status(
-        self,
-        *,
-        ticket_ids: List[int],
-        status: TicketStatus,
-        buyer_id: Optional[int] = None,
-    ) -> List[Ticket]:
-        """Batch update ticket status"""
-        if not ticket_ids:
-            return []
-
-        async with (await get_asyncpg_pool()).acquire() as conn:
-            now = datetime.now(timezone.utc)
-
-            if status == TicketStatus.RESERVED:
-                if buyer_id is None:
-                    raise ValueError('buyer_id is required when updating to RESERVED')
-                rows = await conn.fetch(
-                    """
-                    UPDATE ticket
-                    SET status = 'reserved',
-                        buyer_id = $1,
-                        reserved_at = $2,
-                        updated_at = $3
-                    WHERE id = ANY($4::int[])
-                    RETURNING id, event_id, section, subsection, row_number, seat_number,
-                              price, status, buyer_id, reserved_at, created_at, updated_at
-                    """,
-                    buyer_id,
-                    now,
-                    now,
-                    ticket_ids,
-                )
-                Logger.base.info(
-                    f'🎫 [AVAILABLE→RESERVED] Updated {len(rows)} tickets for buyer {buyer_id}'
-                )
-            elif status == TicketStatus.AVAILABLE:
-                rows = await conn.fetch(
-                    """
-                    UPDATE ticket
-                    SET status = 'available',
-                        buyer_id = NULL,
-                        reserved_at = NULL,
-                        updated_at = $1
-                    WHERE id = ANY($2::int[])
-                    RETURNING id, event_id, section, subsection, row_number, seat_number,
-                              price, status, buyer_id, reserved_at, created_at, updated_at
-                    """,
-                    now,
-                    ticket_ids,
-                )
-                Logger.base.info(f'🎫 [RESERVED→AVAILABLE] Released {len(rows)} tickets')
-            elif status == TicketStatus.SOLD:
-                rows = await conn.fetch(
-                    """
-                    UPDATE ticket
-                    SET status = 'sold',
-                        updated_at = $1
-                    WHERE id = ANY($2::int[])
-                    RETURNING id, event_id, section, subsection, row_number, seat_number,
-                              price, status, buyer_id, reserved_at, created_at, updated_at
-                    """,
-                    now,
-                    ticket_ids,
-                )
-                Logger.base.info(f'🎫 [RESERVED→SOLD] Finalized {len(rows)} tickets')
-            else:
-                raise ValueError(f'Unsupported status transition: {status}')
-
-            return [
-                Ticket(
-                    event_id=row['event_id'],
-                    section=row['section'],
-                    subsection=row['subsection'],
-                    row=row['row_number'],
-                    seat=row['seat_number'],
-                    price=row['price'],
-                    status=TicketStatus(row['status']),
-                    buyer_id=row['buyer_id'],
-                    id=row['id'],
-                    created_at=row['created_at'],
-                    updated_at=row['updated_at'],
-                    reserved_at=row['reserved_at'],
-                )
-                for row in rows
-            ]
 
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:

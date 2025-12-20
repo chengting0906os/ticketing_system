@@ -74,6 +74,6 @@ class ISeatStateQueryHandler(ABC):
             subsection: Subsection number
 
         Returns:
-            List of seats, each containing section, subsection, row, seat_num, price, status, seat_identifier
+            List of seats, each containing section, subsection, row, seat_num, price, status, seat_position
         """
         pass

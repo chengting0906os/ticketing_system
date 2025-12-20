@@ -19,10 +19,6 @@ from src.platform.message_queue.protobuf_serializer import (
     convert_domain_event_to_proto,
     get_proto_class_by_event_type,
 )
-from src.service.reservation.driven_adapter.reservation_mq_publisher import (
-    SeatReservationFailedEvent,
-    SeatsReservedEvent,
-)
 from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
@@ -75,11 +71,6 @@ class TestGetProtoClass:
         assert (
             get_proto_class_by_event_type('BookingCreatedDomainEvent')
             == pb.BookingCreatedDomainEvent
-        )
-        assert get_proto_class_by_event_type('SeatsReservedEvent') == pb.SeatsReservedEvent
-        assert (
-            get_proto_class_by_event_type('SeatReservationFailedEvent')
-            == pb.SeatReservationFailedEvent
         )
         assert get_proto_class_by_event_type('BookingPaidEvent') == pb.BookingPaidEvent
         assert get_proto_class_by_event_type('BookingCancelledEvent') == pb.BookingCancelledEvent
@@ -194,59 +185,6 @@ class TestBookingCreatedEventSerialization:
 
         # config=None means field not set, so MessageToDict won't include it
         assert 'config' not in result
-
-
-@pytest.mark.unit
-class TestSeatsReservedEventSerialization:
-    @pytest.fixture
-    def seats_reserved_event(self) -> SeatsReservedEvent:
-        return SeatsReservedEvent(
-            booking_id='booking-123',
-            buyer_id=42,
-            event_id=1,
-            section='A',
-            subsection=1,
-            seat_selection_mode='manual',
-            reserved_seats=['A1-1-1', 'A1-1-2'],
-            total_price=5000,
-            subsection_stats={'available': 98, 'reserved': 2, 'sold': 0, 'total': 100},
-            event_stats={'available': 49998, 'reserved': 2, 'sold': 0, 'total': 50000},
-        )
-
-    def test_serialize_and_deserialize_roundtrip(
-        self, seats_reserved_event: SeatsReservedEvent
-    ) -> None:
-        data = convert_domain_event_to_proto(seats_reserved_event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='SeatsReservedEvent')
-
-        assert result['booking_id'] == seats_reserved_event.booking_id
-        assert result['buyer_id'] == seats_reserved_event.buyer_id
-        assert result['reserved_seats'] == seats_reserved_event.reserved_seats
-        assert result['subsection_stats'] == seats_reserved_event.subsection_stats
-        assert result['event_stats'] == seats_reserved_event.event_stats
-
-
-@pytest.mark.unit
-class TestSeatReservationFailedEventSerialization:
-    def test_serialize_and_deserialize_roundtrip(self) -> None:
-        event = SeatReservationFailedEvent(
-            booking_id='booking-456',
-            buyer_id=42,
-            event_id=1,
-            section='B',
-            subsection=2,
-            quantity=3,
-            seat_selection_mode='auto',
-            seat_positions=[],
-            error_message='Insufficient seats available',
-        )
-
-        data = convert_domain_event_to_proto(event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='SeatReservationFailedEvent')
-
-        assert result['booking_id'] == event.booking_id
-        assert result['error_message'] == event.error_message
-        assert result['status'] == 'reservation_failed'
 
 
 @pytest.mark.unit

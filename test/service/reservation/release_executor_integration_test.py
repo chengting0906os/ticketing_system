@@ -104,11 +104,16 @@ class TestReleaseExecutorIntegration:
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 60)
         assert status_before == [1], f'Seat should be RESERVED before release, got {status_before}'
 
-        # When: Release the seat
-        results = await release_executor.release_seats(seat_ids=['A-2-2-11'], event_id=event_id)
+        # When: Release the seat (new format: seat_positions='row-seat', section/subsection separate)
+        results = await release_executor.release_seats(
+            seat_positions=['2-11'],
+            event_id=event_id,
+            section='A',
+            subsection=2,
+        )
 
         # Then: Should return success
-        assert results == {'A-2-2-11': True}
+        assert results == {'2-11': True}
 
         # Verify seat is now AVAILABLE (status=0)
         status_after = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 60)
@@ -155,11 +160,16 @@ class TestReleaseExecutorIntegration:
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 8)
         assert status_before == [1], f'Seat should be RESERVED before release, got {status_before}'
 
-        # When: Release the seat
-        results = await release_executor.release_seats(seat_ids=['A-1-1-5'], event_id=event_id)
+        # When: Release the seat (new format: seat_positions='row-seat', section/subsection separate)
+        results = await release_executor.release_seats(
+            seat_positions=['1-5'],
+            event_id=event_id,
+            section='A',
+            subsection=1,
+        )
 
         # Then: Should return success
-        assert results == {'A-1-1-5': True}
+        assert results == {'1-5': True}
 
         # Verify seat is now AVAILABLE (status=0)
         status_after = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 8)

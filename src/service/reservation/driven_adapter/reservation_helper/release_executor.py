@@ -23,41 +23,52 @@ class ReleaseExecutor:
         """Calculate seat index in Bitfield"""
         return (row - 1) * cols + (seat_num - 1)
 
-    async def release_seats(self, *, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
-        """Release seats (RESERVED -> AVAILABLE). Fetches config from Kvrocks."""
+    async def release_seats(
+        self,
+        *,
+        seat_positions: List[str],
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> Dict[str, bool]:
+        """
+        Release seats (RESERVED -> AVAILABLE). Fetches config from Kvrocks.
+
+        Args:
+            seat_positions: List of seat positions (format: "row-seat", e.g., "1-5")
+            event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
+        """
         client = kvrocks_client.get_client()
         results: Dict[str, bool] = {}
 
-        # Cache config per section to avoid repeated fetches
-        config_cache: Dict[str, int] = {}  # section_id -> cols
+        section_id = f'{section}-{subsection}'
 
-        for seat_id in seat_ids:
-            parts = seat_id.split('-')
-            if len(parts) != 4:
-                results[seat_id] = False
+        # Fetch config once (all seats are in same section)
+        event_state_key = make_event_state_key(event_id=event_id)
+        json_path = f"$.sections['{section}'].subsections['{str(subsection)}'].cols"
+        config_result = await client.execute_command('JSON.GET', event_state_key, json_path)
+
+        if not config_result:
+            # Return all as failed if config not found
+            return {seat_pos: False for seat_pos in seat_positions}
+
+        cols = orjson.loads(config_result)[0]
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+
+        for seat_position in seat_positions:
+            parts = seat_position.split('-')
+            if len(parts) != 2:
+                results[seat_position] = False
                 continue
 
-            section, subsection, row, seat_num = parts
-            section_id = f'{section}-{subsection}'
-
-            # Fetch config if not cached
-            if section_id not in config_cache:
-                event_state_key = make_event_state_key(event_id=event_id)
-                json_path = f"$.sections['{section}'].subsections['{subsection}'].cols"
-                result = await client.execute_command('JSON.GET', event_state_key, json_path)
-                if result:
-                    config_cache[section_id] = orjson.loads(result)[0]
-                else:
-                    results[seat_id] = False
-                    continue
-
-            cols = config_cache[section_id]
+            row, seat_num = parts
             seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
-            bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
             offset = seat_index * 2
 
             # Set to AVAILABLE (00)
             await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 0)
-            results[seat_id] = True
+            results[seat_position] = True
 
         return results

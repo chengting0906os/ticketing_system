@@ -234,14 +234,34 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     # ========== Other Command Methods ==========
 
     @Logger.io
-    async def release_seats(self, seat_ids: List[str], event_id: int) -> Dict[str, bool]:
+    async def release_seats(
+        self,
+        seat_positions: List[str],
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> Dict[str, bool]:
         """Release seats (RESERVED -> AVAILABLE)"""
-        return await self.release_executor.release_seats(seat_ids=seat_ids, event_id=event_id)
+        return await self.release_executor.release_seats(
+            seat_positions=seat_positions,
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
+        )
 
     @Logger.io
-    async def finalize_payment(self, *, seat_id: str, event_id: int) -> bool:
+    async def finalize_payment(
+        self,
+        *,
+        seat_position: str,
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> bool:
         """Finalize payment (RESERVED -> SOLD)"""
         return await self.payment_finalizer.finalize_seat_payment(
-            seat_id=seat_id,
+            seat_position=seat_position,
             event_id=event_id,
+            section=section,
+            subsection=subsection,
         )

@@ -12,7 +12,6 @@ Organization:
 # =============================================================================
 # Service Fixtures
 # =============================================================================
-from test.service.ticketing.reservation.fixtures import *  # noqa: F401, F403
 from test.service.ticketing.fixtures import *  # noqa: F401, F403
 
 # =============================================================================
@@ -22,7 +21,6 @@ from test.service.ticketing.fixtures import *  # noqa: F401, F403
 # and are auto-discovered by pytest:
 # - test/service/ticketing/booking/conftest.py
 # - test/service/ticketing/event_ticketing/conftest.py
-# - test/service/ticketing/reservation/conftest.py
 
 # =============================================================================
 # Common Reusable Steps (Given/When/Then steps for API calls)

@@ -104,9 +104,12 @@ class TestPaymentFinalizerIntegration:
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 60)
         assert status_before == [1], f'Seat should be RESERVED before finalize, got {status_before}'
 
-        # When: Finalize payment
+        # When: Finalize payment (new format: seat_position='row-seat', section/subsection separate)
         result = await payment_finalizer.finalize_seat_payment(
-            seat_id='A-2-2-11', event_id=event_id
+            seat_position='2-11',
+            event_id=event_id,
+            section='A',
+            subsection=2,
         )
 
         # Then: Should return success
@@ -155,8 +158,13 @@ class TestPaymentFinalizerIntegration:
         status_before = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 8)
         assert status_before == [1], f'Seat should be RESERVED before finalize, got {status_before}'
 
-        # When: Finalize payment
-        result = await payment_finalizer.finalize_seat_payment(seat_id='A-1-1-5', event_id=event_id)
+        # When: Finalize payment (new format: seat_position='row-seat', section/subsection separate)
+        result = await payment_finalizer.finalize_seat_payment(
+            seat_position='1-5',
+            event_id=event_id,
+            section='A',
+            subsection=1,
+        )
 
         # Then: Should return success
         assert result is True

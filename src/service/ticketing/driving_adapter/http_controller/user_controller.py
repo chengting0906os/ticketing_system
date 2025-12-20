@@ -1,7 +1,8 @@
 from typing import Optional
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Cookie, Depends, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from sqlalchemy.exc import IntegrityError
 
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
@@ -43,22 +44,31 @@ async def create_user(
     request: CreateUserRequest,
     user_command_repo: IUserCommandRepo = Depends(Provide[Container.user_command_repo]),
 ) -> UserResponse:
-    # Create UserUseCase with injected command repo
-    use_case = UserUseCase(user_command_repo=user_command_repo)
-    user_entity = await use_case.create_user(
-        email=request.email,
-        password=request.password.get_secret_value(),
-        name=request.name,
-        role=request.role,
-    )
+    try:
+        # Create UserUseCase with injected command repo
+        use_case = UserUseCase(user_command_repo=user_command_repo)
+        user_entity = await use_case.create_user(
+            email=request.email,
+            password=request.password.get_secret_value(),
+            name=request.name,
+            role=request.role,
+        )
 
-    return UserResponse(
-        id=user_entity.id or 0,
-        email=user_entity.email,
-        name=user_entity.name,
-        role=user_entity.role,
-        is_active=user_entity.is_active,
-    )
+        return UserResponse(
+            id=user_entity.id or 0,
+            email=user_entity.email,
+            name=user_entity.name,
+            role=user_entity.role,
+            is_active=user_entity.is_active,
+        )
+    except IntegrityError as e:
+        # Handle duplicate email constraint violation
+        if 'ix_user_email' in str(e) or 'duplicate key' in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'User with email {request.email} already exists',
+            ) from e
+        raise
 
 
 @router.post('/login', response_model=UserResponse)

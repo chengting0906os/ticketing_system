@@ -9,11 +9,11 @@ import orjson
 from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import Container
+from src.platform.logging.loguru_io import Logger
+from src.platform.types import UtilsUUID7
 from src.service.reservation.app.interface.i_booking_event_broadcaster import (
     IBookingEventBroadcaster,
 )
-from src.platform.logging.loguru_io import Logger
-from src.platform.types import UtilsUUID7
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
     MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase,
@@ -182,7 +182,7 @@ async def stream_booking_status(
 
     async def event_generator() -> AsyncIterator[dict[str, str]]:
         """Generate SSE event stream for booking status updates via Kvrocks pub/sub"""
-        final_states = {'completed', 'failed', 'cancelled', 'COMPLETED', 'FAILED', 'CANCELLED'}
+        final_states = {'completed', 'failed', 'cancelled'}
 
         try:
             # Subscribe to Kvrocks pub/sub channel

@@ -48,7 +48,7 @@ class ListSectionSeatsDetailUseCase:
                         "seat_num": 1,
                         "price": 1000,
                         "status": "AVAILABLE",
-                        "seat_identifier": "A-1-1-1"
+                        "seat_position": "1-1"
                     },
                     ...
                 ]

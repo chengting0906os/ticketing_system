@@ -6,6 +6,9 @@ Contains Given/When/Then steps for:
 - Ticket auto-creation
 - Seating config validation
 - Compensating transactions
+- SSE seat status streaming
+
+Note: SSE fixtures (http_server, async_client) are in test/service/ticketing/fixtures.py
 """
 
 from collections.abc import Callable
@@ -430,7 +433,10 @@ def verify_seating_config_with_availability(step: Step, context: dict[str, Any])
 
 @then('the response should contain {count:d} tickets')
 def verify_ticket_count(count: int, context: dict[str, Any]) -> None:
-    """Verify the response contains the expected number of tickets."""
+    """Verify the response contains the expected number of tickets.
+
+    Note: tickets field contains TicketResponse objects from PostgreSQL, each representing one seat.
+    """
     response = context['response']
     response_json = response.json()
 
@@ -442,15 +448,22 @@ def verify_ticket_count(count: int, context: dict[str, Any]) -> None:
 
 @then('the tickets should include seat identifiers:')
 def verify_tickets_include_seat_identifiers(step: Step, context: dict[str, Any]) -> None:
-    """Verify the tickets include specific seat identifiers."""
+    """Verify the tickets include specific seat identifiers.
+
+    Seat identifier format: {section}-{subsection}-{row}-{seat}
+    e.g., "A-1-1-1" means section=A, subsection=1, row=1, seat=1
+    """
     response = context['response']
     response_json = response.json()
 
     assert 'tickets' in response_json, 'Response should contain tickets field'
     tickets = response_json['tickets']
 
-    # Extract seat identifiers from tickets
-    ticket_seat_ids = {ticket['seat_identifier'] for ticket in tickets}
+    # Extract seat identifiers from tickets by constructing from component fields
+    ticket_seat_ids = {
+        f'{ticket["section"]}-{ticket["subsection"]}-{ticket["row_number"]}-{ticket["seat_number"]}'
+        for ticket in tickets
+    }
 
     # Get expected seat identifiers from step
     data_table = step.data_table
@@ -471,7 +484,109 @@ def verify_all_tickets_have_status(expected_status: str, context: dict[str, Any]
     tickets = response_json['tickets']
 
     for ticket in tickets:
+        seat_id = f'{ticket["section"]}-{ticket["subsection"]}-{ticket["row_number"]}-{ticket["seat_number"]}'
         assert ticket['status'] == expected_status, (
-            f"Ticket {ticket['seat_identifier']} has status '{ticket['status']}', "
-            f"expected '{expected_status}'"
+            f"Ticket {seat_id} has status '{ticket['status']}', expected '{expected_status}'"
+        )
+
+
+@then('{ticket_type} tickets should be returned with count:')
+def then_tickets_returned_with_count(
+    ticket_type: str,
+    step: Step,
+    context: dict[str, Any],
+) -> None:
+    """Verify tickets are returned with correct count, optionally checking status.
+
+    Note: tickets field contains SeatResponse objects grouped by status.
+    Each SeatResponse has seat_positions list with individual seat positions.
+
+    Example:
+        Then available tickets should be returned with count:
+          | 10 |
+    """
+    rows = step.data_table.rows
+    expected_count = int(rows[0].cells[0].value)
+
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data['total_count'] == expected_count
+
+    # Count total seat_positions across all SeatResponse groups
+    total_seats = sum(len(ticket['seat_positions']) for ticket in data['tickets'])
+    assert total_seats == expected_count, (
+        f'Expected {expected_count} total seats, got {total_seats}'
+    )
+
+    # If ticket_type is 'available', verify all tickets have status='available'
+    if ticket_type == 'available':
+        for ticket in data['tickets']:
+            assert ticket['status'] == 'available', (
+                f"Expected status 'available', got '{ticket['status']}'"
+            )
+
+
+@then('all subsection stats should be returned:')
+def then_all_subsection_stats_returned(
+    step: Step,
+    context: dict[str, Any],
+) -> None:
+    """Verify all subsection stats are returned with correct values.
+
+    Response format (from Kvrocks):
+        {
+            "event_id": 1,
+            "sections": {
+                "A-1": {"available": 50, "reserved": 0, "sold": 0, "total": 50},
+                "A-2": {"available": 50, "reserved": 0, "sold": 0, "total": 50},
+                ...
+            },
+            "total_sections": 4
+        }
+
+    Example:
+        Then all subsection stats should be returned:
+          | section | subsection | total | available |
+          | A       | 1          | 50    | 50        |
+    """
+    response = context['response']
+    assert response.status_code == 200
+
+    data = response.json()
+    sections = data.get('sections', {})
+
+    # Parse expected data from step table
+    rows = step.data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+
+    expected_stats = []
+    for row in rows[1:]:
+        values = [cell.value for cell in row.cells]
+        row_data = dict(zip(headers, values, strict=True))
+        expected_stats.append(
+            {
+                'section': row_data['section'],
+                'subsection': int(row_data['subsection']),
+                'total': int(row_data['total']),
+                'available': int(row_data['available']),
+            }
+        )
+
+    # Verify each expected subsection
+    for expected in expected_stats:
+        # Build key like "A-1" from section="A" and subsection=1
+        section_key = f'{expected["section"]}-{expected["subsection"]}'
+        assert section_key in sections, (
+            f'Section {section_key} not found in response. Available: {list(sections.keys())}'
+        )
+
+        section_stats = sections[section_key]
+        assert section_stats['total'] == expected['total'], (
+            f'Section {section_key}: expected total={expected["total"]}, got {section_stats["total"]}'
+        )
+        assert section_stats['available'] == expected['available'], (
+            f'Section {section_key}: expected available={expected["available"]}, '
+            f'got {section_stats["available"]}'
         )
