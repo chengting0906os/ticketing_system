@@ -1,0 +1,115 @@
+// Event Ticketing - Entity Relationship Model
+// Extracted from EVENT_TICKETING_SPEC.md
+
+// ============================================
+// Enums
+// ============================================
+
+Enum EventStatus {
+  DRAFT [note: 'Draft (just created, tickets not yet generated)']
+  AVAILABLE [note: 'Available for purchase']
+  SOLD_OUT [note: 'Sold out (all tickets sold)']
+  COMPLETED [note: 'Completed (manually by seller)']
+  // ENDED - Not implemented for now
+
+  Note: '''
+  State Transitions (Mixed Mode):
+  - DRAFT -> AVAILABLE: Automatic after ticket generation
+  - AVAILABLE -> SOLD_OUT: Automatic when all tickets are sold
+  - AVAILABLE -> COMPLETED: Manual by seller
+  '''
+}
+
+Enum TicketStatus {
+  AVAILABLE [note: 'Available for purchase']
+  RESERVED [note: 'Reserved (can return to AVAILABLE on timeout/cancel)']
+  SOLD [note: 'Sold (final state)']
+
+  Note: '''
+  State Transitions:
+  - AVAILABLE -> RESERVED: On reservation
+  - RESERVED -> SOLD: On payment confirmation
+  - RESERVED -> AVAILABLE: On timeout or cancellation
+  '''
+}
+
+// ============================================
+// Entities
+// ============================================
+
+Table Event {
+  id int [pk, note: 'Primary key, auto-generated']
+  name string [not null, note: 'Event name, not empty']
+  description string [not null, note: 'Event description, not empty']
+  seller_id int [not null, ref: > User.id, note: 'Seller ID, FK to User']
+  venue_name string [not null, note: 'Venue name, not empty']
+  seating_config string [note: 'Seating configuration (JSON format: {rows, cols, sections[]})']
+  is_active bool [default: true, note: 'Whether the event is active/published']
+  status EventStatus [note: 'Event status']
+  created_at string [note: 'Creation timestamp, auto']
+  updated_at string [note: 'Update timestamp, auto']
+
+  Note: '''
+  Event Entity - Manages event creation, query, and status management
+
+  Business Rules:
+  - Only Sellers can create events
+  - Creating an event auto-generates all seat tickets based on seating_config
+
+  State Transitions (see EventStatus enum):
+  - DRAFT -> AVAILABLE: Automatic after ticket generation
+  - AVAILABLE -> SOLD_OUT: Automatic when all tickets sold
+  - AVAILABLE -> COMPLETED: Manual by seller
+
+  Cross-Attribute Invariants:
+  - Ticket count = rows x cols x sections x subsections (from seating_config)
+
+  Compensation Transaction (on Kvrocks init failure):
+  1. Delete Kvrocks seat data (if any)
+  2. Delete Tickets from DB
+  3. Delete Event from DB
+
+  Relationships:
+  - Event 1:N Ticket
+  '''
+}
+
+Table Ticket {
+  id int [pk, note: 'Primary key, auto-generated']
+  event_id int [not null, ref: > Event.id, note: 'Event ID, FK to Event']
+  section string [not null, note: 'Section name, e.g., "A"']
+  subsection int [not null, note: 'Subsection number, e.g., 1']
+  row_number int [not null, note: 'Row number, e.g., 1']
+  seat_number int [not null, note: 'Seat number, e.g., 1']
+  price int [not null, note: 'Ticket price, >= 0']
+  status TicketStatus [note: 'Ticket status']
+  buyer_id int [note: 'Buyer ID, Nullable, FK to User']
+  reserved_at datetime [note: 'Reservation timestamp, Nullable']
+
+  Note: '''
+  Ticket Entity - Manages event seat tickets
+
+  Business Rules:
+  - Ticket price must be >= 0
+  - Unique constraint: (event_id, section, subsection, row_number, seat_number)
+
+  Relationships:
+  - Ticket N:1 Event
+  '''
+}
+
+Table User {
+  id int [pk, note: 'Primary key']
+
+  Note: '''
+  User Entity (reference only, actual definition may be in another module)
+  '''
+}
+
+// ============================================
+// Relationships
+// ============================================
+
+Ref: Ticket.event_id > Event.id [note: 'Event 1:N Ticket - One event has many tickets']
+Ref: Event.seller_id > User.id [note: 'User 1:N Event - One seller can have many events']
+Ref: Ticket.buyer_id > User.id [note: 'User 1:N Ticket - One buyer can purchase many tickets']
