@@ -34,6 +34,8 @@ class IEventTicketingQueryRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
-        """Get all tickets for an event (regardless of status)."""
+    async def get_tickets_by_subsection(
+        self, *, event_id: int, section: str, subsection: int
+    ) -> List[Ticket]:
+        """Get all tickets for a specific subsection."""
         pass

@@ -10,9 +10,6 @@ from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.query.list_all_subsection_status_use_case import (
     ListAllSubSectionStatusUseCase,
 )
-from src.service.reservation.app.query.list_section_seats_detail_use_case import (
-    ListSectionSeatsDetailUseCase,
-)
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
@@ -99,19 +96,33 @@ async def list_events(
 # ============================ Seat Status Endpoints ============================
 
 
-@router.get('/{event_id}/all_subsection_status', status_code=status.HTTP_200_OK)
+@router.get('/{event_id}', status_code=status.HTTP_200_OK)
 @Logger.io
-async def list_event_all_subsection_status(event_id: int) -> dict:
-    """Get statistics for all sections of an event (read from Kvrocks)."""
+async def get_event_with_subsection_status(event_id: int) -> dict:
+    """Get event details with seat status for all subsections (read from Kvrocks)."""
     # Check if event exists first
     repo = container.event_ticketing_query_repo()
-    event = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
-    if event is None:
+    event_aggregate = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
+    if event_aggregate is None:
         raise HTTPException(status_code=404, detail=f'Event not found: {event_id}')
 
+    event = event_aggregate.event
     seat_state_handler = container.seat_state_query_handler()
     use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
-    return await use_case.execute(event_id=event_id)
+    subsection_status = await use_case.execute(event_id=event_id)
+
+    return {
+        'id': event_id,
+        'name': event.name,
+        'description': event.description,
+        'seller_id': event.seller_id,
+        'is_active': event.is_active,
+        'status': event.status.value,
+        'venue_name': event.venue_name,
+        'seating_config': event.seating_config,
+        'sections': subsection_status['sections'],
+        'total_sections': subsection_status['total_sections'],
+    }
 
 
 @router.get(
@@ -124,53 +135,87 @@ async def list_subsection_seats(
     section: str,
     subsection: int,
 ) -> SectionStatsResponse:
-    """List all seats in the specified section (query from Kvrocks only)."""
-    seat_state_handler = container.seat_state_query_handler()
-    use_case = ListSectionSeatsDetailUseCase(seat_state_handler=seat_state_handler)
+    """List all seats in the specified section (query from DB)."""
+    repo = container.event_ticketing_query_repo()
 
-    result = await use_case.execute(event_id=event_id, section=section, subsection=subsection)
+    # Check if event exists
+    event_aggregate = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
+    if event_aggregate is None:
+        raise HTTPException(status_code=404, detail=f'Event not found: {event_id}')
+
+    # Query tickets from DB
+    tickets = await repo.get_tickets_by_subsection(
+        event_id=event_id, section=section, subsection=subsection
+    )
+
+    # Group seats by status
+    seats_by_status: dict[str, list[str]] = {}
+    price = 0
+    available_count = 0
+    reserved_count = 0
+    sold_count = 0
+
+    for ticket in tickets:
+        seat_position = f'{ticket.row}-{ticket.seat}'
+        status_value = ticket.status.value
+        if price == 0:
+            price = ticket.price
+
+        if status_value not in seats_by_status:
+            seats_by_status[status_value] = []
+        seats_by_status[status_value].append(seat_position)
+
+        if status_value == 'available':
+            available_count += 1
+        elif status_value == 'reserved':
+            reserved_count += 1
+        elif status_value == 'sold':
+            sold_count += 1
+
+    total_count = len(tickets)
 
     # Create SeatResponse for each status group
     seats = [
         SeatResponse(
-            event_id=result['event_id'],
-            section=result['section'],
-            subsection=result['subsection'],
+            event_id=event_id,
+            section=section,
+            subsection=subsection,
             seat_positions=positions,
-            price=result['price'],
+            price=price,
             status=seat_status,
         )
-        for seat_status, positions in result['seats_by_status'].items()
+        for seat_status, positions in seats_by_status.items()
     ]
 
     return SectionStatsResponse(
-        total=result['total'],
-        available=result['available'],
-        reserved=result['reserved'],
-        sold=result['sold'],
-        event_id=result['event_id'],
-        section=result['section'],
-        subsection=result['subsection'],
+        total=total_count,
+        available=available_count,
+        reserved=reserved_count,
+        sold=sold_count,
+        event_id=event_id,
+        section=section,
+        subsection=subsection,
         tickets=seats,
-        total_count=result['total'],
+        total_count=total_count,
     )
 
 
 # ============================ SSE Endpoints (Pub/Sub Subscribe) ============================
 
 
-@router.get('/{event_id}/all_subsection_status/sse', status_code=status.HTTP_200_OK)
+@router.get('/{event_id}/sse', status_code=status.HTTP_200_OK)
 @Logger.io
-async def stream_all_section_stats(
+async def stream_event_status(
     event_id: int,
 ) -> EventSourceResponse:
-    """SSE real-time push of statistics for all sections (via Redis Pub/Sub subscribe)."""
+    """SSE real-time push of event status updates (via Redis Pub/Sub subscribe)."""
     # Check if event exists
     repo = container.event_ticketing_query_repo()
-    event = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
-    if event is None:
+    event_aggregate = await repo.get_event_aggregate_by_id_with_tickets(event_id=event_id)
+    if event_aggregate is None:
         raise HTTPException(status_code=404, detail=f'Event not found: {event_id}')
 
+    event = event_aggregate.event
     pubsub_handler = container.pubsub_handler()
     seat_state_handler = container.seat_state_query_handler()
     use_case = ListAllSubSectionStatusUseCase(seat_state_handler=seat_state_handler)
@@ -178,10 +223,17 @@ async def stream_all_section_stats(
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         try:
-            # 1. Send initial status
+            # 1. Send initial status with event info
             initial_response = EventStateSseResponse(
                 event_type='initial_status',
-                event_id=initial_result['event_id'],
+                event_id=event_id,
+                name=event.name,
+                description=event.description,
+                seller_id=event.seller_id,
+                is_active=event.is_active,
+                status=event.status.value,
+                venue_name=event.venue_name,
+                seating_config=event.seating_config,
                 sections=initial_result['sections'],
                 total_sections=initial_result['total_sections'],
             )
@@ -196,6 +248,13 @@ async def stream_all_section_stats(
                 update_response = EventStateSseResponse(
                     event_type='status_update',
                     event_id=payload.get('event_id', event_id),
+                    name=event.name,
+                    description=event.description,
+                    seller_id=event.seller_id,
+                    is_active=event.is_active,
+                    status=event.status.value,
+                    venue_name=event.venue_name,
+                    seating_config=event.seating_config,
                     sections=event_state.get('sections', {}),
                     total_sections=event_state.get('total_sections', 0),
                 )

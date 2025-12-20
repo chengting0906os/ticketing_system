@@ -135,13 +135,23 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             return aggregates
 
     @Logger.io
-    async def get_all_tickets_by_event(self, *, event_id: int) -> List[Ticket]:
+    async def get_tickets_by_subsection(
+        self, *, event_id: int, section: str, subsection: int
+    ) -> List[Ticket]:
+        """Query tickets by event_id, section, and subsection from DB."""
         async with self._get_session() as session:
             result = await session.execute(
-                select(TicketModel).where(TicketModel.event_id == event_id)
+                select(TicketModel)
+                .where(TicketModel.event_id == event_id)
+                .where(TicketModel.section == section)
+                .where(TicketModel.subsection == subsection)
+                .order_by(TicketModel.row_number, TicketModel.seat_number)
             )
             ticket_models = result.scalars().all()
 
             tickets = [self._model_to_ticket(m) for m in ticket_models]
-            Logger.base.info(f'[GET_ALL_TICKETS] Found {len(tickets)} tickets for event {event_id}')
+            Logger.base.info(
+                f'[GET_SUBSECTION_TICKETS] Found {len(tickets)} tickets '
+                f'for event={event_id} section={section}-{subsection}'
+            )
             return tickets

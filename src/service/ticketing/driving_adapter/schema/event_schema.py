@@ -136,32 +136,17 @@ class SectionStatsResponse(BaseModel):
 # ============================ SSE Schemas ============================
 
 
-class EventStatsSchema(BaseModel):
-    """Event-level statistics (matches PostgreSQL event.stats JSONB)."""
-
-    available: int
-    reserved: int
-    sold: int
-    total: int
-    updated_at: int
-
-
-class SubsectionStatsSchema(BaseModel):
-    """Subsection-level statistics (matches PostgreSQL subsection_stats table)."""
-
-    section: str
-    subsection: int
-    price: int
-    available: int
-    reserved: int
-    sold: int
-    updated_at: int
-
-
 class EventStateSseResponse(BaseModel):
     """SSE response for event state updates."""
 
     event_type: str
     event_id: int
+    name: str
+    description: str
+    seller_id: int
+    is_active: bool
+    status: str
+    venue_name: str
+    seating_config: Dict
     sections: Dict
     total_sections: int

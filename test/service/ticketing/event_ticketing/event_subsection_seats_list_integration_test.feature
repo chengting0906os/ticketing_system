@@ -30,9 +30,12 @@ Feature: Event Ticket Management
     Then the response status code should be 404
     And the error message should contain "Event not found"
 
-  Scenario: Get all subsection status for an event
-    When I call GET "/api/event/{event_id}/all_subsection_status"
+  Scenario: Get event details with subsection status
+    When I call GET "/api/event/{event_id}"
     Then the response status code should be 200
+    And the response data should include:
+      | id       | name      | description | seller_id | is_active | status    | venue_name  | seating_config | sections | total_sections |
+      | not_null | SSE Event | SSE Test    | not_null  | true      | available | Large Arena | not_null       | not_null | 4              |
     And all subsection stats should be returned:
       | section | subsection | total | available |
       | A       | 1          | 50    | 50        |
@@ -40,7 +43,7 @@ Feature: Event Ticket Management
       | B       | 1          | 50    | 50        |
       | C       | 1          | 50    | 50        |
 
-  Scenario: Get all subsection status for non-existent event
-    When I call GET "/api/event/999/all_subsection_status"
+  Scenario: Get event details for non-existent event
+    When I call GET "/api/event/999"
     Then the response status code should be 404
     And the error message should contain "Event not found"

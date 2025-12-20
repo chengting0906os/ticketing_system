@@ -237,7 +237,7 @@ def when_subscribe_to_sse_endpoint(
 
     Example:
         When I subscribe to SSE endpoint "/api/booking/event/{event_id}/sse"
-        When I subscribe to SSE endpoint "/api/event/{event_id}/all_subsection_status/sse"
+        When I subscribe to SSE endpoint "/api/event/{event_id}/sse"
     """
     resolved_endpoint = resolve_endpoint_vars(endpoint, context)
     url = f'{http_server}{resolved_endpoint}'
@@ -390,7 +390,7 @@ def _connect_users_to_sse(
     for cookie in client.cookies.jar:
         cookies[cookie.name] = cookie.value
 
-    url = f'{http_server}/api/event/{event_id_int}/all_subsection_status/sse'
+    url = f'{http_server}/api/event/{event_id_int}/sse'
     headers = {'Accept': 'text/event-stream'}
 
     threads: list[tuple[threading.Thread, list[dict[str, Any]], dict[str, Any]]] = []
@@ -647,6 +647,67 @@ def then_initial_status_received(step: Step, context: dict[str, Any]) -> None:
     assert len(sections) == expected_count, (
         f'Expected {expected_count} sections, got {len(sections)}'
     )
+
+
+def _match_sse_value(*, actual: Any, expected: str) -> bool:
+    """Match actual value against expected string pattern for SSE events.
+
+    Supports special patterns:
+        - not_null: value is not None
+        - {any_int}: value is any positive integer
+        - true/false: boolean values
+        - Regular values: exact match
+    """
+    if expected == 'not_null':
+        return actual is not None
+    if expected == '{any_int}':
+        return isinstance(actual, int) and actual > 0
+    if expected.lower() == 'true':
+        return actual is True
+    if expected.lower() == 'false':
+        return actual is False
+    if isinstance(actual, int):
+        try:
+            return actual == int(expected)
+        except ValueError:
+            return False
+    return str(actual) == expected
+
+
+@then('initial SSE event data should include:')
+def then_initial_sse_event_data_should_include(step: Step, context: dict[str, Any]) -> None:
+    """Verify initial SSE event data includes specified field-value pairs.
+
+    Format: headers on top row, values on second row
+
+    Example:
+        Then initial SSE event data should include:
+          | event_id  | seller_id | name      | description | is_active | status    | venue_name  | seating_config | total_sections |
+          | {any_int} | {any_int} | SSE Event | SSE Test    | true      | available | Large Arena | not_null       | 4              |
+    """
+    events = context.get('sse_events', [])
+    assert len(events) > 0, 'No SSE events received'
+
+    initial_event = None
+    for event in events:
+        if event.get('event') == 'initial_status':
+            initial_event = event
+            break
+
+    assert initial_event is not None, 'No initial_status event found'
+
+    event_data = initial_event.get('data', {})
+
+    # Parse datatable: row[0] = headers, row[1] = values
+    rows = step.data_table.rows
+    headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+
+    for field, expected in zip(headers, values, strict=True):
+        actual = event_data.get(field)
+        assert _match_sse_value(actual=actual, expected=expected), (
+            f'Field "{field}": expected "{expected}", got "{actual}"'
+        )
 
 
 @then('section stats should include:')
