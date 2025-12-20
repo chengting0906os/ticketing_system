@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from pydantic import BaseModel
 
@@ -49,33 +49,6 @@ class EventCreateWithTicketConfigRequest(BaseModel):
         }
 
 
-class TicketResponse(BaseModel):
-    id: int
-    event_id: int
-    section: str
-    subsection: int
-    row_number: int
-    seat_number: int
-    price: int
-    status: str
-    buyer_id: Optional[int] = None
-
-    class Config:
-        json_schema_extra = {
-            'example': {
-                'id': 1,
-                'event_id': 1,
-                'section': 'A',
-                'subsection': 1,
-                'row_number': 1,
-                'seat_number': 1,
-                'price': 2000,
-                'status': 'sold',
-                'buyer_id': 123,
-            }
-        }
-
-
 class EventResponse(BaseModel):
     id: int
     name: str
@@ -85,7 +58,6 @@ class EventResponse(BaseModel):
     seating_config: Dict
     is_active: bool
     status: str
-    tickets: List[TicketResponse] = []
 
     class Config:
         json_schema_extra = {

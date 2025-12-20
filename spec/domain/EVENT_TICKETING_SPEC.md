@@ -91,7 +91,6 @@ Event Ticketing 模組負責管理活動（Event）與票券（Ticket）的建�
 | POST   | `/api/event`                                                                 | 建立活動                     | Seller     | 201     | 400, 403 |
 | GET    | `/api/event`                                                                 | 列出所有可購買活動           | Public     | 200     | -        |
 | GET    | `/api/event?seller_id={id}`                                                  | 列出賣家所有活動             | Public     | 200     | -        |
-| GET    | `/api/event/{event_id}`                                                      | 取得活動詳情（含座位剩餘）   | Public     | 200     | 404      |
 | GET    | `/api/event/{event_id}/all_subsection_status`                                | 取得所有子區域狀態統計       | Public     | 200     | -        |
 | GET    | `/api/event/{event_id}/sections/{section}/subsection/{subsection}/seats`     | 取得指定子區域座位清單       | Public     | 200     | 404      |
 | GET    | `/api/event/{event_id}/all_subsection_status/sse`                            | 訂閱所有子區域狀態更新 (SSE) | Public     | 200     | 404      |
@@ -166,7 +165,6 @@ data: {"event_type": "status_update", "event_id": 1, "sections": [...], "total_s
 #### Use Cases
 
 - [create_event_and_tickets_use_case.py](../../src/service/ticketing/app/command/create_event_and_tickets_use_case.py) - 建立活動
-- [get_event_use_case.py](../../src/service/ticketing/app/query/get_event_use_case.py) - 查詢活動詳情
 - [list_events_use_case.py](../../src/service/ticketing/app/query/list_events_use_case.py) - 列出活動
 - [list_all_subsection_status_use_case.py](../../src/service/reservation/app/query/list_all_subsection_status_use_case.py) - 子區域狀態
 - [list_section_seats_detail_use_case.py](../../src/service/reservation/app/query/list_section_seats_detail_use_case.py) - 座位清單

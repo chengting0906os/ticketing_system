@@ -1,12 +1,11 @@
 from collections.abc import AsyncGenerator
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
 from src.platform.config.di import container
-from src.platform.exception.exceptions import NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.query.list_all_subsection_status_use_case import (
     ListAllSubSectionStatusUseCase,
@@ -14,11 +13,9 @@ from src.service.reservation.app.query.list_all_subsection_status_use_case impor
 from src.service.reservation.app.query.list_section_seats_detail_use_case import (
     ListSectionSeatsDetailUseCase,
 )
-from src.service.shared_kernel.app.interface import ISeatStateQueryHandler
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
-from src.service.ticketing.app.query.get_event_use_case import GetEventUseCase
 from src.service.ticketing.app.query.list_events_use_case import ListEventsUseCase
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import require_seller
@@ -28,7 +25,6 @@ from src.service.ticketing.driving_adapter.schema.event_schema import (
     EventStateSseResponse,
     SeatResponse,
     SectionStatsResponse,
-    TicketResponse,
 )
 
 
@@ -67,95 +63,6 @@ async def create_event(
         is_active=event.is_active,
         status=event.status.value,  # Convert enum to string
     )
-
-
-@router.get('/{event_id}', status_code=status.HTTP_200_OK)
-@Logger.io
-async def get_event(
-    event_id: int,
-    use_case: GetEventUseCase = Depends(GetEventUseCase.depends),
-    seat_query_handler: ISeatStateQueryHandler = Depends(
-        lambda: __import__(
-            'src.platform.config.di', fromlist=['container']
-        ).container.seat_state_query_handler()
-    ),
-) -> EventResponse:
-    event_aggregate = await use_case.get_by_id(event_id=event_id)
-
-    if not event_aggregate:
-        raise NotFoundError(f'Event with id {event_id} not found')
-
-    # Extract event entity for better readability
-    event = event_aggregate.event
-
-    # Get seat availability stats from Kvrocks via shared_kernel interface
-    seat_stats = await seat_query_handler.list_all_subsection_status(event_id=event_id)
-
-    # Merge seat availability into seating_config
-    enhanced_seating_config = _merge_seat_stats_into_config(event.seating_config, seat_stats)
-
-    # Get all tickets for this event
-    tickets = await use_case.event_ticketing_query_repo.get_all_tickets_by_event(event_id=event_id)
-    ticket_responses = [
-        TicketResponse(
-            id=ticket.id or 0,
-            event_id=ticket.event_id,
-            section=ticket.section,
-            subsection=ticket.subsection,
-            row_number=ticket.row,
-            seat_number=ticket.seat,
-            price=ticket.price,
-            status=ticket.status.value,
-            buyer_id=ticket.buyer_id,
-        )
-        for ticket in tickets
-    ]
-
-    return EventResponse(
-        id=event_id,
-        name=event.name,
-        description=event.description,
-        seller_id=event.seller_id,
-        venue_name=event.venue_name,
-        seating_config=enhanced_seating_config,
-        is_active=event.is_active,
-        status=event.status.value,
-        tickets=ticket_responses,
-    )
-
-
-def _merge_seat_stats_into_config(seating_config: Dict, seat_stats: Dict[str, Dict]) -> Dict:
-    """Merge seat availability statistics into seating configuration."""
-    enhanced_config = seating_config.copy()
-
-    if 'sections' not in enhanced_config:
-        return enhanced_config
-
-    global_rows = enhanced_config.get('rows', 1)
-    global_cols = enhanced_config.get('cols', 10)
-
-    for section in enhanced_config['sections']:
-        section_name = section['name']
-        subsection_count = section.get('subsections', 0)
-
-        expanded_subsections = []
-        for num in range(1, subsection_count + 1):
-            section_id = f'{section_name}-{num}'
-            stats = seat_stats.get(section_id, {})
-            expanded_subsections.append(
-                {
-                    'number': num,
-                    'rows': global_rows,
-                    'cols': global_cols,
-                    'available': stats.get('available', 0),
-                    'reserved': stats.get('reserved', 0),
-                    'sold': stats.get('sold', 0),
-                    'total': stats.get('total', 0),
-                }
-            )
-        section['subsections'] = expanded_subsections
-
-    return enhanced_config
 
 
 @router.get('', status_code=status.HTTP_200_OK)

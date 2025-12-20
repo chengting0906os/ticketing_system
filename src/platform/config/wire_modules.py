@@ -15,7 +15,6 @@ from src.service.ticketing.app.command import (
 )
 from src.service.ticketing.app.query import (
     get_booking_use_case,
-    get_event_use_case,
     list_bookings_use_case,
     list_events_use_case,
 )
@@ -30,6 +29,5 @@ WIRE_MODULES: list[ModuleType] = [
     get_booking_use_case,
     create_event_and_tickets_use_case,
     list_events_use_case,
-    get_event_use_case,
     user_controller,
 ]
