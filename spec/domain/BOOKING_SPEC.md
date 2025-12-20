@@ -185,6 +185,48 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 | BookingPaidEvent          | 付款完成 | Reservation Service | 在 Kvrocks 確認座位為 SOLD |
 | BookingCancelledEvent     | 預訂取消 | Reservation Service | 在 Kvrocks 釋放座位        |
 
+#### BookingCreatedDomainEvent
+
+| Field               | Type            | Description                    |
+| ------------------- | --------------- | ------------------------------ |
+| booking_id          | UUID            | 預訂 ID                        |
+| buyer_id            | int             | 買家 ID                        |
+| event_id            | int             | 活動 ID                        |
+| total_price         | int             | 總價                           |
+| section             | str             | 區域                           |
+| subsection          | int             | 子區域                         |
+| quantity            | int             | 數量                           |
+| seat_selection_mode | str             | 選位模式 (manual/best_available) |
+| seat_positions      | List[str]       | 座位清單，格式: `"{row}-{seat}"` |
+| status              | BookingStatus   | 預訂狀態                       |
+| occurred_at         | datetime        | 發生時間                       |
+| config              | SubsectionConfig | 子區域配置 (rows, cols, price) |
+
+#### BookingPaidEvent
+
+| Field          | Type      | Description                    |
+| -------------- | --------- | ------------------------------ |
+| booking_id     | UUID      | 預訂 ID                        |
+| buyer_id       | int       | 買家 ID                        |
+| event_id       | int       | 活動 ID                        |
+| section        | str       | 區域                           |
+| subsection     | int       | 子區域                         |
+| seat_positions | List[str] | 座位清單，格式: `"{row}-{seat}"` |
+| paid_at        | datetime  | 付款時間                       |
+| total_amount   | float     | 付款金額                       |
+
+#### BookingCancelledEvent
+
+| Field          | Type      | Description                    |
+| -------------- | --------- | ------------------------------ |
+| booking_id     | UUID      | 預訂 ID                        |
+| buyer_id       | int       | 買家 ID                        |
+| event_id       | int       | 活動 ID                        |
+| section        | str       | 區域                           |
+| subsection     | int       | 子區域                         |
+| seat_positions | List[str] | 座位清單，格式: `"{row}-{seat}"` |
+| cancelled_at   | datetime  | 取消時間                       |
+
 ### 6.5 SSE Architecture
 
 ```

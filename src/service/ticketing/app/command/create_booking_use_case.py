@@ -120,15 +120,10 @@ class CreateBookingUseCase:
                 quantity=quantity,
             )
 
-            Logger.base.info(
-                f'📝 [CREATE-BOOKING] Generated UUID7: {booking_id_str} '
-                f'for buyer {buyer_id}, section {section}-{subsection}'
-            )
-
             # Step 2: Fail Fast - Check seat availability before any writes
             # Also retrieves config (rows, cols, price) to pass to downstream services
             availability_result = (
-                await self.seat_availability_handler.check_subsection_availability(
+                await self.seat_availability_handler.check_subsection_availability_then_get_config(
                     event_id=event_id,
                     section=section,
                     subsection=subsection,
@@ -142,11 +137,11 @@ class CreateBookingUseCase:
             # Step 3: Publish event to Booking Service
             # Uses section-subsection as partition key for ordering
             # Includes config (rows, cols, price) to pass to downstream services
-            booking_created_event = BookingCreatedDomainEvent.from_booking_with_config(
-                booking, availability_result
+            await self.event_publisher.publish_booking_created(
+                event=BookingCreatedDomainEvent.from_booking_with_config(
+                    booking=booking, config=availability_result
+                )
             )
-
-            await self.event_publisher.publish_booking_created(event=booking_created_event)
             Logger.base.info(
                 f'🚀 [TICKETING→RESERVATION] Published BookingCreated event for {booking_id_str}'
             )

@@ -44,3 +44,10 @@ Feature: Booking Status SSE Endpoint
     Then I should receive SSE event with:
       | event_type      | status | error_message           |
       | booking_updated | FAILED | No seats available |
+
+  Scenario: SSE connection closes on terminal state
+    Given I am subscribed to SSE for event {event_id}
+    When SSE event is published with:
+      | event_type      | event_id   | booking_id                           | status    | tickets |
+      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000003 | COMPLETED | []      |
+    Then the SSE connection should be closed

@@ -71,7 +71,7 @@ class TestReleaseExecutorIntegration:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        """Test releasing seat A-2-2-11 (section=A, subsection=2, row=2, seat=11)"""
+        """Test releasing seat 2-11 (row=2, seat=11)"""
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -84,7 +84,7 @@ class TestReleaseExecutorIntegration:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Reserve seat A-2-2-11 first
+        # Reserve seat 2-11 first
         booking_id = str(uuid.uuid7())
         reserve_result = await seat_handler.reserve_seats_atomic(
             event_id=event_id,
@@ -128,7 +128,7 @@ class TestReleaseExecutorIntegration:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        """Test releasing seat A-1-1-5 (section=A, subsection=1, row=1, seat=5)"""
+        """Test releasing seat 1-5 (row=1, seat=5)"""
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -141,7 +141,7 @@ class TestReleaseExecutorIntegration:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Reserve seat A-1-1-5 first
+        # Reserve seat 1-5 first
         booking_id = str(uuid.uuid7())
         await seat_handler.reserve_seats_atomic(
             event_id=event_id,

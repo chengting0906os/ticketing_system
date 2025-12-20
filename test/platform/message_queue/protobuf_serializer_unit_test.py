@@ -94,7 +94,7 @@ class TestBookingCreatedEventSerialization:
             subsection=1,
             quantity=2,
             seat_selection_mode='manual',
-            seat_positions=['A1-1-1', 'A1-1-2'],
+            seat_positions=['1-1', '1-2'],
             status=BookingStatus.PROCESSING,
             occurred_at=datetime.now(timezone.utc),
             config=SubsectionConfig(rows=10, cols=20, price=2500),
@@ -197,7 +197,7 @@ class TestBookingPaidEventSerialization:
             event_id=1,
             section='A',
             subsection=1,
-            ticket_ids=[101, 102, 103],
+            seat_positions=['1-1', '1-2', '1-3'],
             paid_at=paid_at,
             total_amount=7500.0,
         )
@@ -208,7 +208,7 @@ class TestBookingPaidEventSerialization:
         assert result['booking_id'] == str(event.booking_id)
         assert result['section'] == 'A'
         assert result['subsection'] == 1
-        assert result['ticket_ids'] == [101, 102, 103]
+        assert result['seat_positions'] == ['1-1', '1-2', '1-3']
         assert result['total_amount'] == 7500.0
 
 
@@ -222,8 +222,7 @@ class TestBookingCancelledEventSerialization:
             event_id=1,
             section='A',
             subsection=1,
-            ticket_ids=[101, 102],
-            seat_positions=['A1-1-1', 'A1-1-2'],
+            seat_positions=['1-1', '1-2'],
             cancelled_at=cancelled_at,
         )
 
@@ -233,5 +232,4 @@ class TestBookingCancelledEventSerialization:
         assert result['booking_id'] == str(event.booking_id)
         assert result['section'] == 'A'
         assert result['subsection'] == 1
-        assert result['ticket_ids'] == [101, 102]
-        assert result['seat_positions'] == ['A1-1-1', 'A1-1-2']
+        assert result['seat_positions'] == ['1-1', '1-2']

@@ -20,7 +20,7 @@ from typing import Any
 import bcrypt
 from fastapi.testclient import TestClient
 import orjson
-from pytest_bdd import given, then, when
+from pytest_bdd import given, parsers, then, when
 from pytest_bdd.model import Step
 import uuid_utils as uuid
 
@@ -118,7 +118,7 @@ def create_booking_with_status(
             'subsection': 1,
             'quantity': 2,
             'total_price': total_price,
-            'status': 'pending_payment',
+            'status': status,  # Use actual status from test data
             'seat_selection_mode': 'manual',
         },
     )
@@ -260,91 +260,68 @@ def create_events(
     )
 
 
-@given('bookings with tickets exist:')
-def create_bookings_with_tickets(
-    step: Step,
-    context: dict[str, Any],
+def _create_tickets_for_booking(
+    *,
+    booking_id: str,
+    event_id: int,
+    section: str,
+    subsection: int,
+    quantity: int,
+    total_price: int,
+    buyer_id: int,
+    status: str,
+    explicit_seat_positions: list[str] | None,
     execute_sql_statement: Callable[..., list[dict[str, Any]] | None],
-) -> None:
-    """Create bookings with associated tickets."""
-    rows = step.data_table.rows
-    headers = [cell.value for cell in rows[0].cells]
-    if 'bookings' not in context:
-        context['bookings'] = {}
+) -> list[str]:
+    """Create tickets for a booking based on quantity or explicit seat positions."""
+    if quantity <= 0:
+        return []
 
-    for row in rows[1:]:
-        values = [cell.value for cell in row.cells]
-        booking_data = dict(zip(headers, values, strict=True))
+    price_per_ticket = total_price // quantity
+    ticket_status = 'sold' if status == 'paid' else 'reserved'
 
-        booking_id_input = booking_data['booking_id']
-        try:
-            int(booking_id_input)
-            booking_id = str(uuid.uuid7())
-        except ValueError:
-            booking_id = booking_id_input
+    # Use explicit seat_positions if provided, otherwise generate unique ones
+    if explicit_seat_positions:
+        seat_positions = explicit_seat_positions
+    else:
+        # Query max seat number for this event/section/subsection
+        max_seat_result = execute_sql_statement(
+            """
+            SELECT COALESCE(MAX(seat_number), 0) as max_seat
+            FROM ticket
+            WHERE event_id = :event_id AND section = :section AND subsection = :subsection
+            """,
+            {'event_id': event_id, 'section': section, 'subsection': subsection},
+            fetch=True,
+        )
+        start_seat = (max_seat_result[0]['max_seat'] if max_seat_result else 0) + 1
+        seat_positions = [f'1-{start_seat + idx}' for idx in range(quantity)]
 
-        buyer_id = int(booking_data['buyer_id'])
-        event_id = int(booking_data['event_id'])
-        section = booking_data['section']
-        subsection = int(booking_data['subsection'])
-        quantity = int(booking_data['quantity'])
-        total_price = int(booking_data['total_price'])
-        status = booking_data['status']
-        seat_selection_mode = booking_data.get('seat_selection_mode', 'best_available')
-
-        paid_at_sql = ', NOW()' if booking_data.get('paid_at') == 'not_null' else ''
-        paid_at_col = ', paid_at' if booking_data.get('paid_at') == 'not_null' else ''
-
+    for seat_pos in seat_positions:
+        row_num, seat_num = seat_pos.split('-')
         execute_sql_statement(
-            f"""
-            INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at{paid_at_col})
-            VALUES (:id, :buyer_id, :event_id, :section, :subsection, :quantity, :total_price, :status, :seat_selection_mode, :seat_positions, NOW(), NOW(){paid_at_sql})
+            """
+            INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
+            VALUES (:event_id, :section, :subsection, :row_number, :seat_number, :price, :status, :buyer_id, NOW(), NOW())
             """,
             {
-                'id': booking_id,
-                'buyer_id': buyer_id,
                 'event_id': event_id,
                 'section': section,
                 'subsection': subsection,
-                'quantity': quantity,
-                'total_price': total_price,
-                'status': status,
-                'seat_selection_mode': seat_selection_mode,
-                'seat_positions': [],
+                'row_number': int(row_num),
+                'seat_number': int(seat_num),
+                'price': price_per_ticket,
+                'status': ticket_status,
+                'buyer_id': buyer_id,
             },
         )
 
-        if 'ticket_ids' in booking_data:
-            ticket_ids = [int(tid.strip()) for tid in booking_data['ticket_ids'].split(',')]
-            seat_positions = []
-            for idx, ticket_id in enumerate(ticket_ids):
-                ticket_status = 'sold' if status == 'paid' else 'reserved'
-                execute_sql_statement(
-                    """
-                    INSERT INTO ticket (id, event_id, section, subsection, row_number, seat_number, price, status, buyer_id, created_at, updated_at)
-                    VALUES (:id, :event_id, :section, :subsection, :row_number, :seat_number, :price, :status, :buyer_id, NOW(), NOW())
-                    """,
-                    {
-                        'id': ticket_id,
-                        'event_id': event_id,
-                        'section': section,
-                        'subsection': subsection,
-                        'row_number': 1,
-                        'seat_number': idx + 1,
-                        'price': 1000,
-                        'status': ticket_status,
-                        'buyer_id': buyer_id,
-                    },
-                )
-                seat_positions.append(f'1-{idx + 1}')
-            execute_sql_statement(
-                'UPDATE booking SET seat_positions = :seat_positions WHERE id = :booking_id',
-                {'booking_id': booking_id, 'seat_positions': seat_positions},
-            )
+    execute_sql_statement(
+        'UPDATE booking SET seat_positions = :seat_positions WHERE id = :booking_id',
+        {'booking_id': booking_id, 'seat_positions': seat_positions},
+    )
 
-        booking_id_int = int(booking_data['booking_id'])
-        context['bookings'][booking_id_int] = {'id': booking_id}
-        context[f'booking_{booking_id_int}_id'] = booking_id
+    return seat_positions
 
 
 @given('bookings exist:')
@@ -399,6 +376,9 @@ def create_bookings(
             else ''
         )
 
+        buyer_id = int(booking_data['buyer_id'])
+        status = booking_data['status']
+
         execute_sql_statement(
             f"""
             INSERT INTO "booking" (id, buyer_id, event_id, section, subsection, quantity, total_price, status, seat_selection_mode, seat_positions, created_at, updated_at{paid_at_col})
@@ -406,17 +386,35 @@ def create_bookings(
             """,
             {
                 'id': booking_id,
-                'buyer_id': int(booking_data['buyer_id']),
+                'buyer_id': buyer_id,
                 'event_id': event_id,
                 'section': section,
                 'subsection': subsection,
                 'quantity': quantity,
                 'total_price': int(booking_data['total_price']),
-                'status': booking_data['status'],
+                'status': status,
                 'seat_selection_mode': seat_selection_mode,
                 'seat_positions': seat_positions,
             },
         )
+
+        # Create tickets automatically when status is 'paid' (paid bookings have tickets)
+        if status == 'paid':
+            # Use explicit seat_positions from data if provided (e.g., for manual selection tests)
+            explicit_positions = seat_positions if seat_positions else None
+            _create_tickets_for_booking(
+                booking_id=booking_id,
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                quantity=quantity,
+                total_price=int(booking_data['total_price']),
+                buyer_id=buyer_id,
+                status=status,
+                explicit_seat_positions=explicit_positions,
+                execute_sql_statement=execute_sql_statement,
+            )
+
         context['bookings'][int(booking_data['id'])] = {'id': booking_id}
 
 
@@ -425,29 +423,25 @@ def create_bookings(
 # =============================================================================
 
 
-@when('buyer with id {user_id:d} requests their bookings:')
-@when('seller with id {user_id:d} requests their bookings:')
-def user_requests_bookings_with_table(
-    user_id: int, step: Step, client: TestClient, context: dict[str, Any]
+@when(parsers.parse('{role} with id {user_id:d} requests their bookings'))
+def user_requests_bookings(
+    role: str,
+    user_id: int,
+    client: TestClient,
+    context: dict[str, Any],  # noqa: ARG001
 ) -> None:
-    login_user(client, get_user_email_by_id(user_id), DEFAULT_PASSWORD)
-    booking_status = extract_table_data(step).get('booking_status', '')
-    response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status={booking_status}')
-    _store_response(context, response)
-
-
-@when('buyer with id {user_id:d} requests their bookings')
-@when('seller with id {user_id:d} requests their bookings')
-def user_requests_bookings(user_id: int, client: TestClient, context: dict[str, Any]) -> None:
     login_user(client, get_user_email_by_id(user_id), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status=')
     _store_response(context, response)
 
 
-@when('buyer with id {user_id:d} requests their bookings with status "{status}"')
-@when('seller with id {user_id:d} requests their bookings with status "{status}"')
+@when(parsers.parse('{role} with id {user_id:d} requests their bookings with status "{status}"'))
 def user_requests_bookings_with_status(
-    user_id: int, status: str, client: TestClient, context: dict[str, Any]
+    role: str,
+    user_id: int,
+    status: str,
+    client: TestClient,
+    context: dict[str, Any],  # noqa: ARG001
 ) -> None:
     login_user(client, get_user_email_by_id(user_id), DEFAULT_PASSWORD)
     response = client.get(f'{BOOKING_MY_BOOKINGS}?booking_status={status}')
@@ -597,41 +591,38 @@ def verify_booking_seat_positions(step: Step, context: dict[str, Any], booking_i
     assert len(actual_seats) == len(expected_seats)
 
 
-@then('the booking should include tickets:')
-def verify_booking_includes_tickets(step: Step, context: dict[str, Any]) -> None:
-    """Verify the booking response includes specific tickets."""
+@then(parsers.parse('the booking should include {count:d} tickets with:'))
+def verify_booking_includes_n_tickets(step: Step, context: dict[str, Any], count: int) -> None:
+    """Verify the booking response includes N tickets with expected properties."""
     response = context['response']
     booking = response.json()
 
     assert 'tickets' in booking, 'Booking response should contain tickets field'
     tickets = booking['tickets']
 
-    # Parse expected tickets from step table
+    assert len(tickets) == count, f'Expected {count} tickets, got {len(tickets)}'
+
+    # Parse expected properties from step table (single row describes all tickets)
     rows = step.data_table.rows
     headers = [cell.value for cell in rows[0].cells]
+    values = [cell.value for cell in rows[1].cells]
+    expected = dict(zip(headers, values, strict=True))
 
-    for row in rows[1:]:
-        values = [cell.value for cell in row.cells]
-        expected = dict(zip(headers, values, strict=True))
-        expected_ticket_id = int(expected['ticket_id'])
-
-        # Find matching ticket
-        found = False
-        for ticket in tickets:
-            if ticket.get('id') == expected_ticket_id:
-                if 'section' in expected:
-                    assert ticket.get('section') == expected['section']
-                if 'subsection' in expected:
-                    assert ticket.get('subsection') == int(expected['subsection'])
-                if 'row' in expected:
-                    assert ticket.get('row') == int(expected['row'])
-                if 'seat' in expected:
-                    assert ticket.get('seat') == int(expected['seat'])
-                if 'price' in expected:
-                    assert ticket.get('price') == int(expected['price'])
-                if 'status' in expected:
-                    assert ticket.get('status') == expected['status']
-                found = True
-                break
-
-        assert found, f'Ticket {expected_ticket_id} not found in booking tickets'
+    # Verify all tickets have expected properties
+    for ticket in tickets:
+        if 'section' in expected:
+            assert ticket.get('section') == expected['section'], (
+                f'Expected section {expected["section"]}, got {ticket.get("section")}'
+            )
+        if 'subsection' in expected:
+            assert ticket.get('subsection') == int(expected['subsection']), (
+                f'Expected subsection {expected["subsection"]}, got {ticket.get("subsection")}'
+            )
+        if 'price' in expected:
+            assert ticket.get('price') == int(expected['price']), (
+                f'Expected price {expected["price"]}, got {ticket.get("price")}'
+            )
+        if 'status' in expected:
+            assert ticket.get('status') == expected['status'], (
+                f'Expected status {expected["status"]}, got {ticket.get("status")}'
+            )

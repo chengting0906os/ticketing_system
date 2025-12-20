@@ -40,118 +40,40 @@ from test.bdd_conftest.shared_step_utils import (
 )
 
 
-# ============ Given Steps - Simple Login ============
+# ============ Given Steps - Login ============
 
 
-@given('I am logged in as a seller')
-def given_logged_in_as_seller(
-    client: TestClient,
-    context: dict[str, Any],
-) -> None:
-    """Login as default seller (creates if not exists).
-
-    Example:
-        Given I am logged in as a seller
-    """
-    create_user_if_not_exists(
-        client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD, DEFAULT_SELLER_NAME, 'seller'
-    )
-    user = login_user(client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD)
-    store_user_in_context(user, 'seller', context)
+def _get_role_defaults(role: str) -> tuple[str, str]:
+    """Get default email and name for role."""
+    if role == 'seller':
+        return DEFAULT_SELLER_EMAIL, DEFAULT_SELLER_NAME
+    return DEFAULT_BUYER_EMAIL, DEFAULT_BUYER_NAME
 
 
-@given('I am logged in as a buyer')
-def given_logged_in_as_buyer(
-    client: TestClient,
-    context: dict[str, Any],
-) -> None:
-    """Login as default buyer (creates if not exists).
-
-    Example:
-        Given I am logged in as a buyer
-    """
-    create_user_if_not_exists(
-        client, DEFAULT_BUYER_EMAIL, DEFAULT_PASSWORD, DEFAULT_BUYER_NAME, 'buyer'
-    )
-    user = login_user(client, DEFAULT_BUYER_EMAIL, DEFAULT_PASSWORD)
-    store_user_in_context(user, 'buyer', context)
-
-
-# ============ Given Steps - Login with Table Data ============
-
-
-@given('I am logged in as a seller with')
-def given_logged_in_as_seller_with_table(
-    step: Step,
-    client: TestClient,
-    context: dict[str, Any],
-) -> None:
-    """Create and login as seller with specified credentials.
-
-    Example:
-        Given I am logged in as a seller with
-            | email           | password | name        |
-            | seller@test.com | P@ssw0rd | Test Seller |
-    """
-    data = extract_table_data(step)
-    email = data.get('email', DEFAULT_SELLER_EMAIL)
-    password = data.get('password', DEFAULT_PASSWORD)
-    name = data.get('name', DEFAULT_SELLER_NAME)
-
-    create_user_if_not_exists(client, email, password, name, 'seller')
-    user = login_user(client, email, password)
-    store_user_in_context(user, 'seller', context)
-
-
-@given('I am logged in as a buyer with')
-def given_logged_in_as_buyer_with_table(
-    step: Step,
-    client: TestClient,
-    context: dict[str, Any],
-) -> None:
-    """Create and login as buyer with specified credentials.
-
-    Example:
-        Given I am logged in as a buyer with
-            | email          | password | name       |
-            | buyer@test.com | P@ssw0rd | Test Buyer |
-    """
-    data = extract_table_data(step)
-    email = data.get('email', DEFAULT_BUYER_EMAIL)
-    password = data.get('password', DEFAULT_PASSWORD)
-    name = data.get('name', DEFAULT_BUYER_NAME)
-
-    create_user_if_not_exists(client, email, password, name, 'buyer')
-    user = login_user(client, email, password)
-    store_user_in_context(user, 'buyer', context)
-
-
-# ============ Given Steps - User with Role Parameter ============
-
-
-@given(parsers.parse('I am logged in as "{role}"'))
-def given_logged_in_as_role(
+def _login_as_role_with_defaults(
     role: str,
     client: TestClient,
     context: dict[str, Any],
 ) -> None:
-    """Login as specified role with default credentials.
-
-    Example:
-        Given I am logged in as "seller"
-        Given I am logged in as "buyer"
-    """
-    if role == 'seller':
-        email, name = DEFAULT_SELLER_EMAIL, DEFAULT_SELLER_NAME
-    else:
-        email, name = DEFAULT_BUYER_EMAIL, DEFAULT_BUYER_NAME
-
+    """Internal helper to login as role with default credentials."""
+    email, name = _get_role_defaults(role)
     create_user_if_not_exists(client, email, DEFAULT_PASSWORD, name, role)
     user = login_user(client, email, DEFAULT_PASSWORD)
     store_user_in_context(user, role, context)
 
 
-@given(parsers.parse('I am logged in as "{role}" with'))
+@given(parsers.re(r'I am logged in as a (?P<role>seller|buyer)$'))
+def given_logged_in_as_role(role: str, client: TestClient, context: dict[str, Any]) -> None:
+    """Login as specified role with default credentials.
+
+    Example:
+        Given I am logged in as a seller
+        Given I am logged in as a buyer
+    """
+    _login_as_role_with_defaults(role, client, context)
+
+
+@given(parsers.re(r'I am logged in as a (?P<role>seller|buyer) with'))
 def given_logged_in_as_role_with_table(
     step: Step,
     role: str,
@@ -161,13 +83,12 @@ def given_logged_in_as_role_with_table(
     """Create and login as specified role with table credentials.
 
     Example:
-        Given I am logged in as "seller" with
+        Given I am logged in as a seller with
             | email           | password | name        |
             | seller@test.com | P@ssw0rd | Test Seller |
     """
     data = extract_table_data(step)
-    default_email = DEFAULT_SELLER_EMAIL if role == 'seller' else DEFAULT_BUYER_EMAIL
-    default_name = DEFAULT_SELLER_NAME if role == 'seller' else DEFAULT_BUYER_NAME
+    default_email, default_name = _get_role_defaults(role)
 
     email = data.get('email', default_email)
     password = data.get('password', DEFAULT_PASSWORD)
@@ -191,42 +112,33 @@ def given_not_authenticated(client: TestClient) -> None:
     client.cookies.clear()
 
 
-@given('a seller exists')
-def given_seller_exists_simple(
+def _create_role_with_defaults(
+    role: str,
     client: TestClient,
     context: dict[str, Any],
 ) -> None:
-    """Create a seller with default credentials (no datatable).
+    """Internal helper to create user with role-based defaults."""
+    email, name = _get_role_defaults(role)
+
+    user = create_user_if_not_exists(client, email, DEFAULT_PASSWORD, name, role)
+    if not user:
+        user = login_user(client, email, DEFAULT_PASSWORD)
+    store_user_in_context(user, role, context, set_as_current=False)
+
+
+@given(parsers.parse('a {role} exists'))
+def given_role_exists(
+    role: str,
+    client: TestClient,
+    context: dict[str, Any],
+) -> None:
+    """Create a user with specified role using default credentials.
 
     Example:
         Given a seller exists
-    """
-    user = create_user_if_not_exists(
-        client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD, DEFAULT_SELLER_NAME, 'seller'
-    )
-    # If user already exists, get ID via login
-    if not user:
-        user = login_user(client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD)
-    store_user_in_context(user, 'seller', context, set_as_current=False)
-
-
-@given('a buyer exists')
-def given_buyer_exists_simple(
-    client: TestClient,
-    context: dict[str, Any],
-) -> None:
-    """Create a buyer with default credentials (no datatable).
-
-    Example:
         Given a buyer exists
     """
-    user = create_user_if_not_exists(
-        client, DEFAULT_BUYER_EMAIL, DEFAULT_PASSWORD, DEFAULT_BUYER_NAME, 'buyer'
-    )
-    # If user already exists, get ID via login
-    if not user:
-        user = login_user(client, DEFAULT_BUYER_EMAIL, DEFAULT_PASSWORD)
-    store_user_in_context(user, 'buyer', context, set_as_current=False)
+    _create_role_with_defaults(role, client, context)
 
 
 # ============ Given Steps - Event Creation ============

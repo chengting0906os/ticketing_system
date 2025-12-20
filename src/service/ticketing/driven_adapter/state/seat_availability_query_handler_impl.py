@@ -73,7 +73,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     def _is_expired(self, *, entry: CacheEntry) -> bool:
         return time.time() - entry['timestamp'] > self._ttl_seconds
 
-    async def check_subsection_availability(
+    async def check_subsection_availability_then_get_config(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> AvailabilityCheckResult:
         """Check if subsection has sufficient seats (event-driven cache with TTL)"""

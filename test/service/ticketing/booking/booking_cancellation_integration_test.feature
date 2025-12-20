@@ -23,6 +23,41 @@ Feature: Booking Cancellation
       | status    |
       | cancelled |
 
+  Scenario: Successfully cancel processing booking
+    Given an event exists with:
+      | name           | description      | is_active | status    | seller_id | venue_name   | seating_config                                                                         |
+      | Metal Festival | Processing test  | true      | available | 1         | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
+    And a booking exists with:
+      | buyer_id | event_id | total_price | status     |
+      | 2        | 1        | 2000        | processing |
+    And I am logged in as a buyer
+    When I call PATCH "/api/booking/{booking.id}"
+    Then the response status code should be 200
+    And the response data should include:
+      | status    |
+      | cancelled |
+
+  Scenario: Cancelled booking releases seats for rebooking
+    Given an event exists with:
+      | name          | description   | is_active | status    | seller_id | venue_name   | seating_config                                                                      |
+      | Limited Event | Only 2 seats  | true      | available | 1         | Taipei Arena | {"rows": 1, "cols": 2, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
+    And a booking exists with:
+      | buyer_id | event_id | total_price | status          |
+      | 2        | 1        | 2000        | pending_payment |
+    And I am logged in as a buyer
+    When I call PATCH "/api/booking/{booking.id}"
+    Then the response status code should be 200
+    And the response data should include:
+      | status    |
+      | cancelled |
+    When I call POST "/api/booking" with
+      | event_id   | section | subsection | seat_selection_mode | seat_positions | quantity |
+      | {event_id} | A       | 1          | best_available      | []             | 2        |
+    Then the response status code should be 201
+    And the response data should include:
+      | status     |
+      | processing |
+
   Scenario: Cannot cancel completed booking
     Given an event exists with:
       | name          | description  | is_active | status   | seller_id | venue_name  | seating_config                                                                         |
@@ -50,6 +85,18 @@ Feature: Booking Cancellation
     When I call PATCH "/api/booking/{booking.id}"
     Then the response status code should be 400
     And the error message should contain "Booking already cancelled"
+
+  Scenario: Cannot cancel failed booking
+    Given an event exists with:
+      | name          | description           | is_active | status    | seller_id | venue_name   | seating_config                                                                      |
+      | Failed Show   | Reservation failed    | true      | available | 1         | Taipei Arena | {"rows": 1, "cols": 1, "sections": [{"name": "A", "price": 800, "subsections": 1}]} |
+    And I am logged in as a buyer
+    And a booking exists with:
+      | buyer_id | event_id | total_price | status |
+      | 2        | 1        | 800         | failed |
+    When I call PATCH "/api/booking/{booking.id}"
+    Then the response status code should be 400
+    And the error message should contain "Cannot cancel failed booking"
 
   Scenario: Only buyer can cancel their own booking
     Given an event exists with:

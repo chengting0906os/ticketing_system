@@ -14,7 +14,6 @@ from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_kafka_config_service import IKafkaConfigService
 
 from .kafka_constant_builder import KafkaTopicBuilder
-from .section_based_partition_strategy import SectionBasedPartitionStrategy
 
 
 class KafkaConfigService(IKafkaConfigService):
@@ -23,7 +22,6 @@ class KafkaConfigService(IKafkaConfigService):
 
     Responsible for configuring new events:
     1. Event-specific topics
-    2. Section-based partition strategy
 
     Note: Consumer management is handled by Docker Compose
     """
@@ -36,7 +34,6 @@ class KafkaConfigService(IKafkaConfigService):
     ) -> None:
         self.total_partitions = total_partitions
         self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
-        self.partition_strategy = SectionBasedPartitionStrategy(total_partitions)
         self._admin_client: AdminClient | None = None
         self._kafka_reachable: bool | None = None
 
@@ -95,12 +92,12 @@ class KafkaConfigService(IKafkaConfigService):
                 f'⚠️ [KAFKA] Kafka not available, skipping topic creation for EVENT_ID={event_id}. '
                 f'Topics will be created when consumers start.'
             )
-            self._analyze_partition_distribution(event_id, seating_config)
+            self._analyze_partition_distribution(seating_config)
             return True  # Not a failure - topics will be created on consumer startup
 
         try:
             self._create_event_topics(event_id)
-            self._analyze_partition_distribution(event_id, seating_config)
+            self._analyze_partition_distribution(seating_config)
             Logger.base.info(f'✅ [KAFKA] Infrastructure setup completed for EVENT_ID={event_id}')
             return True
 
@@ -168,28 +165,26 @@ class KafkaConfigService(IKafkaConfigService):
             f'📊 [KAFKA_CONFIG] Created {success_count}/{len(topics_to_create)} topics successfully'
         )
 
-    def _analyze_partition_distribution(self, event_id: int, seating_config: Dict) -> None:
+    def _analyze_partition_distribution(self, seating_config: Dict) -> None:
         """Analyze and log partition distribution for the event"""
         sections = seating_config.get('sections', [])
-        mapping = self.partition_strategy.get_section_partition_mapping(sections, event_id)
-        loads = self.partition_strategy.calculate_expected_load(seating_config, event_id)
+        rows = seating_config.get('rows', 10)
+        cols = seating_config.get('cols', 10)
+        seats_per_subsection = rows * cols
 
-        # Log mapping relationships
-        Logger.base.info('🗺️ [KAFKA_CONFIG] Subsection-to-Partition Mapping:')
-        for subsection, partition in mapping.items():
-            Logger.base.info(f'   {subsection} → Partition {partition}')
-
-        # Log load distribution
-        Logger.base.info('⚖️ [KAFKA_CONFIG] Partition Load Distribution:')
         total_seats = 0
-        for partition_id in sorted(loads.keys()):
-            load_info = loads[partition_id]
-            subsections_str = ', '.join(load_info['subsections'])
-            seat_count = load_info['estimated_seats']
-            total_seats += seat_count
-
-            Logger.base.info(
-                f'   Partition {partition_id}: {seat_count:,} seats ({subsections_str})'
-            )
+        for section in sections:
+            section_name = section.get('name', str(section))
+            subsections_count = section.get('subsections', 1)
+            for subsection_num in range(1, subsections_count + 1):
+                section_index = ord(section_name.upper()) - ord('A')
+                global_index = section_index * settings.SUBSECTIONS_PER_SECTION + (
+                    subsection_num - 1
+                )
+                partition = global_index % self.total_partitions
+                total_seats += seats_per_subsection
+                Logger.base.info(
+                    f'   {section_name}-{subsection_num} → Partition {partition} ({seats_per_subsection} seats)'
+                )
 
         Logger.base.info(f'📈 [KAFKA] Total seats: {total_seats:,}')

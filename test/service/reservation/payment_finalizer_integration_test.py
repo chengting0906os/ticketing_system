@@ -71,7 +71,7 @@ class TestPaymentFinalizerIntegration:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        """Test finalizing payment for seat A-2-2-11 (RESERVED -> SOLD)"""
+        """Test finalizing payment for seat 2-11 (RESERVED -> SOLD)"""
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 
@@ -84,7 +84,7 @@ class TestPaymentFinalizerIntegration:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Reserve seat A-2-2-11 first
+        # Reserve seat 2-11 first
 
         booking_id = str(uuid.uuid7())
         await seat_handler.reserve_seats_atomic(
@@ -128,7 +128,7 @@ class TestPaymentFinalizerIntegration:
         init_handler: InitEventAndTicketsStateHandlerImpl,
         unique_event_id: int,
     ) -> None:
-        """Test finalizing payment for seat A-1-1-5 (RESERVED -> SOLD)"""
+        """Test finalizing payment for seat 1-5 (RESERVED -> SOLD)"""
         # Get sync client for verification
         client = kvrocks_test_client.connect()
 

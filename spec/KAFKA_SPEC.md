@@ -1,6 +1,6 @@
 # Kafka Event-Driven Messaging Specification
 
-> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [section_based_partition_strategy.py](../src/platform/message_queue/section_based_partition_strategy.py) | [docker-compose.yml](../docker-compose.yml)
+> **📁 Related Files**: [kafka_config_service.py](../src/platform/message_queue/kafka_config_service.py) | [kafka_constant_builder.py](../src/platform/message_queue/kafka_constant_builder.py) | [docker-compose.yml](../docker-compose.yml)
 
 ## Quick Reference
 

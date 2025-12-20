@@ -87,7 +87,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # When
-        result = await handler.check_subsection_availability(
+        result = await handler.check_subsection_availability_then_get_config(
             event_id=1, section='A', subsection=1, required_quantity=10
         )
 
@@ -109,7 +109,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # When
-        result = await handler.check_subsection_availability(
+        result = await handler.check_subsection_availability_then_get_config(
             event_id=1, section='B', subsection=2, required_quantity=10
         )
 
@@ -128,7 +128,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # When
-        result = await handler.check_subsection_availability(
+        result = await handler.check_subsection_availability_then_get_config(
             event_id=100, section='C', subsection=3, required_quantity=5
         )
 
@@ -163,7 +163,7 @@ class TestCheckSubsectionAvailabilityIntegration:
 
         # When/Then: Event check happens first, so error is 'Event 999 not found'
         with pytest.raises(NotFoundError, match='Event 999 not found'):
-            await handler.check_subsection_availability(
+            await handler.check_subsection_availability_then_get_config(
                 event_id=999, section='Z', subsection=99, required_quantity=1
             )
 
@@ -179,7 +179,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # When
-        result = await handler.check_subsection_availability(
+        result = await handler.check_subsection_availability_then_get_config(
             event_id=1, section='A', subsection=1, required_quantity=10
         )
 
@@ -198,7 +198,7 @@ class TestCheckSubsectionAvailabilityIntegration:
         )
 
         # When
-        result = await handler.check_subsection_availability(
+        result = await handler.check_subsection_availability_then_get_config(
             event_id=1, section='A', subsection=1, required_quantity=50
         )
 

@@ -49,6 +49,26 @@ Feature: Booking Payment
     Then the response status code should be 400
     And the error message should contain "Cannot pay for cancelled booking"
 
+  Scenario: Cannot pay for processing booking
+    Given a booking exists with:
+      | buyer_id | event_id | total_price | status     |
+      | 2        | 1        | 1000        | processing |
+    When I call POST "/api/booking/{booking.id}/pay" with
+      | card_number      |
+      | 4242424242424242 |
+    Then the response status code should be 400
+    And the error message should contain "Booking is not in a payable state"
+
+  Scenario: Cannot pay for failed booking
+    Given a booking exists with:
+      | buyer_id | event_id | total_price | status |
+      | 2        | 1        | 1000        | failed |
+    When I call POST "/api/booking/{booking.id}/pay" with
+      | card_number      |
+      | 4242424242424242 |
+    Then the response status code should be 400
+    And the error message should contain "Booking is not in a payable state"
+
   Scenario: Only buyer can pay for their booking
     Given a booking exists with:
       | buyer_id | event_id | total_price | status          |

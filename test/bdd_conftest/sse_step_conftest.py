@@ -558,6 +558,60 @@ def then_sse_connection_established(context: dict[str, Any]) -> None:
     )
 
 
+@then('the SSE connection should be closed')
+def then_sse_connection_should_be_closed(context: dict[str, Any]) -> None:
+    """Verify SSE connection was closed after receiving terminal state.
+
+    This step verifies that:
+    1. A terminal state event (COMPLETED/FAILED/CANCELLED) was received
+    2. The connection was properly closed
+
+    Example:
+        Then the SSE connection should be closed
+    """
+    subscription = context.get('sse_subscription', {})
+    message_queue = subscription.get('message_queue')
+    stop_event = subscription.get('stop_event')
+
+    if not message_queue:
+        raise AssertionError('No SSE subscription found.')
+
+    try:
+        # Wait for terminal state message
+        received_event = message_queue.get(timeout=2.0)
+
+        # Verify it's a terminal state
+        status = received_event.get('status', '')
+        terminal_states = ['COMPLETED', 'FAILED', 'CANCELLED']
+        assert status in terminal_states, (
+            f"Expected terminal state (one of {terminal_states}), got '{status}'"
+        )
+
+        # Connection should be closed after terminal state
+        # In mock context, we verify by stopping the subscriber
+        if stop_event:
+            stop_event.set()
+
+        # Verify no more messages after terminal state (connection closed)
+        try:
+            extra_msg = message_queue.get(timeout=0.5)
+            # If we get here, connection wasn't closed properly
+            raise AssertionError(
+                f'Connection should be closed after terminal state, but received: {extra_msg}'
+            )
+        except queue.Empty:
+            pass  # Expected: no more messages after terminal state
+
+    except queue.Empty:
+        raise AssertionError('No SSE events received within timeout')
+    finally:
+        # Clean up
+        if stop_event:
+            stop_event.set()
+        if redis_client := subscription.get('redis_client'):
+            redis_client.close()
+
+
 @then('initial status event should be received with:')
 def then_initial_status_received(step: Step, context: dict[str, Any]) -> None:
     """Verify initial status event was received.
@@ -672,16 +726,19 @@ def then_updated_section_stats_show(step: Step, context: dict[str, Any]) -> None
     assert section['reserved'] == int(data['reserved']), 'Reserved mismatch'
 
 
-@then('all 3 users should receive status update event')
-def then_all_users_receive_update(context: dict[str, Any]) -> None:
+@then(parsers.parse('all {user_count:d} users should receive status update event'))
+def then_all_users_receive_update(user_count: int, context: dict[str, Any]) -> None:
     """Verify all users received the update.
 
     Example:
         Then all 3 users should receive status update event
+        Then all 5 users should receive status update event
     """
     connections = context.get('user_connections', [])
 
-    assert len(connections) == 3, f'Expected 3 connections, got {len(connections)}'
+    assert len(connections) == user_count, (
+        f'Expected {user_count} connections, got {len(connections)}'
+    )
 
     for conn in connections:
         events = conn.get('events', [])

@@ -377,7 +377,7 @@ class AtomicReservationExecutor:
                 )
             except Exception as e:
                 error_msg = str(e)
-                # Parse Lua error format: "SEAT_UNAVAILABLE: Seat A-1-1-5 is already RESERVED"
+                # Parse Lua error format: "SEAT_UNAVAILABLE: Seat 1-5 is already RESERVED"
                 if ':' in error_msg:
                     error_msg = error_msg.split(':', 1)[1].strip()
                 return {

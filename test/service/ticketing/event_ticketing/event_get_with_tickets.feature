@@ -44,12 +44,12 @@ Feature: Get Event with Seat Availability
     Then the response status code should be 200
     And the response should contain 6 tickets
     And the tickets should include seat identifiers:
-      | A-1-1-1 |
-      | A-1-1-2 |
-      | A-1-1-3 |
-      | A-1-2-1 |
-      | A-1-2-2 |
-      | A-1-2-3 |
+      | 1-1 |
+      | 1-2 |
+      | 1-3 |
+      | 2-1 |
+      | 2-2 |
+      | 2-3 |
     And all tickets should have status "available"
 
   Scenario: Get non-existent event

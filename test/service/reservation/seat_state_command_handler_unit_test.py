@@ -90,10 +90,10 @@ class TestErrorResult:
 
     def test_error_result_with_complex_message(self) -> None:
         # Given: Complex error message
-        message = 'Seat A-1-1-1 is already SOLD'
+        message = 'Seat 1-1 is already SOLD'
         # When: Create error result
         result = SeatStateCommandHandlerImpl._error_result(message)
         # Then: Should preserve exact message
         assert result['success'] is False
-        assert result['error_message'] == 'Seat A-1-1-1 is already SOLD'
+        assert result['error_message'] == 'Seat 1-1 is already SOLD'
         assert result['reserved_seats'] == []

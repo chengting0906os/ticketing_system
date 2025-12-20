@@ -63,14 +63,7 @@ async def publish_domain_event(
     Args:
         event: Domain event to publish
         topic: Kafka topic name
-        partition: Partition number (must be >= 0)
-
-    Example:
-        await publish_domain_event(
-            event=ReservationRequest(...),
-            topic="reservations",
-            partition=42,
-        )
+        partition: Kafka partition number
     """
     tracer = trace.get_tracer(__name__)
 
@@ -84,17 +77,11 @@ async def publish_domain_event(
             'event.type': event.__class__.__name__,
         },
     ):
-        # Inject trace context into event
         trace_headers = inject_trace_context()
         proto_msg = convert_domain_event_to_proto(event, trace_context=trace_headers)
-
-        # Serialize protobuf to bytes
         value_bytes = proto_msg.SerializeToString()
 
-        # Get async producer and send (fire-and-forget)
         producer = await _get_global_producer()
-        # produce() returns a coroutine that yields a Future
-        # We don't await the Future to keep it fire-and-forget
         await producer.produce(topic=topic, value=value_bytes, partition=partition)
 
         Logger.base.info(f'Published {event.__class__.__name__} to {topic} (partition={partition})')

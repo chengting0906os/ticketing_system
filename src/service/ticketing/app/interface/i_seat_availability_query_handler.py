@@ -19,7 +19,7 @@ class ISeatAvailabilityQueryHandler(ABC):
     """
 
     @abstractmethod
-    async def check_subsection_availability(
+    async def check_subsection_availability_then_get_config(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
     ) -> AvailabilityCheckResult:
         """

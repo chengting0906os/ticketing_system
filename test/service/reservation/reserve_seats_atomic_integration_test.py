@@ -160,7 +160,7 @@ class TestReserveSeatsAtomicManualMode:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Reserve seat A-1-1-1
+        # Reserve seat 1-1
         booking_id_1 = str(uuid.uuid7())
         await seat_handler.reserve_seats_atomic(
             event_id=event_id,
@@ -206,7 +206,7 @@ class TestReserveSeatsAtomicManualMode:
         event_id = unique_event_id
         await init_handler.initialize_seats_from_config(event_id=event_id, seating_config=config)
 
-        # Reserve seat A-1-1-2
+        # Reserve seat 1-2
         booking_id_1 = str(uuid.uuid7())
         await seat_handler.reserve_seats_atomic(
             event_id=event_id,
@@ -571,14 +571,14 @@ class TestReserveSeatsAtomicBestAvailableMode:
         # Verify each reserved seat has correct bitfield encoding
         bf_key = _make_key(f'seats_bf:{event_id}:A-1')
 
-        # Check seat A-1-1-1 (index 0) - RESERVED status = 1
+        # Check seat 1-1 (index 0) - RESERVED status = 1
         status_s1 = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 0)
         assert status_s1 == [1], 'Seat 1 should have status=1 (RESERVED)'
 
-        # Check seat A-1-1-2 (index 1) - RESERVED status = 1
+        # Check seat 1-2 (index 1) - RESERVED status = 1
         status_s2 = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 2)
         assert status_s2 == [1], 'Seat 2 should have status=1 (RESERVED)'
 
-        # Check seat A-1-2-1 (index 5: row 2, seat 1 in 5-seat rows) - RESERVED status = 1
+        # Check seat 2-1 (index 5: row 2, seat 1 in 5-seat rows) - RESERVED status = 1
         status_s3 = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', 10)
         assert status_s3 == [1], 'Seat in row 2 should have status=1 (RESERVED)'

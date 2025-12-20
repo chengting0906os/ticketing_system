@@ -450,8 +450,8 @@ def verify_ticket_count(count: int, context: dict[str, Any]) -> None:
 def verify_tickets_include_seat_identifiers(step: Step, context: dict[str, Any]) -> None:
     """Verify the tickets include specific seat identifiers.
 
-    Seat identifier format: {section}-{subsection}-{row}-{seat}
-    e.g., "A-1-1-1" means section=A, subsection=1, row=1, seat=1
+    Seat identifier format: {row}-{seat}
+    e.g., "1-1" means row=1, seat=1
     """
     response = context['response']
     response_json = response.json()
@@ -460,10 +460,7 @@ def verify_tickets_include_seat_identifiers(step: Step, context: dict[str, Any])
     tickets = response_json['tickets']
 
     # Extract seat identifiers from tickets by constructing from component fields
-    ticket_seat_ids = {
-        f'{ticket["section"]}-{ticket["subsection"]}-{ticket["row_number"]}-{ticket["seat_number"]}'
-        for ticket in tickets
-    }
+    ticket_seat_ids = {f'{ticket["row_number"]}-{ticket["seat_number"]}' for ticket in tickets}
 
     # Get expected seat identifiers from step
     data_table = step.data_table
@@ -484,7 +481,7 @@ def verify_all_tickets_have_status(expected_status: str, context: dict[str, Any]
     tickets = response_json['tickets']
 
     for ticket in tickets:
-        seat_id = f'{ticket["section"]}-{ticket["subsection"]}-{ticket["row_number"]}-{ticket["seat_number"]}'
+        seat_id = f'{ticket["row_number"]}-{ticket["seat_number"]}'
         assert ticket['status'] == expected_status, (
             f"Ticket {seat_id} has status '{ticket['status']}', expected '{expected_status}'"
         )

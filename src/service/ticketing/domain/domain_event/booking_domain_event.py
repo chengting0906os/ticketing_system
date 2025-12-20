@@ -63,7 +63,7 @@ class BookingPaidEvent:
     event_id: int
     section: str
     subsection: int
-    ticket_ids: List[int]
+    seat_positions: List[str]
     paid_at: datetime
     total_amount: float
 
@@ -79,7 +79,6 @@ class BookingCancelledEvent:
     event_id: int
     section: str
     subsection: int
-    ticket_ids: List[int]
     seat_positions: List[str]
     cancelled_at: datetime
 

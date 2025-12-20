@@ -113,7 +113,7 @@ class TestBookingStatusManager:
         mock_handler = MockBookingMetadataHandler()
         mock_handler.metadata[str(booking_id)] = {
             'status': 'RESERVE_SUCCESS',
-            'reserved_seats': '["A-1-1-1", "A-1-1-2"]',
+            'reserved_seats': '["1-1", "1-2"]',
             'total_price': 2000,
             'subsection_stats': '{"section_id": "A-1", "available": 8}',
             'event_stats': '{"event_id": 1, "available": 98}',
@@ -126,7 +126,7 @@ class TestBookingStatusManager:
         # Then: Should return cached result
         assert result is not None
         assert result['success'] is True
-        assert result['reserved_seats'] == ['A-1-1-1', 'A-1-1-2']
+        assert result['reserved_seats'] == ['1-1', '1-2']
         assert result['total_price'] == 2000
         assert result['subsection_stats'] == {'section_id': 'A-1', 'available': 8}
         assert result['event_stats'] == {'event_id': 1, 'available': 98}
@@ -140,7 +140,7 @@ class TestBookingStatusManager:
         mock_handler = MockBookingMetadataHandler()
         mock_handler.metadata[str(booking_id)] = {
             'status': 'RESERVE_FAILED',
-            'error_message': 'Seat A-1-1-1 is already RESERVED',
+            'error_message': 'Seat 1-1 is already RESERVED',
         }
         manager = BookingStatusManager(booking_metadata_handler=mock_handler)
 
@@ -150,7 +150,7 @@ class TestBookingStatusManager:
         # Then: Should return error result
         assert result is not None
         assert result['success'] is False
-        assert result['error_message'] == 'Seat A-1-1-1 is already RESERVED'
+        assert result['error_message'] == 'Seat 1-1 is already RESERVED'
         assert result['reserved_seats'] is None
         assert result['total_price'] == 0
 
@@ -217,7 +217,7 @@ class TestBookingStatusManager:
         mock_handler = MockBookingMetadataHandler()
         mock_handler.metadata[str(booking_id)] = {
             'status': 'RESERVE_SUCCESS',
-            'reserved_seats': '["A-1-1-1"]',
+            'reserved_seats': '["1-1"]',
             'total_price': 1000,
             'subsection_stats': '{}',
             'event_stats': '{}',
@@ -232,4 +232,4 @@ class TestBookingStatusManager:
         assert result1 == result2
         assert result1 is not None  # Add type guard for mypy/pyrefly
         assert result1['success'] is True
-        assert result1['reserved_seats'] == ['A-1-1-1']
+        assert result1['reserved_seats'] == ['1-1']

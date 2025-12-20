@@ -34,7 +34,7 @@ def mock_event_publisher() -> Mock:
 def mock_seat_availability_handler() -> Mock:
     """Mock seat availability query handler"""
     handler = AsyncMock()
-    handler.check_subsection_availability = AsyncMock()
+    handler.check_subsection_availability_then_get_config = AsyncMock()
     return handler
 
 
@@ -78,11 +78,9 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test successful booking creation generates UUID7"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=True,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
+        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
+            has_enough_seats=True,
+            config=SubsectionConfig(rows=10, cols=20, price=1000),
         )
 
         # Act
@@ -113,11 +111,9 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test booking creation fails when insufficient seats available"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=False,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
+        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
+            has_enough_seats=False,
+            config=SubsectionConfig(rows=10, cols=20, price=1000),
         )
 
         # Act & Assert
@@ -140,11 +136,9 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test that BookingCreated event is published to Booking Service"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=True,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
+        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
+            has_enough_seats=True,
+            config=SubsectionConfig(rows=10, cols=20, price=1000),
         )
 
         # Act
@@ -171,11 +165,9 @@ class TestCreateBookingUseCase:
         valid_booking_params['seat_selection_mode'] = 'manual'
         valid_booking_params['seat_positions'] = ['1-1', '1-2']
 
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=True,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
+        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
+            has_enough_seats=True,
+            config=SubsectionConfig(rows=10, cols=20, price=1000),
         )
 
         # Act
@@ -201,11 +193,9 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test that booking entity receives custom UUID7 id"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability.return_value = (
-            AvailabilityCheckResult(
-                has_enough_seats=True,
-                config=SubsectionConfig(rows=10, cols=20, price=1000),
-            )
+        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
+            has_enough_seats=True,
+            config=SubsectionConfig(rows=10, cols=20, price=1000),
         )
 
         # Act
