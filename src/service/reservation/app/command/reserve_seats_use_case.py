@@ -4,17 +4,14 @@ Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL wri
 
 from opentelemetry import trace
 
-from src.service.reservation.app.interface.i_booking_event_broadcaster import (
-    IBookingEventBroadcaster,
+from src.service.shared_kernel.app.interface.i_pubsub_handler import (
+    IPubSubHandler,
 )
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
-)
-from src.service.reservation.app.interface.i_event_state_broadcaster import (
-    IEventStateBroadcaster,
 )
 from src.service.reservation.app.interface import ISeatStateCommandHandler
 
@@ -39,21 +36,18 @@ class ReserveSeatsUseCase:
     Dependencies:
     - seat_state_handler: For Kvrocks seat reservation
     - booking_command_repo: For PostgreSQL writes
-    - event_state_broadcaster: For Redis Pub/Sub cache updates
-    - sse_broadcaster: For SSE real-time notifications
+    - pubsub_handler: For SSE + event_state broadcast via Kvrocks Pub/Sub
     """
 
     def __init__(
         self,
         seat_state_handler: ISeatStateCommandHandler,
         booking_command_repo: IBookingCommandRepo,
-        event_state_broadcaster: IEventStateBroadcaster,
-        sse_broadcaster: IBookingEventBroadcaster,
+        pubsub_handler: IPubSubHandler,
     ) -> None:
         self.seat_state_handler = seat_state_handler
         self.booking_command_repo = booking_command_repo
-        self.event_state_broadcaster = event_state_broadcaster
-        self.sse_broadcaster = sse_broadcaster
+        self.pubsub_handler = pubsub_handler
         self.tracer = trace.get_tracer(__name__)
 
     @Logger.io
@@ -114,21 +108,12 @@ class ReserveSeatsUseCase:
                     price=request.config.price if request.config else None,
                 )
 
-                # Step 3: Handle result
                 if result['success']:
                     reserved_seats = result['reserved_seats']
                     total_price = result['total_price']
                     event_state = result.get('event_state', {})
 
-                    # Step 4a: Broadcast event_state update via Redis Pub/Sub (real-time cache)
-                    await self.event_state_broadcaster.broadcast_event_state(
-                        event_id=request.event_id, event_state=event_state
-                    )
-                    Logger.base.debug(
-                        f'📤 [RESERVE] Broadcasted event_state to Redis Pub/Sub for event {request.event_id}'
-                    )
-
-                    # Step 4b: Write to PostgreSQL directly (booking + tickets)
+                    # Step 3: Write to PostgreSQL (booking + tickets)
                     pg_result = await self.booking_command_repo.create_booking_and_update_tickets_to_reserved(
                         booking_id=request.booking_id,
                         buyer_id=request.buyer_id,
@@ -139,13 +124,17 @@ class ReserveSeatsUseCase:
                         reserved_seats=reserved_seats,
                         total_price=total_price,
                     )
-
                     Logger.base.info(
                         f'✅ [RESERVE] Kvrocks + PostgreSQL write complete for booking {request.booking_id}'
                     )
 
-                    # Step 4c: Publish SSE for real-time UI updates via Kvrocks pub/sub
-                    await self.sse_broadcaster.publish(
+                    # Step 4: Broadcast event_state update via Redis Pub/Sub
+                    await self.pubsub_handler.broadcast_event_state(
+                        event_id=request.event_id, event_state=event_state
+                    )
+
+                    # Step 5: Publish SSE for real-time UI updates
+                    await self.pubsub_handler.publish_booking_update(
                         user_id=request.buyer_id,
                         event_id=request.event_id,
                         event_data={
@@ -189,7 +178,7 @@ class ReserveSeatsUseCase:
                     )
 
                     # Publish SSE failure notification via Kvrocks pub/sub
-                    await self.sse_broadcaster.publish(
+                    await self.pubsub_handler.publish_booking_update(
                         user_id=request.buyer_id,
                         event_id=request.event_id,
                         event_data={
@@ -233,7 +222,7 @@ class ReserveSeatsUseCase:
                 )
 
                 # Publish SSE failure notification via Kvrocks pub/sub
-                await self.sse_broadcaster.publish(
+                await self.pubsub_handler.publish_booking_update(
                     user_id=request.buyer_id,
                     event_id=request.event_id,
                     event_data={
@@ -276,7 +265,7 @@ class ReserveSeatsUseCase:
                 )
 
                 # Publish SSE failure notification via Kvrocks pub/sub
-                await self.sse_broadcaster.publish(
+                await self.pubsub_handler.publish_booking_update(
                     user_id=request.buyer_id,
                     event_id=request.event_id,
                     event_data={
@@ -299,17 +288,17 @@ class ReserveSeatsUseCase:
     def _validate_request(self, request: ReservationRequest) -> None:
         if request.selection_mode == 'manual':
             if not request.seat_positions:
-                raise DomainError('Manual selection requires seat positions', 400)
+                raise DomainError('Manual selection requires seat positions')
             if len(request.seat_positions) > 4:
-                raise DomainError('Cannot reserve more than 4 seats at once', 400)
+                raise DomainError('Cannot reserve more than 4 seats at once')
 
         elif request.selection_mode == 'best_available':
             if not request.quantity or request.quantity <= 0:
-                raise DomainError('Best available selection requires valid quantity', 400)
+                raise DomainError('Best available selection requires valid quantity')
             if request.quantity > 4:
-                raise DomainError('Cannot reserve more than 4 seats at once', 400)
+                raise DomainError('Cannot reserve more than 4 seats at once')
             if not request.section_filter or request.subsection_filter < 1:
-                raise DomainError('Best available mode requires section and subsection filter', 400)
+                raise DomainError('Best available mode requires section and subsection filter')
 
         else:
-            raise DomainError(f'Invalid selection mode: {request.selection_mode}', 400)
+            raise DomainError(f'Invalid selection mode: {request.selection_mode}')

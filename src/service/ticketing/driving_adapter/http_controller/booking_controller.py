@@ -11,8 +11,8 @@ from sse_starlette.sse import EventSourceResponse
 from src.platform.config.di import Container
 from src.platform.logging.loguru_io import Logger
 from src.platform.types import UtilsUUID7
-from src.service.reservation.app.interface.i_booking_event_broadcaster import (
-    IBookingEventBroadcaster,
+from src.service.shared_kernel.app.interface.i_pubsub_handler import (
+    IPubSubHandler,
 )
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
 from src.service.ticketing.app.command.mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case import (
@@ -158,9 +158,7 @@ async def pay_booking(
 async def stream_booking_status(
     event_id: int,
     current_user: UserEntity = Depends(get_current_user),
-    event_broadcaster: IBookingEventBroadcaster = Depends(
-        Provide[Container.booking_event_broadcaster]
-    ),
+    pubsub_handler: IPubSubHandler = Depends(Provide[Container.pubsub_handler]),
 ) -> EventSourceResponse:
     """
     SSE real-time booking status updates for user's bookings of an event
@@ -186,7 +184,7 @@ async def stream_booking_status(
 
         try:
             # Subscribe to Kvrocks pub/sub channel
-            async for event_data in event_broadcaster.subscribe(
+            async for event_data in pubsub_handler.subscribe(
                 user_id=user_id,
                 event_id=event_id,
             ):

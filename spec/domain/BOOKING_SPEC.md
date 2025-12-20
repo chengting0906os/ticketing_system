@@ -238,7 +238,7 @@ Reservation Service ─────── publish ──────────
 **Flow:**
 
 1. SSE 客戶端連線時，訂閱 Kvrocks pub/sub channel `booking:status:{user_id}:{event_id}`
-2. Reservation Service 處理座位預訂後，透過 `BookingEventBroadcaster` 發布狀態更新
+2. Reservation Service 處理座位預訂後，透過 `IPubSubHandler` 發布狀態更新
 3. SSE endpoint 收到訂閱訊息後，推送 `status_update` 事件給客戶端
 4. 當預訂達到終態（completed/failed/cancelled）時，自動關閉 SSE 連線
 

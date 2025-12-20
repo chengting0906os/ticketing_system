@@ -230,10 +230,10 @@ async def list_subsection_seats(
     seats_by_status: dict[str, list[str]] = {}
     for seat in result['seats']:
         seat_position = seat['seat_position']
-        status = seat['status']
-        if status not in seats_by_status:
-            seats_by_status[status] = []
-        seats_by_status[status].append(seat_position)
+        seat_status = seat['status']
+        if seat_status not in seats_by_status:
+            seats_by_status[seat_status] = []
+        seats_by_status[seat_status].append(seat_position)
 
     # Create SeatResponse for each status
     price = result['seats'][0]['price'] if result['seats'] else 0
@@ -244,9 +244,9 @@ async def list_subsection_seats(
             subsection=result['subsection'],
             seat_positions=positions,
             price=price,
-            status=status,
+            status=seat_status,
         )
-        for status, positions in seats_by_status.items()
+        for seat_status, positions in seats_by_status.items()
     ]
 
     return SectionStatsResponse(
@@ -331,108 +331,6 @@ async def stream_all_section_stats(event_id: int) -> EventSourceResponse:
 
         except anyio.get_cancelled_exc_class():
             Logger.base.info(f'[SSE] Client disconnected from event {event_id}')
-            raise
-        finally:
-            if pubsub_client:
-                with contextlib.suppress(Exception):
-                    await pubsub_client.aclose()
-
-    return EventSourceResponse(event_generator())
-
-
-@router.get(
-    '/{event_id}/sections/{section}/subsection/{subsection}/seats/sse',
-    status_code=status.HTTP_200_OK,
-)
-@Logger.io
-async def stream_subsection_seats(
-    event_id: int,
-    section: str,
-    subsection: int,
-) -> EventSourceResponse:
-    """SSE real-time push of seat status updates (via Redis Pub/Sub subscribe)."""
-    seat_state_handler = container.seat_state_query_handler()
-    use_case = ListSectionSeatsDetailUseCase(seat_state_handler=seat_state_handler)
-
-    # Get initial data to verify event exists
-    initial_result = await use_case.execute(
-        event_id=event_id, section=section, subsection=subsection
-    )
-
-    async def event_generator() -> AsyncGenerator[dict, None]:
-        pubsub_client: AsyncRedis | None = None
-        try:
-            # 1. Send initial status
-            seats = [
-                {
-                    'event_id': initial_result['event_id'],
-                    'section': seat['section'],
-                    'subsection': seat['subsection'],
-                    'seat_position': seat['seat_position'],
-                    'price': seat['price'],
-                    'status': seat['status'],
-                }
-                for seat in initial_result['seats']
-            ]
-            response_data = {
-                'total': initial_result['total'],
-                'available': initial_result['available'],
-                'reserved': initial_result['reserved'],
-                'sold': initial_result['sold'],
-                'event_id': initial_result['event_id'],
-                'section': initial_result['section'],
-                'subsection': initial_result['subsection'],
-                'tickets': seats,
-                'total_count': initial_result['total'],
-            }
-            yield {'event': 'initial_status', 'data': orjson.dumps(response_data).decode()}
-
-            # 2. Subscribe to pub/sub for updates
-            pubsub_client = await _create_pubsub_client()
-            pubsub = pubsub_client.pubsub()
-            channel = f'event_state_updates:{event_id}'
-
-            await pubsub.subscribe(channel)
-            Logger.base.info(f'[SSE] Subscribed to {channel} for {section}-{subsection}')
-
-            async for message in pubsub.listen():
-                if message['type'] == 'message':
-                    try:
-                        # Re-query Kvrocks to get filtered subsection data
-                        result = await use_case.execute(
-                            event_id=event_id, section=section, subsection=subsection
-                        )
-                        seats = [
-                            {
-                                'event_id': result['event_id'],
-                                'section': seat['section'],
-                                'subsection': seat['subsection'],
-                                'seat_position': seat['seat_position'],
-                                'price': seat['price'],
-                                'status': seat['status'],
-                            }
-                            for seat in result['seats']
-                        ]
-                        response_data = {
-                            'total': result['total'],
-                            'available': result['available'],
-                            'reserved': result['reserved'],
-                            'sold': result['sold'],
-                            'event_id': result['event_id'],
-                            'section': result['section'],
-                            'subsection': result['subsection'],
-                            'tickets': seats,
-                            'total_count': result['total'],
-                        }
-                        yield {
-                            'event': 'status_update',
-                            'data': orjson.dumps(response_data).decode(),
-                        }
-                    except Exception as e:
-                        Logger.base.error(f'[SSE] Error streaming seats: {e}')
-
-        except anyio.get_cancelled_exc_class():
-            Logger.base.info(f'[SSE] Client disconnected: {section}-{subsection}')
             raise
         finally:
             if pubsub_client:

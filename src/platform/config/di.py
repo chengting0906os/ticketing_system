@@ -9,9 +9,6 @@ from src.service.reservation.app.command.finalize_seat_payment_use_case import (
 )
 from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.reservation.driven_adapter.event_state_broadcaster_impl import (
-    EventStateBroadcasterImpl,
-)
 from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
 )
@@ -34,8 +31,8 @@ from src.service.reservation.driven_adapter.seat_state_query_handler_impl import
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.reservation.driven_adapter.booking_event_broadcaster_impl import (
-    BookingEventBroadcasterImpl,
+from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
+    PubSubHandlerImpl,
 )
 from src.platform.message_queue.kafka_config_service import KafkaConfigService
 from src.service.ticketing.driven_adapter.message_queue.booking_event_publisher_impl import (
@@ -83,42 +80,37 @@ class Container(containers.DeclarativeContainer):
     # Used for fire-and-forget tasks like event publishing
     task_group = providers.Object(None)
 
-    # Repositories - session will be injected by use cases
-    # Command repos use raw SQL with asyncpg (no session needed)
-    booking_command_repo = providers.Factory(BookingCommandRepoImpl)
-    event_ticketing_command_repo = providers.Factory(EventTicketingCommandRepoImpl)
-    # Query repos still use SQLAlchemy for complex queries
-    booking_query_repo = providers.Factory(
+    # Repositories (stateless - use session_factory per-request)
+    booking_command_repo = providers.Singleton(BookingCommandRepoImpl)
+    event_ticketing_command_repo = providers.Singleton(EventTicketingCommandRepoImpl)
+    booking_query_repo = providers.Singleton(
         BookingQueryRepoImpl, session_factory=database.provided.session
     )
-    event_ticketing_query_repo = providers.Factory(
+    event_ticketing_query_repo = providers.Singleton(
         EventTicketingQueryRepoImpl, session_factory=database.provided.session
     )
-    user_command_repo = providers.Factory(
+    user_command_repo = providers.Singleton(
         UserCommandRepoImpl, session_factory=database.provided.session
     )
-    user_query_repo = providers.Factory(
+    user_query_repo = providers.Singleton(
         UserQueryRepoImpl, session_factory=database.provided.session
     )
 
     # Auth service
     jwt_auth = providers.Singleton(JwtAuth)
 
-    # Kvrocks Event Broadcaster for SSE (distributed pub/sub)
-    # Factory: creates with kvrocks_client.get_client() lazily at runtime
-    booking_event_broadcaster = providers.Factory(
-        BookingEventBroadcasterImpl,
+    # Kvrocks Pub/Sub Handler for SSE (distributed pub/sub)
+    # Singleton: throttle state must be shared across usages
+    pubsub_handler = providers.Singleton(
+        PubSubHandlerImpl,
         redis_client=providers.Factory(kvrocks_client.get_client),
     )
 
     # Message Queue Publishers
-    booking_event_publisher = providers.Factory(BookingEventPublisherImpl)
+    booking_event_publisher = providers.Singleton(BookingEventPublisherImpl)
 
     # Reservation Service - Booking Command Repo (PostgreSQL writes)
-    reservation_booking_command_repo = providers.Factory(ReservationBookingCommandRepoImpl)
-
-    # Event State Broadcaster (Redis Pub/Sub for real-time cache updates)
-    event_state_broadcaster = providers.Factory(EventStateBroadcasterImpl)
+    reservation_booking_command_repo = providers.Singleton(ReservationBookingCommandRepoImpl)
 
     # Seat Reservation Use Cases (CQRS)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
@@ -140,9 +132,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Ticketing Service - Init State Handler
-    init_event_and_tickets_state_handler = providers.Factory(
-        InitEventAndTicketsStateHandlerImpl,
-    )
+    init_event_and_tickets_state_handler = providers.Singleton(InitEventAndTicketsStateHandlerImpl)
 
     # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)
     seat_availability_query_handler = providers.Singleton(
@@ -151,24 +141,23 @@ class Container(containers.DeclarativeContainer):
     )
 
     # MQ Infrastructure Orchestrator
-    mq_infra_orchestrator = providers.Factory(
+    mq_infra_orchestrator = providers.Singleton(
         MqInfraOrchestrator,
         kafka_service=kafka_service,
     )
 
-    # Seat Reservation Use Cases
-    reserve_seats_use_case = providers.Factory(
+    # Seat Reservation Use Cases (stateless, can be Singleton)
+    reserve_seats_use_case = providers.Singleton(
         ReserveSeatsUseCase,
         seat_state_handler=seat_state_command_handler,
         booking_command_repo=reservation_booking_command_repo,
-        event_state_broadcaster=event_state_broadcaster,
-        sse_broadcaster=booking_event_broadcaster,
+        pubsub_handler=pubsub_handler,
     )
-    release_seat_use_case = providers.Factory(
+    release_seat_use_case = providers.Singleton(
         ReleaseSeatUseCase,
         seat_state_handler=seat_state_command_handler,
     )
-    finalize_seat_payment_use_case = providers.Factory(
+    finalize_seat_payment_use_case = providers.Singleton(
         FinalizeSeatPaymentUseCase,
         seat_state_handler=seat_state_command_handler,
     )

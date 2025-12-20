@@ -43,15 +43,3 @@ Feature: Seat Status SSE Stream
     And all users should see same section stats:
       | section | subsection | available | reserved |
       | A       | 1          | 50        | 0        |
-
-  Scenario: User receives initial seat status via subsection SSE
-    When user connects to subsection SSE stream for event {event_id} section A subsection 1
-    Then SSE connection should be established
-    And initial subsection status event should be received with:
-      | event_type     | total | available |
-      | initial_status | 50    | 50        |
-
-  Scenario: User receives error when connecting to non-existent subsection SSE
-    When user connects to subsection SSE stream for event 999 section A subsection 1
-    Then the response status code should be 404
-    And the error message should contain "Event not found"

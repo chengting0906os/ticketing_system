@@ -147,7 +147,7 @@ def given_subscribed_to_sse(
     actual_event_id = context.get('event_id') if event_id == '{event_id}' else int(event_id)
     user_id = context.get('current_user', {}).get('id', context.get('buyer_id', 2))
 
-    # Channel format matches BookingEventBroadcasterImpl
+    # Channel format matches PubSubHandlerImpl
     channel = f'booking:status:{user_id}:{actual_event_id}'
 
     # Set up real pub/sub with threading
@@ -190,7 +190,7 @@ def when_sse_event_published(
 ) -> None:
     """Publish SSE event via real Kvrocks pub/sub.
 
-    This tests the same channel that BookingEventBroadcasterImpl.publish() uses.
+    This tests the same channel that PubSubHandlerImpl.publish_booking_update() uses.
 
     Example:
         When SSE event is published with:
@@ -784,93 +784,3 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
         assert section['reserved'] == expected_reserved, (
             f'Reserved mismatch for user {conn["user_id"]}'
         )
-
-
-# =============================================================================
-# Subsection SSE Steps
-# =============================================================================
-
-
-@when(
-    parsers.parse(
-        'user connects to subsection SSE stream for event {event_id} section {section} subsection {subsection}'
-    )
-)
-def when_user_connects_to_subsection_sse(
-    event_id: str,
-    section: str,
-    subsection: str,
-    client: TestClient,
-    context: dict[str, Any],
-    http_server: str,
-) -> None:
-    resolved_id = resolve_endpoint_vars(str(event_id), context)
-    event_id_int = int(resolved_id)
-
-    login_user(client, DEFAULT_SELLER_EMAIL, DEFAULT_PASSWORD)
-
-    cookies = {}
-    for cookie in client.cookies.jar:
-        cookies[cookie.name] = cookie.value
-
-    url = f'{http_server}/api/event/{event_id_int}/sections/{section}/subsection/{subsection}/seats/sse'
-    headers = {'Accept': 'text/event-stream'}
-
-    events_list: list[dict[str, Any]] = []
-    status_holder: dict[str, Any] = {'status_code': 0, 'content_type': ''}
-
-    thread = threading.Thread(
-        target=_read_sse_events_in_thread,
-        args=(url, headers, cookies, events_list, status_holder, 3, 5.0),
-        daemon=True,
-    )
-    thread.start()
-    thread.join(timeout=6)
-
-    context['sse_events'] = events_list
-    context['event_id'] = event_id_int
-
-    status_code = status_holder.get('status_code', 0)
-    content_type = status_holder.get('content_type', '')
-
-    context['response'] = MockResponse(
-        status_code if status_code else 404,
-        {'content-type': content_type or 'text/event-stream; charset=utf-8'},
-        {} if status_code == 200 else {'detail': 'Event not found'},
-    )
-
-
-@then('initial subsection status event should be received with:')
-def then_initial_subsection_status_received(step: Step, context: dict[str, Any]) -> None:
-    """Verify initial subsection status event was received.
-
-    Example:
-        Then initial subsection status event should be received with:
-          | event_type     | total | available |
-          | initial_status | 50    | 50        |
-    """
-    data = extract_table_data(step)
-    events = context.get('sse_events', [])
-
-    assert len(events) > 0, 'No SSE events received'
-
-    initial_event = None
-    for event in events:
-        if event.get('event') == data['event_type']:
-            initial_event = event
-            break
-
-    assert initial_event is not None, (
-        f"Expected event type '{data['event_type']}', got events: {[e.get('event') for e in events]}"
-    )
-
-    event_data = initial_event.get('data', {})
-    expected_total = int(data['total'])
-    expected_available = int(data['available'])
-
-    assert event_data.get('total') == expected_total, (
-        f'Expected total={expected_total}, got {event_data.get("total")}'
-    )
-    assert event_data.get('available') == expected_available, (
-        f'Expected available={expected_available}, got {event_data.get("available")}'
-    )

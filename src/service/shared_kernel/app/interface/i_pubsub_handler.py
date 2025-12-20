@@ -1,7 +1,6 @@
-"""Booking Event Broadcaster Interface (Port)
+"""Pub/Sub Handler Interface (Port)
 
-Provides pub/sub mechanism for distributing booking status events
-from use cases to SSE endpoints via Kvrocks pub/sub.
+Provides pub/sub mechanism for distributing events via Kvrocks pub/sub.
 """
 
 from abc import ABC, abstractmethod
@@ -9,13 +8,13 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 
-class IBookingEventBroadcaster(ABC):
+class IPubSubHandler(ABC):
     """
-    Interface for booking event broadcasting via Kvrocks pub/sub
+    Interface for pub/sub via Kvrocks
 
-    Subscription key: (user_id, event_id) tuple
-    - Allows user to monitor all their bookings for a specific event
-    - Distributed across service instances via Kvrocks pub/sub
+    Supports two channel patterns:
+    - booking:status:{user_id}:{event_id} - User-specific booking status
+    - event_state_updates:{event_id} - Event seat state for all viewers
     """
 
     @abstractmethod
@@ -39,7 +38,7 @@ class IBookingEventBroadcaster(ABC):
             yield {}
 
     @abstractmethod
-    async def publish(
+    async def publish_booking_update(
         self,
         *,
         user_id: int,
@@ -53,5 +52,16 @@ class IBookingEventBroadcaster(ABC):
             user_id: User ID (buyer)
             event_id: Event ID
             event_data: Event dictionary to publish
+        """
+        pass
+
+    @abstractmethod
+    async def broadcast_event_state(self, *, event_id: int, event_state: dict) -> None:
+        """
+        Broadcast event_state update for real-time seat status
+
+        Args:
+            event_id: Event ID
+            event_state: Complete event state (sections + stats)
         """
         pass
