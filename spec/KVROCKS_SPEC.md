@@ -13,7 +13,7 @@
 
 | Key Pattern | Type | Purpose | Fields/Encoding |
 |------------|------|---------|-----------------|
-| `seats_bf:{event_id}:{section}-{subsection}` | Bitfield | Seat status (2 bits/seat) | `00`=AVAILABLE, `01`=RESERVED, `10`=SOLD |
+| `seats_bf:{event_id}:{section}-{subsection}` | Bitfield | Seat status (2 bits/seat) | `00`=AVAILABLE, `01`=RESERVED (SOLD 狀態由 PostgreSQL 管理) |
 | `event_state:{event_id}` | **JSON** | **Unified event config + stats (sections + event-level)** | See structure below |
 | `booking:{booking_id}` | Hash | Booking metadata (TTL=1h) | `status`, `reserved_seats`, `total_price` |
 | `event_sellout_timer:{event_id}` | Hash | Sellout time tracking | `first_ticket_reserved_at`, `fully_reserved_at`, `duration_seconds` |

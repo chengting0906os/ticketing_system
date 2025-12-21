@@ -19,7 +19,10 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
    - 只有 `PENDING_PAYMENT` 狀態可以付款
    - `PROCESSING` 狀態付款回傳 400 "Cannot pay booking in processing state"
    - `COMPLETED`、`CANCELLED`、`FAILED` 為終態，不可再變更
-   - 終態嘗試付款或取消回傳 400 "Booking already in terminal state"
+   - 終態錯誤回應（皆回傳 400）：
+     - `COMPLETED` 狀態取消 "Cannot cancel a completed booking"
+     - `CANCELLED` 狀態取消 "Booking already in terminal state"
+     - `FAILED` 狀態取消 "Cannot cancel failed booking"
 6. **無 Timeout**: PENDING_PAYMENT 狀態無時間限制，直到買家付款或取消
 7. **權限控制**:
    - 只有預訂的買家可以取消或付款
@@ -70,10 +73,10 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 - [x] Buyer 可以取消 PROCESSING 或 PENDING_PAYMENT 狀態的預訂
 - [x] 取消後狀態變更為 CANCELLED
 - [x] 取消後座位釋放回可用狀態
-- [x] 已完成付款的預訂無法取消
-- [x] 已取消的預訂無法再次取消
+- [x] 已完成付款的預訂無法取消（回傳 400）
+- [x] 已取消的預訂無法再次取消（回傳 400）
 - [x] FAILED 狀態的預訂無法取消（回傳 400）
-- [x] 非預訂擁有者無法取消
+- [x] 非預訂擁有者無法取消（回傳 403）
 
 ### Booking Query
 
@@ -182,8 +185,9 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 | Event                     | Trigger  | Consumer            | Action                     |
 | ------------------------- | -------- | ------------------- | -------------------------- |
 | BookingCreatedDomainEvent | 預訂建立 | Reservation Service | 在 Kvrocks 預訂座位        |
-| BookingPaidEvent          | 付款完成 | Reservation Service | 在 Kvrocks 確認座位為 SOLD |
 | BookingCancelledEvent     | 預訂取消 | Reservation Service | 在 Kvrocks 釋放座位        |
+
+> **Note**: 付款完成後直接更新 PostgreSQL，不發送事件到 Reservation Service。Kvrocks 只追蹤 AVAILABLE/RESERVED 狀態。
 
 #### BookingCreatedDomainEvent
 
@@ -201,19 +205,6 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 | status              | BookingStatus   | 預訂狀態                       |
 | occurred_at         | datetime        | 發生時間                       |
 | config              | SubsectionConfig | 子區域配置 (rows, cols, price) |
-
-#### BookingPaidEvent
-
-| Field          | Type      | Description                    |
-| -------------- | --------- | ------------------------------ |
-| booking_id     | UUID      | 預訂 ID                        |
-| buyer_id       | int       | 買家 ID                        |
-| event_id       | int       | 活動 ID                        |
-| section        | str       | 區域                           |
-| subsection     | int       | 子區域                         |
-| seat_positions | List[str] | 座位清單，格式: `"{row}-{seat}"` |
-| paid_at        | datetime  | 付款時間                       |
-| total_amount   | float     | 付款金額                       |
 
 #### BookingCancelledEvent
 

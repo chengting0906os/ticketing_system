@@ -25,7 +25,8 @@ Kvrocks-based seat reservation system with:
 
 - `00` = AVAILABLE (0)
 - `01` = RESERVED (1)
-- `10` = SOLD (2)
+
+> **Note**: SOLD 狀態 (`10`) 不再使用。付款後座位保持 RESERVED 直到釋放。PostgreSQL 是 ticket 狀態的 source of truth。
 
 **Index Calculation:**
 
@@ -87,6 +88,8 @@ Tracks time-to-sellout metrics.
 ---
 
 ## Visual Example: 5x5 Seat Layout
+
+> **Note**: 以下範例展示 2-bit 設計，但實際上 SOLD (`10`) 狀態不再使用。Kvrocks 只追蹤 AVAILABLE/RESERVED。
 
 **State Transition (Reserve Seats 1-2 in Row 2):**
 
@@ -256,11 +259,16 @@ results = await pipe.execute()  # 1 round-trip for all
 
 ## State Transitions
 
-### Seat Status
+### Seat Status (Kvrocks)
 
 ```text
-AVAILABLE (00) → reserve_seats_atomic() → RESERVED (01) → finalize_payment() → SOLD (10)
+AVAILABLE (00) ↔ RESERVED (01)
+
+reserve_seats_atomic(): AVAILABLE → RESERVED
+release_seats():        RESERVED → AVAILABLE
 ```
+
+> **Note**: SOLD 狀態由 PostgreSQL ticket.status 管理，Kvrocks 不追蹤付款後的狀態變更。
 
 ### Reservation Workflow
 
