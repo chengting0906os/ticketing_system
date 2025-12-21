@@ -1,5 +1,12 @@
 """
-Unit tests for ReserveSeatsUseCase - specifically testing execution order.
+Unit tests for ReserveSeatsUseCase
+
+Tests:
+- Execution order (Kvrocks -> PostgreSQL -> Pub/Sub -> SSE)
+- Manual mode validation
+- Best available mode validation
+- Quantity limits
+- Failure handling
 """
 
 from typing import Any

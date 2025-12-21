@@ -7,7 +7,11 @@ Features:
 - Retry mechanism: Exponential backoff
 - Dead Letter Queue: Failed messages sent to DLQ
 
-Uses confluent-kafka experimental AIOConsumer for async message processing.
+Listens to 2 Topics:
+1. booking_to_reservation_reserve_seats - Reserve seats (AVAILABLE → RESERVED)
+2. release_ticket_status_to_available_in_kvrocks - Release seats (RESERVED → AVAILABLE)
+
+Note: Kvrocks only tracks AVAILABLE/RESERVED states. PostgreSQL is source of truth for SOLD status.
 """
 
 import os
@@ -24,7 +28,6 @@ from src.platform.message_queue.kafka_constant_builder import (
 )
 from src.platform.message_queue.proto import domain_event_pb2 as pb
 from src.service.reservation.app.dto import (
-    FinalizeSeatPaymentRequest,
     ReleaseSeatsBatchRequest,
     ReservationRequest,
 )
@@ -35,12 +38,12 @@ class SeatReservationConsumer(BaseKafkaConsumer):
     """
     Seat Reservation Consumer - Stateless Router
 
-    Listens to 3 Topics:
-    1. booking_to_reservation_reserve_seats - Reservation requests
-    2. release_ticket_status_to_available_in_kvrocks - Release seats
-    3. finalize_ticket_status_to_paid_in_kvrocks - Finalize payment
+    Listens to 2 Topics:
+    1. booking_to_reservation_reserve_seats - Reserve seats (AVAILABLE → RESERVED)
+    2. release_ticket_status_to_available_in_kvrocks - Release seats (RESERVED → AVAILABLE)
 
-    Uses confluent-kafka AIOConsumer for async message processing.
+    Note: Kvrocks only tracks AVAILABLE/RESERVED states.
+    PostgreSQL is source of truth for SOLD/COMPLETED status.
     """
 
     # Sequential processing to prevent race conditions in seat reservation
@@ -64,7 +67,6 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         # Use cases (lazy initialization)
         self.reserve_seats_use_case: Any = None
         self.release_seat_use_case: Any = None
-        self.finalize_seat_payment_use_case: Any = None
 
         # Topic names
         self.reservation_topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(
@@ -73,15 +75,11 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         self.release_topic = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
             event_id=event_id
         )
-        self.finalize_topic = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(
-            event_id=event_id
-        )
 
     async def _initialize_dependencies(self) -> None:
         """Initialize use cases from DI container."""
         self.reserve_seats_use_case = container.reserve_seats_use_case()
         self.release_seat_use_case = container.release_seat_use_case()
-        self.finalize_seat_payment_use_case = container.finalize_seat_payment_use_case()
 
     def _get_topic_handlers(
         self,
@@ -95,10 +93,6 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             self.release_topic: (
                 pb.BookingCancelledEvent,
                 self._handle_release,
-            ),
-            self.finalize_topic: (
-                pb.BookingPaidEvent,
-                self._handle_finalize,
             ),
         }
 
@@ -116,7 +110,17 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         return {'success': True}
 
     async def _handle_release(self, message: Dict) -> Dict:
-        """Handle seat release request (async)."""
+        """
+        Handle seat release request (async).
+
+        Flow (handled by ReleaseSeatUseCase):
+        1. Release seats in Kvrocks (RESERVED → AVAILABLE)
+        2. Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
+        3. Schedule stats broadcast via SSE
+        4. Publish booking update via SSE
+
+        Idempotency: Both Kvrocks release and DB update handle duplicate messages.
+        """
         seat_positions = message.get('seat_positions', [])
 
         if not seat_positions:
@@ -125,6 +129,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             raise ValueError(error_msg)
 
         booking_id = message.get('booking_id', 'unknown')
+        buyer_id = message.get('buyer_id', 0)
         event_id = message.get('event_id', self.event_id)
         section = message.get('section', '')
         subsection = message.get('subsection', 0)
@@ -133,7 +138,10 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             f'[RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats for booking={booking_id}'
         )
 
+        # Use case handles: Kvrocks release + PostgreSQL update + SSE broadcast
         batch_request = ReleaseSeatsBatchRequest(
+            booking_id=booking_id,
+            buyer_id=buyer_id,
             seat_positions=seat_positions,
             event_id=event_id,
             section=section,
@@ -146,46 +154,6 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             'released_seats': result.successful_seats,
             'failed_seats': result.failed_seats,
             'total_released': result.total_released,
-        }
-
-    async def _handle_finalize(self, message: Dict) -> Dict:
-        """Handle payment finalization request (async)."""
-        seat_positions = message.get('seat_positions', [])
-
-        if not seat_positions:
-            error_msg = 'Missing seat_positions'
-            Logger.base.error(f'[FINALIZE] {error_msg}')
-            raise ValueError(error_msg)
-
-        booking_id = message.get('booking_id', 'unknown')
-        event_id = message.get('event_id', self.event_id)
-        section = message.get('section', '')
-        subsection = message.get('subsection', 0)
-        successful_seats = []
-        failed_seats = []
-
-        for seat_position in seat_positions:
-            request = FinalizeSeatPaymentRequest(
-                seat_position=seat_position,
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-            )
-            result = await self.finalize_seat_payment_use_case.execute(request)
-            if result.success:
-                successful_seats.append(seat_position)
-            else:
-                failed_seats.append(seat_position)
-
-        Logger.base.info(
-            f'[FINALIZE-{self.instance_id}] booking_id={booking_id} '
-            f'success={len(successful_seats)}, failed={len(failed_seats)}'
-        )
-
-        return {
-            'success': len(failed_seats) == 0,
-            'successful_seats': successful_seats,
-            'failed_seats': failed_seats,
         }
 
     # ========== Reservation Logic ==========

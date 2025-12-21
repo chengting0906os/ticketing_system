@@ -4,27 +4,21 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 """
 
 from dependency_injector import containers, providers
-from src.service.reservation.app.command.finalize_seat_payment_use_case import (
-    FinalizeSeatPaymentUseCase,
-)
 from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
 from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
-from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_release_executor import (
+    AtomicReleaseExecutor,
+)
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
-)
-from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer import (
-    PaymentFinalizer,
-)
-from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
-    ReleaseExecutor,
 )
 from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
-from src.service.reservation.driven_adapter.seat_state_command_handler_impl import (
+from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
     SeatStateCommandHandlerImpl,
 )
-from src.service.reservation.driven_adapter.seat_state_query_handler_impl import (
+from src.service.reservation.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
 
@@ -125,17 +119,20 @@ class Container(containers.DeclarativeContainer):
     # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler
     booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)
 
-    # Seat Reservation Executors (stateless, can be Factory or Singleton)
-    atomic_reservation_executor = providers.Singleton(AtomicReservationExecutor)
-    release_executor = providers.Singleton(ReleaseExecutor)
-    payment_finalizer = providers.Singleton(PaymentFinalizer)
+    # Seat Reservation Executors (with idempotency via booking_metadata_handler)
+    atomic_reservation_executor = providers.Singleton(
+        AtomicReservationExecutor,
+        booking_metadata_handler=booking_metadata_handler,
+    )
+    atomic_release_executor = providers.Singleton(
+        AtomicReleaseExecutor,
+        booking_metadata_handler=booking_metadata_handler,
+    )
 
     seat_state_command_handler = providers.Singleton(
         SeatStateCommandHandlerImpl,
-        booking_metadata_handler=booking_metadata_handler,
         reservation_executor=atomic_reservation_executor,
-        release_executor=release_executor,
-        payment_finalizer=payment_finalizer,
+        release_executor=atomic_release_executor,
     )
 
     # Ticketing Service - Init State Handler
@@ -163,10 +160,8 @@ class Container(containers.DeclarativeContainer):
     release_seat_use_case = providers.Singleton(
         ReleaseSeatUseCase,
         seat_state_handler=seat_state_command_handler,
-    )
-    finalize_seat_payment_use_case = providers.Singleton(
-        FinalizeSeatPaymentUseCase,
-        seat_state_handler=seat_state_command_handler,
+        booking_command_repo=reservation_booking_command_repo,
+        pubsub_handler=pubsub_handler,
     )
 
 

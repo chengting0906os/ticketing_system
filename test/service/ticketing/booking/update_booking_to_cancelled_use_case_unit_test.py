@@ -3,8 +3,11 @@ Unit tests for UpdateBookingToCancelledUseCase
 
 Test Focus:
 1. Domain validation: Only PROCESSING/PENDING_PAYMENT bookings can be cancelled
-2. Event emission: BookingCancelledEvent is sent after cancellation to release seats
-3. Fail Fast: booking not found, permission denied, invalid status
+2. Event emission: BookingCancelledEvent is sent to trigger seat release in Reservation Service
+3. Fail Fast: booking not found, permission denied, invalid status (including already cancelled)
+
+Note: DB update is now handled by Reservation Service after receiving BookingCancelledEvent.
+This use case only validates and publishes the event.
 """
 
 from datetime import datetime, timezone
@@ -47,25 +50,24 @@ class TestUpdateBookingToCancelled:
         return AsyncMock()
 
     @pytest.mark.asyncio
-    async def test_successfully_cancel_pending_payment_booking(
+    async def test_successfully_request_cancellation(
         self,
         pending_payment_booking: Booking,
         mock_booking_repo: Mock,
         mock_event_publisher: Mock,
     ) -> None:
         """
-        Core test: Successfully cancel pending payment booking
+        Core test: Successfully request booking cancellation
 
         Given: Booking with PENDING_PAYMENT status
         When: Buyer executes cancellation
         Then:
-          - Booking status changes to CANCELLED
-          - BookingCancelledEvent is sent with seat_positions
+          - BookingCancelledEvent is published to Kafka
+          - Returns booking with CANCELLED status (pending async update)
+          - DB is NOT updated directly (handled by Reservation Service)
         """
         # Arrange
-        cancelled_booking = pending_payment_booking.cancel()
         mock_booking_repo.get_by_id = AsyncMock(return_value=pending_payment_booking)
-        mock_booking_repo.update_status_to_cancelled = AsyncMock(return_value=cancelled_booking)
 
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=mock_booking_repo,
@@ -81,7 +83,7 @@ class TestUpdateBookingToCancelled:
         assert result.status == BookingStatus.CANCELLED
         assert result.id == UUID('00000000-0000-0000-0000-00000000000a')
 
-        # Verify event was sent
+        # Verify event was published (not DB update)
         mock_event_publisher.publish_booking_cancelled.assert_called_once()
         call_args = mock_event_publisher.publish_booking_cancelled.call_args
         event = call_args.kwargs['event']
@@ -89,6 +91,12 @@ class TestUpdateBookingToCancelled:
         assert event.buyer_id == 2
         assert event.event_id == 1
         assert event.seat_positions == ['1-1', '1-2']
+
+        # Verify DB update was NOT called (moved to Reservation Service)
+        assert (
+            not hasattr(mock_booking_repo, 'update_status_to_cancelled')
+            or not mock_booking_repo.update_status_to_cancelled.called
+        )
 
     @pytest.mark.asyncio
     async def test_fail_when_booking_not_found(
@@ -147,7 +155,7 @@ class TestUpdateBookingToCancelled:
 
         Given: Booking with COMPLETED status
         When: Execute cancellation
-        Then: Raises DomainError
+        Then: Raises DomainError (returns 400 per spec)
         """
         # Arrange
         completed_booking = Booking(
@@ -171,7 +179,7 @@ class TestUpdateBookingToCancelled:
         )
 
         # Act & Assert
-        with pytest.raises(DomainError, match='Cannot cancel completed booking'):
+        with pytest.raises(DomainError, match='Cannot cancel a completed booking'):
             await use_case.execute(
                 booking_id=UUID('00000000-0000-0000-0000-00000000000b'), buyer_id=2
             )
@@ -184,8 +192,8 @@ class TestUpdateBookingToCancelled:
         Domain validation: Already cancelled bookings cannot be cancelled again
 
         Given: Booking with CANCELLED status
-        When: Execute cancellation
-        Then: Raises DomainError
+        When: Execute cancellation again
+        Then: Raises DomainError (returns 400)
         """
         # Arrange
         cancelled_booking = Booking(
@@ -208,7 +216,7 @@ class TestUpdateBookingToCancelled:
         )
 
         # Act & Assert
-        with pytest.raises(DomainError, match='Booking already cancelled'):
+        with pytest.raises(DomainError, match='Booking is already cancelled'):
             await use_case.execute(
                 booking_id=UUID('00000000-0000-0000-0000-00000000000c'), buyer_id=2
             )
@@ -225,9 +233,7 @@ class TestUpdateBookingToCancelled:
         Then: Event's seat_positions equals booking.seat_positions
         """
         # Arrange
-        cancelled_booking = pending_payment_booking.cancel()
         mock_booking_repo.get_by_id = AsyncMock(return_value=pending_payment_booking)
-        mock_booking_repo.update_status_to_cancelled = AsyncMock(return_value=cancelled_booking)
 
         use_case = UpdateBookingToCancelledUseCase(
             booking_command_repo=mock_booking_repo,

@@ -1,5 +1,5 @@
 import pytest
-from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
 )
 

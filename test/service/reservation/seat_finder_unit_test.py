@@ -5,7 +5,7 @@ Tests consecutive seat finding logic using bitfield operations.
 """
 
 import pytest
-from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
+from src.service.reservation.driven_adapter.state.reservation_helper.seat_finder import (
     SeatFinder,
 )
 

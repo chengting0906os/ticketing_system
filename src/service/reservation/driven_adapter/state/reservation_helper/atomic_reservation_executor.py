@@ -1,10 +1,16 @@
+"""
+Atomic Reservation Executor
+
+Handles atomic seat reservation with idempotency control via booking metadata.
+"""
+
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Dict, List, cast
 
 from opentelemetry import trace
 import orjson
 from redis.asyncio import Redis
-from src.service.reservation.driven_adapter.reservation_helper.key_str_generator import (
+from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
     make_booking_key,
     make_event_state_key,
     make_seats_bf_key,
@@ -16,9 +22,111 @@ from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
+from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
+    IBookingMetadataHandler,
+)
 
 
 class AtomicReservationExecutor:
+    """
+    Atomic Reservation Executor - Kvrocks seat reservation with idempotency
+
+    Flow:
+    1. Check booking metadata status (idempotency)
+    2. If already RESERVE_SUCCESS, return cached result (no-op)
+    3. If not, find/verify seats and reserve in Kvrocks (atomic via pipeline)
+    4. Update booking metadata to RESERVE_SUCCESS
+
+    Status Flow (Kvrocks metadata):
+    - PENDING_RESERVATION → RESERVE_SUCCESS (after successful reservation)
+    - PENDING_RESERVATION → RESERVE_FAILED (if reservation fails)
+
+    Note: Uses MULTI/EXEC pipeline for atomicity
+    """
+
+    def __init__(self, *, booking_metadata_handler: IBookingMetadataHandler) -> None:
+        self.booking_metadata_handler = booking_metadata_handler
+        self.tracer = trace.get_tracer(__name__)
+
+    @staticmethod
+    def _error_result(error_message: str) -> Dict:
+        """Create error result"""
+        return {
+            'success': False,
+            'reserved_seats': [],
+            'total_price': 0,
+            'subsection_stats': {},
+            'event_stats': {},
+            'error_message': error_message,
+        }
+
+    async def check_reservation_status(self, *, booking_id: str) -> Dict | None:
+        """
+        Check booking status for reservation idempotency.
+
+        Returns:
+            - None: Not yet reserved (PENDING_RESERVATION or no metadata), proceed with reservation
+            - Dict with success=True: Already RESERVE_SUCCESS, return cached result
+            - Dict with success=False: Already RESERVE_FAILED, return error
+        """
+        metadata = await self.booking_metadata_handler.get_booking_metadata(booking_id=booking_id)
+
+        if not metadata:
+            # No metadata found - this shouldn't happen in normal flow
+            # (Ticketing Service should create it first)
+            Logger.base.warning(
+                f'⚠️ [IDEMPOTENCY] No metadata found for booking {booking_id}, proceeding anyway'
+            )
+            return None
+
+        status = metadata.get('status')
+
+        if status == 'RESERVE_SUCCESS':
+            # Already successfully reserved
+            Logger.base.info(
+                f'✅ [IDEMPOTENCY] Booking {booking_id} already RESERVE_SUCCESS - returning cached result'
+            )
+
+            reserved_seats = orjson.loads(metadata.get('reserved_seats', '[]'))
+            total_price = int(metadata.get('total_price', 0))
+            subsection_stats = orjson.loads(metadata.get('subsection_stats', '{}'))
+            event_stats = orjson.loads(metadata.get('event_stats', '{}'))
+
+            return {
+                'success': True,
+                'reserved_seats': reserved_seats,
+                'total_price': total_price,
+                'subsection_stats': subsection_stats,
+                'event_stats': event_stats,
+                'error_message': None,
+            }
+
+        elif status == 'RESERVE_FAILED':
+            # Already failed
+            error_msg = metadata.get('error_message', 'Reservation previously failed')
+            Logger.base.warning(
+                f'⚠️ [IDEMPOTENCY] Booking {booking_id} already RESERVE_FAILED: {error_msg}'
+            )
+            return self._error_result(error_msg)
+
+        elif status == 'PENDING_RESERVATION':
+            # Initial state - proceed with reservation
+            return None
+
+        else:
+            # Unknown status - log warning but proceed anyway
+            Logger.base.warning(
+                f'⚠️ [IDEMPOTENCY] Unknown status {status} for booking {booking_id}, proceeding'
+            )
+            return None
+
+    async def _save_reservation_failure(self, *, booking_id: str, error_message: str) -> None:
+        """Save failed reservation to metadata"""
+        await self.booking_metadata_handler.update_booking_status(
+            booking_id=booking_id, status='RESERVE_FAILED', error_message=error_message
+        )
+        Logger.base.warning(f'❌ [STATUS] Updated booking {booking_id} to RESERVE_FAILED')
+
     @staticmethod
     def _extract_subsection_stats(event_state: Dict[str, Any], section_id: str) -> Dict[str, int]:
         """
@@ -278,9 +386,14 @@ class AtomicReservationExecutor:
                 'booking.id': booking_id,
             },
         ):
+            # ========== STEP 0: Idempotency check ==========
+            existing = await self.check_reservation_status(booking_id=booking_id)
+            if existing:
+                return existing
+
             client = kvrocks_client.get_client()
 
-            # ========== STEP 0: Fetch config if missing (cache miss upstream) ==========
+            # ========== STEP 2: Fetch config if missing (cache miss upstream) ==========
             # Query PostgreSQL to distribute load (instead of Kvrocks)
             if rows == 0 or cols == 0:
                 pool = await get_asyncpg_pool()
@@ -301,7 +414,7 @@ class AtomicReservationExecutor:
                                         break
                                 break
 
-            # ========== STEP 1: Find consecutive seats ==========
+            # ========== STEP 3: Find consecutive seats ==========
             # Config passed via ARGV (avoids Kvrocks fetch in Lua)
             lua_result = await lua_script_executor.find_consecutive_seats(
                 client=client,
@@ -310,27 +423,21 @@ class AtomicReservationExecutor:
             )
 
             if lua_result is None:
-                return {
-                    'success': False,
-                    'reserved_seats': [],
-                    'total_price': 0,
-                    'subsection_stats': {},
-                    'event_stats': {},
-                    'event_state': {},
-                    'error_message': f'No {quantity} consecutive seats available',
-                }
+                error_msg = f'No {quantity} consecutive seats available'
+                await self._save_reservation_failure(booking_id=booking_id, error_message=error_msg)
+                return self._error_result(error_msg)
 
             # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...], "rows": 25, "cols": 20, "price": 0}
             lua_data = orjson.loads(lua_result)
             found_seats = lua_data['seats']
 
-            # ========== STEP 2: Convert to reservation format ==========
+            # ========== STEP 4: Convert to reservation format ==========
             seats_to_reserve = [
                 (row, seat_num, seat_index, f'{row}-{seat_num}')
                 for row, seat_num, seat_index in found_seats
             ]
 
-            # ========== STEP 3: Execute atomic reservation ==========
+            # ========== STEP 5: Execute atomic reservation ==========
             return await self.execute_atomic_reservation(
                 event_id=event_id,
                 section_id=section_id,
@@ -365,6 +472,11 @@ class AtomicReservationExecutor:
                 'booking.id': booking_id,
             },
         ):
+            # ========== STEP 0: Idempotency check ==========
+            existing = await self.check_reservation_status(booking_id=booking_id)
+            if existing:
+                return existing
+
             client = kvrocks_client.get_client()
             event_state_key = make_event_state_key(event_id=event_id)
 
@@ -380,26 +492,13 @@ class AtomicReservationExecutor:
                 # Parse Lua error format: "SEAT_UNAVAILABLE: Seat 1-5 is already RESERVED"
                 if ':' in error_msg:
                     error_msg = error_msg.split(':', 1)[1].strip()
-                return {
-                    'success': False,
-                    'reserved_seats': [],
-                    'total_price': 0,
-                    'subsection_stats': {},
-                    'event_stats': {},
-                    'event_state': {},
-                    'error_message': error_msg,
-                }
+                await self._save_reservation_failure(booking_id=booking_id, error_message=error_msg)
+                return self._error_result(error_msg)
 
             if lua_result is None:
-                return {
-                    'success': False,
-                    'reserved_seats': [],
-                    'total_price': 0,
-                    'subsection_stats': {},
-                    'event_stats': {},
-                    'event_state': {},
-                    'error_message': 'Lua verification returned no data',
-                }
+                error_msg = 'Lua verification returned no data'
+                await self._save_reservation_failure(booking_id=booking_id, error_message=error_msg)
+                return self._error_result(error_msg)
 
             # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
             lua_data = orjson.loads(lua_result)

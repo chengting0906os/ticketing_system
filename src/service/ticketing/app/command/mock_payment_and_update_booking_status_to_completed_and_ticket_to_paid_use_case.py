@@ -1,6 +1,5 @@
 import random
 import string
-from datetime import datetime, timezone
 from typing import Any, Self
 
 from dependency_injector.wiring import Provide, inject
@@ -11,8 +10,6 @@ from src.platform.config.di import Container
 from src.platform.exception.exceptions import DomainError, ForbiddenError, NotFoundError
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
-from src.service.ticketing.app.interface.i_booking_event_publisher import IBookingEventPublisher
-from src.service.ticketing.domain.domain_event.booking_domain_event import BookingPaidEvent
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 
 
@@ -23,10 +20,8 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         self,
         *,
         booking_command_repo: IBookingCommandRepo,
-        event_publisher: IBookingEventPublisher,
     ) -> None:
         self.booking_command_repo = booking_command_repo
-        self.event_publisher = event_publisher
 
     @classmethod
     @inject
@@ -35,11 +30,8 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
         booking_command_repo: IBookingCommandRepo = Depends(
             Provide[Container.booking_command_repo]
         ),
-        event_publisher: IBookingEventPublisher = Depends(
-            Provide[Container.booking_event_publisher]
-        ),
     ) -> Self:
-        return cls(booking_command_repo=booking_command_repo, event_publisher=event_publisher)
+        return cls(booking_command_repo=booking_command_repo)
 
     @Logger.io
     async def pay_booking(
@@ -67,20 +59,8 @@ class MockPaymentAndUpdateBookingStatusToCompletedAndTicketToPaidUseCase:
             )
         )
 
-        assert booking.seat_positions, 'Booking to pay must have seat_positions'
-
-        await self.event_publisher.publish_booking_paid(
-            event=BookingPaidEvent(
-                booking_id=booking_id,
-                buyer_id=buyer_id,
-                event_id=booking.event_id,
-                section=booking.section,
-                subsection=booking.subsection,
-                seat_positions=booking.seat_positions,
-                paid_at=updated_booking.paid_at or datetime.now(timezone.utc),
-                total_amount=float(sum(ticket.price for ticket in tickets)),
-            )
-        )
+        # Note: No Kafka event needed - Kvrocks only tracks AVAILABLE/RESERVED states
+        # PostgreSQL is the source of truth for SOLD/COMPLETED status
 
         payment_id = (
             f'PAY_MOCK_{"".join(random.choices(string.ascii_uppercase + string.digits, k=8))}'

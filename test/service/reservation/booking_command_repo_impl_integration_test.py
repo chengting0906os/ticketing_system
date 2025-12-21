@@ -1,355 +1,288 @@
 """
-Integration test for Reservation Service PostgreSQL booking operations
+Integration tests for Reservation Service's BookingCommandRepoImpl
 
-Tests the PostgreSQL write operations that Reservation Service now handles:
-1. complete_booking_and_mark_tickets_sold_atomically - Payment finalization
-2. update_status_to_cancelled - Booking cancellation
-3. get_by_id - Booking query
-4. get_tickets_by_booking_id - Ticket query
+Tests the PostgreSQL operations for booking creation and ticket management.
 """
 
-from collections.abc import AsyncGenerator
 from typing import Any
 
+from fastapi.testclient import TestClient
 import pytest
 import uuid_utils as uuid
+from uuid_utils import UUID
 
-from src.platform.database.asyncpg_setting import get_asyncpg_pool
+from src.platform.constant.route_constant import EVENT_BASE
+from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )
-from src.service.ticketing.domain.entity.booking_entity import BookingStatus
-from src.service.ticketing.domain.enum.ticket_status import TicketStatus
+from test.bdd_conftest.shared_step_utils import create_user, login_user
+from test.constants import DEFAULT_PASSWORD, TEST_SELLER_EMAIL, TEST_SELLER_NAME
 
 
-@pytest.fixture
-async def booking_repo() -> BookingCommandRepoImpl:
-    """Create booking repository instance"""
-    return BookingCommandRepoImpl()
+@pytest.mark.integration
+class TestCreateBookingWithTicketsDirectly:
+    """Test create_booking_and_update_tickets_to_reserved with real database"""
 
+    @pytest.fixture
+    def repo(self) -> BookingCommandRepoImpl:
+        """Repository instance"""
+        return BookingCommandRepoImpl()
 
-@pytest.fixture
-async def test_event_with_tickets() -> AsyncGenerator[None, None]:
-    pool = await get_asyncpg_pool()
-    async with pool.acquire() as conn:
-        # Create test user for foreign key constraint
-        user_id = await conn.fetchval(
-            """
-            INSERT INTO "user" (name, email, hashed_password, role, is_active, is_superuser, is_verified)
-            VALUES ('Test Seller', 'test_booking_seller@example.com', 'hashed_password', 'seller', true, false, true)
-            ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-            RETURNING id
-            """
+    @pytest.fixture
+    def booking_id(self) -> UUID:
+        """Generate unique booking ID for each test"""
+        return uuid.uuid7()
+
+    @pytest.fixture
+    def test_event_with_tickets(self, client: TestClient) -> dict[str, int]:
+        # Create seller user
+        create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
+        login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+        # Create event with seating config (automatically creates tickets)
+        seating_config = {
+            'rows': 3,
+            'cols': 10,
+            'sections': [
+                {
+                    'name': 'A',
+                    'price': 1500,
+                    'subsections': 1,
+                }
+            ],
+        }
+        response = client.post(
+            EVENT_BASE,
+            json={
+                'name': 'Test Event for Repo Integration',
+                'description': 'Testing repository idempotency',
+                'venue_name': 'Test Venue',
+                'seating_config': seating_config,
+                'is_active': True,
+            },
         )
+        assert response.status_code == 201
+        event_data = response.json()
 
-        # Create test event with event_id=1
-        await conn.execute(
-            """
-            INSERT INTO event (id, name, description, seller_id, is_active, status, venue_name, seating_config)
-            VALUES (1, 'Test Event', 'Test Description', $1, true, 'available', 'Test Venue', '{}')
-            ON CONFLICT (id) DO NOTHING
-            """,
-            user_id,
-        )
+        return {'event_id': event_data['id'], 'total_seats': 30, 'ticket_price': 1500}
 
-        # Create test tickets in section TEST, subsection 1
-        for row in range(1, 7):  # Rows 1-6
-            for seat in range(1, 5):  # Seats 1-4
-                await conn.execute(
-                    """
-                    INSERT INTO ticket (event_id, section, subsection, row_number, seat_number, price, status)
-                    VALUES (1, 'TEST', 1, $1, $2, 1000, 'available')
-                    ON CONFLICT (event_id, section, subsection, row_number, seat_number) DO NOTHING
-                    """,
-                    row,
-                    seat,
-                )
-
-    yield
-
-    # Cleanup
-    async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM booking WHERE section = 'TEST' AND event_id = 1")
-        await conn.execute("DELETE FROM ticket WHERE section = 'TEST' AND event_id = 1")
-        await conn.execute('DELETE FROM event WHERE id = 1')
-
-
-class TestBookingPostgreSQLOperations:
-    @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_create_booking_with_tickets_then_complete_payment(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
+    async def test_idempotency_returns_existing_booking_when_duplicate(
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
     ) -> None:
-        # Given: Create a booking with tickets (test event has tickets 1-1 through 6-4)
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'manual'
-        reserved_seats = ['1-1', '1-2', '1-3']
-        total_price = 3000
-
-        result = await booking_repo.create_booking_and_update_tickets_to_reserved(
+        """
+        Idempotency: Duplicate Kafka events should return existing booking.
+        """
+        # Given: Create initial booking
+        first_result = await repo.create_booking_and_update_tickets_to_reserved(
             booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            reserved_seats=reserved_seats,
-            total_price=total_price,
+            buyer_id=2,
+            event_id=test_event_with_tickets['event_id'],
+            section='A',
+            subsection=1,
+            seat_selection_mode='manual',
+            reserved_seats=['1-1', '1-2'],
+            total_price=3000,
         )
 
-        # Verify booking created with PENDING_PAYMENT status
+        first_booking = first_result['booking']
+        first_tickets = first_result['tickets']
+
+        assert first_booking.id == booking_id
+        assert first_booking.status == BookingStatus.PENDING_PAYMENT
+        assert len(first_tickets) == 2
+
+        # When: Call again with same booking_id (simulating duplicate Kafka event)
+        second_result = await repo.create_booking_and_update_tickets_to_reserved(
+            booking_id=booking_id,  # Same ID!
+            buyer_id=2,
+            event_id=test_event_with_tickets['event_id'],
+            section='A',
+            subsection=1,
+            seat_selection_mode='manual',
+            reserved_seats=['1-1', '1-2'],
+            total_price=3000,
+        )
+
+        second_booking = second_result['booking']
+        second_tickets = second_result['tickets']
+
+        # Then: Should return existing booking (idempotent behavior)
+        assert second_booking.id == first_booking.id
+        assert second_booking.status == BookingStatus.PENDING_PAYMENT
+        assert second_booking.total_price == 3000
+        assert second_booking.created_at == first_booking.created_at  # Same timestamp!
+
+        # Then: Should return same tickets
+        assert len(second_tickets) == 2
+        assert {t.id for t in second_tickets} == {t.id for t in first_tickets}
+
+    @pytest.mark.asyncio
+    async def test_creates_booking_and_updates_tickets_atomically(
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
+    ) -> None:
+        """
+        Atomicity: Booking creation and ticket update happen in single transaction.
+        """
+        # When: Create booking with tickets
+        result = await repo.create_booking_and_update_tickets_to_reserved(
+            booking_id=booking_id,
+            buyer_id=2,
+            event_id=test_event_with_tickets['event_id'],
+            section='A',
+            subsection=1,
+            seat_selection_mode='manual',
+            reserved_seats=['1-1', '1-2', '1-3'],
+            total_price=4500,
+        )
+
         booking = result['booking']
         tickets = result['tickets']
+
+        # Then: Booking created correctly
         assert booking.id == booking_id
+        assert booking.buyer_id == 2
+        assert booking.event_id == test_event_with_tickets['event_id']
+        assert booking.section == 'A'
+        assert booking.subsection == 1
+        assert booking.quantity == 3
+        assert booking.total_price == 4500
         assert booking.status == BookingStatus.PENDING_PAYMENT
-        assert booking.buyer_id == buyer_id
-        assert booking.total_price == total_price
+        assert booking.seat_positions == ['1-1', '1-2', '1-3']
+        assert booking.seat_selection_mode == 'manual'
+        assert booking.created_at is not None
+        assert booking.updated_at is not None
+        assert booking.paid_at is None
+
+        # Then: Tickets updated correctly
         assert len(tickets) == 3
-
-        # Verify tickets created with RESERVED status
-        ticket_ids = [ticket.id for ticket in tickets]
         for ticket in tickets:
-            assert ticket.status == TicketStatus.RESERVED
-            assert ticket.buyer_id == buyer_id
+            assert ticket.buyer_id == 2
+            assert ticket.status.value == 'reserved'
+            assert ticket.reserved_at is not None
+            assert ticket.price == 1500
 
-        # When: Complete payment
-        updated_booking = await booking_repo.complete_booking_and_mark_tickets_sold_atomically(
+    @pytest.mark.asyncio
+    async def test_returns_dict_with_booking_and_tickets(
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
+    ) -> None:
+        """
+        Return format: Dict with 'booking' and 'tickets' keys.
+        """
+        # When
+        result = await repo.create_booking_and_update_tickets_to_reserved(
             booking_id=booking_id,
-            ticket_ids=ticket_ids,
+            buyer_id=2,
+            event_id=test_event_with_tickets['event_id'],
+            section='A',
+            subsection=1,
+            seat_selection_mode='manual',
+            reserved_seats=['1-1'],
+            total_price=1500,
         )
 
-        # Then: Booking status updated to COMPLETED
-        assert updated_booking.status == BookingStatus.COMPLETED
-        assert updated_booking.paid_at is not None
+        # Then: Returns dict with correct keys
+        assert isinstance(result, dict)
+        assert 'booking' in result
+        assert 'tickets' in result
+        assert result['booking'] is not None
+        assert isinstance(result['tickets'], list)
 
-        # Verify tickets updated to SOLD
-        tickets_after_payment = await booking_repo.get_tickets_by_booking_id(booking_id=booking_id)
-        for ticket in tickets_after_payment:
-            assert ticket.status == TicketStatus.SOLD
 
-    @pytest.mark.integration
+@pytest.mark.integration
+class TestUpdateStatusToCancelledAndReleaseTickets:
+    """Test update_status_to_cancelled_and_release_tickets with idempotency"""
+
+    @pytest.fixture
+    def repo(self) -> BookingCommandRepoImpl:
+        return BookingCommandRepoImpl()
+
+    @pytest.fixture
+    def booking_id(self) -> UUID:
+        return uuid.uuid7()
+
+    @pytest.fixture
+    def test_event_with_tickets(self, client: TestClient) -> dict[str, int]:
+        create_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD, TEST_SELLER_NAME, 'seller')
+        login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+
+        seating_config = {
+            'rows': 3,
+            'cols': 10,
+            'sections': [{'name': 'A', 'price': 1500, 'subsections': 1}],
+        }
+        response = client.post(
+            EVENT_BASE,
+            json={
+                'name': 'Test Event for Cancel',
+                'description': 'Testing cancellation',
+                'venue_name': 'Test Venue',
+                'seating_config': seating_config,
+                'is_active': True,
+            },
+        )
+        assert response.status_code == 201
+        return {'event_id': response.json()['id']}
+
     @pytest.mark.asyncio
-    async def test_create_booking_then_cancel(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
+    async def test_idempotent_cancellation(
+        self,
+        repo: BookingCommandRepoImpl,
+        booking_id: UUID,
+        test_event_with_tickets: dict[str, Any],
     ) -> None:
-        """Test creating booking then cancelling it"""
-        # Given: Create a booking with tickets
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'manual'
-        reserved_seats = ['2-1', '2-2']
-        total_price = 2000
-
-        result = await booking_repo.create_booking_and_update_tickets_to_reserved(
+        """
+        Idempotency: Duplicate cancellation events should be no-op.
+        """
+        # Given: Create and then cancel a booking
+        await repo.create_booking_and_update_tickets_to_reserved(
             booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            reserved_seats=reserved_seats,
-            total_price=total_price,
+            buyer_id=2,
+            event_id=test_event_with_tickets['event_id'],
+            section='A',
+            subsection=1,
+            seat_selection_mode='manual',
+            reserved_seats=['1-1', '1-2'],
+            total_price=3000,
         )
 
-        booking = result['booking']
-        assert booking.status == BookingStatus.PENDING_PAYMENT
+        # When: Cancel first time
+        first_result = await repo.update_status_to_cancelled_and_release_tickets(
+            booking_id=booking_id
+        )
+        assert first_result is not None
+        assert first_result.status == BookingStatus.CANCELLED
 
-        # When: Cancel booking
-        cancelled_booking = await booking_repo.update_status_to_cancelled(booking_id=booking_id)
-
-        # Then: Booking status updated to CANCELLED
-        assert cancelled_booking.status == BookingStatus.CANCELLED
-        assert cancelled_booking.paid_at is None
-
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_create_failed_booking(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
-    ) -> None:
-        """Test creating a failed booking (no tickets reserved)"""
-        # Given: Failed reservation parameters (using non-existent seats)
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'manual'
-        seat_positions = ['99-99', '99-98']  # Non-existent seats
-        quantity = 2
-
-        # When: Create failed booking
-        failed_booking = await booking_repo.create_failed_booking_directly(
-            booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            seat_positions=seat_positions,
-            quantity=quantity,
+        # When: Cancel again (duplicate event)
+        second_result = await repo.update_status_to_cancelled_and_release_tickets(
+            booking_id=booking_id
         )
 
-        # Then: Booking created with FAILED status
-        assert failed_booking.status == BookingStatus.FAILED
-        assert failed_booking.id == booking_id
-        assert failed_booking.buyer_id == buyer_id
-        assert failed_booking.seat_positions == seat_positions  # Requested seats recorded
+        # Then: Should return existing cancelled booking without error
+        assert second_result is not None
+        assert second_result.status == BookingStatus.CANCELLED
+        assert second_result.id == first_result.id
 
-        # Verify no actual tickets reserved (since seats don't exist)
-        tickets = await booking_repo.get_tickets_by_booking_id(booking_id=booking_id)
-        assert len(tickets) == 0  # Non-existent seats = no tickets found
-
-    @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_get_booking_by_id(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
+    async def test_returns_none_for_nonexistent_booking(
+        self,
+        repo: BookingCommandRepoImpl,
     ) -> None:
-        # Given: Create a booking
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'best_available'
-        reserved_seats = ['4-1']
-        total_price = 1000
-
-        await booking_repo.create_booking_and_update_tickets_to_reserved(
-            booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            reserved_seats=reserved_seats,
-            total_price=total_price,
+        """
+        Non-existent booking: Returns None instead of raising error.
+        """
+        nonexistent_id = uuid.uuid7()
+        result = await repo.update_status_to_cancelled_and_release_tickets(
+            booking_id=nonexistent_id
         )
-
-        # When: Query by ID
-        queried_booking = await booking_repo.get_by_id(booking_id=booking_id)
-
-        # Then: Booking found and matches
-        assert queried_booking is not None
-        assert queried_booking.id == booking_id
-        assert queried_booking.buyer_id == buyer_id
-        assert queried_booking.event_id == event_id
-        assert queried_booking.status == BookingStatus.PENDING_PAYMENT
-
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_get_booking_by_id_not_found(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
-    ) -> None:
-        # Given: Non-existent booking ID
-        non_existent_id = uuid.uuid7()
-
-        # When: Query by ID
-        result = await booking_repo.get_by_id(booking_id=non_existent_id)
-
-        # Then: Returns None
         assert result is None
-
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_get_tickets_by_booking_id(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
-    ) -> None:
-        # Given: Create a booking with multiple tickets
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'manual'
-        reserved_seats = ['5-1', '5-2', '5-3', '5-4']
-        total_price = 4000
-
-        await booking_repo.create_booking_and_update_tickets_to_reserved(
-            booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            reserved_seats=reserved_seats,
-            total_price=total_price,
-        )
-
-        # When: Query tickets by booking ID
-        tickets = await booking_repo.get_tickets_by_booking_id(booking_id=booking_id)
-
-        # Then: All tickets returned
-        assert len(tickets) == 4
-        for ticket in tickets:
-            assert ticket.buyer_id == buyer_id
-            assert ticket.status == TicketStatus.RESERVED
-            assert ticket.section == section
-            assert ticket.subsection == subsection
-
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_complete_payment_atomicity(
-        self, booking_repo: BookingCommandRepoImpl, test_event_with_tickets: Any
-    ) -> None:
-        # Given: Create a booking with tickets
-        booking_id = uuid.uuid7()
-        buyer_id = 99999
-        event_id = 1  # Use existing event
-        section = 'TEST'
-        subsection = 1
-        seat_selection_mode = 'manual'
-        reserved_seats = ['6-1', '6-2']
-        total_price = 2000
-
-        result = await booking_repo.create_booking_and_update_tickets_to_reserved(
-            booking_id=booking_id,
-            buyer_id=buyer_id,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-            seat_selection_mode=seat_selection_mode,
-            reserved_seats=reserved_seats,
-            total_price=total_price,
-        )
-
-        ticket_ids = [ticket.id for ticket in result['tickets']]
-
-        # When: Complete payment
-        updated_booking = await booking_repo.complete_booking_and_mark_tickets_sold_atomically(
-            booking_id=booking_id,
-            ticket_ids=ticket_ids,
-        )
-
-        # Then: Both booking and tickets updated atomically
-        # Query booking directly from DB
-        pool = await get_asyncpg_pool()
-        async with pool.acquire() as conn:
-            # Check booking status
-            booking_row = await conn.fetchrow(
-                'SELECT status, paid_at FROM booking WHERE id = $1',
-                updated_booking.id,
-            )
-            assert booking_row['status'] == BookingStatus.COMPLETED.value
-            assert booking_row['paid_at'] is not None
-
-            # Check all tickets status (use seat positions to find tickets)
-            ticket_rows = await conn.fetch(
-                """
-                SELECT status FROM ticket
-                WHERE event_id = $1 AND section = $2 AND subsection = $3
-                  AND buyer_id = $4 AND status = $5
-                """,
-                event_id,
-                section,
-                subsection,
-                buyer_id,
-                TicketStatus.SOLD.value,
-            )
-            assert len(ticket_rows) == 2

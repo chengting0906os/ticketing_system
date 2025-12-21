@@ -59,15 +59,18 @@ class ISeatStateCommandHandler(ABC):
     @abstractmethod
     async def release_seats(
         self,
+        *,
+        booking_id: str,
         seat_positions: List[str],
         event_id: int,
         section: str,
         subsection: int,
     ) -> Dict[str, bool]:
         """
-        Release seats (RESERVED -> AVAILABLE)
+        Release seats (RESERVED -> AVAILABLE) with idempotency control.
 
         Args:
+            booking_id: Booking ID (for idempotency)
             seat_positions: List of seat positions (format: "row-seat", e.g., "1-5")
             event_id: Event ID
             section: Section name (e.g., "A")
@@ -75,30 +78,9 @@ class ISeatStateCommandHandler(ABC):
 
         Returns:
             Dict mapping seat_position to success status
-        """
-        pass
 
-    @abstractmethod
-    async def finalize_payment(
-        self,
-        *,
-        seat_position: str,
-        event_id: int,
-        section: str,
-        subsection: int,
-    ) -> bool:
-        """
-        Complete payment, change seat from RESERVED to SOLD
-
-        Config (cols) is fetched from Kvrocks internally.
-
-        Args:
-            seat_position: Seat position (format: "row-seat", e.g., "1-5")
-            event_id: Event ID
-            section: Section name (e.g., "A")
-            subsection: Subsection number (e.g., 1)
-
-        Returns:
-            Success status
+        Note:
+            Uses booking metadata to ensure idempotency - if already released,
+            returns success without re-releasing (no-op).
         """
         pass

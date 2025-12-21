@@ -8,7 +8,7 @@ import os
 
 import pytest
 from redis.asyncio import Redis as AsyncRedis
-from src.service.reservation.driven_adapter.reservation_helper.seat_finder import (
+from src.service.reservation.driven_adapter.state.reservation_helper.seat_finder import (
     SeatFinder,
 )
 

@@ -13,7 +13,6 @@ from src.service.ticketing.app.interface.i_booking_event_publisher import IBooki
 from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
     BookingCreatedDomainEvent,
-    BookingPaidEvent,
 )
 
 
@@ -30,12 +29,6 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
         topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(event_id=event.event_id)
-        partition = self._calculate_partition(event.section, event.subsection)
-        await publish_domain_event(event=event, topic=topic, partition=partition)
-
-    @Logger.io
-    async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
-        topic = KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event.event_id)
         partition = self._calculate_partition(event.section, event.subsection)
         await publish_domain_event(event=event, topic=topic, partition=partition)
 

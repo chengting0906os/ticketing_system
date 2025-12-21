@@ -7,23 +7,14 @@ CQRS Command Side implementation for seat state management.
 from typing import Dict, List, Optional
 
 from opentelemetry import trace
-from src.service.reservation.driven_adapter.reservation_helper.atomic_reservation_executor import (
-    AtomicReservationExecutor,
-)
-from src.service.reservation.driven_adapter.reservation_helper.booking_status_manager import (
-    BookingStatusManager,
-)
-from src.service.reservation.driven_adapter.reservation_helper.payment_finalizer import (
-    PaymentFinalizer,
-)
-from src.service.reservation.driven_adapter.reservation_helper.release_executor import (
-    ReleaseExecutor,
-)
 
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.interface import ISeatStateCommandHandler
-from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
-    IBookingMetadataHandler,
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_release_executor import (
+    AtomicReleaseExecutor,
+)
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_reservation_executor import (
+    AtomicReservationExecutor,
 )
 
 
@@ -31,34 +22,26 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
     """
     Seat State Command Handler Implementation (CQRS Command)
 
-    Responsibility: Orchestrates seat reservation workflow using Lua scripts.
-    All config fetching happens in Lua for single source of truth.
+    Responsibility: Orchestrates seat reservation workflow.
+    Delegates to AtomicReservationExecutor and AtomicReleaseExecutor
+    which handle idempotency internally.
     """
 
     def __init__(
         self,
         *,
-        booking_metadata_handler: IBookingMetadataHandler,
         reservation_executor: AtomicReservationExecutor,
-        release_executor: ReleaseExecutor,
-        payment_finalizer: PaymentFinalizer,
+        release_executor: AtomicReleaseExecutor,
     ) -> None:
         """
         Initialize Seat State Command Handler.
 
         Args:
-            booking_metadata_handler: Required. Injected via DI container.
-            reservation_executor: Handles atomic seat reservation operations.
-            release_executor: Handles seat release operations.
-            payment_finalizer: Handles payment finalization operations.
+            reservation_executor: Handles atomic seat reservation with idempotency.
+            release_executor: Handles atomic seat release with idempotency.
         """
-        self.booking_metadata_handler = booking_metadata_handler
-        self.status_manager = BookingStatusManager(
-            booking_metadata_handler=booking_metadata_handler
-        )
         self.reservation_executor = reservation_executor
         self.release_executor = release_executor
-        self.payment_finalizer = payment_finalizer
         self.tracer = trace.get_tracer(__name__)
 
     # ========== Helper Methods ==========
@@ -139,41 +122,21 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
         subsection: int,
         seat_ids: List[str],
     ) -> Dict:
-        """Reserve specified seats - Manual Mode (Lua fetches config + validates)"""
+        """Reserve specified seats - Manual Mode (executor handles idempotency)"""
         with self.tracer.start_as_current_span(
             'seat_handler.reserve_manual',
             attributes={
                 'booking.id': booking_id,
             },
         ):
-            # Check idempotency first
-            existing = await self.status_manager.check_booking_status(booking_id=booking_id)
-            if existing:
-                return existing
-
-            try:
-                # Execute verify + reserve (Lua fetches config, generates bf_key internally)
-                result = await self.reservation_executor.execute_manual_reservation(
-                    event_id=event_id,
-                    section=section,
-                    subsection=subsection,
-                    booking_id=booking_id,
-                    seat_ids=seat_ids,
-                )
-
-                if not result['success']:
-                    await self.status_manager.save_reservation_failure(
-                        booking_id=booking_id, error_message=result['error_message']
-                    )
-
-                return result
-
-            except Exception as e:
-                error_msg = f'Reservation error: {str(e)}'
-                await self.status_manager.save_reservation_failure(
-                    booking_id=booking_id, error_message=error_msg
-                )
-                raise
+            # Delegate to executor (idempotency handled internally)
+            return await self.reservation_executor.execute_manual_reservation(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                booking_id=booking_id,
+                seat_ids=seat_ids,
+            )
 
     async def _reserve_best_available_seats(
         self,
@@ -199,69 +162,52 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
             if rows is None or cols is None or price is None:
                 return self._error_result('Missing config: rows, cols, price required')
 
-            # Check idempotency first
-            existing = await self.status_manager.check_booking_status(booking_id=booking_id)
-            if existing:
-                return existing
+            # Delegate to executor (idempotency handled internally)
+            return await self.reservation_executor.execute_find_and_reserve(
+                event_id=event_id,
+                section=section,
+                subsection=subsection,
+                booking_id=booking_id,
+                quantity=quantity,
+                rows=rows,
+                cols=cols,
+                price=price,
+            )
 
-            try:
-                # Execute find + reserve (config passed via ARGV to Lua script)
-                result = await self.reservation_executor.execute_find_and_reserve(
-                    event_id=event_id,
-                    section=section,
-                    subsection=subsection,
-                    booking_id=booking_id,
-                    quantity=quantity,
-                    rows=rows,
-                    cols=cols,
-                    price=price,
-                )
-
-                if not result['success']:
-                    await self.status_manager.save_reservation_failure(
-                        booking_id=booking_id, error_message=result['error_message']
-                    )
-
-                return result
-
-            except Exception as e:
-                error_msg = f'Reservation error: {str(e)}'
-                await self.status_manager.save_reservation_failure(
-                    booking_id=booking_id, error_message=error_msg
-                )
-                raise
-
-    # ========== Other Command Methods ==========
+    # ========== Release Methods ==========
 
     @Logger.io
     async def release_seats(
         self,
+        *,
+        booking_id: str,
         seat_positions: List[str],
         event_id: int,
         section: str,
         subsection: int,
     ) -> Dict[str, bool]:
-        """Release seats (RESERVED -> AVAILABLE)"""
-        return await self.release_executor.release_seats(
-            seat_positions=seat_positions,
-            event_id=event_id,
-            section=section,
-            subsection=subsection,
-        )
+        """
+        Release seats (RESERVED -> AVAILABLE) with idempotency control.
 
-    @Logger.io
-    async def finalize_payment(
-        self,
-        *,
-        seat_position: str,
-        event_id: int,
-        section: str,
-        subsection: int,
-    ) -> bool:
-        """Finalize payment (RESERVED -> SOLD)"""
-        return await self.payment_finalizer.finalize_seat_payment(
-            seat_position=seat_position,
+        Delegates to AtomicReleaseExecutor which:
+        1. Checks booking metadata for RELEASE_SUCCESS (idempotency)
+        2. Releases seats atomically via pipeline
+        3. Updates booking metadata to RELEASE_SUCCESS
+
+        Args:
+            booking_id: Booking ID (for idempotency)
+            seat_positions: List of seat positions (format: "row-seat", e.g., "1-5")
+            event_id: Event ID
+            section: Section name (e.g., "A")
+            subsection: Subsection number (e.g., 1)
+
+        Returns:
+            Dict mapping seat_position to success status
+        """
+        return await self.release_executor.execute_atomic_release(
+            booking_id=booking_id,
             event_id=event_id,
             section=section,
             subsection=subsection,
+            seat_positions=seat_positions,
         )

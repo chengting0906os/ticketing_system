@@ -103,6 +103,26 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
+    async def update_status_to_cancelled_and_release_tickets(
+        self,
+        *,
+        booking_id: Union[str, UUID],
+    ) -> Booking | None:
+        """
+        Atomically update booking status to CANCELLED and tickets to AVAILABLE.
+        Called after seat release in Kvrocks.
+
+        Idempotency: If booking is already CANCELLED, returns existing booking.
+
+        Args:
+            booking_id: UUID7 booking ID
+
+        Returns:
+            Updated booking entity with CANCELLED status, or None if not found
+        """
+        pass
+
+    @abstractmethod
     async def update_status_to_cancelled(
         self,
         *,
@@ -110,7 +130,7 @@ class IBookingCommandRepo(ABC):
     ) -> Booking:
         """
         Update booking status to CANCELLED.
-        Called after seat release in Kvrocks.
+        Deprecated: Use update_status_to_cancelled_and_release_tickets instead.
 
         Args:
             booking_id: UUID7 booking ID

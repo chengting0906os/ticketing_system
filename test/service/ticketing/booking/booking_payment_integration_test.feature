@@ -82,16 +82,15 @@ Feature: Booking Payment
     Then the response status code should be 403
     And the error message should contain "Only the buyer can pay for this booking"
 
-  Scenario: Cancel unpaid booking
+  Scenario: Cancel unpaid booking request accepted
     Given a booking exists with:
       | buyer_id | event_id | total_price | status          |
       | 2        | 1        | 1000        | pending_payment |
     When I call PATCH "/api/booking/{booking.id}"
-    And I call GET "/api/booking/{booking.id}"
     Then the response status code should be 200
     And the response data should include:
-      | status    | created_at | paid_at |
-      | cancelled | not_null   | null    |
+      | status    |
+      | cancelled |
 
   Scenario: Cannot cancel completed booking
     Given a booking exists with:
@@ -99,4 +98,4 @@ Feature: Booking Payment
       | 2        | 1        | 1000        | completed |
     When I call PATCH "/api/booking/{booking.id}"
     Then the response status code should be 400
-    And the error message should contain "Cannot cancel completed booking"
+    And the error message should contain "Cannot cancel a completed booking"

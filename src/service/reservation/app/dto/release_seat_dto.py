@@ -7,42 +7,12 @@ Request/Result DTOs for seat release operations.
 import attrs
 
 
-# ========== Release Seat ==========
-
-
-@attrs.define
-class ReleaseSeatRequest:
-    """Seat release request"""
-
-    seat_position: str  # format: "row-seat", e.g., "1-5"
-    event_id: int
-    section: str
-    subsection: int
-
-
-@attrs.define
-class ReleaseSeatResult:
-    """Seat release result"""
-
-    success: bool
-    seat_position: str  # format: "row-seat", e.g., "1-5"
-    error_message: str = ''
-
-    @classmethod
-    def success_result(cls, seat_position: str) -> 'ReleaseSeatResult':
-        """Create success result"""
-        return cls(success=True, seat_position=seat_position)
-
-    @classmethod
-    def failure_result(cls, seat_position: str, error: str) -> 'ReleaseSeatResult':
-        """Create failure result"""
-        return cls(success=False, seat_position=seat_position, error_message=error)
-
-
 @attrs.define
 class ReleaseSeatsBatchRequest:
     """Batch seat release request - Performance optimization for releasing multiple seats"""
 
+    booking_id: str  # UUID7 booking ID (for PostgreSQL update and tracing)
+    buyer_id: int  # Buyer ID (for SSE broadcast)
     seat_positions: list[str]  # format: ["row-seat", ...], e.g., ["1-5", "1-6"]
     event_id: int
     section: str

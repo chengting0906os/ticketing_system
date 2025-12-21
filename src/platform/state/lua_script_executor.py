@@ -34,6 +34,7 @@ class LuaScripts:
             / 'service'
             / 'reservation'
             / 'driven_adapter'
+            / 'state'
             / 'reservation_helper'
             / 'lua_scripts'
         )

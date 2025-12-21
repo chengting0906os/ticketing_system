@@ -11,7 +11,6 @@ from abc import ABC, abstractmethod
 from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
     BookingCreatedDomainEvent,
-    BookingPaidEvent,
 )
 
 
@@ -38,19 +37,6 @@ class IBookingEventPublisher(ABC):
 
         Args:
             event: BookingCreatedDomainEvent domain event
-
-        Raises:
-            EventPublishError: If publishing fails
-        """
-        pass
-
-    @abstractmethod
-    async def publish_booking_paid(self, *, event: BookingPaidEvent) -> None:
-        """
-        Publish BookingPaidEvent to update ticket status.
-
-        Args:
-            event: BookingPaidEvent domain event
 
         Raises:
             EventPublishError: If publishing fails

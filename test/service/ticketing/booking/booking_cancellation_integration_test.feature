@@ -68,7 +68,7 @@ Feature: Booking Cancellation
     And I am logged in as a buyer
     When I call PATCH "/api/booking/{booking.id}"
     Then the response status code should be 400
-    And the error message should contain "Cannot cancel completed booking"
+    And the error message should contain "Cannot cancel a completed booking"
     And the booking status should remain:
       | status    |
       | completed |
@@ -84,7 +84,7 @@ Feature: Booking Cancellation
       | 2        | 1        | 800         | cancelled |
     When I call PATCH "/api/booking/{booking.id}"
     Then the response status code should be 400
-    And the error message should contain "Booking already cancelled"
+    And the error message should contain "Booking is already cancelled"
 
   Scenario: Cannot cancel failed booking
     Given an event exists with:

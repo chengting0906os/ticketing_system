@@ -71,9 +71,12 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
 
                 if existing:
                     Logger.base.warning(
-                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} already exists - skipping'
+                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} already exists - returning existing'
                     )
-                    return {'booking': None, 'tickets': [], 'already_exists': True}
+                    # Return existing booking and tickets for idempotency
+                    existing_booking = await self.get_by_id(booking_id=booking_uuid)
+                    existing_tickets = await self.get_tickets_by_booking_id(booking_id=booking_uuid)
+                    return {'booking': existing_booking, 'tickets': existing_tickets}
 
                 # Use CTE to atomically create booking and update tickets
                 result = await conn.fetch(
@@ -393,17 +396,22 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     return updated_booking
 
     @Logger.io
-    async def update_status_to_cancelled(
+    async def update_status_to_cancelled_and_release_tickets(
         self,
         *,
         booking_id: Union[str, UUID],
-    ) -> Booking:
+    ) -> Booking | None:
         """
-        Update booking status to CANCELLED.
+        Atomically update booking status to CANCELLED and tickets to AVAILABLE.
         Called after seat release in Kvrocks.
+
+        Idempotency: If booking is already CANCELLED, returns existing booking without error.
+
+        Returns:
+            Updated booking entity, or None if booking not found
         """
         with self.tracer.start_as_current_span(
-            'reservation.repo.cancel_booking',
+            'reservation.repo.cancel_booking_and_release_tickets',
             attributes={
                 'booking.id': str(booking_id),
             },
@@ -413,23 +421,63 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             async with (await get_asyncpg_pool()).acquire() as conn:
                 booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
 
+                # Idempotency check: Get current booking status
+                existing = await conn.fetchrow(
+                    'SELECT id, status, event_id, section, subsection, seat_positions FROM booking WHERE id = $1',
+                    booking_uuid,
+                )
+
+                if not existing:
+                    Logger.base.warning(
+                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} not found - skipping'
+                    )
+                    return None
+
+                if existing['status'] == BookingStatus.CANCELLED.value:
+                    Logger.base.warning(
+                        f'⚠️ [IDEMPOTENCY] Booking {booking_id} already CANCELLED - skipping'
+                    )
+                    return await self.get_by_id(booking_id=booking_uuid)
+
+                # Use CTE to atomically update booking and tickets
                 booking_row = await conn.fetchrow(
                     """
-                    UPDATE booking
-                    SET status = $1,
-                        updated_at = $2
-                    WHERE id = $3
-                    RETURNING id, buyer_id, event_id, section, subsection, quantity,
-                              total_price, seat_selection_mode, seat_positions, status,
-                              created_at, updated_at, paid_at
+                    WITH updated_tickets AS (
+                        UPDATE ticket
+                        SET status = 'available',
+                            buyer_id = NULL,
+                            updated_at = $1,
+                            reserved_at = NULL
+                        WHERE event_id = $2
+                          AND section = $3
+                          AND subsection = $4
+                          AND (row_number || '-' || seat_number) = ANY($5::text[])
+                          AND status = 'reserved'
+                        RETURNING id
+                    ),
+                    updated_booking AS (
+                        UPDATE booking
+                        SET status = $6,
+                            updated_at = $1
+                        WHERE id = $7
+                        RETURNING id, buyer_id, event_id, section, subsection, quantity,
+                                  total_price, seat_selection_mode, seat_positions, status,
+                                  created_at, updated_at, paid_at
+                    )
+                    SELECT b.*, (SELECT COUNT(*) FROM updated_tickets) as tickets_released
+                    FROM updated_booking b
                     """,
-                    BookingStatus.CANCELLED.value,  # $1
-                    now,  # $2 - updated_at
-                    booking_uuid,  # $3
+                    now,  # $1 - updated_at
+                    existing['event_id'],  # $2
+                    existing['section'],  # $3
+                    existing['subsection'],  # $4
+                    existing['seat_positions'] or [],  # $5
+                    BookingStatus.CANCELLED.value,  # $6
+                    booking_uuid,  # $7
                 )
 
                 if not booking_row:
-                    raise ValueError(f'Booking {booking_id} not found')
+                    raise ValueError(f'Booking {booking_id} not found during update')
 
                 updated_booking = Booking(
                     buyer_id=booking_row['buyer_id'],
@@ -447,9 +495,28 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     paid_at=booking_row['paid_at'],
                 )
 
-                Logger.base.info(f'✅ [RESERVATION→PG] Updated booking {booking_id} to CANCELLED')
+                tickets_released = booking_row['tickets_released']
+                Logger.base.info(
+                    f'✅ [RESERVATION→PG] Booking {booking_id} → CANCELLED, '
+                    f'{tickets_released} tickets → AVAILABLE'
+                )
 
                 return updated_booking
+
+    @Logger.io
+    async def update_status_to_cancelled(
+        self,
+        *,
+        booking_id: Union[str, UUID],
+    ) -> Booking:
+        """
+        Update booking status to CANCELLED (without ticket update).
+        Deprecated: Use update_status_to_cancelled_and_release_tickets instead.
+        """
+        result = await self.update_status_to_cancelled_and_release_tickets(booking_id=booking_id)
+        if result is None:
+            raise ValueError(f'Booking {booking_id} not found')
+        return result
 
     @Logger.io
     async def get_by_id(self, *, booking_id: Union[str, UUID]) -> Booking | None:
