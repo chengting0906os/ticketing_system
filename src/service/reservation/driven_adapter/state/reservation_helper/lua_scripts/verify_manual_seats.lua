@@ -3,7 +3,7 @@
 Verify Manual Seats Selection (Lua Script)
 
 Fetches config and verifies specified seats are available.
-Returns validated seat data with config for atomic reservation.
+Returns validated seat data for atomic reservation.
 
 KEYS[1]: Bitfield key (e.g., 'seats_bf:1:A-1')
 KEYS[2]: Event state key (e.g., 'event_state:1')
@@ -14,7 +14,7 @@ ARGV[3]: subsection (e.g., '1')
 ARGV[4+]: seat_ids in "row-seat" format (e.g., '1-5', '1-6', '1-7')
 
 Returns:
-- Success: JSON {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
+- Success: JSON {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20}
 - Failure: Error string with reason
 --]]
 
@@ -51,15 +51,6 @@ end
 local subsection_array = cjson.decode(subsection_result)
 local subsection_config = subsection_array[1]
 local cols = subsection_config.cols
-
--- Fetch section price
-local price_path = '$.sections.' .. section .. '.price'
-local price_result = redis.call('JSON.GET', event_state_key, price_path)
-local price = 0
-if price_result then
-    local price_array = cjson.decode(price_result)
-    price = price_array[1]
-end
 
 -- ========== STEP 2: Parse seat IDs and calculate indices ==========
 local function calculate_seat_index(row, seat_num, spr)
@@ -111,6 +102,5 @@ end
 -- ========== SUCCESS: Return validated seats with config ==========
 return cjson.encode({
     seats = seats_to_reserve,
-    cols = cols,
-    price = price
+    cols = cols
 })

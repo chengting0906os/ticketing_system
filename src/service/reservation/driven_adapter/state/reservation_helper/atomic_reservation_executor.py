@@ -499,10 +499,14 @@ class AtomicReservationExecutor:
                 await self._save_reservation_failure(booking_id=booking_id, error_message=error_msg)
                 return self._error_result(error_msg)
 
-            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20, "price": 1800}
+            # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20}
             lua_data = orjson.loads(lua_result)
             verified_seats = lua_data['seats']
-            section_price = lua_data['price']
+
+            # Fetch section price from event_state
+            price_path = f'$.sections.{section}.price'
+            price_result = await client.execute_command('JSON.GET', event_state_key, price_path)
+            section_price = orjson.loads(price_result)[0] if price_result else 0
 
             # ========== STEP 2: Convert to reservation format ==========
             seats_to_reserve = [
@@ -592,3 +596,210 @@ class AtomicReservationExecutor:
             f'🎉 [SELLOUT-TRACKING] Event {event_id} SOLD OUT! Duration: {duration:.2f}s '
             f'({duration / 60:.2f} min), Total seats: {total_seats}'
         )
+
+    # ========== Split Methods for New 5-Step Flow ==========
+
+    async def execute_find_seats(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        quantity: int,
+        rows: int,
+        cols: int,
+        price: int,
+    ) -> Dict:
+        """
+        Find available seats via Lua script (Step 2 - BEST_AVAILABLE mode).
+
+        Lua script only, no Pipeline update.
+        Returns seats to reserve for downstream PostgreSQL + Pipeline steps.
+        """
+        section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        client = kvrocks_client.get_client()
+
+        # Execute Lua script to find consecutive seats
+        lua_result = await lua_script_executor.find_consecutive_seats(
+            client=client,
+            keys=[bf_key],
+            args=[str(rows), str(cols), str(quantity)],
+        )
+
+        if lua_result is None:
+            return {
+                'success': False,
+                'seats_to_reserve': [],
+                'total_price': 0,
+                'error_message': f'No {quantity} consecutive seats available',
+            }
+
+        # Parse Lua result: {"seats": [[row, seat_num, seat_index], ...]}
+        lua_data = orjson.loads(lua_result)
+        found_seats = lua_data['seats']
+
+        # Convert to reservation format: [(row, seat_num, seat_index, seat_id), ...]
+        seats_to_reserve = [
+            (row, seat_num, seat_index, f'{row}-{seat_num}')
+            for row, seat_num, seat_index in found_seats
+        ]
+
+        return {
+            'success': True,
+            'seats_to_reserve': seats_to_reserve,
+            'total_price': price * len(seats_to_reserve),
+            'error_message': None,
+        }
+
+    async def execute_verify_seats(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        seat_ids: List[str],
+        price: int,
+    ) -> Dict:
+        """
+        Verify specified seats are available via Lua script (Step 2 - MANUAL mode).
+
+        Lua script only, no Pipeline update.
+        Returns verified seats for downstream PostgreSQL + Pipeline steps.
+        """
+        section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        event_state_key = make_event_state_key(event_id=event_id)
+        client = kvrocks_client.get_client()
+
+        try:
+            lua_result = await lua_script_executor.verify_manual_seats(
+                client=client,
+                keys=[bf_key, event_state_key],
+                args=[str(event_id), section, str(subsection)] + seat_ids,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            # Parse Lua error format: "SEAT_UNAVAILABLE: Seat 1-5 is already RESERVED"
+            if ':' in error_msg:
+                error_msg = error_msg.split(':', 1)[1].strip()
+            return {
+                'success': False,
+                'seats_to_reserve': [],
+                'total_price': 0,
+                'error_message': error_msg,
+            }
+
+        if lua_result is None:
+            return {
+                'success': False,
+                'seats_to_reserve': [],
+                'total_price': 0,
+                'error_message': 'Lua verification returned no data',
+            }
+
+        # Parse Lua result: {"seats": [[row, seat_num, seat_index, seat_id], ...], "cols": 20}
+        lua_data = orjson.loads(lua_result)
+        verified_seats = lua_data['seats']
+
+        # Convert to reservation format
+        seats_to_reserve = [
+            (row, seat_num, seat_index, seat_id)
+            for row, seat_num, seat_index, seat_id in verified_seats
+        ]
+
+        return {
+            'success': True,
+            'seats_to_reserve': seats_to_reserve,
+            'total_price': price * len(seats_to_reserve),
+            'error_message': None,
+        }
+
+    async def execute_update_seat_map(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        booking_id: str,
+        seats_to_reserve: List[tuple],
+        total_price: int,
+    ) -> Dict:
+        """
+        Update seat map in Kvrocks via Pipeline (Step 4 of new flow).
+
+        Pipeline only, no Lua script.
+        Executes atomic updates: BITFIELD SET + JSON.NUMINCRBY for stats.
+        """
+        section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        client = kvrocks_client.get_client()
+
+        # Read current stats for sellout tracking
+        event_state_key = make_event_state_key(event_id=event_id)
+        result = await client.execute_command('JSON.GET', event_state_key, '$')
+        if result:
+            event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
+            current_stats = event_state_dict.get('event_stats', {})
+        else:
+            return self._error_result('event_state cannot be empty')
+
+        current_reserved_count = int(current_stats.get('reserved', 0))
+        current_total_seats = int(current_stats.get('total', 0))
+        num_seats = len(seats_to_reserve)
+        reserved_seats = []
+
+        pipe = client.pipeline(transaction=True)
+
+        # STEP 1: Reserve seats in bitfield
+        for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
+            pipe.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, 1)
+            reserved_seats.append(seat_id)
+
+        # STEP 2: Update JSON statistics
+        pipe.execute_command(
+            'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
+        )
+        pipe.execute_command('JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats)
+
+        # STEP 3: Fetch updated statistics
+        pipe.execute_command('JSON.GET', event_state_key, '$')
+
+        # Execute pipeline
+        results = await pipe.execute()
+
+        # Parse statistics from pipeline results
+        event_state_idx = num_seats + 2
+        json_state_result = results[event_state_idx]
+        event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
+        subsection_stats = self._extract_subsection_stats(event_state, section_id)
+        event_stats = self._extract_event_stats(event_state)
+
+        # Track sellout timing
+        try:
+            await self._track_first_ticket(
+                client=client,
+                event_id=event_id,
+                current_reserved_count=current_reserved_count,
+            )
+        except Exception as e:
+            Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track first ticket: {e}')
+
+        try:
+            await self._track_all_reserved(
+                client=client,
+                event_id=event_id,
+                new_available_count=event_stats.get('available', 0),
+                total_seats=current_total_seats,
+            )
+        except Exception as e:
+            Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track full reservation: {e}')
+
+        return {
+            'success': True,
+            'reserved_seats': reserved_seats,
+            'total_price': total_price,
+            'subsection_stats': subsection_stats,
+            'event_stats': event_stats,
+            'error_message': None,
+        }
