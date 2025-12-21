@@ -4,8 +4,8 @@ https://python-dependency-injector.ets-labs.org/examples/fastapi-sqlalchemy.html
 """
 
 from dependency_injector import containers, providers
-from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
-from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.reservation.app.command.seat_release_use_case import SeatReleaseUseCase
+from src.service.reservation.app.command.seat_reservation_use_case import SeatReservationUseCase
 from src.service.reservation.driven_adapter.state.reservation_helper.atomic_release_executor import (
     AtomicReleaseExecutor,
 )
@@ -151,14 +151,14 @@ class Container(containers.DeclarativeContainer):
     )
 
     # Seat Reservation Use Cases (stateless, can be Singleton)
-    reserve_seats_use_case = providers.Singleton(
-        ReserveSeatsUseCase,
+    seat_reservation_use_case = providers.Singleton(
+        SeatReservationUseCase,
         seat_state_handler=seat_state_command_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,
     )
-    release_seat_use_case = providers.Singleton(
-        ReleaseSeatUseCase,
+    seat_release_use_case = providers.Singleton(
+        SeatReleaseUseCase,
         seat_state_handler=seat_state_command_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,

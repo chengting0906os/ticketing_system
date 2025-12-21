@@ -1,5 +1,5 @@
 """
-Reserve Seats Use Case - Atomic operations based on Lua scripts + PostgreSQL writes
+Seat Reservation Use Case - Atomic operations based on Lua scripts + PostgreSQL writes
 """
 
 import attrs
@@ -17,7 +17,7 @@ from src.service.reservation.app.interface.i_booking_command_repo import (
 from src.service.reservation.app.interface import ISeatStateCommandHandler
 
 
-class ReserveSeatsUseCase:
+class SeatReservationUseCase:
     """
     Reserve Seats Use Case - Kvrocks + PostgreSQL
 

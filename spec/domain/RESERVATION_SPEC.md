@@ -67,7 +67,7 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 ### Unit Tests
 
-- [reserve_seats_use_case_unit_test.py](../../test/service/reservation/unit/reserve_seats_use_case_unit_test.py) - 預訂 Use Case
+- [seat_reservation_use_case_unit_test.py](../../test/service/reservation/seat_reservation_use_case_unit_test.py) - 預訂 Use Case
 - [seat_finder_unit_test.py](../../test/service/reservation/seat_finder_unit_test.py) - 座位搜尋演算法
 - [seat_state_command_handler_unit_test.py](../../test/service/reservation/seat_state_command_handler_unit_test.py) - 狀態處理器
 - [atomic_reservation_executor_unit_test.py](../../test/service/reservation/atomic_reservation_executor_unit_test.py) - 原子預訂執行器
@@ -146,8 +146,8 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 #### Use Cases (Command)
 
-- [reserve_seats_use_case.py](../../src/service/reservation/app/command/reserve_seats_use_case.py) - 預訂座位
-- [release_seat_use_case.py](../../src/service/reservation/app/command/release_seat_use_case.py) - 釋放座位
+- [seat_reservation_use_case.py](../../src/service/reservation/app/command/seat_reservation_use_case.py) - 預訂座位
+- [seat_release_use_case.py](../../src/service/reservation/app/command/seat_release_use_case.py) - 釋放座位
 
 #### Use Cases (Query)
 

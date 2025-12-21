@@ -1,5 +1,5 @@
 """
-Unit tests for ReserveSeatsUseCase
+Unit tests for SeatReservationUseCase
 
 Tests:
 - Execution order (Kvrocks -> PostgreSQL -> Pub/Sub -> SSE)
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.service.reservation.app.command.reserve_seats_use_case import ReserveSeatsUseCase
+from src.service.reservation.app.command.seat_reservation_use_case import SeatReservationUseCase
 from src.service.reservation.app.dto import ReservationRequest
 from src.service.shared_kernel.domain.value_object.subsection_config import SubsectionConfig
 
@@ -53,8 +53,8 @@ class TestReserveSeatsExecutionOrder:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReserveSeatsUseCase:
-        return ReserveSeatsUseCase(
+    ) -> SeatReservationUseCase:
+        return SeatReservationUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -76,7 +76,7 @@ class TestReserveSeatsExecutionOrder:
     @pytest.mark.asyncio
     async def test_success_path_executes_in_correct_order(
         self,
-        use_case: ReserveSeatsUseCase,
+        use_case: SeatReservationUseCase,
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
@@ -133,7 +133,7 @@ class TestReserveSeatsExecutionOrder:
     @pytest.mark.asyncio
     async def test_postgres_write_happens_before_broadcast(
         self,
-        use_case: ReserveSeatsUseCase,
+        use_case: SeatReservationUseCase,
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,

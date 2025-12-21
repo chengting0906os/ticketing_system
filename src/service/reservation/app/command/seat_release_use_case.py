@@ -1,7 +1,7 @@
 """
-Release Seat Use Case - Atomic operations for releasing seats
+Seat Release Use Case - Atomic operations for releasing seats
 
-Symmetric with ReserveSeatsUseCase: Kvrocks + PostgreSQL + SSE
+Symmetric with SeatReservationUseCase: Kvrocks + PostgreSQL + SSE
 """
 
 from opentelemetry import trace
@@ -20,7 +20,7 @@ from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
 )
 
 
-class ReleaseSeatUseCase:
+class SeatReleaseUseCase:
     """
     Release Seat Use Case - Kvrocks + PostgreSQL
 

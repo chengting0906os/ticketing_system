@@ -65,8 +65,8 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         )
 
         # Use cases (lazy initialization)
-        self.reserve_seats_use_case: Any = None
-        self.release_seat_use_case: Any = None
+        self.seat_reservation_use_case: Any = None
+        self.seat_release_use_case: Any = None
 
         # Topic names
         self.reservation_topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(
@@ -78,8 +78,8 @@ class SeatReservationConsumer(BaseKafkaConsumer):
 
     async def _initialize_dependencies(self) -> None:
         """Initialize use cases from DI container."""
-        self.reserve_seats_use_case = container.reserve_seats_use_case()
-        self.release_seat_use_case = container.release_seat_use_case()
+        self.seat_reservation_use_case = container.seat_reservation_use_case()
+        self.seat_release_use_case = container.seat_release_use_case()
 
     def _get_topic_handlers(
         self,
@@ -147,7 +147,7 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             section=section,
             subsection=subsection,
         )
-        result = await self.release_seat_use_case.execute_batch(batch_request)
+        result = await self.seat_release_use_case.execute_batch(batch_request)
 
         return {
             'success': True,
@@ -233,5 +233,5 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         )
 
         # Call use case (use case is responsible for sending success/failure events)
-        await self.reserve_seats_use_case.reserve_seats(request)
+        await self.seat_reservation_use_case.reserve_seats(request)
         return True

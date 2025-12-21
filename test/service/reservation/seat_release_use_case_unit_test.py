@@ -1,5 +1,5 @@
 """
-Unit tests for ReleaseSeatUseCase
+Unit tests for SeatReleaseUseCase
 
 Tests:
 - Execution order (Kvrocks -> PostgreSQL -> Pub/Sub -> SSE)
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.service.reservation.app.command.release_seat_use_case import ReleaseSeatUseCase
+from src.service.reservation.app.command.seat_release_use_case import SeatReleaseUseCase
 from src.service.reservation.app.dto import ReleaseSeatsBatchRequest
 
 
@@ -47,8 +47,8 @@ class TestReleaseSeatExecutionOrder:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReleaseSeatUseCase:
-        return ReleaseSeatUseCase(
+    ) -> SeatReleaseUseCase:
+        return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -68,7 +68,7 @@ class TestReleaseSeatExecutionOrder:
     @pytest.mark.asyncio
     async def test_success_path_executes_in_correct_order(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
@@ -121,7 +121,7 @@ class TestReleaseSeatExecutionOrder:
     @pytest.mark.asyncio
     async def test_postgres_update_happens_after_kvrocks_release(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
@@ -186,8 +186,8 @@ class TestReleaseSeatAtomicFailure:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReleaseSeatUseCase:
-        return ReleaseSeatUseCase(
+    ) -> SeatReleaseUseCase:
+        return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -196,7 +196,7 @@ class TestReleaseSeatAtomicFailure:
     @pytest.mark.asyncio
     async def test_atomic_failure_marks_all_seats_failed(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
     ) -> None:
         """Test that atomic failure correctly reports all seats as failed."""
         request = ReleaseSeatsBatchRequest(
@@ -241,8 +241,8 @@ class TestReleaseSeatFailure:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReleaseSeatUseCase:
-        return ReleaseSeatUseCase(
+    ) -> SeatReleaseUseCase:
+        return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -251,7 +251,7 @@ class TestReleaseSeatFailure:
     @pytest.mark.asyncio
     async def test_kvrocks_error_marks_all_seats_failed(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
     ) -> None:
         """Test that Kvrocks error marks all seats as failed."""
         request = ReleaseSeatsBatchRequest(
@@ -300,8 +300,8 @@ class TestReleaseSeatPostgresFailure:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReleaseSeatUseCase:
-        return ReleaseSeatUseCase(
+    ) -> SeatReleaseUseCase:
+        return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -310,7 +310,7 @@ class TestReleaseSeatPostgresFailure:
     @pytest.mark.asyncio
     async def test_postgres_failure_does_not_fail_operation(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
         mock_pubsub_handler: AsyncMock,
     ) -> None:
         """
@@ -361,8 +361,8 @@ class TestReleaseSeatSSEPublish:
         mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
-    ) -> ReleaseSeatUseCase:
-        return ReleaseSeatUseCase(
+    ) -> SeatReleaseUseCase:
+        return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
@@ -371,7 +371,7 @@ class TestReleaseSeatSSEPublish:
     @pytest.mark.asyncio
     async def test_sse_publish_contains_correct_data(
         self,
-        use_case: ReleaseSeatUseCase,
+        use_case: SeatReleaseUseCase,
         mock_pubsub_handler: AsyncMock,
     ) -> None:
         """Test that SSE publish contains correct booking update data."""
