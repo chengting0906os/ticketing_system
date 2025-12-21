@@ -92,21 +92,19 @@ end
 local bitfield_args = { 'BITFIELD', bf_key }
 for _, seat in ipairs(seats_to_reserve) do
     local seat_index = seat[3]
-    local offset = seat_index * 2
     table.insert(bitfield_args, 'GET')
-    table.insert(bitfield_args, 'u2')
-    table.insert(bitfield_args, offset)
+    table.insert(bitfield_args, 'u1')
+    table.insert(bitfield_args, seat_index) -- no * 2 needed for 1-bit
 end
 
 local statuses = redis.call(unpack(bitfield_args))
 
--- Check each seat status
+-- Check each seat status (0=AVAILABLE, 1=RESERVED)
 for i, status in ipairs(statuses) do
     if status ~= 0 then
         local seat = seats_to_reserve[i]
         local seat_id = seat[4]
-        local status_name = (status == 1) and 'RESERVED' or 'SOLD'
-        return redis.error_reply('SEAT_UNAVAILABLE: Seat ' .. seat_id .. ' is already ' .. status_name)
+        return redis.error_reply('SEAT_UNAVAILABLE: Seat ' .. seat_id .. ' is already RESERVED')
     end
 end
 

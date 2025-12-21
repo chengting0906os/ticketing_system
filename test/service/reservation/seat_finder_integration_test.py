@@ -24,8 +24,8 @@ def _make_key(key: str) -> str:
 
 
 async def _set_seat_state(client: AsyncRedis, bf_key: str, seat_index: int, state: int) -> None:
-    offset = seat_index * 2
-    await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, state)
+    """Set seat state in bitfield (1-bit per seat: 0=available, 1=reserved)"""
+    await client.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, state)
 
 
 # =============================================================================
@@ -145,20 +145,20 @@ class TestSeatFinder:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_find_consecutive_seats_skip_sold_seats(self) -> None:
-        # Given: Setup with SOLD seats
+    async def test_find_consecutive_seats_skip_reserved_seats(self) -> None:
+        # Given: Setup with RESERVED seats
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:6:A-1')
         client = kvrocks_client.get_client()
 
         # 1 row, 5 seats
-        # Mark seat 2 as SOLD (10)
-        await _set_seat_state(client, bf_key, 1, 2)  # seat 2 → SOLD
+        # Mark seat 2 as RESERVED (1)
+        await _set_seat_state(client, bf_key, 1, 1)  # seat 2 → RESERVED
 
         # When: Find 3 consecutive seats
         result = await finder.find_consecutive_seats(bf_key=bf_key, rows=1, cols=5, quantity=3)
 
-        # Then: Should find seats 3-5 (skipping sold seat 2)
+        # Then: Should find seats 3-5 (skipping reserved seat 2)
         assert result is not None
         assert len(result) == 3
         assert result == [(1, 3, 2), (1, 4, 3), (1, 5, 4)]
@@ -305,37 +305,35 @@ class TestSeatFinder:
         """
         Test that BITFIELD batch read works correctly (performance optimization)
 
-        Verifies that BITFIELD GET u2 returns same results as individual GETBIT calls
+        Verifies that BITFIELD GET u1 returns same results as individual GETBIT calls
         """
         finder: SeatFinder = SeatFinder()
         bf_key = _make_key('test_seats_bf:12:A-1')
         client = kvrocks_client.get_client()
 
         # Setup: 2 rows, 10 seats per row
-        # Row 1: AVAILABLE RESERVED SOLD AVAILABLE RESERVED SOLD AVAILABLE AVAILABLE SOLD RESERVED
+        # Row 1: AVAILABLE RESERVED RESERVED AVAILABLE RESERVED RESERVED AVAILABLE AVAILABLE RESERVED RESERVED
         # Row 2: All AVAILABLE
         rows = 2
         cols = 10
 
-        # Set various seat states in Row 1 using BITFIELD
-        # Note: Must use BITFIELD SET instead of SETBIT for compatibility with BITFIELD GET in Kvrocks
+        # Set various seat states in Row 1 using BITFIELD (1-bit per seat)
         seat_states = [
-            0,  # Seat 1: AVAILABLE (00)
-            1,  # Seat 2: RESERVED (01)
-            2,  # Seat 3: SOLD (10)
-            0,  # Seat 4: AVAILABLE (00)
-            1,  # Seat 5: RESERVED (01)
-            2,  # Seat 6: SOLD (10)
-            0,  # Seat 7: AVAILABLE (00)
-            0,  # Seat 8: AVAILABLE (00)
-            2,  # Seat 9: SOLD (10)
-            1,  # Seat 10: RESERVED (01)
+            0,  # Seat 1: AVAILABLE
+            1,  # Seat 2: RESERVED
+            1,  # Seat 3: RESERVED
+            0,  # Seat 4: AVAILABLE
+            1,  # Seat 5: RESERVED
+            1,  # Seat 6: RESERVED
+            0,  # Seat 7: AVAILABLE
+            0,  # Seat 8: AVAILABLE
+            1,  # Seat 9: RESERVED
+            1,  # Seat 10: RESERVED
         ]
 
         for seat_num, status in enumerate(seat_states, start=1):
             seat_idx = (1 - 1) * cols + (seat_num - 1)  # Row 1
-            offset = seat_idx * 2
-            await client.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, status)
+            await client.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_idx, status)
 
         # When: Find 2 consecutive seats (should find seats 7-8 in Row 1)
         result = await finder.find_consecutive_seats(

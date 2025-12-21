@@ -200,9 +200,8 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             for seat in all_seats:
                 section_id = f'{seat["section"]}-{seat["subsection"]}'
                 bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
-                offset = seat['seat_index'] * 2
-                pipe.setbit(bf_key, offset, 0)
-                pipe.setbit(bf_key, offset + 1, 0)
+                # 1-bit per seat: 0=available, 1=reserved
+                pipe.setbit(bf_key, seat['seat_index'], 0)
 
             event_total_seats = sum(section_stats.values())
             event_state['event_stats']['available'] = event_total_seats

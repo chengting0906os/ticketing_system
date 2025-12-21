@@ -263,10 +263,9 @@ class AtomicReservationExecutor:
             )  # Create pipeline with MULTI/EXEC for isolation
 
             # ========== STEP 1: Reserve seats in bitfield ==========
-            # Update each seat's status from AVAILABLE (00) to RESERVED (01)
+            # Update each seat's status from AVAILABLE (0) to RESERVED (1)
             for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
-                offset = seat_index * 2
-                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 1)  # 01 = RESERVED
+                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, 1)  # 1 = RESERVED
                 reserved_seats.append(seat_id)
 
             # ========== STEP 2: Update JSON statistics ==========

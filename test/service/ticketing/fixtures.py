@@ -148,14 +148,12 @@ def mock_kafka_infrastructure(
         timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 
         # Write seat bitfields (status only - prices moved to JSON)
+        # 1-bit per seat: 0=available, 1=reserved
         for seat in all_seats:
             section_id = f'{seat["section"]}-{seat["subsection"]}'
             bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-            offset = seat['seat_index'] * 2
-
-            # Set seat status to AVAILABLE (00)
-            pipe.setbit(bf_key, offset, 0)
-            pipe.setbit(bf_key, offset + 1, 0)
+            # Set seat status to AVAILABLE (0)
+            pipe.setbit(bf_key, seat['seat_index'], 0)
 
             # ✨ REMOVED: seat_meta Hash (prices now in JSON)
 

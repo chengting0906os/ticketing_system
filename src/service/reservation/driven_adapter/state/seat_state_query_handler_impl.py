@@ -29,11 +29,10 @@ def _make_key(key: str) -> str:
     return f'{_KEY_PREFIX}{key}'
 
 
-# Bitfield to status mapping
+# Bitfield to status mapping (1-bit: 0=available, 1=reserved)
 BITFIELD_TO_STATUS = {
-    0: 'available',  # 00
-    1: 'reserved',  # 01
-    2: 'sold',  # 10
+    0: 'available',
+    1: 'reserved',
 }
 
 
@@ -131,14 +130,9 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
                 seat_index = self._calculate_seat_index(int(row), int(seat_num), cols)
 
                 bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
-                offset = seat_index * 2
 
-                # Read status from bitfield
-                bit0 = await client.getbit(bf_key, offset)
-                bit1 = await client.getbit(bf_key, offset + 1)
-                status_value = bit0 * 2 + bit1
-
-                # ✨ CHANGED: Price from section config JSON (not seat_meta Hash)
+                # Read status from bitfield (1-bit per seat: 0=available, 1=reserved)
+                status_value = await client.getbit(bf_key, seat_index)
 
                 seat_states[seat_id] = {
                     'seat_id': seat_id,
@@ -240,8 +234,8 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
         client = kvrocks_client.get_client()
         bf_key = _make_key(f'seats_bf:{event_id}:{section_id}')
 
-        # OPTIMIZATION: Fetch entire bitfield in ONE call (instead of 2N getbit calls)
-        # Each seat uses 2 bits, so we need (total_seats * 2) bits = (total_seats / 4) bytes
+        # OPTIMIZATION: Fetch entire bitfield in ONE call (instead of N getbit calls)
+        # Each seat uses 1 bit, so we need total_seats bits = (total_seats / 8) bytes
         # Note: Use GET instead of GETRANGE for Kvrocks bitmap type compatibility
         raw_data = await client.get(bf_key)  # type: ignore
 
@@ -256,25 +250,21 @@ class SeatStateQueryHandlerImpl(ISeatStateQueryHandler):
 
         # ✨ REMOVED: Pipeline to batch fetch row metadata (prices now in section config)
 
-        # Build seat list from bitfield bytes
+        # Build seat list from bitfield bytes (1-bit per seat)
         all_seats = []
         for row in range(1, total_rows + 1):
             for seat_num in range(1, cols + 1):
                 seat_index = self._calculate_seat_index(row, seat_num, cols)
-                bit_offset = seat_index * 2
 
-                # Extract 2 bits from bitfield_bytes
-                byte_index = bit_offset // 8
-                bit_position = 7 - (bit_offset % 8)  # Redis stores bits MSB first
+                # Extract 1 bit from bitfield_bytes
+                byte_index = seat_index // 8
+                bit_position = 7 - (seat_index % 8)  # Redis stores bits MSB first
 
                 if byte_index < len(bitfield_bytes):
                     byte_value = bitfield_bytes[byte_index]
-                    # Extract bit0 and bit1
-                    bit0 = (byte_value >> bit_position) & 1
-                    bit1 = (byte_value >> (bit_position - 1)) & 1 if bit_position > 0 else 0
-                    status_value = bit0 * 2 + bit1
+                    status_value = (byte_value >> bit_position) & 1
                 else:
-                    # Seat not initialized yet, default to available (00)
+                    # Seat not initialized yet, default to available (0)
                     status_value = 0
 
                 seat_position = f'{row}-{seat_num}'

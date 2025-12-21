@@ -157,8 +157,9 @@ class AtomicReleaseExecutor:
 
             # Release each seat (RESERVED → AVAILABLE)
             for _seat_position, seat_index in seats_to_release:
-                offset = seat_index * 2
-                pipe.execute_command('BITFIELD', bf_key, 'SET', 'u2', offset, 0)  # 00 = AVAILABLE
+                pipe.execute_command(
+                    'BITFIELD', bf_key, 'SET', 'u1', seat_index, 0
+                )  # 0 = AVAILABLE
 
             # Update JSON statistics
             pipe.execute_command(

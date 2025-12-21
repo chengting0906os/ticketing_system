@@ -132,9 +132,9 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 | Key Pattern | Type | Description |
 | ----------- | ---- | ----------- |
-| `seats_bf:{event_id}:{section}-{subsection}` | BITFIELD | 座位狀態 (2 bits per seat: u2) |
+| `seats_bf:{event_id}:{section}-{subsection}` | BITFIELD | 座位狀態 (1 bit per seat: u1, 0=available, 1=reserved) |
 | `seats_config:{event_id}:{section}-{subsection}` | HASH | 子區域配置 (rows, cols, price) |
-| `subsection_stats:{event_id}:{section}-{subsection}` | HASH | 統計 (available, reserved, sold) |
+| `subsection_stats:{event_id}:{section}-{subsection}` | HASH | 統計 (available, reserved) |
 | `seat_booking:{event_id}:{section}-{subsection}:{row}-{seat}` | STRING | 座位對應的 booking_id |
 
 ### 6.5 Implementation

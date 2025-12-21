@@ -49,14 +49,13 @@ for row = 1, rows do
     local consecutive_seats = {}
 
     -- 🚀 Performance optimization: Batch read entire row using BITFIELD
-    -- Instead of cols × 2 GETBIT calls, use 1 BITFIELD call
+    -- Instead of cols GETBIT calls, use 1 BITFIELD call
     local bitfield_args = { 'BITFIELD', bf_key }
     for seat_num = 1, cols do
         local seat_index = calculate_seat_index(row, seat_num, cols)
-        local bit_offset = seat_index * 2
         table.insert(bitfield_args, 'GET')      -- Append
-        table.insert(bitfield_args, 'u2')       -- Append GET u2 (unsigned 2-bit integer) command
-        table.insert(bitfield_args, bit_offset) -- Append
+        table.insert(bitfield_args, 'u1')       -- Append GET u1 (unsigned 1-bit integer) command
+        table.insert(bitfield_args, seat_index) -- Append (no * 2 needed for 1-bit)
     end
 
     -- Execute BITFIELD: 1 command instead of cols × 2 GETBIT
@@ -65,7 +64,7 @@ for row = 1, rows do
     -- Process each seat status
     for seat_num = 1, cols do
         local seat_index = calculate_seat_index(row, seat_num, cols)
-        local status = seat_statuses[seat_num] -- 0=AVAILABLE, 1=RESERVED, 2=SOLD
+        local status = seat_statuses[seat_num] -- 0=AVAILABLE, 1=RESERVED
 
         local is_available = (status == 0)
         if is_available then

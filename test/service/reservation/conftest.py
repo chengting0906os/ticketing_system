@@ -447,11 +447,11 @@ def _verify_bitfield_status_sync(
     # Parse seat_id (format: "row-seat")
     row, seat = map(int, seat_id.split('-'))
 
-    # Calculate offset: ((row-1) * cols + (seat-1)) * 2
-    offset = ((row - 1) * config['cols'] + (seat - 1)) * 2
+    # Calculate seat_index (1-bit per seat: 0=available, 1=reserved)
+    seat_index = (row - 1) * config['cols'] + (seat - 1)
 
     bf_key = _make_key(f'seats_bf:{context["event_id"]}:{section}-{subsec_num}')
-    status = client.execute_command('BITFIELD', bf_key, 'GET', 'u2', offset)
+    status = client.execute_command('BITFIELD', bf_key, 'GET', 'u1', seat_index)
 
     assert status == [expected_status], (
         f'Seat {seat_id} should have status {expected_status}, got {status}'
