@@ -7,11 +7,7 @@ import attrs
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-
-
-class SeatSelectionMode(StrEnum):
-    MANUAL = 'manual'
-    BEST_AVAILABLE = 'best_available'
+from src.service.shared_kernel.domain.value_object import SelectionMode
 
 
 class BookingStatus(StrEnum):
@@ -57,7 +53,7 @@ class Booking:
         quantity: int,
     ) -> 'Booking':
         # Validate seat selection parameters
-        if seat_selection_mode == 'manual':
+        if seat_selection_mode == SelectionMode.MANUAL:
             if not seat_positions:
                 raise DomainError('seat_positions is required for manual selection', 400)
             if quantity != len(seat_positions):
@@ -67,7 +63,7 @@ class Booking:
                 )
             if len(seat_positions) > 4:
                 raise DomainError('Maximum 4 tickets per booking', 400)
-        elif seat_selection_mode == 'best_available':
+        elif seat_selection_mode == SelectionMode.BEST_AVAILABLE:
             if seat_positions and len(seat_positions) > 0:
                 raise DomainError('seat_positions must be empty for best_available selection', 400)
             if quantity < 1 or quantity > 4:
@@ -79,7 +75,7 @@ class Booking:
 
         # Validate seat_positions format for manual selection (now simple string format like "1-1", "1-2")
 
-        if seat_selection_mode == 'manual' and seat_positions:
+        if seat_selection_mode == SelectionMode.MANUAL and seat_positions:
             for seat_position in seat_positions:
                 try:
                     # Validate seat_position format: "row-seat" (e.g., "1-1", "2-3")
@@ -108,7 +104,7 @@ class Booking:
                     raise DomainError(f'Invalid seat_positions format: {e}', 400)
 
         # For manual mode, validate that tickets are selected
-        if seat_selection_mode == 'manual' and not seat_positions:
+        if seat_selection_mode == SelectionMode.MANUAL and not seat_positions:
             raise DomainError('No tickets selected for booking', 400)
 
         now = datetime.now(timezone.utc)

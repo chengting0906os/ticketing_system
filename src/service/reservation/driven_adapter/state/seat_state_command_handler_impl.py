@@ -16,6 +16,7 @@ from src.service.reservation.driven_adapter.state.reservation_helper.atomic_rele
 from src.service.reservation.driven_adapter.state.reservation_helper.atomic_reservation_executor import (
     AtomicReservationExecutor,
 )
+from src.service.shared_kernel.domain.value_object import SelectionMode
 
 
 class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
@@ -83,7 +84,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                 'booking.id': booking_id,
             },
         ):
-            if mode == 'manual':
+            if mode == SelectionMode.MANUAL:
                 # Validate manual mode parameters
                 if not seat_ids:
                     return self._error_result('Manual mode requires seat_ids')
@@ -96,7 +97,7 @@ class SeatStateCommandHandlerImpl(ISeatStateCommandHandler):
                     subsection=subsection,
                     seat_ids=seat_ids,
                 )
-            elif mode == 'best_available':
+            elif mode == SelectionMode.BEST_AVAILABLE:
                 return await self._reserve_best_available_seats(
                     event_id=event_id,
                     booking_id=booking_id,

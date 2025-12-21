@@ -5,16 +5,17 @@ Seat Reservation Use Case - Atomic operations based on Lua scripts + PostgreSQL 
 import attrs
 from opentelemetry import trace
 
-from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
-    PubSubHandlerImpl,
-)
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
+from src.service.reservation.app.interface import ISeatStateCommandHandler
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
-from src.service.reservation.app.interface import ISeatStateCommandHandler
+from src.service.shared_kernel.domain.value_object import SelectionMode
+from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
+    PubSubHandlerImpl,
+)
 
 
 class SeatReservationUseCase:
@@ -103,7 +104,9 @@ class SeatReservationUseCase:
                     section=request.section_filter,
                     subsection=request.subsection_filter,
                     quantity=request.quantity,
-                    seat_ids=request.seat_positions if request.selection_mode == 'manual' else None,
+                    seat_ids=request.seat_positions
+                    if request.selection_mode == SelectionMode.MANUAL
+                    else None,
                     rows=request.config.rows if request.config else None,
                     cols=request.config.cols if request.config else None,
                     price=request.config.price if request.config else None,
@@ -289,13 +292,13 @@ class SeatReservationUseCase:
                 )
 
     def _validate_request(self, request: ReservationRequest) -> None:
-        if request.selection_mode == 'manual':
+        if request.selection_mode == SelectionMode.MANUAL:
             if not request.seat_positions:
                 raise DomainError('Manual selection requires seat positions')
             if len(request.seat_positions) > 4:
                 raise DomainError('Cannot reserve more than 4 seats at once')
 
-        elif request.selection_mode == 'best_available':
+        elif request.selection_mode == SelectionMode.BEST_AVAILABLE:
             if not request.quantity or request.quantity <= 0:
                 raise DomainError('Best available selection requires valid quantity')
             if request.quantity > 4:
