@@ -18,7 +18,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 import orjson
 import pytest
-from pytest_bdd import given, then
+from pytest_bdd import given, parsers, then
 from pytest_bdd.model import Step
 
 from src.platform.constant.route_constant import EVENT_BASE
@@ -375,7 +375,7 @@ def verify_database_consistency(execute_sql_statement: Callable[..., list[dict[s
     assert orphan_count == 0, f'Found {orphan_count} orphaned tickets (tickets without events)'
 
 
-@then('{ticket_type} tickets should be returned with count:')
+@then(parsers.parse('{ticket_type} tickets should be returned with count:'))
 def then_tickets_returned_with_count(
     ticket_type: str,
     step: Step,

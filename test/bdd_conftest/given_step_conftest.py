@@ -62,18 +62,19 @@ def _login_as_role_with_defaults(
     store_user_in_context(user, role, context)
 
 
-@given(parsers.re(r'I am logged in as a (?P<role>seller|buyer)$'))
-def given_logged_in_as_role(role: str, client: TestClient, context: dict[str, Any]) -> None:
-    """Login as specified role with default credentials.
-
-    Example:
-        Given I am logged in as a seller
-        Given I am logged in as a buyer
-    """
-    _login_as_role_with_defaults(role, client, context)
+@given('I am logged in as a seller')
+def given_logged_in_as_seller(client: TestClient, context: dict[str, Any]) -> None:
+    """Login as seller with default credentials."""
+    _login_as_role_with_defaults('seller', client, context)
 
 
-@given(parsers.re(r'I am logged in as a (?P<role>seller|buyer) with'))
+@given('I am logged in as a buyer')
+def given_logged_in_as_buyer(client: TestClient, context: dict[str, Any]) -> None:
+    """Login as buyer with default credentials."""
+    _login_as_role_with_defaults('buyer', client, context)
+
+
+@given(parsers.parse('I am logged in as a {role} with'))
 def given_logged_in_as_role_with_table(
     step: Step,
     role: str,
@@ -87,6 +88,7 @@ def given_logged_in_as_role_with_table(
             | email           | password | name        |
             | seller@test.com | P@ssw0rd | Test Seller |
     """
+    assert role in ('seller', 'buyer'), f'Invalid role: {role}'
     data = extract_table_data(step)
     default_email, default_name = _get_role_defaults(role)
 

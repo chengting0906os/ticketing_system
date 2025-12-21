@@ -448,7 +448,9 @@ def user_requests_bookings_with_status(
     _store_response(context, response)
 
 
-@when('buyer with id {buyer_id:d} requests booking details for booking {booking_id:d}')
+@when(
+    parsers.parse('buyer with id {buyer_id:d} requests booking details for booking {booking_id:d}')
+)
 def buyer_requests_booking_details(
     buyer_id: int, booking_id: int, client: TestClient, context: dict[str, Any]
 ) -> None:
@@ -572,7 +574,7 @@ def verify_booking_details_include(step: Step, context: dict[str, Any]) -> None:
         assert booking.get('status') == expected_data['status']
 
 
-@then('the booking with id {booking_id:d} should have seat_positions:')
+@then(parsers.parse('the booking with id {booking_id:d} should have seat_positions:'))
 def verify_booking_seat_positions(step: Step, context: dict[str, Any], booking_id: int) -> None:
     rows = step.data_table.rows
     expected_seats = [row.cells[0].value for row in rows]
