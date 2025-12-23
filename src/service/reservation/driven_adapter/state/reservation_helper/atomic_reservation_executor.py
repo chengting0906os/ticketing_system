@@ -4,24 +4,21 @@ Atomic Reservation Executor
 Handles atomic seat reservation with idempotency control via booking metadata.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Dict, List, cast
+from typing import Any, Dict, List
 
 from opentelemetry import trace
 import orjson
-from redis.asyncio import Redis
-from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
-    make_booking_key,
-    make_event_state_key,
-    make_seats_bf_key,
-    make_sellout_timer_key,
-)
 
 from src.platform.database.asyncpg_setting import get_asyncpg_pool
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
+from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
+    make_booking_key,
+    make_event_state_key,
+    make_seats_bf_key,
+)
 from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
     IBookingMetadataHandler,
 )
@@ -524,79 +521,6 @@ class AtomicReservationExecutor:
                 section_price=section_price,
             )
 
-    @staticmethod
-    async def _track_first_ticket(
-        *,
-        client: Redis,
-        event_id: int,
-        current_reserved_count: int,
-    ) -> None:
-        # Only track when this is the first ticket (reserved was 0 before)
-        if current_reserved_count != 0:
-            return
-
-        timer_key = make_sellout_timer_key(event_id=event_id)
-        now = datetime.now(timezone.utc).isoformat()
-
-        # Simple HSET - Kafka partition ordering guarantees this is the first reservation
-        await cast(Awaitable[int], client.hset(timer_key, 'first_ticket_reserved_at', now))
-
-        Logger.base.info(
-            f'📊 [SELLOUT-TRACKING] First ticket reserved for event_id={event_id} at {now}'
-        )
-
-    @staticmethod
-    async def _track_all_reserved(
-        *,
-        client: Redis,
-        event_id: int,
-        new_available_count: int,
-        total_seats: int,
-    ) -> None:
-        # Only track when just sold out (available became 0)
-        if new_available_count != 0:
-            return
-
-        timer_key = make_sellout_timer_key(event_id=event_id)
-
-        # Fetch first ticket reserved timestamp
-        first_ticket_reserved_at_raw = await cast(
-            Awaitable[str], client.hget(timer_key, 'first_ticket_reserved_at')
-        )
-
-        if not first_ticket_reserved_at_raw:
-            # No first ticket recorded, skip tracking
-            return
-
-        # Decode bytes to string
-        first_ticket_reserved_at_str = (
-            first_ticket_reserved_at_raw.decode()
-            if isinstance(first_ticket_reserved_at_raw, bytes)
-            else first_ticket_reserved_at_raw
-        )
-
-        # Parse timestamps and calculate duration
-        first_ticket_reserved_at = datetime.fromisoformat(first_ticket_reserved_at_str)
-        sold_out_at = datetime.now(timezone.utc)
-        duration = (sold_out_at - first_ticket_reserved_at).total_seconds()
-
-        # Save sellout stats to Kvrocks
-        await cast(
-            Awaitable[int],
-            client.hset(
-                timer_key,
-                mapping={
-                    'fully_reserved_at': sold_out_at.isoformat(),
-                    'duration_seconds': str(duration),
-                },
-            ),
-        )
-
-        Logger.base.info(
-            f'🎉 [SELLOUT-TRACKING] Event {event_id} SOLD OUT! Duration: {duration:.2f}s '
-            f'({duration / 60:.2f} min), Total seats: {total_seats}'
-        )
-
     # ========== Split Methods for New 5-Step Flow ==========
 
     async def execute_find_seats(
@@ -721,7 +645,6 @@ class AtomicReservationExecutor:
         event_id: int,
         section: str,
         subsection: int,
-        booking_id: str,
         seats_to_reserve: List[tuple],
         total_price: int,
     ) -> Dict:
@@ -729,77 +652,24 @@ class AtomicReservationExecutor:
         Update seat map in Kvrocks via Pipeline (Step 4 of new flow).
 
         Pipeline only, no Lua script.
-        Executes atomic updates: BITFIELD SET + JSON.NUMINCRBY for stats.
+        Executes atomic updates: BITFIELD SET for each seat.
         """
         section_id = f'{section}-{subsection}'
         bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
         client = kvrocks_client.get_client()
 
-        # Read current stats for sellout tracking
-        event_state_key = make_event_state_key(event_id=event_id)
-        result = await client.execute_command('JSON.GET', event_state_key, '$')
-        if result:
-            event_state_dict: Dict[str, Any] = orjson.loads(result)[0]
-            current_stats = event_state_dict.get('event_stats', {})
-        else:
-            return self._error_result('event_state cannot be empty')
-
-        current_reserved_count = int(current_stats.get('reserved', 0))
-        current_total_seats = int(current_stats.get('total', 0))
-        num_seats = len(seats_to_reserve)
         reserved_seats = []
-
         pipe = client.pipeline(transaction=True)
 
-        # STEP 1: Reserve seats in bitfield
         for _row, _seat_num, seat_index, seat_id in seats_to_reserve:
             pipe.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, 1)
             reserved_seats.append(seat_id)
 
-        # STEP 2: Update JSON statistics
-        pipe.execute_command(
-            'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', -num_seats
-        )
-        pipe.execute_command('JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', num_seats)
-
-        # STEP 3: Fetch updated statistics
-        pipe.execute_command('JSON.GET', event_state_key, '$')
-
-        # Execute pipeline
-        results = await pipe.execute()
-
-        # Parse statistics from pipeline results
-        event_state_idx = num_seats + 2
-        json_state_result = results[event_state_idx]
-        event_state: Dict[str, Any] = orjson.loads(json_state_result)[0]
-        subsection_stats = self._extract_subsection_stats(event_state, section_id)
-        event_stats = self._extract_event_stats(event_state)
-
-        # Track sellout timing
-        try:
-            await self._track_first_ticket(
-                client=client,
-                event_id=event_id,
-                current_reserved_count=current_reserved_count,
-            )
-        except Exception as e:
-            Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track first ticket: {e}')
-
-        try:
-            await self._track_all_reserved(
-                client=client,
-                event_id=event_id,
-                new_available_count=event_stats.get('available', 0),
-                total_seats=current_total_seats,
-            )
-        except Exception as e:
-            Logger.base.warning(f'[SELLOUT-TRACKING] Failed to track full reservation: {e}')
+        await pipe.execute()
 
         return {
             'success': True,
             'reserved_seats': reserved_seats,
             'total_price': total_price,
-            'subsection_stats': subsection_stats,
-            'event_stats': event_stats,
             'error_message': None,
         }
