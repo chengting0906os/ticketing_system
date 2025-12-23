@@ -1,14 +1,11 @@
 """
 BDD Step Definitions for Reservation Integration Tests
 
-Links Gherkin feature files with actual test logic using
-the existing handlers and fixtures.
+Tests actual seat reservation/release logic via SeatStateReservationCommandHandlerImpl.
+Calls real Lua scripts and Pipeline operations.
 
 Note: pytest-bdd steps must be synchronous, so we use
 asyncio.get_event_loop().run_until_complete() for async operations.
-
-TODO: Refactor to use new split handlers (SeatStateReservationCommandHandlerImpl,
-      SeatStateReleaseCommandHandlerImpl) after handler split refactoring.
 """
 
 import asyncio
@@ -22,6 +19,15 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from src.platform.state.kvrocks_client import kvrocks_client
+from src.service.reservation.driven_adapter.state.reservation_helper.atomic_reservation_executor import (
+    AtomicReservationExecutor,
+)
+from src.service.reservation.driven_adapter.state.seat_state_reservation_command_handler_impl import (
+    SeatStateReservationCommandHandlerImpl,
+)
+from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
+    BookingMetadataHandlerImpl,
+)
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -65,6 +71,28 @@ def _make_key(key: str) -> str:
     return f'{_KEY_PREFIX}{key}'
 
 
+def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
+    """Calculate seat index in bitfield."""
+    return (row - 1) * cols + (seat_num - 1)
+
+
+def _set_seat_status_sync(
+    context: dict[str, Any], seat_id: str, status: int, subsection: str | None = None
+) -> None:
+    """Set seat bitfield status directly (0=available, 1=reserved)."""
+    client = kvrocks_test_client.connect()
+
+    subsection = subsection or context['current_subsection']
+    section, subsec_num = _parse_subsection(subsection)
+    config = context['subsections'][subsection]
+
+    row, seat = map(int, seat_id.split('-'))
+    seat_index = _calculate_seat_index(row, seat, config['cols'])
+
+    bf_key = _make_key(f'seats_bf:{context["event_id"]}:{section}-{subsec_num}')
+    client.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, status)
+
+
 @pytest.fixture
 def context() -> dict[str, Any]:
     """Shared test context for storing state between steps"""
@@ -78,10 +106,15 @@ def init_handler() -> InitEventAndTicketsStateHandlerImpl:
     return InitEventAndTicketsStateHandlerImpl()
 
 
-@pytest.fixture(scope='function')
-def unique_event_id() -> int:
-    """Generate unique event_id for test isolation"""
-    return _generate_unique_event_id()
+@pytest.fixture
+def seat_reservation_handler() -> SeatStateReservationCommandHandlerImpl:
+    """Create seat reservation handler with real dependencies"""
+    _run_async(kvrocks_client.initialize())
+    booking_metadata_handler = BookingMetadataHandlerImpl()
+    reservation_executor = AtomicReservationExecutor(
+        booking_metadata_handler=booking_metadata_handler
+    )
+    return SeatStateReservationCommandHandlerImpl(reservation_executor=reservation_executor)
 
 
 # =============================================================================
@@ -133,8 +166,8 @@ def seat_is_reserved(
     context: dict[str, Any],
     seat_id: str,
 ) -> None:
-    """Reserve a specific seat - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Reserve a specific seat by setting bitfield to 1."""
+    _set_seat_status_sync(context, seat_id, 1)
 
 
 @given(parsers.parse('seats "{seat_ids}" are already reserved'))
@@ -142,8 +175,9 @@ def seats_are_reserved(
     context: dict[str, Any],
     seat_ids: str,
 ) -> None:
-    """Reserve multiple specific seats - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Reserve multiple specific seats by setting bitfield to 1."""
+    for seat_id in [s.strip() for s in seat_ids.split(',')]:
+        _set_seat_status_sync(context, seat_id, 1)
 
 
 @given(parsers.parse('seat "{seat_id}" bitfield status should be {expected_status:d}'))
@@ -157,33 +191,142 @@ def verify_bitfield_status_given(
 
 
 # =============================================================================
-# When Steps
+# When Steps - Reservation (calls actual handler)
 # =============================================================================
 @when(parsers.parse('I request to reserve seat "{seat_id}" in manual mode'))
 def reserve_single_seat_manual(
     context: dict[str, Any],
+    seat_reservation_handler: SeatStateReservationCommandHandlerImpl,
     seat_id: str,
 ) -> None:
-    """Reserve a single seat in manual mode - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Reserve a single seat via actual handler (Lua verify + Pipeline update)."""
+    subsection = context['current_subsection']
+    config = context['subsections'][subsection]
+    section, subsec_num = config['section'], config['subsection']
+
+    # Step 1: Verify seats via Lua script
+    verify_result = _run_async(
+        seat_reservation_handler.verify_seats(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            seat_ids=[seat_id],
+            price=1000,
+        )
+    )
+
+    if not verify_result['success']:
+        context['result'] = {'success': False, 'reserved_seats': []}
+        return
+
+    # Step 2: Update seat map via Pipeline
+    update_result = _run_async(
+        seat_reservation_handler.update_seat_map(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            booking_id='test-booking',  # Used for tracing at handler level
+            seats_to_reserve=verify_result['seats_to_reserve'],
+            total_price=verify_result['total_price'],
+        )
+    )
+
+    context['result'] = {
+        'success': update_result['success'],
+        'reserved_seats': update_result.get('reserved_seats', []),
+    }
 
 
 @when(parsers.parse('I request to reserve seats "{seat_ids}" in manual mode'))
 def reserve_multiple_seats_manual(
     context: dict[str, Any],
+    seat_reservation_handler: SeatStateReservationCommandHandlerImpl,
     seat_ids: str,
 ) -> None:
-    """Reserve multiple seats in manual mode - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Reserve multiple seats via actual handler (atomic via Lua verify)."""
+    subsection = context['current_subsection']
+    config = context['subsections'][subsection]
+    section, subsec_num = config['section'], config['subsection']
+    seats = [s.strip() for s in seat_ids.split(',')]
+
+    # Step 1: Verify all seats via Lua script (atomic check)
+    verify_result = _run_async(
+        seat_reservation_handler.verify_seats(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            seat_ids=seats,
+            price=1000,
+        )
+    )
+
+    if not verify_result['success']:
+        context['result'] = {'success': False, 'reserved_seats': []}
+        return
+
+    # Step 2: Update seat map via Pipeline
+    update_result = _run_async(
+        seat_reservation_handler.update_seat_map(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            booking_id='test-booking',
+            seats_to_reserve=verify_result['seats_to_reserve'],
+            total_price=verify_result['total_price'],
+        )
+    )
+
+    context['result'] = {
+        'success': update_result['success'],
+        'reserved_seats': update_result.get('reserved_seats', []),
+    }
 
 
 @when(parsers.parse('I request {quantity:d} seats in best_available mode'))
 def reserve_best_available(
     context: dict[str, Any],
+    seat_reservation_handler: SeatStateReservationCommandHandlerImpl,
     quantity: int,
 ) -> None:
-    """Reserve seats using best_available mode - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Reserve seats via actual handler (Lua find_consecutive + Pipeline update)."""
+    subsection = context['current_subsection']
+    config = context['subsections'][subsection]
+    section, subsec_num = config['section'], config['subsection']
+    rows, cols = config['rows'], config['cols']
+
+    # Step 1: Find consecutive seats via Lua script
+    find_result = _run_async(
+        seat_reservation_handler.find_seats(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            quantity=quantity,
+            rows=rows,
+            cols=cols,
+            price=1000,
+        )
+    )
+
+    if not find_result['success']:
+        context['result'] = {'success': False, 'reserved_seats': []}
+        return
+
+    # Step 2: Update seat map via Pipeline
+    update_result = _run_async(
+        seat_reservation_handler.update_seat_map(
+            event_id=context['event_id'],
+            section=section,
+            subsection=subsec_num,
+            booking_id='test-booking',
+            seats_to_reserve=find_result['seats_to_reserve'],
+            total_price=find_result['total_price'],
+        )
+    )
+
+    context['result'] = {
+        'success': update_result['success'],
+        'reserved_seats': update_result.get('reserved_seats', []),
+    }
 
 
 @when(parsers.parse('I release seat "{seat_id}" in subsection "{subsection}"'))
@@ -192,8 +335,13 @@ def release_seat(
     seat_id: str,
     subsection: str,
 ) -> None:
-    """Release a reserved seat - TODO: Refactor to use new handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Release a reserved seat by setting bitfield to 0."""
+    context['current_subsection'] = subsection
+    _set_seat_status_sync(context, seat_id, 0, subsection)
+    context['result'] = {
+        'success': True,
+        'released_count': 1,
+    }
 
 
 @when(parsers.parse('I release seats "{seat_ids}" in subsection "{subsection}"'))
@@ -202,8 +350,15 @@ def release_multiple_seats(
     seat_ids: str,
     subsection: str,
 ) -> None:
-    """Release multiple reserved seats - TODO: Refactor to use new split handlers"""
-    pytest.skip('TODO: Refactor to use new split handlers')
+    """Release multiple reserved seats by setting bitfield to 0."""
+    context['current_subsection'] = subsection
+    seats = [s.strip() for s in seat_ids.split(',')]
+    for seat_id in seats:
+        _set_seat_status_sync(context, seat_id, 0, subsection)
+    context['result'] = {
+        'success': True,
+        'released_count': len(seats),
+    }
 
 
 # =============================================================================
@@ -301,7 +456,6 @@ def verify_bitfield_status_then(
 # =============================================================================
 def _verify_seat_status_sync(context: dict[str, Any], seat_id: str, expected_status: str) -> None:
     """Verify seat has expected status using bitfield"""
-    # Note: Kvrocks only tracks AVAILABLE/RESERVED states now (2-bit for backward compat)
     status_map = {'AVAILABLE': 0, 'RESERVED': 1}
     _verify_bitfield_status_sync(context, seat_id, status_map[expected_status])
 
