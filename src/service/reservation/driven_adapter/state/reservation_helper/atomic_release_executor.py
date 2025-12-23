@@ -150,8 +150,6 @@ class AtomicReleaseExecutor:
             if not seats_to_release:
                 return {seat_pos: False for seat_pos in seat_positions}
 
-            num_seats = len(seats_to_release)
-
             # ========== STEP 3: Execute atomic release via pipeline ==========
             pipe = client.pipeline(transaction=True)
 
@@ -160,14 +158,6 @@ class AtomicReleaseExecutor:
                 pipe.execute_command(
                     'BITFIELD', bf_key, 'SET', 'u1', seat_index, 0
                 )  # 0 = AVAILABLE
-
-            # Update JSON statistics
-            pipe.execute_command(
-                'JSON.NUMINCRBY', event_state_key, '$.event_stats.available', num_seats
-            )
-            pipe.execute_command(
-                'JSON.NUMINCRBY', event_state_key, '$.event_stats.reserved', -num_seats
-            )
 
             # Update booking metadata to RELEASE_SUCCESS
             booking_key = make_booking_key(booking_id=booking_id)
@@ -182,6 +172,90 @@ class AtomicReleaseExecutor:
             # Execute pipeline
             await pipe.execute()
 
-            Logger.base.info(f'✅ [RELEASE] Released {num_seats} seats for booking {booking_id}')
+            Logger.base.info(
+                f'✅ [RELEASE] Released {len(seats_to_release)} seats for booking {booking_id}'
+            )
 
             return {seat_pos: True for seat_pos in seat_positions}
+
+    # ========== Split Methods for New Flow ==========
+
+    async def execute_fetch_release_config(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+    ) -> Dict:
+        """
+        Fetch config (cols) from Kvrocks for release.
+
+        Returns:
+            Dict with keys:
+                - success: bool
+                - cols: int
+                - error_message: Optional[str]
+        """
+        client = kvrocks_client.get_client()
+        event_state_key = make_event_state_key(event_id=event_id)
+        json_path = f"$.sections['{section}'].subsections['{str(subsection)}'].cols"
+
+        config_result = await client.execute_command('JSON.GET', event_state_key, json_path)
+
+        if not config_result:
+            return {
+                'success': False,
+                'cols': 0,
+                'error_message': f'Config not found for event {event_id}',
+            }
+
+        cols = orjson.loads(config_result)[0]
+        return {
+            'success': True,
+            'cols': cols,
+            'error_message': None,
+        }
+
+    async def execute_update_seat_map_release(
+        self,
+        *,
+        event_id: int,
+        section: str,
+        subsection: int,
+        booking_id: str,
+        seats_to_release: List[tuple],
+    ) -> Dict:
+        """
+        Update seat map in Kvrocks for release via Pipeline.
+
+        Args:
+            seats_to_release: List of (seat_position, seat_index) tuples
+
+        Returns:
+            Dict with keys:
+                - success: bool
+                - released_seats: List[str]
+                - error_message: Optional[str]
+        """
+        section_id = f'{section}-{subsection}'
+        bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
+        client = kvrocks_client.get_client()
+
+        released_seats = []
+        pipe = client.pipeline(transaction=True)
+
+        for seat_position, seat_index in seats_to_release:
+            pipe.execute_command('BITFIELD', bf_key, 'SET', 'u1', seat_index, 0)
+            released_seats.append(seat_position)
+
+        await pipe.execute()
+
+        Logger.base.info(
+            f'✅ [RELEASE] Released {len(released_seats)} seats for booking {booking_id}'
+        )
+
+        return {
+            'success': True,
+            'released_seats': released_seats,
+            'error_message': None,
+        }

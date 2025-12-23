@@ -21,6 +21,12 @@ from src.service.reservation.driven_adapter.state.seat_state_command_handler_imp
 from src.service.reservation.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
+from src.service.reservation.driven_adapter.state.seat_state_release_command_handler_impl import (
+    SeatStateReleaseCommandHandlerImpl,
+)
+from src.service.reservation.driven_adapter.state.seat_state_reservation_command_handler_impl import (
+    SeatStateReservationCommandHandlerImpl,
+)
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
@@ -135,6 +141,16 @@ class Container(containers.DeclarativeContainer):
         release_executor=atomic_release_executor,
     )
 
+    # New split handlers (PostgreSQL-first flow)
+    seat_state_reservation_handler = providers.Singleton(
+        SeatStateReservationCommandHandlerImpl,
+        reservation_executor=atomic_reservation_executor,
+    )
+    seat_state_release_handler = providers.Singleton(
+        SeatStateReleaseCommandHandlerImpl,
+        release_executor=atomic_release_executor,
+    )
+
     # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Singleton(InitEventAndTicketsStateHandlerImpl)
 
@@ -159,7 +175,7 @@ class Container(containers.DeclarativeContainer):
     )
     seat_release_use_case = providers.Singleton(
         SeatReleaseUseCase,
-        seat_state_handler=seat_state_command_handler,
+        seat_state_handler=seat_state_release_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,
     )

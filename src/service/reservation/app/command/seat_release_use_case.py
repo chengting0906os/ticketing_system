@@ -1,17 +1,23 @@
 """
-Seat Release Use Case - Atomic operations for releasing seats
+Seat Release Use Case - PostgreSQL First Flow
 
-Symmetric with SeatReservationUseCase: Kvrocks + PostgreSQL + SSE
+New 5-Step Flow:
+1. Validate Request
+2. Idempotency Check (PostgreSQL)
+3. PostgreSQL Write (booking + tickets)
+4. Kvrocks Pipeline (update seat map)
+5. SSE broadcast
 """
 
 from opentelemetry import trace
 
+from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import (
     ReleaseSeatsBatchRequest,
     ReleaseSeatsBatchResult,
 )
-from src.service.reservation.app.interface import ISeatStateCommandHandler
+from src.service.reservation.app.interface import ISeatStateReleaseCommandHandler
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
@@ -22,31 +28,23 @@ from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
 
 class SeatReleaseUseCase:
     """
-    Release Seat Use Case - Kvrocks + PostgreSQL
+    Release Seat Use Case - PostgreSQL First Flow
 
-    Responsibility: Release seats in Kvrocks AND update PostgreSQL
-
-    Flow:
-    1. Release seats in Kvrocks (atomic operation)
-    2. Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
-    3. Schedule stats broadcast via SSE for real-time updates
-    4. Publish booking update via SSE
-    5. Return result
+    New 5-Step Flow:
+    1. Validate Request - Check seat_positions exists
+    2. Idempotency Check - Query PostgreSQL booking table
+    3. PostgreSQL Write - Update booking + tickets
+    4. Kvrocks Pipeline - Update seat map (BITFIELD SET 0)
+    5. SSE Broadcast - Notify users
 
     Design Principles:
-    - Unified writes: Kvrocks + PostgreSQL in one use case
-    - Single Responsibility: Handles complete release flow
-    - Symmetric with ReserveSeatsUseCase
-
-    Dependencies:
-    - seat_state_handler: For Kvrocks seat release
-    - booking_command_repo: For PostgreSQL writes
-    - pubsub_handler: For SSE + event_state broadcast via Kvrocks Pub/Sub
+    - PostgreSQL as source of truth for idempotency
+    - Pipeline for batch seat map updates
     """
 
     def __init__(
         self,
-        seat_state_handler: ISeatStateCommandHandler,
+        seat_state_handler: ISeatStateReleaseCommandHandler,
         booking_command_repo: IBookingCommandRepo,
         pubsub_handler: PubSubHandlerImpl,
     ) -> None:
@@ -58,25 +56,14 @@ class SeatReleaseUseCase:
     @Logger.io
     async def execute_batch(self, request: ReleaseSeatsBatchRequest) -> ReleaseSeatsBatchResult:
         """
-        Execute batch seat release - Kvrocks + PostgreSQL
+        Execute seat release - PostgreSQL First Flow
 
-        Flow:
-        1. Release seats in Kvrocks (atomic operation)
-        2. Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
-        3. Schedule stats broadcast for real-time updates
-        4. Publish SSE for booking update
-        5. Return result
-
-        Design Rationale:
-        - Unified writes: Kvrocks + PostgreSQL in one use case
-        - No Kafka hop between Kvrocks and PostgreSQL operations
-        - SSE broadcast: Real-time UI updates
-
-        Args:
-            request: Release request with booking_id, buyer_id, seat_positions, etc.
-
-        Returns:
-            Release result with successful/failed seats
+        New 5-Step Flow:
+        1. Validate Request
+        2. Idempotency Check (PostgreSQL)
+        3. PostgreSQL Write (booking + tickets)
+        4. Kvrocks Pipeline (update seat map)
+        5. SSE Broadcast
         """
         with self.tracer.start_as_current_span(
             'use_case.release_seats',
@@ -93,80 +80,121 @@ class SeatReleaseUseCase:
                     f'buyer {request.buyer_id}, {len(request.seat_positions)} seats'
                 )
 
-                # Step 1: Release seats in Kvrocks (with idempotency via booking metadata)
-                # Note: This is atomic - either all succeed or all fail
-                results = await self.seat_state_handler.release_seats(
-                    booking_id=request.booking_id,
-                    seat_positions=request.seat_positions,
-                    event_id=request.event_id,
-                    section=request.section,
-                    subsection=request.subsection,
+                # ========== Step 1: Validate Request ==========
+                self._validate_request(request)
+
+                # ========== Step 2: Idempotency Check (PostgreSQL) ==========
+                existing_booking = await self.booking_command_repo.get_by_id(
+                    booking_id=request.booking_id
                 )
-
-                # Atomic operation: all succeed or all fail
-                all_success = all(results.values())
-                successful_seats = request.seat_positions if all_success else []
-
-                Logger.base.info(
-                    f'✅ [RELEASE] Kvrocks released {len(successful_seats)}/{len(request.seat_positions)} seats'
-                )
-
-                # Step 2: Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
-                try:
-                    await self.booking_command_repo.update_status_to_cancelled_and_release_tickets(
-                        booking_id=request.booking_id
-                    )
+                if existing_booking and existing_booking.status == 'CANCELLED':
                     Logger.base.info(
-                        f'✅ [RELEASE] PostgreSQL updated for booking {request.booking_id}'
+                        f'✅ [IDEMPOTENCY] Booking {request.booking_id} already CANCELLED, '
+                        'completing remaining steps'
                     )
-                except Exception as e:
-                    Logger.base.error(
-                        f'❌ [RELEASE] Failed to update DB for booking {request.booking_id}: {e}'
+                    return await self._complete_success_flow(
+                        request=request,
+                        seat_positions=existing_booking.seat_positions,
                     )
-                    # Don't fail the entire operation - Kvrocks release succeeded
 
-                # Step 3: Schedule throttled stats broadcast (1s delay)
-                await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
+                if not existing_booking or existing_booking.status != 'PENDING_PAYMENT':
+                    error_msg = f'Booking {request.booking_id} not in PENDING_PAYMENT status'
+                    Logger.base.warning(f'⚠️ [RELEASE] {error_msg}')
+                    return self._error_result(request, error_msg)
 
-                # Step 4: Publish SSE for real-time UI updates
-                await self.pubsub_handler.publish_booking_update(
-                    user_id=request.buyer_id,
-                    event_id=request.event_id,
-                    event_data={
-                        'event_type': 'booking_updated',
-                        'event_id': request.event_id,
-                        'booking_id': request.booking_id,
-                        'status': 'CANCELLED',
-                        'tickets': [],
-                    },
+                # ========== Step 3: PostgreSQL Write ==========
+                await self.booking_command_repo.update_status_to_cancelled_and_release_tickets(
+                    booking_id=request.booking_id
+                )
+                Logger.base.info(
+                    f'✅ [RELEASE] PostgreSQL write complete for booking {request.booking_id}'
                 )
 
-                # Atomic: either all succeed or all fail
-                failed_seats = [] if all_success else request.seat_positions
-                return ReleaseSeatsBatchResult(
-                    successful_seats=successful_seats,
-                    failed_seats=failed_seats,
-                    total_released=len(successful_seats),
-                    error_messages={}
-                    if all_success
-                    else {seat_pos: 'Atomic release failed' for seat_pos in failed_seats},
+                # ========== Step 4 + 5: Kvrocks + SSE ==========
+                return await self._complete_success_flow(
+                    request=request,
+                    seat_positions=request.seat_positions,
                 )
+
+            except DomainError as e:
+                Logger.base.warning(f'⚠️ [RELEASE] Domain error: {e}')
+                return self._error_result(request, str(e))
 
             except Exception as e:
-                error_msg = f'Error releasing batch of seats: {str(e)}'
-                Logger.base.error(f'❌ [RELEASE] {error_msg}')
+                Logger.base.exception(f'❌ [RELEASE] Unexpected error: {e}')
+                return self._error_result(request, 'Internal server error')
 
-                # Record exception on span
-                span = trace.get_current_span()
-                span.record_exception(e)
-                span.set_status(trace.Status(trace.StatusCode.ERROR, error_msg))
-                span.set_attribute('error', True)
-                span.set_attribute('error.type', 'unexpected_error')
+    def _validate_request(self, request: ReleaseSeatsBatchRequest) -> None:
+        if not request.seat_positions:
+            raise DomainError('seat_positions is required')
 
-                # All seats failed
-                return ReleaseSeatsBatchResult(
-                    successful_seats=[],
-                    failed_seats=request.seat_positions,
-                    total_released=0,
-                    error_messages={seat_pos: error_msg for seat_pos in request.seat_positions},
-                )
+    def _build_seats_to_release(
+        self, *, seat_positions: list[str], cols: int
+    ) -> list[tuple[str, int]]:
+        """Build seats_to_release tuples for Kvrocks update."""
+        return [
+            (
+                seat_id,
+                (int(seat_id.split('-')[0]) - 1) * cols + (int(seat_id.split('-')[1]) - 1),
+            )
+            for seat_id in seat_positions
+        ]
+
+    async def _complete_success_flow(
+        self,
+        *,
+        request: ReleaseSeatsBatchRequest,
+        seat_positions: list[str],
+    ) -> ReleaseSeatsBatchResult:
+        """Complete Step 4 (Kvrocks) + Step 5 (SSE) + return success result."""
+        # Fetch config for seat index calculation
+        config_result = await self.seat_state_handler.fetch_release_config(
+            event_id=request.event_id,
+            section=request.section,
+            subsection=request.subsection,
+        )
+        if not config_result['success']:
+            return self._error_result(request, config_result['error_message'])
+
+        cols = config_result['cols']
+        seats_to_release = self._build_seats_to_release(seat_positions=seat_positions, cols=cols)
+
+        # Step 4: Kvrocks Pipeline (idempotent - SET 0 when already 0 is no-op)
+        await self.seat_state_handler.update_seat_map_release(
+            event_id=request.event_id,
+            section=request.section,
+            subsection=request.subsection,
+            booking_id=request.booking_id,
+            seats_to_release=seats_to_release,
+        )
+        Logger.base.info(f'✅ [RELEASE] Kvrocks seat map updated for booking {request.booking_id}')
+
+        # Step 5: SSE Broadcast
+        await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
+        await self.pubsub_handler.publish_booking_update(
+            user_id=request.buyer_id,
+            event_id=request.event_id,
+            event_data={
+                'event_type': 'booking_updated',
+                'event_id': request.event_id,
+                'booking_id': request.booking_id,
+                'status': 'CANCELLED',
+                'tickets': [],
+            },
+        )
+
+        return ReleaseSeatsBatchResult(
+            successful_seats=seat_positions,
+            failed_seats=[],
+            total_released=len(seat_positions),
+            error_messages={},
+        )
+
+    @staticmethod
+    def _error_result(request: ReleaseSeatsBatchRequest, error_msg: str) -> ReleaseSeatsBatchResult:
+        return ReleaseSeatsBatchResult(
+            successful_seats=[],
+            failed_seats=request.seat_positions,
+            total_released=0,
+            error_messages={seat_pos: error_msg for seat_pos in request.seat_positions},
+        )
