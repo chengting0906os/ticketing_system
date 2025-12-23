@@ -16,11 +16,11 @@ from opentelemetry import trace
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
-from src.service.reservation.app.interface import ISeatStateCommandHandler
+from src.service.reservation.app.interface import ISeatStateReservationCommandHandler
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
-from src.service.shared_kernel.domain.value_object import SelectionMode
+from src.service.shared_kernel.domain.value_object import BookingStatus, SelectionMode
 from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
     PubSubHandlerImpl,
 )
@@ -46,7 +46,7 @@ class SeatReservationUseCase:
 
     def __init__(
         self,
-        seat_state_handler: ISeatStateCommandHandler,
+        seat_state_handler: ISeatStateReservationCommandHandler,
         booking_command_repo: IBookingCommandRepo,
         pubsub_handler: PubSubHandlerImpl,
     ) -> None:
@@ -91,11 +91,11 @@ class SeatReservationUseCase:
                 existing_booking = await self.booking_command_repo.get_by_id(
                     booking_id=request.booking_id
                 )
-                if existing_booking and existing_booking.status == 'FAILED':
+                if existing_booking and existing_booking.status == BookingStatus.FAILED:
                     return await self._handle_failure(
                         request, 'Booking previously failed', skip_create=True
                     )
-                elif existing_booking and existing_booking.status == 'PENDING_PAYMENT':
+                elif existing_booking and existing_booking.status == BookingStatus.PENDING_PAYMENT:
                     Logger.base.info(
                         f'✅ [IDEMPOTENCY] Booking {request.booking_id} already exists, '
                         'completing remaining steps'
@@ -227,7 +227,7 @@ class SeatReservationUseCase:
                 'event_type': 'booking_updated',
                 'event_id': request.event_id,
                 'booking_id': request.booking_id,
-                'status': 'PENDING_PAYMENT',
+                'status': BookingStatus.PENDING_PAYMENT,
                 'tickets': tickets_data,
             },
         )
@@ -270,7 +270,7 @@ class SeatReservationUseCase:
                 'event_type': 'booking_updated',
                 'event_id': request.event_id,
                 'booking_id': request.booking_id,
-                'status': 'FAILED',
+                'status': BookingStatus.FAILED,
                 'tickets': [],
                 'error_message': error_msg,
             },

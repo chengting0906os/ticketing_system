@@ -15,7 +15,8 @@ from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
-from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+from src.service.shared_kernel.domain.value_object import BookingStatus
+from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 

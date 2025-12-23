@@ -107,7 +107,6 @@ class SeatStateReservationCommandHandlerImpl(ISeatStateReservationCommandHandler
                 event_id=event_id,
                 section=section,
                 subsection=subsection,
-                booking_id=booking_id,
                 seats_to_reserve=seats_to_reserve,
                 total_price=total_price,
             )

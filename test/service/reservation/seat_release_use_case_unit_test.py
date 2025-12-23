@@ -1,11 +1,12 @@
 """
 Unit tests for SeatReleaseUseCase
 
-Tests:
-- Execution order (Kvrocks -> PostgreSQL -> Pub/Sub -> SSE)
-- Successful release of all seats
-- Partial release (some seats fail)
-- Complete failure handling
+Tests PostgreSQL-first flow:
+1. Idempotency check (PostgreSQL get_by_id)
+2. PostgreSQL write (booking → CANCELLED, tickets → AVAILABLE)
+3. Fetch config from Kvrocks
+4. Update seat map in Kvrocks
+5. SSE broadcast
 """
 
 from typing import Any
@@ -15,25 +16,33 @@ import pytest
 
 from src.service.reservation.app.command.seat_release_use_case import SeatReleaseUseCase
 from src.service.reservation.app.dto import ReleaseSeatsBatchRequest
+from src.service.shared_kernel.domain.value_object import BookingStatus
+
+
+def _make_mock_booking(status: BookingStatus = BookingStatus.PENDING_PAYMENT) -> AsyncMock:
+    """Create a mock booking with given status."""
+    booking = AsyncMock()
+    booking.status = status
+    booking.seat_positions = ['1-1', '1-2']
+    return booking
 
 
 class TestReleaseSeatExecutionOrder:
-    """Test that release_seats executes steps in correct order."""
+    """Test that release_seats executes steps in correct order (PostgreSQL-first)."""
 
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        handler.release_seats = AsyncMock(
-            return_value={
-                '1-1': True,
-                '1-2': True,
-            }
+        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
+        handler.update_seat_map_release = AsyncMock(
+            return_value={'success': True, 'released_seats': ['1-1', '1-2']}
         )
         return handler
 
     @pytest.fixture
     def mock_booking_command_repo(self) -> AsyncMock:
         repo = AsyncMock()
+        repo.get_by_id = AsyncMock(return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT))
         repo.update_status_to_cancelled_and_release_tickets = AsyncMock(return_value=None)
         return repo
 
@@ -75,23 +84,30 @@ class TestReleaseSeatExecutionOrder:
         valid_request: ReleaseSeatsBatchRequest,
     ) -> None:
         """
-        Test execution order on success path:
-        1. Release seats in Kvrocks
-        2. Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
-        3. Schedule stats broadcast via Redis Pub/Sub
-        4. Publish SSE for booking update
-
-        PostgreSQL write MUST happen AFTER Kvrocks release.
+        Test execution order on success path (PostgreSQL-first flow):
+        1. Idempotency check (PostgreSQL get_by_id)
+        2. PostgreSQL write (booking → CANCELLED, tickets → AVAILABLE)
+        3. Fetch config from Kvrocks
+        4. Update seat map in Kvrocks
+        5. Schedule stats broadcast via Redis Pub/Sub
+        6. Publish SSE for booking update
         """
-        # Arrange
         call_order: list[str] = []
 
-        async def track_kvrocks(*args: Any, **kwargs: Any) -> dict[str, bool]:
-            call_order.append('kvrocks_release')
-            return {'1-1': True, '1-2': True}
+        async def track_get_by_id(*args: Any, **kwargs: Any) -> AsyncMock:
+            call_order.append('postgres_get_by_id')
+            return _make_mock_booking(BookingStatus.PENDING_PAYMENT)
 
-        async def track_postgres(*args: Any, **kwargs: Any) -> None:
+        async def track_postgres_update(*args: Any, **kwargs: Any) -> None:
             call_order.append('postgres_update')
+
+        async def track_fetch_config(*args: Any, **kwargs: Any) -> dict:
+            call_order.append('kvrocks_fetch_config')
+            return {'success': True, 'cols': 10}
+
+        async def track_kvrocks_update(*args: Any, **kwargs: Any) -> dict:
+            call_order.append('kvrocks_update')
+            return {'success': True, 'released_seats': ['1-1', '1-2']}
 
         async def track_schedule_broadcast(*args: Any, **kwargs: Any) -> None:
             call_order.append('schedule_stats_broadcast')
@@ -99,27 +115,31 @@ class TestReleaseSeatExecutionOrder:
         async def track_sse(*args: Any, **kwargs: Any) -> None:
             call_order.append('sse_publish')
 
-        mock_seat_state_handler.release_seats = track_kvrocks
-        mock_booking_command_repo.update_status_to_cancelled_and_release_tickets = track_postgres
+        mock_booking_command_repo.get_by_id = track_get_by_id
+        mock_booking_command_repo.update_status_to_cancelled_and_release_tickets = (
+            track_postgres_update
+        )
+        mock_seat_state_handler.fetch_release_config = track_fetch_config
+        mock_seat_state_handler.update_seat_map_release = track_kvrocks_update
         mock_pubsub_handler.schedule_stats_broadcast = track_schedule_broadcast
         mock_pubsub_handler.publish_booking_update = track_sse
 
-        # Act
         result = await use_case.execute_batch(valid_request)
 
-        # Assert
         assert result.successful_seats == ['1-1', '1-2']
         assert result.failed_seats == []
         assert result.total_released == 2
         assert call_order == [
-            'kvrocks_release',
+            'postgres_get_by_id',
             'postgres_update',
+            'kvrocks_fetch_config',
+            'kvrocks_update',
             'schedule_stats_broadcast',
             'sse_publish',
-        ], f'Expected order: kvrocks -> postgres -> schedule_broadcast -> sse, got: {call_order}'
+        ], f'Expected PostgreSQL-first order, got: {call_order}'
 
     @pytest.mark.asyncio
-    async def test_postgres_update_happens_after_kvrocks_release(
+    async def test_postgres_write_happens_before_kvrocks_update(
         self,
         use_case: SeatReleaseUseCase,
         mock_seat_state_handler: AsyncMock,
@@ -128,47 +148,42 @@ class TestReleaseSeatExecutionOrder:
         valid_request: ReleaseSeatsBatchRequest,
     ) -> None:
         """
-        Critical invariant: Kvrocks release MUST complete before PostgreSQL update.
-        This ensures seats are released before updating booking status.
+        Critical invariant: PostgreSQL write MUST complete before Kvrocks update.
+        PostgreSQL is source of truth; Kvrocks update can be retried if it fails.
         """
-        kvrocks_called = False
-        postgres_called_before_kvrocks = False
-
-        async def track_kvrocks(*args: Any, **kwargs: Any) -> dict[str, bool]:
-            nonlocal kvrocks_called
-            kvrocks_called = True
-            return {'1-1': True, '1-2': True}
+        postgres_called = False
+        kvrocks_called_before_postgres = False
 
         async def track_postgres(*args: Any, **kwargs: Any) -> None:
-            nonlocal postgres_called_before_kvrocks
-            if not kvrocks_called:
-                postgres_called_before_kvrocks = True
+            nonlocal postgres_called
+            postgres_called = True
 
-        mock_seat_state_handler.release_seats = track_kvrocks
+        async def track_kvrocks(*args: Any, **kwargs: Any) -> dict:
+            nonlocal kvrocks_called_before_postgres
+            if not postgres_called:
+                kvrocks_called_before_postgres = True
+            return {'success': True, 'released_seats': ['1-1', '1-2']}
+
         mock_booking_command_repo.update_status_to_cancelled_and_release_tickets = track_postgres
+        mock_seat_state_handler.update_seat_map_release = track_kvrocks
 
-        # Act
         await use_case.execute_batch(valid_request)
 
-        # Assert
-        assert kvrocks_called, 'Kvrocks release should have been called'
-        assert not postgres_called_before_kvrocks, (
-            'PostgreSQL update was called before Kvrocks release - this violates the invariant!'
+        assert postgres_called, 'PostgreSQL update should have been called'
+        assert not kvrocks_called_before_postgres, (
+            'Kvrocks update was called before PostgreSQL write - this violates the invariant!'
         )
 
 
-class TestReleaseSeatAtomicFailure:
-    """Test atomic failure scenarios - if any seat fails, all fail."""
+class TestReleaseSeatIdempotency:
+    """Test idempotency scenarios."""
 
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        # Atomic operation: if any seat fails, all results are False
-        handler.release_seats = AsyncMock(
-            return_value={
-                '1-1': False,
-                '1-2': False,
-            }
+        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
+        handler.update_seat_map_release = AsyncMock(
+            return_value={'success': True, 'released_seats': ['1-1', '1-2']}
         )
         return handler
 
@@ -194,66 +209,16 @@ class TestReleaseSeatAtomicFailure:
         )
 
     @pytest.mark.asyncio
-    async def test_atomic_failure_marks_all_seats_failed(
+    async def test_already_cancelled_booking_skips_postgres_update(
         self,
         use_case: SeatReleaseUseCase,
-    ) -> None:
-        """Test that atomic failure correctly reports all seats as failed."""
-        request = ReleaseSeatsBatchRequest(
-            booking_id='test-booking-id',
-            buyer_id=1,
-            seat_positions=['1-1', '1-2'],
-            event_id=1,
-            section='A',
-            subsection=1,
-        )
-
-        result = await use_case.execute_batch(request)
-
-        # Atomic: all seats fail together
-        assert result.successful_seats == []
-        assert result.failed_seats == ['1-1', '1-2']
-        assert result.total_released == 0
-        assert '1-1' in result.error_messages
-        assert '1-2' in result.error_messages
-
-
-class TestReleaseSeatFailure:
-    """Test failure scenarios."""
-
-    @pytest.fixture
-    def mock_seat_state_handler(self) -> AsyncMock:
-        handler = AsyncMock()
-        handler.release_seats = AsyncMock(side_effect=Exception('Kvrocks connection error'))
-        return handler
-
-    @pytest.fixture
-    def mock_booking_command_repo(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
-    def mock_pubsub_handler(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
-    def use_case(
-        self,
-        mock_seat_state_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
-        mock_pubsub_handler: AsyncMock,
-    ) -> SeatReleaseUseCase:
-        return SeatReleaseUseCase(
-            seat_state_handler=mock_seat_state_handler,
-            booking_command_repo=mock_booking_command_repo,
-            pubsub_handler=mock_pubsub_handler,
+    ) -> None:
+        """Test that already cancelled bookings complete remaining steps without PostgreSQL write."""
+        mock_booking_command_repo.get_by_id = AsyncMock(
+            return_value=_make_mock_booking(BookingStatus.CANCELLED)
         )
 
-    @pytest.mark.asyncio
-    async def test_kvrocks_error_marks_all_seats_failed(
-        self,
-        use_case: SeatReleaseUseCase,
-    ) -> None:
-        """Test that Kvrocks error marks all seats as failed."""
         request = ReleaseSeatsBatchRequest(
             booking_id='test-booking-id',
             buyer_id=1,
@@ -265,77 +230,34 @@ class TestReleaseSeatFailure:
 
         result = await use_case.execute_batch(request)
 
-        assert result.successful_seats == []
-        assert result.failed_seats == ['1-1', '1-2']
-        assert result.total_released == 0
-        assert '1-1' in result.error_messages
-        assert '1-2' in result.error_messages
-
-
-class TestReleaseSeatPostgresFailure:
-    """Test PostgreSQL failure scenarios - should not fail the entire operation."""
-
-    @pytest.fixture
-    def mock_seat_state_handler(self) -> AsyncMock:
-        handler = AsyncMock()
-        handler.release_seats = AsyncMock(return_value={'1-1': True, '1-2': True})
-        return handler
-
-    @pytest.fixture
-    def mock_booking_command_repo(self) -> AsyncMock:
-        repo = AsyncMock()
-        # PostgreSQL update fails
-        repo.update_status_to_cancelled_and_release_tickets = AsyncMock(
-            side_effect=Exception('PostgreSQL connection error')
-        )
-        return repo
-
-    @pytest.fixture
-    def mock_pubsub_handler(self) -> AsyncMock:
-        return AsyncMock()
-
-    @pytest.fixture
-    def use_case(
-        self,
-        mock_seat_state_handler: AsyncMock,
-        mock_booking_command_repo: AsyncMock,
-        mock_pubsub_handler: AsyncMock,
-    ) -> SeatReleaseUseCase:
-        return SeatReleaseUseCase(
-            seat_state_handler=mock_seat_state_handler,
-            booking_command_repo=mock_booking_command_repo,
-            pubsub_handler=mock_pubsub_handler,
-        )
-
-    @pytest.mark.asyncio
-    async def test_postgres_failure_does_not_fail_operation(
-        self,
-        use_case: SeatReleaseUseCase,
-        mock_pubsub_handler: AsyncMock,
-    ) -> None:
-        """
-        Test that PostgreSQL failure does not fail the entire operation.
-        Kvrocks release is the primary operation; DB update can be retried.
-        """
-        request = ReleaseSeatsBatchRequest(
-            booking_id='test-booking-id',
-            buyer_id=1,
-            seat_positions=['1-1', '1-2'],
-            event_id=1,
-            section='A',
-            subsection=1,
-        )
-
-        result = await use_case.execute_batch(request)
-
-        # Kvrocks release should still succeed
         assert result.successful_seats == ['1-1', '1-2']
-        assert result.failed_seats == []
-        assert result.total_released == 2
+        mock_booking_command_repo.update_status_to_cancelled_and_release_tickets.assert_not_called()
 
-        # SSE should still be published
-        mock_pubsub_handler.schedule_stats_broadcast.assert_called_once()
-        mock_pubsub_handler.publish_booking_update.assert_called_once()
+    @pytest.mark.asyncio
+    async def test_non_pending_payment_booking_fails(
+        self,
+        use_case: SeatReleaseUseCase,
+        mock_booking_command_repo: AsyncMock,
+    ) -> None:
+        """Test that bookings not in PENDING_PAYMENT status return error."""
+        mock_booking_command_repo.get_by_id = AsyncMock(
+            return_value=_make_mock_booking(BookingStatus.COMPLETED)
+        )
+
+        request = ReleaseSeatsBatchRequest(
+            booking_id='test-booking-id',
+            buyer_id=1,
+            seat_positions=['1-1', '1-2'],
+            event_id=1,
+            section='A',
+            subsection=1,
+        )
+
+        result = await use_case.execute_batch(request)
+
+        assert result.successful_seats == []
+        assert result.failed_seats == ['1-1', '1-2']
+        assert 'not in PENDING_PAYMENT status' in result.error_messages['1-1']
 
 
 class TestReleaseSeatSSEPublish:
@@ -344,12 +266,18 @@ class TestReleaseSeatSSEPublish:
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        handler.release_seats = AsyncMock(return_value={'1-1': True})
+        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
+        handler.update_seat_map_release = AsyncMock(
+            return_value={'success': True, 'released_seats': ['1-1']}
+        )
         return handler
 
     @pytest.fixture
     def mock_booking_command_repo(self) -> AsyncMock:
-        return AsyncMock()
+        repo = AsyncMock()
+        repo.get_by_id = AsyncMock(return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT))
+        repo.update_status_to_cancelled_and_release_tickets = AsyncMock(return_value=None)
+        return repo
 
     @pytest.fixture
     def mock_pubsub_handler(self) -> AsyncMock:
@@ -393,7 +321,7 @@ class TestReleaseSeatSSEPublish:
                 'event_type': 'booking_updated',
                 'event_id': 99,
                 'booking_id': 'test-booking-id',
-                'status': 'CANCELLED',
+                'status': BookingStatus.CANCELLED,
                 'tickets': [],
             },
         )

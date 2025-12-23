@@ -1,21 +1,12 @@
 from datetime import datetime, timezone
-from enum import StrEnum
 from typing import List, Optional
-from uuid_utils import UUID
 
 import attrs
+from uuid_utils import UUID
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
-from src.service.shared_kernel.domain.value_object import SelectionMode
-
-
-class BookingStatus(StrEnum):
-    PROCESSING = 'processing'
-    PENDING_PAYMENT = 'pending_payment'
-    CANCELLED = 'cancelled'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
+from src.service.shared_kernel.domain.value_object import BookingStatus, SelectionMode
 
 
 # Validation logic moved to shared validators module
@@ -31,7 +22,7 @@ class Booking:
     subsection: int
     quantity: int
     seat_selection_mode: str
-    seat_positions: Optional[List[str]] = attrs.field(factory=list)
+    seat_positions: list[str] = attrs.field(factory=list)
     status: BookingStatus = BookingStatus.PROCESSING
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

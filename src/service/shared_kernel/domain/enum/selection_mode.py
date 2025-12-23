@@ -1,4 +1,4 @@
-"""Selection Mode Value Object"""
+"""Selection Mode Enum"""
 
 from enum import StrEnum
 

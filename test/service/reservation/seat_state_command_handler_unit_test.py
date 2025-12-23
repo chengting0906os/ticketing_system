@@ -9,9 +9,6 @@ import pytest
 from src.service.reservation.driven_adapter.state.reservation_helper.seat_finder import (
     SeatFinder,
 )
-from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
 
 
 # ============================================================================
@@ -67,33 +64,3 @@ class TestCalculateSeatIndex:
         result = SeatFinder._calculate_seat_index(row=20, seat_num=50, cols=100)
         # Then: Should be index 1949
         assert result == 1949
-
-
-# ============================================================================
-# Test Pure Functions - _error_result
-# ============================================================================
-
-
-@pytest.mark.unit
-class TestErrorResult:
-    """Test error result formatting"""
-
-    def test_error_result_format(self) -> None:
-        # Given: Error message
-        message = 'Seat already reserved'
-        # When: Create error result
-        result = SeatStateCommandHandlerImpl._error_result(message)
-        # Then: Should return standardized error format
-        assert result['success'] is False
-        assert result['error_message'] == 'Seat already reserved'
-        assert result['reserved_seats'] == []
-
-    def test_error_result_with_complex_message(self) -> None:
-        # Given: Complex error message
-        message = 'Seat 1-1 is already SOLD'
-        # When: Create error result
-        result = SeatStateCommandHandlerImpl._error_result(message)
-        # Then: Should preserve exact message
-        assert result['success'] is False
-        assert result['error_message'] == 'Seat 1-1 is already SOLD'
-        assert result['reserved_seats'] == []

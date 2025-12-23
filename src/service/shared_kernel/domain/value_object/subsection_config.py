@@ -15,8 +15,3 @@ class SubsectionConfig:
     rows: int
     cols: int
     price: int
-
-    @property
-    def total_seats(self) -> int:
-        """Total number of seats in the subsection."""
-        return self.rows * self.cols

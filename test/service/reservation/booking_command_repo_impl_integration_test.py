@@ -12,7 +12,7 @@ import uuid_utils as uuid
 from uuid_utils import UUID
 
 from src.platform.constant.route_constant import EVENT_BASE
-from src.service.ticketing.domain.entity.booking_entity import BookingStatus
+from src.service.shared_kernel.domain.value_object import BookingStatus
 from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl,
 )

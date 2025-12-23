@@ -21,6 +21,7 @@ from src.service.reservation.app.interface import ISeatStateReleaseCommandHandle
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
+from src.service.shared_kernel.domain.value_object import BookingStatus
 from src.service.shared_kernel.driven_adapter.pubsub_handler_impl import (
     PubSubHandlerImpl,
 )
@@ -87,9 +88,9 @@ class SeatReleaseUseCase:
                 existing_booking = await self.booking_command_repo.get_by_id(
                     booking_id=request.booking_id
                 )
-                if existing_booking and existing_booking.status == 'CANCELLED':
+                if existing_booking and existing_booking.status == BookingStatus.CANCELLED:
                     Logger.base.info(
-                        f'✅ [IDEMPOTENCY] Booking {request.booking_id} already CANCELLED, '
+                        f'✅ [IDEMPOTENCY] Booking {request.booking_id} already cancelled, '
                         'completing remaining steps'
                     )
                     return await self._complete_success_flow(
@@ -97,7 +98,7 @@ class SeatReleaseUseCase:
                         seat_positions=existing_booking.seat_positions,
                     )
 
-                if not existing_booking or existing_booking.status != 'PENDING_PAYMENT':
+                if not existing_booking or existing_booking.status != BookingStatus.PENDING_PAYMENT:
                     error_msg = f'Booking {request.booking_id} not in PENDING_PAYMENT status'
                     Logger.base.warning(f'⚠️ [RELEASE] {error_msg}')
                     return self._error_result(request, error_msg)
@@ -178,7 +179,7 @@ class SeatReleaseUseCase:
                 'event_type': 'booking_updated',
                 'event_id': request.event_id,
                 'booking_id': request.booking_id,
-                'status': 'CANCELLED',
+                'status': BookingStatus.CANCELLED,
                 'tickets': [],
             },
         )

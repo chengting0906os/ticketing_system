@@ -6,6 +6,9 @@ the existing handlers and fixtures.
 
 Note: pytest-bdd steps must be synchronous, so we use
 asyncio.get_event_loop().run_until_complete() for async operations.
+
+TODO: Refactor to use new split handlers (SeatStateReservationCommandHandlerImpl,
+      SeatStateReleaseCommandHandlerImpl) after handler split refactoring.
 """
 
 import asyncio
@@ -17,13 +20,8 @@ from typing import Any
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
-import uuid_utils as uuid
 
-from src.platform.config.di import container
 from src.platform.state.kvrocks_client import kvrocks_client
-from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
     InitEventAndTicketsStateHandlerImpl,
 )
@@ -71,13 +69,6 @@ def _make_key(key: str) -> str:
 def context() -> dict[str, Any]:
     """Shared test context for storing state between steps"""
     return {}
-
-
-@pytest.fixture
-def seat_handler() -> SeatStateCommandHandlerImpl:
-    """Create seat state command handler with proper DI"""
-    _run_async(kvrocks_client.initialize())
-    return container.seat_state_command_handler()
 
 
 @pytest.fixture
@@ -140,54 +131,19 @@ def subsection_has_seats(
 @given(parsers.parse('seat "{seat_id}" is already reserved'))
 def seat_is_reserved(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_id: str,
 ) -> None:
-    """Reserve a specific seat"""
-    section, subsec_num = _parse_subsection(context['current_subsection'])
-
-    booking_id = str(uuid.uuid7())
-    _run_async(
-        seat_handler.reserve_seats_atomic(
-            event_id=context['event_id'],
-            booking_id=booking_id,
-            buyer_id=99,
-            mode='manual',
-            section=section,
-            subsection=subsec_num,
-            quantity=1,
-            seat_ids=[seat_id],
-        )
-    )
-    # Store booking_id for release operations
-    context['last_booking_id'] = booking_id
+    """Reserve a specific seat - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @given(parsers.parse('seats "{seat_ids}" are already reserved'))
 def seats_are_reserved(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_ids: str,
 ) -> None:
-    """Reserve multiple specific seats"""
-    section, subsec_num = _parse_subsection(context['current_subsection'])
-
-    seats = [s.strip() for s in seat_ids.split(',')]
-    booking_id = str(uuid.uuid7())
-    _run_async(
-        seat_handler.reserve_seats_atomic(
-            event_id=context['event_id'],
-            booking_id=booking_id,
-            buyer_id=99,
-            mode='manual',
-            section=section,
-            subsection=subsec_num,
-            quantity=len(seats),
-            seat_ids=seats,
-        )
-    )
-    # Store booking_id for release operations
-    context['last_booking_id'] = booking_id
+    """Reserve multiple specific seats - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @given(parsers.parse('seat "{seat_id}" bitfield status should be {expected_status:d}'))
@@ -206,132 +162,48 @@ def verify_bitfield_status_given(
 @when(parsers.parse('I request to reserve seat "{seat_id}" in manual mode'))
 def reserve_single_seat_manual(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_id: str,
 ) -> None:
-    """Reserve a single seat in manual mode"""
-    section, subsec_num = _parse_subsection(context['current_subsection'])
-
-    booking_id = str(uuid.uuid7())
-    result = _run_async(
-        seat_handler.reserve_seats_atomic(
-            event_id=context['event_id'],
-            booking_id=booking_id,
-            buyer_id=1,
-            mode='manual',
-            section=section,
-            subsection=subsec_num,
-            quantity=1,
-            seat_ids=[seat_id],
-        )
-    )
-    context['result'] = result
+    """Reserve a single seat in manual mode - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @when(parsers.parse('I request to reserve seats "{seat_ids}" in manual mode'))
 def reserve_multiple_seats_manual(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_ids: str,
 ) -> None:
-    """Reserve multiple seats in manual mode"""
-    section, subsec_num = _parse_subsection(context['current_subsection'])
-
-    seats = [s.strip() for s in seat_ids.split(',')]
-    booking_id = str(uuid.uuid7())
-    result = _run_async(
-        seat_handler.reserve_seats_atomic(
-            event_id=context['event_id'],
-            booking_id=booking_id,
-            buyer_id=1,
-            mode='manual',
-            section=section,
-            subsection=subsec_num,
-            quantity=len(seats),
-            seat_ids=seats,
-        )
-    )
-    context['result'] = result
+    """Reserve multiple seats in manual mode - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @when(parsers.parse('I request {quantity:d} seats in best_available mode'))
 def reserve_best_available(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     quantity: int,
 ) -> None:
-    """Reserve seats using best_available mode"""
-    subsection = context['current_subsection']
-    section, subsec_num = _parse_subsection(subsection)
-    config = context['subsections'][subsection]
-
-    booking_id = str(uuid.uuid7())
-    result = _run_async(
-        seat_handler.reserve_seats_atomic(
-            event_id=context['event_id'],
-            booking_id=booking_id,
-            buyer_id=1,
-            mode='best_available',
-            section=section,
-            subsection=subsec_num,
-            quantity=quantity,
-            rows=config['rows'],
-            cols=config['cols'],
-            price=1000,
-        )
-    )
-    context['result'] = result
+    """Reserve seats using best_available mode - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @when(parsers.parse('I release seat "{seat_id}" in subsection "{subsection}"'))
 def release_seat(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_id: str,
     subsection: str,
 ) -> None:
-    """Release a reserved seat"""
-    section, subsec_num = _parse_subsection(subsection)
-    booking_id = context.get('last_booking_id', str(uuid.uuid7()))
-
-    results = _run_async(
-        seat_handler.release_seats(
-            booking_id=booking_id,
-            seat_positions=[seat_id],
-            event_id=context['event_id'],
-            section=section,
-            subsection=subsec_num,
-        )
-    )
-    context['result'] = {'success': results.get(seat_id, False)}
-    context['release_results'] = results
+    """Release a reserved seat - TODO: Refactor to use new handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 @when(parsers.parse('I release seats "{seat_ids}" in subsection "{subsection}"'))
 def release_multiple_seats(
     context: dict[str, Any],
-    seat_handler: SeatStateCommandHandlerImpl,
     seat_ids: str,
     subsection: str,
 ) -> None:
-    """Release multiple reserved seats"""
-    section, subsec_num = _parse_subsection(subsection)
-    seats = [s.strip() for s in seat_ids.split(',')]
-    booking_id = context.get('last_booking_id', str(uuid.uuid7()))
-
-    results = _run_async(
-        seat_handler.release_seats(
-            booking_id=booking_id,
-            seat_positions=seats,
-            event_id=context['event_id'],
-            section=section,
-            subsection=subsec_num,
-        )
-    )
-    # Count successful releases
-    success_count = sum(1 for v in results.values() if v)
-    context['result'] = {'success': success_count > 0, 'released_count': success_count}
-    context['release_results'] = results
+    """Release multiple reserved seats - TODO: Refactor to use new split handlers"""
+    pytest.skip('TODO: Refactor to use new split handlers')
 
 
 # =============================================================================

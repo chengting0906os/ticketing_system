@@ -15,9 +15,6 @@ from src.service.reservation.driven_adapter.state.reservation_helper.atomic_rese
 from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
-from src.service.reservation.driven_adapter.state.seat_state_command_handler_impl import (
-    SeatStateCommandHandlerImpl,
-)
 from src.service.reservation.driven_adapter.state.seat_state_query_handler_impl import (
     SeatStateQueryHandlerImpl,
 )
@@ -122,7 +119,7 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Use Cases (CQRS)
     seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
 
-    # Ticketing Service - Booking Metadata Handler (Kvrocks) - defined here for seat_state_command_handler
+    # Ticketing Service - Booking Metadata Handler (Kvrocks)
     booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)
 
     # Seat Reservation Executors (with idempotency via booking_metadata_handler)
@@ -135,13 +132,7 @@ class Container(containers.DeclarativeContainer):
         booking_metadata_handler=booking_metadata_handler,
     )
 
-    seat_state_command_handler = providers.Singleton(
-        SeatStateCommandHandlerImpl,
-        reservation_executor=atomic_reservation_executor,
-        release_executor=atomic_release_executor,
-    )
-
-    # New split handlers (PostgreSQL-first flow)
+    # Split handlers (PostgreSQL-first flow)
     seat_state_reservation_handler = providers.Singleton(
         SeatStateReservationCommandHandlerImpl,
         reservation_executor=atomic_reservation_executor,
@@ -169,7 +160,7 @@ class Container(containers.DeclarativeContainer):
     # Seat Reservation Use Cases (stateless, can be Singleton)
     seat_reservation_use_case = providers.Singleton(
         SeatReservationUseCase,
-        seat_state_handler=seat_state_command_handler,
+        seat_state_handler=seat_state_reservation_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,
     )
