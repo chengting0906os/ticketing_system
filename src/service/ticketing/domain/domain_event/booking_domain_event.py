@@ -2,11 +2,10 @@
 Booking Domain Events
 
 These events are published when booking operations occur and should
-be handled by other bounded contexts (like event_ticketing).
+be handled by other bounded contexts (like reservation service).
 """
 
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 import attrs
 from uuid_utils import UUID
@@ -31,9 +30,8 @@ class BookingCreatedDomainEvent:
     subsection: int
     quantity: int
     seat_selection_mode: str
-    seat_positions: List[str]
+    seat_positions: list[str]
     status: BookingStatus
-    occurred_at: datetime
     config: Optional[SubsectionConfig] = None
 
     @classmethod
@@ -51,37 +49,15 @@ class BookingCreatedDomainEvent:
             seat_selection_mode=booking.seat_selection_mode,
             seat_positions=booking.seat_positions or [],
             status=booking.status,
-            occurred_at=datetime.now(timezone.utc),
             config=config.config,
         )
 
 
 @attrs.define
-class BookingPaidEvent:
-    booking_id: UUID
-    buyer_id: int
-    event_id: int
-    section: str
-    subsection: int
-    seat_positions: List[str]
-    paid_at: datetime
-    total_amount: float
-
-    @property
-    def occurred_at(self) -> datetime:
-        return self.paid_at
-
-
-@attrs.define
 class BookingCancelledEvent:
-    booking_id: UUID
-    buyer_id: int
-    event_id: int
-    section: str
-    subsection: int
-    seat_positions: List[str]
-    cancelled_at: datetime
+    """Minimal event - consumer fetches booking details from DB."""
 
-    @property
-    def occurred_at(self) -> datetime:
-        return self.cancelled_at
+    booking_id: UUID
+    event_id: int
+    section: str  # for partition calculation
+    subsection: int  # for partition calculation

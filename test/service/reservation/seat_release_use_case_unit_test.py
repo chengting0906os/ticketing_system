@@ -19,10 +19,21 @@ from src.service.reservation.app.dto import ReleaseSeatsBatchRequest
 from src.service.shared_kernel.domain.value_object import BookingStatus
 
 
-def _make_mock_booking(status: BookingStatus = BookingStatus.PENDING_PAYMENT) -> AsyncMock:
-    """Create a mock booking with given status."""
+def _make_mock_booking(
+    status: BookingStatus = BookingStatus.PENDING_PAYMENT,
+    buyer_id: int = 1,
+    event_id: int = 1,
+    section: str = 'A',
+    subsection: int = 1,
+) -> AsyncMock:
+    """Create a mock booking with given attributes."""
     booking = AsyncMock()
+    booking.id = 'test-booking-id'
     booking.status = status
+    booking.buyer_id = buyer_id
+    booking.event_id = event_id
+    booking.section = section
+    booking.subsection = subsection
     booking.seat_positions = ['1-1', '1-2']
     return booking
 
@@ -65,13 +76,10 @@ class TestReleaseSeatExecutionOrder:
 
     @pytest.fixture
     def valid_request(self) -> ReleaseSeatsBatchRequest:
+        """Minimal request - use case fetches details from DB."""
         return ReleaseSeatsBatchRequest(
             booking_id='test-booking-id',
-            buyer_id=1,
-            seat_positions=['1-1', '1-2'],
             event_id=1,
-            section='A',
-            subsection=1,
         )
 
     @pytest.mark.asyncio
@@ -221,11 +229,7 @@ class TestReleaseSeatIdempotency:
 
         request = ReleaseSeatsBatchRequest(
             booking_id='test-booking-id',
-            buyer_id=1,
-            seat_positions=['1-1', '1-2'],
             event_id=1,
-            section='A',
-            subsection=1,
         )
 
         result = await use_case.execute_batch(request)
@@ -246,18 +250,14 @@ class TestReleaseSeatIdempotency:
 
         request = ReleaseSeatsBatchRequest(
             booking_id='test-booking-id',
-            buyer_id=1,
-            seat_positions=['1-1', '1-2'],
             event_id=1,
-            section='A',
-            subsection=1,
         )
 
         result = await use_case.execute_batch(request)
 
         assert result.successful_seats == []
-        assert result.failed_seats == ['1-1', '1-2']
-        assert 'not in PENDING_PAYMENT status' in result.error_messages['1-1']
+        assert result.failed_seats == []  # No seat_positions in request, error at booking level
+        assert 'not in PENDING_PAYMENT status' in result.error_messages['booking']
 
 
 class TestReleaseSeatSSEPublish:
@@ -275,7 +275,10 @@ class TestReleaseSeatSSEPublish:
     @pytest.fixture
     def mock_booking_command_repo(self) -> AsyncMock:
         repo = AsyncMock()
-        repo.get_by_id = AsyncMock(return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT))
+        # Mock booking with buyer_id=42, event_id=99 for SSE assertions
+        repo.get_by_id = AsyncMock(
+            return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT, buyer_id=42, event_id=99)
+        )
         repo.update_status_to_cancelled_and_release_tickets = AsyncMock(return_value=None)
         return repo
 
@@ -302,18 +305,15 @@ class TestReleaseSeatSSEPublish:
         use_case: SeatReleaseUseCase,
         mock_pubsub_handler: AsyncMock,
     ) -> None:
-        """Test that SSE publish contains correct booking update data."""
+        """Test that SSE publish contains correct booking update data (from DB)."""
         request = ReleaseSeatsBatchRequest(
             booking_id='test-booking-id',
-            buyer_id=42,
-            seat_positions=['1-1'],
             event_id=99,
-            section='A',
-            subsection=1,
         )
 
         await use_case.execute_batch(request)
 
+        # SSE uses booking data from DB (buyer_id=42, event_id=99)
         mock_pubsub_handler.publish_booking_update.assert_called_once_with(
             user_id=42,
             event_id=99,

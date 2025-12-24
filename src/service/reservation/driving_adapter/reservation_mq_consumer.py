@@ -1,15 +1,17 @@
 """
-Seat Reservation Consumer - Seat Selection Router
-Responsibility: Manage Kvrocks seat state and handle reservation requests
+Seat Reservation Consumer - Unified Command Router
+
+Responsibility: Manage Kvrocks seat state via unified ticket-command-request topic.
 
 Features:
 - Fully async concurrent processing via AIOConsumer
-- Retry mechanism: Exponential backoff
+- Message-type-based routing (message_type field in proto)
 - Dead Letter Queue: Failed messages sent to DLQ
 
-Listens to 2 Topics:
-1. booking_to_reservation_reserve_seats - Reserve seats (AVAILABLE → RESERVED)
-2. release_ticket_status_to_available_in_kvrocks - Release seats (RESERVED → AVAILABLE)
+Listens to 1 Topic (unified for ordering - no race condition):
+- ticket-command-request: Routes by message_type field
+  - BookingCreatedDomainEvent: Reserve seats (AVAILABLE → RESERVED)
+  - BookingCancelledEvent: Release seats (RESERVED → AVAILABLE)
 
 Note: Kvrocks only tracks AVAILABLE/RESERVED states. PostgreSQL is source of truth for SOLD status.
 """
@@ -17,6 +19,7 @@ Note: Kvrocks only tracks AVAILABLE/RESERVED states. PostgreSQL is source of tru
 import os
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from confluent_kafka import Message
 import orjson
 
 from src.platform.config.di import container
@@ -27,6 +30,7 @@ from src.platform.message_queue.kafka_constant_builder import (
     KafkaTopicBuilder,
 )
 from src.platform.message_queue.proto import domain_event_pb2 as pb
+from src.platform.observability.tracing import extract_trace_context
 from src.service.reservation.app.dto import (
     ReleaseSeatsBatchRequest,
     ReservationRequest,
@@ -36,11 +40,14 @@ from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
 class SeatReservationConsumer(BaseKafkaConsumer):
     """
-    Seat Reservation Consumer - Stateless Router
+    Seat Reservation Consumer - Unified Command Router
 
-    Listens to 2 Topics:
-    1. booking_to_reservation_reserve_seats - Reserve seats (AVAILABLE → RESERVED)
-    2. release_ticket_status_to_available_in_kvrocks - Release seats (RESERVED → AVAILABLE)
+    Listens to 1 Topic (unified for ordering - no race condition):
+    - ticket-command-request: Routes by message_type field in proto
+
+    Message Types:
+    - BookingCreatedDomainEvent: Reserve seats
+    - BookingCancelledEvent: Release seats
 
     Note: Kvrocks only tracks AVAILABLE/RESERVED states.
     PostgreSQL is source of truth for SOLD/COMPLETED status.
@@ -68,13 +75,8 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         self.seat_reservation_use_case: Any = None
         self.seat_release_use_case: Any = None
 
-        # Topic names
-        self.reservation_topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(
-            event_id=event_id
-        )
-        self.release_topic = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
-            event_id=event_id
-        )
+        # Unified topic for reserve/release commands
+        self.command_topic = KafkaTopicBuilder.ticket_command_request(event_id=event_id)
 
     async def _initialize_dependencies(self) -> None:
         """Initialize use cases from DI container."""
@@ -84,17 +86,115 @@ class SeatReservationConsumer(BaseKafkaConsumer):
     def _get_topic_handlers(
         self,
     ) -> Dict[str, tuple[type, Callable[[Dict], Awaitable[Any]]]]:
-        """Return topic to async handler mapping."""
+        """Return topic to async handler mapping.
+
+        Note: proto_class and handler are placeholders.
+        Actual routing is done in _process_message based on message_type field.
+        """
         return {
-            self.reservation_topic: (
-                pb.BookingCreatedDomainEvent,
-                self._handle_reservation,
-            ),
-            self.release_topic: (
-                pb.BookingCancelledEvent,
-                self._handle_release,
+            self.command_topic: (
+                pb.BookingCreatedDomainEvent,  # Placeholder, actual type from body
+                self._handle_reservation,  # Placeholder, actual handler from body
             ),
         }
+
+    def _detect_message_type_and_parse(self, msg_bytes: bytes) -> tuple[str, type, Dict]:
+        """
+        Detect message type and parse the correct proto message.
+
+        Since AIOProducer doesn't support headers, message_type is embedded
+        in the proto message body. We try parsing each type.
+
+        Returns: (message_type, proto_class, parsed_data)
+        """
+        from google.protobuf.json_format import MessageToDict
+
+        # Try BookingCreatedDomainEvent first
+        try:
+            created_msg = pb.BookingCreatedDomainEvent()
+            created_msg.ParseFromString(msg_bytes)
+            if created_msg.message_type == 'BookingCreatedDomainEvent':
+                data = MessageToDict(created_msg, preserving_proto_field_name=True)
+                return ('BookingCreatedDomainEvent', pb.BookingCreatedDomainEvent, data)
+        except Exception:
+            pass
+
+        # Try BookingCancelledEvent
+        try:
+            cancelled_msg = pb.BookingCancelledEvent()
+            cancelled_msg.ParseFromString(msg_bytes)
+            if cancelled_msg.message_type == 'BookingCancelledEvent':
+                data = MessageToDict(cancelled_msg, preserving_proto_field_name=True)
+                return ('BookingCancelledEvent', pb.BookingCancelledEvent, data)
+        except Exception:
+            pass
+
+        raise ValueError('Could not detect message_type from proto body')
+
+    async def _process_message(
+        self,
+        msg: Message,
+        proto_class: type,  # Ignored - determined by message body
+        handler: Callable[[Dict], Awaitable[Any]],  # Ignored - determined by message body
+        topic: str,
+    ) -> None:
+        """
+        Override base class to implement message-type-based routing.
+
+        Reads message_type field from proto body to determine:
+        - BookingCreatedDomainEvent → reserve seats
+        - BookingCancelledEvent → release seats
+        """
+        try:
+            # Detect message type from proto body
+            msg_bytes = msg.value()
+            message_type, _, data = self._detect_message_type_and_parse(msg_bytes)
+            booking_id = data.get('booking_id', 'unknown')
+
+            # Route based on message type
+            if message_type == 'BookingCreatedDomainEvent':
+                actual_handler = self._handle_reservation
+            elif message_type == 'BookingCancelledEvent':
+                actual_handler = self._handle_release
+            else:
+                raise ValueError(f'Unknown message_type: {message_type}')
+
+            Logger.base.info(
+                f'[RESERVATION-{self.instance_id}] type={message_type} booking_id={booking_id}'
+            )
+
+            # Extract trace context from message
+            extract_trace_context(
+                headers={
+                    'traceparent': data.get('traceparent', ''),
+                    'tracestate': data.get('tracestate', ''),
+                }
+            )
+
+            # Call handler with tracing
+            with self.tracer.start_as_current_span(
+                f'consumer.{topic}',
+                attributes={
+                    'messaging.system': 'kafka',
+                    'messaging.destination': topic,
+                    'messaging.message_type': message_type,
+                    'booking.id': booking_id,
+                },
+            ):
+                await actual_handler(data)
+                self._track_offset(msg)
+
+        except Exception as e:
+            Logger.base.error(f'[{self.service_name}] Error: {e}')
+
+            try:
+                # Try to get some data for DLQ
+                data = {'raw': msg.value().hex() if msg.value() else 'empty'}
+            except Exception:
+                data = {'error': 'Failed to extract message data'}
+
+            await self._send_to_dlq(message=data, original_topic=topic, error=str(e))
+            self._track_offset(msg)  # Still track to avoid reprocessing
 
     # ========== Async Message Handlers ==========
 
@@ -113,39 +213,29 @@ class SeatReservationConsumer(BaseKafkaConsumer):
         """
         Handle seat release request (async).
 
+        Minimal message - use case fetches all details from DB:
+        - booking_id: For PostgreSQL lookup
+        - event_id: For topic routing
+
         Flow (handled by ReleaseSeatUseCase):
-        1. Release seats in Kvrocks (RESERVED → AVAILABLE)
+        1. Fetch booking from DB (get seat_positions, section, subsection, buyer_id)
         2. Update PostgreSQL (booking → CANCELLED, tickets → AVAILABLE)
-        3. Schedule stats broadcast via SSE
-        4. Publish booking update via SSE
+        3. Release seats in Kvrocks (RESERVED → AVAILABLE)
+        4. SSE broadcast
 
-        Idempotency: Both Kvrocks release and DB update handle duplicate messages.
+        Idempotency: Both DB update and Kvrocks release handle duplicate messages.
         """
-        seat_positions = message.get('seat_positions', [])
-
-        if not seat_positions:
-            error_msg = 'Missing seat_positions'
-            Logger.base.error(f'[RELEASE] {error_msg}')
-            raise ValueError(error_msg)
-
         booking_id = message.get('booking_id', 'unknown')
-        buyer_id = message.get('buyer_id', 0)
         event_id = message.get('event_id', self.event_id)
-        section = message.get('section', '')
-        subsection = message.get('subsection', 0)
 
         Logger.base.info(
-            f'[RELEASE-{self.instance_id}] Releasing {len(seat_positions)} seats for booking={booking_id}'
+            f'[RELEASE-{self.instance_id}] Processing release for booking={booking_id}'
         )
 
-        # Use case handles: Kvrocks release + PostgreSQL update + SSE broadcast
+        # Use case fetches all details from DB (seat_positions, section, subsection, buyer_id)
         batch_request = ReleaseSeatsBatchRequest(
             booking_id=booking_id,
-            buyer_id=buyer_id,
-            seat_positions=seat_positions,
             event_id=event_id,
-            section=section,
-            subsection=subsection,
         )
         result = await self.seat_release_use_case.execute_batch(batch_request)
 

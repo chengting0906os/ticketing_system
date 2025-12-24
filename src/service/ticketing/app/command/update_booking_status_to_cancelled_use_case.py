@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Self
 
 from dependency_injector.wiring import Provide, inject
@@ -83,16 +82,13 @@ class UpdateBookingToCancelledUseCase:
 
         assert booking.seat_positions, 'Booking to cancel must have seat_positions'
 
-        # Publish event - Reservation Service will handle DB update
+        # Publish minimal event - Reservation Service fetches details from DB
         await self.event_publisher.publish_booking_cancelled(
             event=BookingCancelledEvent(
                 booking_id=booking_id,
-                buyer_id=buyer_id,
                 event_id=booking.event_id,
                 section=booking.section,
                 subsection=booking.subsection,
-                seat_positions=booking.seat_positions,
-                cancelled_at=datetime.now(timezone.utc),
             )
         )
 

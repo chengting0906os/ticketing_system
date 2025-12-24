@@ -23,7 +23,6 @@ from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
     BookingCreatedDomainEvent,
-    BookingPaidEvent,
 )
 from src.service.ticketing.domain.entity.booking_entity import BookingStatus
 
@@ -72,7 +71,6 @@ class TestGetProtoClass:
             get_proto_class_by_event_type('BookingCreatedDomainEvent')
             == pb.BookingCreatedDomainEvent
         )
-        assert get_proto_class_by_event_type('BookingPaidEvent') == pb.BookingPaidEvent
         assert get_proto_class_by_event_type('BookingCancelledEvent') == pb.BookingCancelledEvent
 
     def test_raises_for_unknown_event_type(self) -> None:
@@ -96,7 +94,6 @@ class TestBookingCreatedEventSerialization:
             seat_selection_mode='manual',
             seat_positions=['1-1', '1-2'],
             status=BookingStatus.PROCESSING,
-            occurred_at=datetime.now(timezone.utc),
             config=SubsectionConfig(rows=10, cols=20, price=2500),
         )
 
@@ -121,6 +118,7 @@ class TestBookingCreatedEventSerialization:
         assert result['seat_selection_mode'] == booking_created_event.seat_selection_mode
         assert result['seat_positions'] == booking_created_event.seat_positions
         assert result['status'] == booking_created_event.status.value
+        assert result['message_type'] == 'BookingCreatedDomainEvent'
 
     def test_config_field_serialization(
         self, booking_created_event: BookingCreatedDomainEvent
@@ -153,7 +151,6 @@ class TestBookingCreatedEventSerialization:
             seat_selection_mode='auto',
             seat_positions=[],
             status=BookingStatus.PROCESSING,
-            occurred_at=datetime.now(timezone.utc),
             config=SubsectionConfig(rows=10, cols=20, price=0),
         )
 
@@ -176,7 +173,6 @@ class TestBookingCreatedEventSerialization:
             seat_selection_mode='auto',
             seat_positions=[],
             status=BookingStatus.PROCESSING,
-            occurred_at=datetime.now(timezone.utc),
             config=None,  # Explicitly None
         )
 
@@ -188,48 +184,22 @@ class TestBookingCreatedEventSerialization:
 
 
 @pytest.mark.unit
-class TestBookingPaidEventSerialization:
-    def test_serialize_and_deserialize_roundtrip(self) -> None:
-        paid_at = datetime.now(timezone.utc)
-        event = BookingPaidEvent(
-            booking_id=uuid_utils.uuid7(),
-            buyer_id=42,
-            event_id=1,
-            section='A',
-            subsection=1,
-            seat_positions=['1-1', '1-2', '1-3'],
-            paid_at=paid_at,
-            total_amount=7500.0,
-        )
-
-        data = convert_domain_event_to_proto(event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='BookingPaidEvent')
-
-        assert result['booking_id'] == str(event.booking_id)
-        assert result['section'] == 'A'
-        assert result['subsection'] == 1
-        assert result['seat_positions'] == ['1-1', '1-2', '1-3']
-        assert result['total_amount'] == 7500.0
-
-
-@pytest.mark.unit
 class TestBookingCancelledEventSerialization:
+    """Test minimal BookingCancelledEvent (only booking_id, event_id, section, subsection)."""
+
     def test_serialize_and_deserialize_roundtrip(self) -> None:
-        cancelled_at = datetime.now(timezone.utc)
         event = BookingCancelledEvent(
             booking_id=uuid_utils.uuid7(),
-            buyer_id=42,
             event_id=1,
             section='A',
             subsection=1,
-            seat_positions=['1-1', '1-2'],
-            cancelled_at=cancelled_at,
         )
 
         data = convert_domain_event_to_proto(event).SerializeToString()
         result = deserialize_domain_event(data=data, event_type='BookingCancelledEvent')
 
         assert result['booking_id'] == str(event.booking_id)
+        assert result['event_id'] == 1
         assert result['section'] == 'A'
         assert result['subsection'] == 1
-        assert result['seat_positions'] == ['1-1', '1-2']
+        assert result['message_type'] == 'BookingCancelledEvent'

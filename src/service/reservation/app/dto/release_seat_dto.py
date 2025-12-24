@@ -9,14 +9,10 @@ import attrs
 
 @attrs.define
 class ReleaseSeatsBatchRequest:
-    """Batch seat release request - Performance optimization for releasing multiple seats"""
+    """Minimal release request - all details fetched from DB using booking_id"""
 
-    booking_id: str  # UUID7 booking ID (for PostgreSQL update and tracing)
-    buyer_id: int  # Buyer ID (for SSE broadcast)
-    seat_positions: list[str]  # format: ["row-seat", ...], e.g., ["1-5", "1-6"]
-    event_id: int
-    section: str
-    subsection: int
+    booking_id: str  # UUID7 booking ID (for PostgreSQL lookup)
+    event_id: int  # Event ID (for topic routing)
 
 
 @attrs.define

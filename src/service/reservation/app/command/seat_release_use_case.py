@@ -2,17 +2,22 @@
 Seat Release Use Case - PostgreSQL First Flow
 
 New 5-Step Flow:
-1. Validate Request
-2. Idempotency Check (PostgreSQL)
+1. Fetch booking from DB
+2. Idempotency Check (booking status)
 3. PostgreSQL Write (booking + tickets)
 4. Kvrocks Pipeline (update seat map)
 5. SSE broadcast
 """
 
+from typing import TYPE_CHECKING
+
 from opentelemetry import trace
 
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
+
+if TYPE_CHECKING:
+    from src.service.ticketing.domain.entity.booking_entity import Booking
 from src.service.reservation.app.dto import (
     ReleaseSeatsBatchRequest,
     ReleaseSeatsBatchResult,
@@ -60,8 +65,8 @@ class SeatReleaseUseCase:
         Execute seat release - PostgreSQL First Flow
 
         New 5-Step Flow:
-        1. Validate Request
-        2. Idempotency Check (PostgreSQL)
+        1. Fetch booking from DB (all details needed)
+        2. Idempotency Check (booking status)
         3. PostgreSQL Write (booking + tickets)
         4. Kvrocks Pipeline (update seat map)
         5. SSE Broadcast
@@ -71,37 +76,33 @@ class SeatReleaseUseCase:
             attributes={
                 'booking.id': request.booking_id,
                 'event.id': request.event_id,
-                'buyer.id': request.buyer_id,
-                'seat.count': len(request.seat_positions),
             },
         ):
             try:
+                # ========== Step 1: Fetch Booking from DB ==========
+                booking = await self.booking_command_repo.get_by_id(booking_id=request.booking_id)
+                if not booking:
+                    error_msg = f'Booking {request.booking_id} not found'
+                    Logger.base.warning(f'⚠️ [RELEASE] {error_msg}')
+                    return self._error_result(error_msg)
+
                 Logger.base.info(
                     f'🔓 [RELEASE] Processing release for booking {request.booking_id}, '
-                    f'buyer {request.buyer_id}, {len(request.seat_positions)} seats'
+                    f'buyer {booking.buyer_id}, {len(booking.seat_positions or [])} seats'
                 )
 
-                # ========== Step 1: Validate Request ==========
-                self._validate_request(request)
-
-                # ========== Step 2: Idempotency Check (PostgreSQL) ==========
-                existing_booking = await self.booking_command_repo.get_by_id(
-                    booking_id=request.booking_id
-                )
-                if existing_booking and existing_booking.status == BookingStatus.CANCELLED:
+                # ========== Step 2: Idempotency Check ==========
+                if booking.status == BookingStatus.CANCELLED:
                     Logger.base.info(
                         f'✅ [IDEMPOTENCY] Booking {request.booking_id} already cancelled, '
                         'completing remaining steps'
                     )
-                    return await self._complete_success_flow(
-                        request=request,
-                        seat_positions=existing_booking.seat_positions,
-                    )
+                    return await self._complete_success_flow(booking=booking)
 
-                if not existing_booking or existing_booking.status != BookingStatus.PENDING_PAYMENT:
+                if booking.status != BookingStatus.PENDING_PAYMENT:
                     error_msg = f'Booking {request.booking_id} not in PENDING_PAYMENT status'
                     Logger.base.warning(f'⚠️ [RELEASE] {error_msg}')
-                    return self._error_result(request, error_msg)
+                    return self._error_result(error_msg)
 
                 # ========== Step 3: PostgreSQL Write ==========
                 await self.booking_command_repo.update_status_to_cancelled_and_release_tickets(
@@ -112,22 +113,15 @@ class SeatReleaseUseCase:
                 )
 
                 # ========== Step 4 + 5: Kvrocks + SSE ==========
-                return await self._complete_success_flow(
-                    request=request,
-                    seat_positions=request.seat_positions,
-                )
+                return await self._complete_success_flow(booking=booking)
 
             except DomainError as e:
                 Logger.base.warning(f'⚠️ [RELEASE] Domain error: {e}')
-                return self._error_result(request, str(e))
+                return self._error_result(str(e))
 
             except Exception as e:
                 Logger.base.exception(f'❌ [RELEASE] Unexpected error: {e}')
-                return self._error_result(request, 'Internal server error')
-
-    def _validate_request(self, request: ReleaseSeatsBatchRequest) -> None:
-        if not request.seat_positions:
-            raise DomainError('seat_positions is required')
+                return self._error_result('Internal server error')
 
     def _build_seats_to_release(
         self, *, seat_positions: list[str], cols: int
@@ -141,44 +135,49 @@ class SeatReleaseUseCase:
             for seat_id in seat_positions
         ]
 
-    async def _complete_success_flow(
-        self,
-        *,
-        request: ReleaseSeatsBatchRequest,
-        seat_positions: list[str],
-    ) -> ReleaseSeatsBatchResult:
-        """Complete Step 4 (Kvrocks) + Step 5 (SSE) + return success result."""
+    async def _complete_success_flow(self, *, booking: 'Booking') -> ReleaseSeatsBatchResult:
+        """Complete Step 4 (Kvrocks) + Step 5 (SSE) + return success result.
+
+        Uses booking entity for all required data (section, subsection, seat_positions, buyer_id).
+        """
+        seat_positions = booking.seat_positions or []
+
         # Fetch config for seat index calculation
         config_result = await self.seat_state_handler.fetch_release_config(
-            event_id=request.event_id,
-            section=request.section,
-            subsection=request.subsection,
+            event_id=booking.event_id,
+            section=booking.section,
+            subsection=booking.subsection,
         )
         if not config_result['success']:
-            return self._error_result(request, config_result['error_message'])
+            return ReleaseSeatsBatchResult(
+                successful_seats=[],
+                failed_seats=seat_positions,
+                total_released=0,
+                error_messages={seat: config_result['error_message'] for seat in seat_positions},
+            )
 
         cols = config_result['cols']
         seats_to_release = self._build_seats_to_release(seat_positions=seat_positions, cols=cols)
 
         # Step 4: Kvrocks Pipeline (idempotent - SET 0 when already 0 is no-op)
         await self.seat_state_handler.update_seat_map_release(
-            event_id=request.event_id,
-            section=request.section,
-            subsection=request.subsection,
-            booking_id=request.booking_id,
+            event_id=booking.event_id,
+            section=booking.section,
+            subsection=booking.subsection,
+            booking_id=str(booking.id),
             seats_to_release=seats_to_release,
         )
-        Logger.base.info(f'✅ [RELEASE] Kvrocks seat map updated for booking {request.booking_id}')
+        Logger.base.info(f'✅ [RELEASE] Kvrocks seat map updated for booking {booking.id}')
 
         # Step 5: SSE Broadcast
-        await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
+        await self.pubsub_handler.schedule_stats_broadcast(event_id=booking.event_id)
         await self.pubsub_handler.publish_booking_update(
-            user_id=request.buyer_id,
-            event_id=request.event_id,
+            user_id=booking.buyer_id,
+            event_id=booking.event_id,
             event_data={
                 'event_type': 'booking_updated',
-                'event_id': request.event_id,
-                'booking_id': request.booking_id,
+                'event_id': booking.event_id,
+                'booking_id': str(booking.id),
                 'status': BookingStatus.CANCELLED,
                 'tickets': [],
             },
@@ -192,10 +191,10 @@ class SeatReleaseUseCase:
         )
 
     @staticmethod
-    def _error_result(request: ReleaseSeatsBatchRequest, error_msg: str) -> ReleaseSeatsBatchResult:
+    def _error_result(error_msg: str) -> ReleaseSeatsBatchResult:
         return ReleaseSeatsBatchResult(
             successful_seats=[],
-            failed_seats=request.seat_positions,
+            failed_seats=[],
             total_released=0,
-            error_messages={seat_pos: error_msg for seat_pos in request.seat_positions},
+            error_messages={'booking': error_msg},
         )

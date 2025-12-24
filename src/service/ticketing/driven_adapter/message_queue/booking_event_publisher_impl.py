@@ -3,6 +3,10 @@ Booking Event Publisher Implementation
 
 Concrete adapter that implements IBookingEventPublisher using confluent-kafka.
 Handles infrastructure concerns like topic naming and event serialization.
+
+Uses unified topic (ticket-command-request) with message_type header for routing:
+- BookingCreatedDomainEvent: Reserve seats
+- BookingCancelledEvent: Release seats
 """
 
 from src.platform.config.core_setting import settings
@@ -17,7 +21,11 @@ from src.service.ticketing.domain.domain_event.booking_domain_event import (
 
 
 class BookingEventPublisherImpl(IBookingEventPublisher):
-    """Kafka-based implementation of booking event publisher."""
+    """Kafka-based implementation of booking event publisher.
+
+    All events published to unified topic (ticket-command-request) with
+    message_type header for consumer routing.
+    """
 
     @staticmethod
     def _calculate_partition(section: str, subsection: int) -> int:
@@ -28,14 +36,22 @@ class BookingEventPublisherImpl(IBookingEventPublisher):
 
     @Logger.io
     async def publish_booking_created(self, *, event: BookingCreatedDomainEvent) -> None:
-        topic = KafkaTopicBuilder.booking_to_reservation_reserve_seats(event_id=event.event_id)
+        """Publish booking created event (reserve seats)."""
+        topic = KafkaTopicBuilder.ticket_command_request(event_id=event.event_id)
         partition = self._calculate_partition(event.section, event.subsection)
-        await publish_domain_event(event=event, topic=topic, partition=partition)
+        await publish_domain_event(
+            event=event,
+            topic=topic,
+            partition=partition,
+        )
 
     @Logger.io
     async def publish_booking_cancelled(self, *, event: BookingCancelledEvent) -> None:
-        topic = KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(
-            event_id=event.event_id
-        )
+        """Publish booking cancelled event (release seats)."""
+        topic = KafkaTopicBuilder.ticket_command_request(event_id=event.event_id)
         partition = self._calculate_partition(event.section, event.subsection)
-        await publish_domain_event(event=event, topic=topic, partition=partition)
+        await publish_domain_event(
+            event=event,
+            topic=topic,
+            partition=partition,
+        )

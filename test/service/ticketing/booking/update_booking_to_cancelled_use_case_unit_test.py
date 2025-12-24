@@ -87,10 +87,11 @@ class TestUpdateBookingToCancelled:
         mock_event_publisher.publish_booking_cancelled.assert_called_once()
         call_args = mock_event_publisher.publish_booking_cancelled.call_args
         event = call_args.kwargs['event']
+        # Minimal event - only booking_id, event_id, section, subsection
         assert event.booking_id == UUID('00000000-0000-0000-0000-00000000000a')
-        assert event.buyer_id == 2
         assert event.event_id == 1
-        assert event.seat_positions == ['1-1', '1-2']
+        assert event.section == 'A'
+        assert event.subsection == 1
 
         # Verify DB update was NOT called (moved to Reservation Service)
         assert (
@@ -222,15 +223,17 @@ class TestUpdateBookingToCancelled:
             )
 
     @pytest.mark.asyncio
-    async def test_event_contains_seat_positions_from_booking(
+    async def test_event_contains_section_subsection_for_partition(
         self, pending_payment_booking: Booking, mock_booking_repo: Mock, mock_event_publisher: Mock
     ) -> None:
         """
-        Event content validation: seat_positions from booking.seat_positions
+        Event content validation: section/subsection for partition calculation
 
-        Given: Booking with seat_positions ['1-1', '1-2']
+        Given: Booking with section='A', subsection=1
         When: Cancel booking
-        Then: Event's seat_positions equals booking.seat_positions
+        Then: Event's section/subsection equals booking values (for partition calculation)
+
+        Note: seat_positions no longer in event - consumer fetches from DB.
         """
         # Arrange
         mock_booking_repo.get_by_id = AsyncMock(return_value=pending_payment_booking)
@@ -246,4 +249,5 @@ class TestUpdateBookingToCancelled:
         # Assert
         mock_event_publisher.publish_booking_cancelled.assert_called_once()
         event = mock_event_publisher.publish_booking_cancelled.call_args.kwargs['event']
-        assert event.seat_positions == ['1-1', '1-2']
+        assert event.section == 'A'
+        assert event.subsection == 1

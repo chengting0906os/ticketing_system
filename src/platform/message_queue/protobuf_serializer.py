@@ -16,9 +16,7 @@ from src.platform.message_queue.proto import domain_event_pb2 as pb
 
 _EVENT_TYPE_TO_PROTO: dict[str, type] = {
     'BookingCreatedDomainEvent': pb.BookingCreatedDomainEvent,
-    'BookingPaidEvent': pb.BookingPaidEvent,
     'BookingCancelledEvent': pb.BookingCancelledEvent,
-    'ReservationRequestEvent': pb.ReservationRequestEvent,
 }
 
 
@@ -74,15 +72,30 @@ def get_proto_class_by_event_type(event_type: str) -> type:
 
 
 def convert_domain_event_to_proto(
-    event: object, trace_context: dict[str, str] | None = None
+    event: object,
+    *,
+    trace_context: dict[str, str] | None = None,
 ) -> Any:
-    """Convert domain event to protobuf message with optional trace context."""
-    proto_class = get_proto_class_by_event_type(event.__class__.__name__)
+    """Convert domain event to protobuf message with trace context.
+
+    Args:
+        event: Domain event (attrs class) to convert
+        trace_context: OpenTelemetry trace headers (traceparent, tracestate)
+
+    Note: message_type is auto-derived from event class name.
+    """
+    event_type = event.__class__.__name__
+    proto_class = get_proto_class_by_event_type(event_type)
     event_dict = _attrs_to_proto_dict(event)
+
+    # Inject message type for consumer routing (auto-derived from class name)
+    event_dict['message_type'] = event_type
+
     # Inject trace context if provided
     if trace_context:
         event_dict['traceparent'] = trace_context.get('traceparent', '')
         event_dict['tracestate'] = trace_context.get('tracestate', '')
+
     return proto_class(**event_dict)
 
 

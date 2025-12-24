@@ -13,49 +13,20 @@ class KafkaTopicBuilder:
     Format: event-id-{event_id}______{action}______{from_service}___to___{to_service}
     """
 
-    # ====== To Booking Service =======
+    # ====== To Reservation Service (unified topic for reserve/release) =======
     @staticmethod
-    def ticketing_to_booking_create_metadata(*, event_id: int) -> str:
-        """Ticketing checks availability, then sends to Booking Service to create metadata"""
-        return f'event-id-{event_id}______create-booking-metadata______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.BOOKING_SERVICE}'
+    def ticket_command_request(*, event_id: int) -> str:
+        """Unified topic for seat reservation commands (reserve/release).
 
-    # ====== To Reservation Service (from Booking) =======
-    @staticmethod
-    def booking_to_reservation_reserve_seats(*, event_id: int) -> str:
-        """Booking Service sends reservation request to Reservation Service"""
-        return f'event-id-{event_id}______reserve-seats-request______{ServiceNames.BOOKING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
+        Uses action field in message to route:
+        - action='reserve': Reserve seats (AVAILABLE → RESERVED)
+        - action='release': Release seats (RESERVED → AVAILABLE)
 
-    # ====== To Reservation Service (from Ticketing - existing) =======
-    @staticmethod
-    def ticket_reserving_request_to_reserved_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______ticket-reserving-request-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
+        Same topic ensures ordering - no race condition between reserve/release.
+        """
+        return f'event-id-{event_id}______ticket-command-request______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
 
-    @staticmethod
-    def release_ticket_status_to_available_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______release-ticket-status-to-available-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
-
-    @staticmethod
-    def finalize_ticket_status_to_paid_in_kvrocks(*, event_id: int) -> str:
-        return f'event-id-{event_id}______finalize-ticket-status-to-paid-in-kvrocks______{ServiceNames.TICKETING_SERVICE}___to___{ServiceNames.RESERVATION_SERVICE}'
-
-    # ====== To Ticketing Service (includes Booking + Event Ticketing) =======
-
-    @staticmethod
-    def update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-        *, event_id: int
-    ) -> str:
-        """After successful seat reservation, update both Booking and Ticket status (atomic operation)"""
-        return f'event-id-{event_id}______update-booking-status-to-pending-payment-and-ticket-status-to-reserved-in-postgresql______{ServiceNames.RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
-
-    @staticmethod
-    def update_booking_status_to_failed(*, event_id: int) -> str:
-        return f'event-id-{event_id}______update-booking-status-to-failed______{ServiceNames.RESERVATION_SERVICE}___to___{ServiceNames.TICKETING_SERVICE}'
-
-    @staticmethod
-    def ticketing_dlq(*, event_id: int) -> str:
-        """Dead Letter Queue for ticketing service unrecoverable errors"""
-        return f'event-id-{event_id}______ticketing-dlq______{ServiceNames.TICKETING_SERVICE}'
-
+    # ====== Dead Letter Queues =======
     @staticmethod
     def reservation_dlq(*, event_id: int) -> str:
         """Dead Letter Queue for seat reservation service unrecoverable errors"""
@@ -64,30 +35,10 @@ class KafkaTopicBuilder:
         )
 
     @staticmethod
-    def booking_dlq(*, event_id: int) -> str:
-        """Dead Letter Queue for booking service unrecoverable errors"""
-        return f'event-id-{event_id}______booking-dlq______{ServiceNames.BOOKING_SERVICE}'
-
-    @staticmethod
     def get_all_topics(*, event_id: int) -> list[str]:
         return [
-            # To Booking Service (new flow)
-            KafkaTopicBuilder.ticketing_to_booking_create_metadata(event_id=event_id),
-            # To Reservation Service (new flow - from Booking)
-            KafkaTopicBuilder.booking_to_reservation_reserve_seats(event_id=event_id),
-            # To Reservation Service (existing - will be deprecated)
-            KafkaTopicBuilder.ticket_reserving_request_to_reserved_in_kvrocks(event_id=event_id),
-            KafkaTopicBuilder.release_ticket_status_to_available_in_kvrocks(event_id=event_id),
-            KafkaTopicBuilder.finalize_ticket_status_to_paid_in_kvrocks(event_id=event_id),
-            # To Ticketing Service (will be deprecated - Reservation handles PostgreSQL now)
-            KafkaTopicBuilder.update_booking_status_to_pending_payment_and_ticket_status_to_reserved_in_postgresql(
-                event_id=event_id
-            ),
-            KafkaTopicBuilder.update_booking_status_to_failed(event_id=event_id),
-            # Dead Letter Queues
-            KafkaTopicBuilder.ticketing_dlq(event_id=event_id),
+            KafkaTopicBuilder.ticket_command_request(event_id=event_id),
             KafkaTopicBuilder.reservation_dlq(event_id=event_id),
-            KafkaTopicBuilder.booking_dlq(event_id=event_id),
         ]
 
 
@@ -99,27 +50,8 @@ class KafkaConsumerGroupBuilder:
     """
 
     @staticmethod
-    def ticketing_service(*, event_id: int) -> str:
-        """Ticketing Service (integrates booking + event_ticketing)"""
-        return f'event-id-{event_id}_____{ServiceNames.TICKETING_SERVICE}--{event_id}'
-
-    @staticmethod
     def reservation_service(*, event_id: int) -> str:
         return f'event-id-{event_id}_____{ServiceNames.RESERVATION_SERVICE}--{event_id}'
-
-    @staticmethod
-    def booking_service(*, event_id: int) -> str:
-        """Booking Service (handles booking metadata)"""
-        return f'event-id-{event_id}_____{ServiceNames.BOOKING_SERVICE}--{event_id}'
-
-    @staticmethod
-    def get_all_consumer_groups(*, event_id: int) -> list[str]:
-        """Get all consumer groups (Ticketing + Booking + Reservation)"""
-        return [
-            KafkaConsumerGroupBuilder.ticketing_service(event_id=event_id),
-            KafkaConsumerGroupBuilder.booking_service(event_id=event_id),
-            KafkaConsumerGroupBuilder.reservation_service(event_id=event_id),
-        ]
 
 
 class KafkaProducerTransactionalIdBuilder:
@@ -145,35 +77,4 @@ class KafkaProducerTransactionalIdBuilder:
         """Seat Reservation Service Producer Transactional ID"""
         return (
             f'{ServiceNames.RESERVATION_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
-        )
-
-    @staticmethod
-    def booking_service(*, event_id: int, instance_id: str) -> str:
-        """Booking Service Producer Transactional ID"""
-        return f'{ServiceNames.BOOKING_SERVICE}-producer-event-{event_id}-instance-{instance_id}'
-
-
-class PartitionKeyBuilder:
-    """
-    Partition Key Naming Unified Builder
-
-    Format: event-{event_id}-section-{section}-partition-{partition_number}
-    """
-
-    @staticmethod
-    def section_based(*, event_id: int, section: str, partition_number: int = 0) -> str:
-        return f'event-{event_id}-section-{section}-partition-{partition_number}'
-
-    @staticmethod
-    def booking_based(*, event_id: int) -> str:
-        return f'event-{event_id}'
-
-    @staticmethod
-    def booking_with_id(*, event_id: int, booking_id: int) -> str:
-        return f'event-{event_id}-booking-{booking_id}'
-
-    @staticmethod
-    def seat_based(*, event_id: int, section: str, partition_number: int = 0) -> str:
-        return PartitionKeyBuilder.section_based(
-            event_id=event_id, section=section, partition_number=partition_number
         )

@@ -21,8 +21,6 @@ from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
 from src.platform.message_queue.protobuf_serializer import convert_domain_event_to_proto
 from src.platform.observability.tracing import inject_trace_context
-from src.service.shared_kernel.domain.domain_event import MqDomainEvent
-
 
 # Global async producer instance
 _global_producer: AIOProducer | None = None
@@ -53,7 +51,7 @@ async def _get_global_producer() -> AIOProducer:
 
 async def publish_domain_event(
     *,
-    event: MqDomainEvent,
+    event: object,
     topic: str,
     partition: int,
 ) -> Literal[True]:
@@ -64,8 +62,13 @@ async def publish_domain_event(
         event: Domain event to publish
         topic: Kafka topic name
         partition: Kafka partition number
+
+    Note: message_type is auto-derived from event class name and embedded in
+    the proto message body (not Kafka headers) because AIOProducer doesn't
+    support headers in batch mode.
     """
     tracer = trace.get_tracer(__name__)
+    event_type = event.__class__.__name__
 
     with tracer.start_as_current_span(
         'kafka.publish',
@@ -74,17 +77,24 @@ async def publish_domain_event(
             'messaging.destination': topic,
             'messaging.destination_kind': 'topic',
             'messaging.kafka.partition': partition,
-            'event.type': event.__class__.__name__,
+            'event.type': event_type,
         },
     ):
         trace_headers = inject_trace_context()
-        proto_msg = convert_domain_event_to_proto(event, trace_context=trace_headers)
+        proto_msg = convert_domain_event_to_proto(
+            event,
+            trace_context=trace_headers,
+        )
         value_bytes = proto_msg.SerializeToString()
 
         producer = await _get_global_producer()
-        await producer.produce(topic=topic, value=value_bytes, partition=partition)
+        await producer.produce(
+            topic=topic,
+            value=value_bytes,
+            partition=partition,
+        )
 
-        Logger.base.info(f'Published {event.__class__.__name__} to {topic} (partition={partition})')
+        Logger.base.info(f'Published {event_type} to {topic} (partition={partition})')
 
         return True
 
