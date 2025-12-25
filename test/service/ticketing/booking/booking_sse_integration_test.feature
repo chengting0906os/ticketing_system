@@ -31,23 +31,23 @@ Feature: Booking Status SSE Endpoint
     Given I am subscribed to SSE for event {event_id}
     When SSE event is published with:
       | event_type      | event_id   | booking_id                           | status          | tickets                                                                                                            |
-      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000001 | PENDING_PAYMENT | [{"id": 1, "section": "A", "subsection": 1, "row": 1, "seat": 1, "price": 1000, "status": "reserved"}] |
+      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000001 | pending_payment | [{"id": 1, "section": "A", "subsection": 1, "row": 1, "seat": 1, "price": 1000, "status": "reserved"}] |
     Then I should receive SSE event with:
       | event_type      | status          | booking_id                           |
-      | booking_updated | PENDING_PAYMENT | 01900000-0000-7000-8000-000000000001 |
+      | booking_updated | pending_payment | 01900000-0000-7000-8000-000000000001 |
 
   Scenario: SSE broadcaster delivers failure events with error message
     Given I am subscribed to SSE for event {event_id}
     When SSE event is published with:
-      | event_type      | event_id   | booking_id                           | status | tickets | error_message           |
-      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000002 | FAILED | []      | No seats available |
+      | event_type      | event_id   | booking_id                           | status | tickets | error_message      |
+      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000002 | failed | []      | No seats available |
     Then I should receive SSE event with:
-      | event_type      | status | error_message           |
-      | booking_updated | FAILED | No seats available |
+      | event_type      | status | error_message      |
+      | booking_updated | failed | No seats available |
 
   Scenario: SSE connection closes on terminal state
     Given I am subscribed to SSE for event {event_id}
     When SSE event is published with:
       | event_type      | event_id   | booking_id                           | status    | tickets |
-      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000003 | COMPLETED | []      |
+      | booking_updated | {event_id} | 01900000-0000-7000-8000-000000000003 | completed | []      |
     Then the SSE connection should be closed
