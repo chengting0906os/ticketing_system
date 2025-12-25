@@ -17,8 +17,8 @@ from src.service.reservation.app.interface.i_booking_command_repo import (
 )
 from src.service.shared_kernel.domain.value_object import BookingStatus
 from src.service.ticketing.domain.entity.booking_entity import Booking
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
-from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingCommandRepoImpl(IBookingCommandRepo):
@@ -173,10 +173,10 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     paid_at=booking_row['paid_at'],
                 )
 
-                # Convert ticket rows to TicketRef entities
+                # Convert ticket rows to TicketEntity
                 tickets = []
                 for row in ticket_rows:
-                    ticket = TicketRef(
+                    ticket = TicketEntity(
                         event_id=row['event_id'],
                         section=row['section'],
                         subsection=row['subsection'],
@@ -556,7 +556,9 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             )
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: Union[str, UUID]) -> list[TicketRef]:
+    async def get_tickets_by_booking_id(
+        self, *, booking_id: Union[str, UUID]
+    ) -> list[TicketEntity]:
         """Get all tickets for a booking"""
         async with (await get_asyncpg_pool()).acquire() as conn:
             booking_uuid = UUID(booking_id) if isinstance(booking_id, str) else booking_id
@@ -597,7 +599,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
 
             tickets = []
             for row in ticket_rows:
-                ticket = TicketRef(
+                ticket = TicketEntity(
                     event_id=row['event_id'],
                     section=row['section'],
                     subsection=row['subsection'],

@@ -15,8 +15,8 @@ from src.platform.database.db_setting import get_asyncpg_pool
 from src.platform.logging.loguru_io import Logger
 from src.service.ticketing.app.interface.i_booking_command_repo import IBookingCommandRepo
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
-from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingCommandRepoImpl(IBookingCommandRepo):
@@ -72,7 +72,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
             return self._row_to_entity(row)
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketEntity]:
         """
         Query tickets associated with booking (used for command operations)
 
@@ -115,7 +115,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
 
             tickets = []
             for row in rows:
-                ticket = TicketRef(
+                ticket = TicketEntity(
                     event_id=row['event_id'],
                     section=row['section'],
                     subsection=row['subsection'],

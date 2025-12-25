@@ -11,7 +11,7 @@ from typing import List
 from uuid_utils import UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
-from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 
 
 class IBookingCommandRepo(ABC):
@@ -39,7 +39,7 @@ class IBookingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketRef]:
+    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List[TicketEntity]:
         """
         Get tickets associated with booking (for command operations)
 

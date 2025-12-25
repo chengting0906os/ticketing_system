@@ -12,8 +12,8 @@ from src.service.ticketing.domain.entity.booking_entity import Booking, BookingS
 from src.service.ticketing.driven_adapter.model.booking_model import BookingModel
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
-from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 class BookingQueryRepoImpl(IBookingQueryRepo):
@@ -246,7 +246,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             return bookings_with_tickets
 
     @Logger.io
-    async def _get_tickets_by_booking_id(self, *, booking_id: UUID) -> list[TicketRef]:
+    async def _get_tickets_by_booking_id(self, *, booking_id: UUID) -> list[TicketEntity]:
         """
         Get all tickets for a booking using seat_positions
 
@@ -300,10 +300,10 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             )
             db_tickets = result.scalars().all()
 
-            # Convert to Ticket entities
+            # Convert to TicketEntity
             tickets = []
             for db_ticket in db_tickets:
-                ticket = TicketRef(
+                ticket = TicketEntity(
                     event_id=db_ticket.event_id,
                     section=db_ticket.section,
                     subsection=db_ticket.subsection,
