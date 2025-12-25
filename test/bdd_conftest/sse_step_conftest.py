@@ -81,6 +81,46 @@ class MockResponse:
 
 
 # =============================================================================
+# Helper Functions - Common
+# =============================================================================
+
+
+def _find_section_in_list(
+    sections: list[dict[str, Any]],
+    *,
+    section: str,
+    subsection: int,
+) -> dict[str, Any] | None:
+    """Find a section by section name and subsection number."""
+    return next(
+        (s for s in sections if s.get('section') == section and s.get('subsection') == subsection),
+        None,
+    )
+
+
+def _find_event_by_type(events: list[dict[str, Any]], event_type: str) -> dict[str, Any] | None:
+    """Find an event by its type."""
+    return next((e for e in events if e.get('event') == event_type), None)
+
+
+def _find_event_with_sections(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Find an event that contains sections data."""
+    for event in events:
+        event_data = event.get('data', {})
+        if isinstance(event_data, dict) and 'sections' in event_data:
+            return event
+    return None
+
+
+def _get_sse_events(context: dict[str, Any]) -> list[dict[str, Any]]:
+    """Get SSE events from context, raise if empty."""
+    events = context.get('sse_events', [])
+    if not events:
+        raise AssertionError('No SSE events received')
+    return events
+
+
+# =============================================================================
 # Helper Functions - Kvrocks Pub/Sub
 # =============================================================================
 
@@ -586,7 +626,7 @@ def then_sse_connection_should_be_closed(context: dict[str, Any]) -> None:
 
     try:
         # Wait for terminal state message for the expected booking
-        terminal_states = ['COMPLETED', 'FAILED', 'CANCELLED']
+        terminal_states = ['completed', 'failed', 'cancelled']
         received_event = None
         max_attempts = 10  # Prevent infinite loop
 
@@ -649,18 +689,12 @@ def then_initial_status_received(step: Step, context: dict[str, Any]) -> None:
           | initial_status | 4              |
     """
     data = extract_table_data(step)
-    events = context.get('sse_events', [])
+    events = _get_sse_events(context)
+    event_type = data['event_type']
 
-    assert len(events) > 0, 'No SSE events received'
-
-    initial_event = None
-    for event in events:
-        if event.get('event') == data['event_type']:
-            initial_event = event
-            break
-
+    initial_event = _find_event_by_type(events, event_type)
     assert initial_event is not None, (
-        f"Expected event type '{data['event_type']}', got events: {[e.get('event') for e in events]}"
+        f"Expected event type '{event_type}', got events: {[e.get('event') for e in events]}"
     )
 
     event_data = initial_event.get('data', {})
@@ -708,15 +742,9 @@ def then_initial_sse_event_data_should_include(step: Step, context: dict[str, An
           | event_id  | seller_id | name      | description | is_active | status    | venue_name  | seating_config | total_sections |
           | {any_int} | {any_int} | SSE Event | SSE Test    | true      | available | Large Arena | not_null       | 4              |
     """
-    events = context.get('sse_events', [])
-    assert len(events) > 0, 'No SSE events received'
+    events = _get_sse_events(context)
 
-    initial_event = None
-    for event in events:
-        if event.get('event') == 'initial_status':
-            initial_event = event
-            break
-
+    initial_event = _find_event_by_type(events, 'initial_status')
     assert initial_event is not None, 'No initial_status event found'
 
     event_data = initial_event.get('data', {})
@@ -743,30 +771,21 @@ def then_section_stats_include(step: Step, context: dict[str, Any]) -> None:
           | A       | 1          | 50    | 50        |
     """
     data = extract_table_data(step)
-    events = context.get('sse_events', [])
+    events = _get_sse_events(context)
 
-    assert len(events) > 0, 'No SSE events received'
-
-    sections_event = None
-    for event in events:
-        event_data = event.get('data', {})
-        if isinstance(event_data, dict) and 'sections' in event_data:
-            sections_event = event
-            break
+    sections_event = _find_event_with_sections(events)
 
     assert sections_event is not None, 'No event with sections data found'
     sections = sections_event['data'].get('sections', [])
 
-    # Find matching section/subsection in the list
     target_section = data['section']
     target_subsection = int(data['subsection'])
-    matching_section = None
-    for s in sections:
-        if s.get('section') == target_section and s.get('subsection') == target_subsection:
-            matching_section = s
-            break
-
     key = f'{target_section}-{target_subsection}'
+
+    matching_section = _find_section_in_list(
+        sections, section=target_section, subsection=target_subsection
+    )
+
     assert matching_section is not None, f'Section {key} not found in response'
 
     total = (
@@ -792,15 +811,9 @@ def then_status_update_received(step: Step, context: dict[str, Any]) -> None:
           | status_update |
     """
     data = extract_table_data(step)
-    events = context.get('sse_events', [])
+    events = _get_sse_events(context)
 
-    assert len(events) >= 1, 'No status update event received'
-
-    update_event = None
-    for event in events:
-        if event.get('event') == data['event_type']:
-            update_event = event
-            break
+    update_event = _find_event_by_type(events, data['event_type'])
 
     assert update_event is not None, f"No event with type '{data['event_type']}' found in {events}"
 
@@ -868,22 +881,15 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
         events = conn.get('events', [])
         assert len(events) > 0, f'User {conn["user_id"]} has no events'
 
-        latest_event = None
-        for event in reversed(events):
-            event_data = event.get('data', {})
-            if isinstance(event_data, dict) and 'sections' in event_data:
-                latest_event = event
-                break
+        # Find the latest event with sections (search from end)
+        latest_event = _find_event_with_sections(list(reversed(events)))
 
         assert latest_event is not None, f'No event with sections data for user {conn["user_id"]}'
         sections = latest_event['data'].get('sections', [])
 
-        # Find matching section/subsection in the list
-        matching_section = None
-        for s in sections:
-            if s.get('section') == target_section and s.get('subsection') == target_subsection:
-                matching_section = s
-                break
+        matching_section = _find_section_in_list(
+            sections, section=target_section, subsection=target_subsection
+        )
 
         assert matching_section is not None, f'Section {key} not found for user {conn["user_id"]}'
 
