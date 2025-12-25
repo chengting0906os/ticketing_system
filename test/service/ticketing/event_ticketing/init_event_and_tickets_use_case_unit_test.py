@@ -17,9 +17,9 @@ from src.service.ticketing.app.command.create_event_and_tickets_use_case import 
     CreateEventAndTicketsUseCase,
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
-    Event,
     EventTicketingAggregate,
 )
+from src.service.ticketing.domain.entity.event_entity import EventEntity
 from src.service.ticketing.domain.enum import EventStatus
 
 
@@ -83,7 +83,7 @@ class TestCreateEventKafkaSetup:
 
     @pytest.fixture
     def created_aggregate(self, valid_event_data: dict[str, Any]) -> EventTicketingAggregate:
-        event = Event(
+        event = EventEntity(
             id=1,
             name='Test Concert',
             description='Test Description',

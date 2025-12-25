@@ -14,9 +14,9 @@ import pytest
 import uvicorn
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
-    Ticket,
     TicketStatus,
 )
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from test.kvrocks_test_client import kvrocks_test_client
 
 
@@ -35,11 +35,11 @@ def context() -> dict[str, Any]:
 
 
 @pytest.fixture
-def available_tickets() -> list[Ticket]:
+def available_tickets() -> list[TicketEntity]:
     """Sample available tickets for unit testing."""
     now = datetime.now()
     return [
-        Ticket(
+        TicketEntity(
             id=1,
             event_id=1,
             section='A',

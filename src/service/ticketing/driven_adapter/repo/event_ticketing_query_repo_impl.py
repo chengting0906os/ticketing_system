@@ -13,12 +13,12 @@ from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
     IEventTicketingQueryRepo,
 )
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
-    Event,
     EventTicketingAggregate,
     SubsectionTicketsAggregate,
-    Ticket,
 )
+from src.service.ticketing.domain.entity.event_entity import EventEntity
 from src.service.ticketing.domain.entity.subsection_stats_entity import SubsectionStatsEntity
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from src.service.ticketing.domain.enum.event_status import EventStatus
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
@@ -45,8 +45,8 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
         else:
             raise RuntimeError('No session or session_factory available')
 
-    def _model_to_event(self, event_model: EventModel) -> Event:
-        return Event(
+    def _model_to_event(self, event_model: EventModel) -> EventEntity:
+        return EventEntity(
             name=event_model.name,
             description=event_model.description,
             seller_id=event_model.seller_id,
@@ -60,8 +60,8 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             stats=event_model.stats,
         )
 
-    def _model_to_ticket(self, ticket_model: TicketModel) -> Ticket:
-        return Ticket(
+    def _model_to_ticket(self, ticket_model: TicketModel) -> TicketEntity:
+        return TicketEntity(
             event_id=ticket_model.event_id,
             section=ticket_model.section,
             subsection=ticket_model.subsection,
@@ -168,7 +168,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
     @Logger.io
     async def get_tickets_by_subsection(
         self, *, event_id: int, section: str, subsection: int
-    ) -> List[Ticket]:
+    ) -> List[TicketEntity]:
         """Query tickets by event_id, section, and subsection from DB."""
         async with self._get_session() as session:
             result = await session.execute(

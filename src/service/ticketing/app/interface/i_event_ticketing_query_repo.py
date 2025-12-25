@@ -10,8 +10,8 @@ from typing import List, Optional
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
     SubsectionTicketsAggregate,
-    Ticket,
 )
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 
 
 class IEventTicketingQueryRepo(ABC):
@@ -37,7 +37,7 @@ class IEventTicketingQueryRepo(ABC):
     @abstractmethod
     async def get_tickets_by_subsection(
         self, *, event_id: int, section: str, subsection: int
-    ) -> List[Ticket]:
+    ) -> List[TicketEntity]:
         """Get all tickets for a specific subsection."""
         pass
 

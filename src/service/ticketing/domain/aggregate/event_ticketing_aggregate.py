@@ -12,61 +12,22 @@ Event Ticketing Aggregate - Aggregate Root for Event Ticketing
 """
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import attrs
 
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.domain.entity.event_entity import EventEntity
 from src.service.ticketing.domain.entity.subsection_stats_entity import SubsectionStatsEntity
+from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 from src.service.ticketing.domain.enum.event_status import EventStatus
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
 
 @attrs.define
-class Ticket:
-    event_id: int
-    section: str
-    subsection: int
-    row: int
-    seat: int
-    price: int
-    status: TicketStatus
-    buyer_id: Optional[int] = None
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    reserved_at: Optional[datetime] = None
-
-
-def _validate_non_empty_string(instance: object, attribute: attrs.Attribute, value: str) -> None:
-    if not value or not value.strip():
-        raise ValueError(f'Event {attribute.name} cannot be empty')
-
-
-@attrs.define
-class Event:
-    name: str = attrs.field(validator=_validate_non_empty_string)
-    description: str = attrs.field(validator=_validate_non_empty_string)
-    seller_id: int
-    venue_name: str = attrs.field(validator=_validate_non_empty_string)
-    seating_config: Dict
-    is_active: bool = True
-    status: EventStatus = EventStatus.AVAILABLE
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    stats: Optional[Dict] = None
-
-
-@attrs.define
 class EventTicketingAggregate:
-    # Event entity
-    event: Event
-
-    # Tickets collection - entities within aggregate
-    tickets: List[Ticket] = attrs.field(factory=list)
-
-    # Subsection stats - read from subsection_stats table
+    event: EventEntity
+    tickets: List[TicketEntity] = attrs.field(factory=list)
     subsection_stats: List[SubsectionStatsEntity] = attrs.field(factory=list)
 
     @classmethod
@@ -90,7 +51,7 @@ class EventTicketingAggregate:
 
         # Validate seating configuration
         cls._validate_seating_config(seating_config)
-        event = Event(
+        event = EventEntity(
             name=name,
             description=description,
             seller_id=seller_id,
@@ -142,7 +103,7 @@ class EventTicketingAggregate:
 
         return ticket_tuples
 
-    def _generate_tickets_from_seating_config(self) -> List[Ticket]:
+    def _generate_tickets_from_seating_config(self) -> List[TicketEntity]:
         """Generate tickets from seating config (compact format only)."""
         if not self.event.id:
             raise ValueError('Event must have an ID before generating tickets')
@@ -161,7 +122,7 @@ class EventTicketingAggregate:
             for subsection_num in range(1, subsection_count + 1):
                 for row in range(1, rows + 1):
                     for seat in range(1, cols + 1):
-                        ticket = Ticket(
+                        ticket = TicketEntity(
                             event_id=self.event.id,
                             section=section_name,
                             subsection=subsection_num,
@@ -218,4 +179,4 @@ class SubsectionTicketsAggregate:
     """Aggregate for subsection stats with tickets."""
 
     stats: SubsectionStatsEntity
-    tickets: List[Ticket] = attrs.field(factory=list)
+    tickets: List[TicketEntity] = attrs.field(factory=list)
