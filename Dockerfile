@@ -37,4 +37,5 @@ CMD ["uv", "run", "granian", "src.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--reload", \
-     "--reload-paths", "src"]
+     "--reload-paths", "src", \
+     "--log-config", "src/platform/logging/granian_log_config.json"]

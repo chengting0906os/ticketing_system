@@ -149,7 +149,7 @@ class TicketingServiceStack(Stack):
             command=[
                 'sh',
                 '-c',
-                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS}',
+                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS} --log-config src/platform/logging/granian_log_config.json',
             ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='ticketing-service', log_retention=logs.RetentionDays.ONE_WEEK
