@@ -19,7 +19,7 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import Eve
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import require_seller
 from src.service.ticketing.domain.enum.sse_event_type import SseEventType
-from src.service.ticketing.driving_adapter.schema.event_schema import (
+from src.service.ticketing.driving_adapter.http_controller.schema.event_schema import (
     EventCreateWithTicketConfigRequest,
     EventResponse,
     EventStateSseResponse,

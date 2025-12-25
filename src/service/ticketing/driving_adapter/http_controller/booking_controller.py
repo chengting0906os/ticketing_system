@@ -25,7 +25,7 @@ from src.service.ticketing.driving_adapter.http_controller.auth.role_auth import
     get_current_user,
     require_buyer,
 )
-from src.service.ticketing.driving_adapter.schema.booking_schema import (
+from src.service.ticketing.driving_adapter.http_controller.schema.booking_schema import (
     BookingCreateRequest,
     BookingDetailResponse,
     BookingResponse,

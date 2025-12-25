@@ -11,7 +11,7 @@ from src.service.ticketing.app.interface.i_user_query_repo import IUserQueryRepo
 from src.service.ticketing.app.query.user_query_use_case import UserUseCase
 from src.service.ticketing.domain.entity.user_entity import UserEntity
 from src.service.ticketing.driving_adapter.http_controller.auth.jwt_auth import JwtAuth
-from src.service.ticketing.driving_adapter.schema.user_schema import (
+from src.service.ticketing.driving_adapter.http_controller.schema.user_schema import (
     CreateUserRequest,
     LoginRequest,
     UserResponse,
