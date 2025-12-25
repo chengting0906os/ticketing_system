@@ -96,7 +96,19 @@ class SubsectionStatsResponse(BaseModel):
     available: int
     reserved: int
     sold: int
-    updated_at: int
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'event_id': 1,
+                'section': 'A',
+                'subsection': 1,
+                'price': 2000,
+                'available': 48,
+                'reserved': 2,
+                'sold': 0,
+            }
+        }
 
 
 class EventWithSubsectionStatsResponse(BaseModel):
@@ -168,6 +180,20 @@ class TicketResponse(BaseModel):
     price: int
     status: str
 
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': 1,
+                'event_id': 1,
+                'section': 'A',
+                'subsection': 1,
+                'row': 1,
+                'seat': 1,
+                'price': 2000,
+                'status': 'available',
+            }
+        }
+
 
 class SubsectionSeatsResponse(BaseModel):
     """Subsection seats response with stats and tickets."""
@@ -181,6 +207,42 @@ class SubsectionSeatsResponse(BaseModel):
     reserved: int
     sold: int
     tickets: List[TicketResponse]
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'event_id': 1,
+                'section': 'A',
+                'subsection': 1,
+                'price': 2000,
+                'total': 50,
+                'available': 48,
+                'reserved': 2,
+                'sold': 0,
+                'tickets': [
+                    {
+                        'id': 1,
+                        'event_id': 1,
+                        'section': 'A',
+                        'subsection': 1,
+                        'row': 1,
+                        'seat': 1,
+                        'price': 2000,
+                        'status': 'available',
+                    },
+                    {
+                        'id': 2,
+                        'event_id': 1,
+                        'section': 'A',
+                        'subsection': 1,
+                        'row': 1,
+                        'seat': 2,
+                        'price': 2000,
+                        'status': 'reserved',
+                    },
+                ],
+            }
+        }
 
 
 # ============================ SSE Schemas ============================
@@ -201,6 +263,37 @@ class EventStateSseResponse(BaseModel):
     seating_config: Dict
     sections: List[SubsectionStatsResponse]
 
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'event_type': 'initial_status',
+                'event_id': 1,
+                'stats': {'available': 1000, 'reserved': 0, 'sold': 0, 'total': 1000},
+                'name': 'Concert Event',
+                'description': 'Amazing live music performance',
+                'seller_id': 1,
+                'is_active': True,
+                'status': 'available',
+                'venue_name': 'Taipei Arena',
+                'seating_config': {
+                    'rows': 25,
+                    'cols': 20,
+                    'sections': [{'name': 'A', 'price': 2000, 'subsections': 2}],
+                },
+                'sections': [
+                    {
+                        'event_id': 1,
+                        'section': 'A',
+                        'subsection': 1,
+                        'price': 2000,
+                        'available': 500,
+                        'reserved': 0,
+                        'sold': 0,
+                    }
+                ],
+            }
+        }
+
 
 class EventStateSseUpdateResponse(BaseModel):
     """SSE response for status updates (only changed fields)."""
@@ -209,3 +302,23 @@ class EventStateSseUpdateResponse(BaseModel):
     event_id: int
     stats: dict
     subsection_stats: List[Dict]
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'event_type': 'status_update',
+                'event_id': 1,
+                'stats': {'available': 998, 'reserved': 2, 'sold': 0, 'total': 1000},
+                'subsection_stats': [
+                    {
+                        'event_id': 1,
+                        'section': 'A',
+                        'subsection': 1,
+                        'price': 2000,
+                        'available': 498,
+                        'reserved': 2,
+                        'sold': 0,
+                    }
+                ],
+            }
+        }

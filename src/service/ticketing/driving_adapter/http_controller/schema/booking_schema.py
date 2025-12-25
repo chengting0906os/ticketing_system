@@ -91,6 +91,9 @@ class CancelReservationResponse(BaseModel):
     status: str
     cancelled_tickets: int
 
+    class Config:
+        json_schema_extra = {'example': {'status': 'cancelled', 'cancelled_tickets': 2}}
+
 
 class BookingWithDetailsResponse(BaseModel):
     """Booking response with event and user details"""
@@ -112,6 +115,28 @@ class BookingWithDetailsResponse(BaseModel):
     seat_selection_mode: str
     seat_positions: List[str]
 
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': '01936d8f-5e73-7c4e-a9c5-123456789abc',
+                'buyer_id': 2,
+                'event_id': 1,
+                'total_price': 4000,
+                'status': 'pending_payment',
+                'created_at': '2025-01-10T10:30:00',
+                'paid_at': None,
+                'event_name': 'Concert Event',
+                'buyer_name': 'John Doe',
+                'seller_name': 'Jane Seller',
+                'venue_name': 'Taipei Arena',
+                'section': 'A',
+                'subsection': 1,
+                'quantity': 2,
+                'seat_selection_mode': 'best_available',
+                'seat_positions': ['1-1', '1-2'],
+            }
+        }
+
 
 class TicketDetail(BaseModel):
     """Ticket detail in booking"""
@@ -123,6 +148,19 @@ class TicketDetail(BaseModel):
     seat: int
     price: int
     status: str
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': 1,
+                'section': 'A',
+                'subsection': 1,
+                'row': 1,
+                'seat': 1,
+                'price': 2000,
+                'status': 'reserved',
+            }
+        }
 
 
 class BookingDetailResponse(BaseModel):
@@ -145,3 +183,45 @@ class BookingDetailResponse(BaseModel):
     seat_selection_mode: str
     seat_positions: List[str]
     tickets: List[TicketDetail]
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': '01936d8f-5e73-7c4e-a9c5-123456789abc',
+                'buyer_id': 2,
+                'event_id': 1,
+                'total_price': 4000,
+                'status': 'pending_payment',
+                'created_at': '2025-01-10T10:30:00',
+                'paid_at': None,
+                'event_name': 'Concert Event',
+                'buyer_name': 'John Doe',
+                'seller_name': 'Jane Seller',
+                'venue_name': 'Taipei Arena',
+                'section': 'A',
+                'subsection': 1,
+                'quantity': 2,
+                'seat_selection_mode': 'best_available',
+                'seat_positions': ['1-1', '1-2'],
+                'tickets': [
+                    {
+                        'id': 1,
+                        'section': 'A',
+                        'subsection': 1,
+                        'row': 1,
+                        'seat': 1,
+                        'price': 2000,
+                        'status': 'reserved',
+                    },
+                    {
+                        'id': 2,
+                        'section': 'A',
+                        'subsection': 1,
+                        'row': 1,
+                        'seat': 2,
+                        'price': 2000,
+                        'status': 'reserved',
+                    },
+                ],
+            }
+        }
