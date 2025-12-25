@@ -64,6 +64,7 @@ class SeatStateReservationCommandHandlerImpl(ISeatStateReservationCommandHandler
         section: str,
         subsection: int,
         seat_ids: List[str],
+        cols: int,
         price: int,
     ) -> Dict:
         """Verify specified seats are available via Lua script (MANUAL mode)."""
@@ -81,6 +82,7 @@ class SeatStateReservationCommandHandlerImpl(ISeatStateReservationCommandHandler
                 section=section,
                 subsection=subsection,
                 seat_ids=seat_ids,
+                cols=cols,
                 price=price,
             )
 

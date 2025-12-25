@@ -17,9 +17,7 @@ import pytest
 from uuid_utils import UUID
 
 from src.platform.exception.exceptions import DomainError
-from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.app.command.create_booking_use_case import CreateBookingUseCase
-from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 @pytest.fixture
@@ -34,7 +32,7 @@ def mock_event_publisher() -> Mock:
 def mock_seat_availability_handler() -> Mock:
     """Mock seat availability query handler"""
     handler = AsyncMock()
-    handler.check_subsection_availability_then_get_config = AsyncMock()
+    handler.check_availability = AsyncMock()
     return handler
 
 
@@ -78,10 +76,7 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test successful booking creation generates UUID7"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
-            has_enough_seats=True,
-            config=SubsectionConfig(rows=10, cols=20, price=1000),
-        )
+        mock_seat_availability_handler.check_availability.return_value = True
 
         # Act
         with patch(
@@ -111,10 +106,7 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test booking creation fails when insufficient seats available"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
-            has_enough_seats=False,
-            config=SubsectionConfig(rows=10, cols=20, price=1000),
-        )
+        mock_seat_availability_handler.check_availability.return_value = False
 
         # Act & Assert
         with pytest.raises(DomainError) as exc_info:
@@ -136,10 +128,7 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test that BookingCreated event is published to Booking Service"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
-            has_enough_seats=True,
-            config=SubsectionConfig(rows=10, cols=20, price=1000),
-        )
+        mock_seat_availability_handler.check_availability.return_value = True
 
         # Act
         await create_booking_use_case.create_booking(**valid_booking_params)
@@ -165,10 +154,7 @@ class TestCreateBookingUseCase:
         valid_booking_params['seat_selection_mode'] = 'manual'
         valid_booking_params['seat_positions'] = ['1-1', '1-2']
 
-        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
-            has_enough_seats=True,
-            config=SubsectionConfig(rows=10, cols=20, price=1000),
-        )
+        mock_seat_availability_handler.check_availability.return_value = True
 
         # Act
         result = await create_booking_use_case.create_booking(**valid_booking_params)
@@ -193,10 +179,7 @@ class TestCreateBookingUseCase:
     ) -> None:
         """Test that booking entity receives custom UUID7 id"""
         # Arrange
-        mock_seat_availability_handler.check_subsection_availability_then_get_config.return_value = AvailabilityCheckResult(
-            has_enough_seats=True,
-            config=SubsectionConfig(rows=10, cols=20, price=1000),
-        )
+        mock_seat_availability_handler.check_availability.return_value = True
 
         # Act
         with patch(

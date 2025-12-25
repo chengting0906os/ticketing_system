@@ -50,13 +50,7 @@ def _(value: Enum) -> Any:
 # ============================================================================
 
 
-def _to_proto_subsection_config(value: Any) -> pb.SubsectionConfig:
-    return pb.SubsectionConfig(rows=value.rows, cols=value.cols, price=value.price)
-
-
-_TO_PROTO_FIELD_CONVERTERS: dict[str, Callable[[Any], Any]] = {
-    'config': _to_proto_subsection_config,
-}
+_TO_PROTO_FIELD_CONVERTERS: dict[str, Callable[[Any], Any]] = {}
 
 
 # ============================================================================

@@ -64,14 +64,22 @@ class TestReserveSeatsExecutionOrder:
         return AsyncMock()
 
     @pytest.fixture
+    def mock_seating_config_handler(self) -> AsyncMock:
+        handler = AsyncMock()
+        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
+        return handler
+
+    @pytest.fixture
     def use_case(
         self,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
     ) -> SeatReservationUseCase:
         return SeatReservationUseCase(
             seat_state_handler=mock_seat_state_handler,
+            seating_config_handler=mock_seating_config_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
         )
@@ -86,7 +94,6 @@ class TestReserveSeatsExecutionOrder:
             section_filter='A',
             subsection_filter=1,
             quantity=2,
-            config=SubsectionConfig(rows=10, cols=10, price=1000),
         )
 
     @pytest.mark.asyncio
@@ -94,18 +101,20 @@ class TestReserveSeatsExecutionOrder:
         self,
         use_case: SeatReservationUseCase,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
         valid_request: ReservationRequest,
     ) -> None:
         """
-        Test execution order on success path (new 6-step flow):
+        Test execution order on success path (new 7-step flow):
         1. Validate Request (done in use case)
         2. Idempotency Check (PostgreSQL get_by_id)
-        3. Find seats (Lua - find_seats)
-        4. PostgreSQL write
-        5. Update seat map (Pipeline - update_seat_map)
-        6. SSE broadcast
+        3. Fetch Config (Kvrocks - get_config)
+        4. Find seats (Lua - find_seats)
+        5. PostgreSQL write
+        6. Update seat map (Pipeline - update_seat_map)
+        7. SSE broadcast
 
         PostgreSQL write MUST happen BEFORE Kvrocks update.
         """
@@ -115,6 +124,10 @@ class TestReserveSeatsExecutionOrder:
         async def track_idempotency(*args: Any, **kwargs: Any) -> None:
             call_order.append('idempotency_check')
             return None
+
+        async def track_fetch_config(*args: Any, **kwargs: Any) -> SubsectionConfig:
+            call_order.append('fetch_config')
+            return SubsectionConfig(rows=10, cols=10, price=1000)
 
         async def track_find_seats(*args: Any, **kwargs: Any) -> dict[str, Any]:
             call_order.append('lua_find_seats')
@@ -139,6 +152,7 @@ class TestReserveSeatsExecutionOrder:
             call_order.append('sse_publish')
 
         mock_booking_command_repo.get_by_id = track_idempotency
+        mock_seating_config_handler.get_config = track_fetch_config
         mock_seat_state_handler.find_seats = track_find_seats
         mock_booking_command_repo.create_booking_and_update_tickets_to_reserved = track_postgres
         mock_seat_state_handler.update_seat_map = track_update_seat_map
@@ -152,12 +166,13 @@ class TestReserveSeatsExecutionOrder:
         assert result.success is True
         assert call_order == [
             'idempotency_check',
+            'fetch_config',
             'lua_find_seats',
             'postgres_write',
             'kvrocks_update_seat_map',
             'schedule_stats_broadcast',
             'sse_publish',
-        ], f'Expected 6-step flow order, got: {call_order}'
+        ], f'Expected 7-step flow order, got: {call_order}'
 
     @pytest.mark.asyncio
     async def test_postgres_write_happens_before_broadcast(

@@ -4,10 +4,11 @@ Seat Reservation Use Case - PostgreSQL First Flow
 New 6-Step Flow:
 1. Validate Request
 2. Idempotency Check (PostgreSQL)
-3. Lua Script (find/verify seats)
-4. PostgreSQL write (booking + tickets)
-5. Kvrocks Pipeline (update seat map)
-6. SSE broadcast
+3. Fetch Config (Kvrocks)
+4. Lua Script (find/verify seats)
+5. PostgreSQL write (booking + tickets)
+6. Kvrocks Pipeline (update seat map)
+7. SSE broadcast
 """
 
 import attrs
@@ -16,7 +17,10 @@ from opentelemetry import trace
 from src.platform.exception.exceptions import DomainError
 from src.platform.logging.loguru_io import Logger
 from src.service.reservation.app.dto import ReservationRequest, ReservationResult
-from src.service.reservation.app.interface import ISeatStateReservationCommandHandler
+from src.service.reservation.app.interface import (
+    ISeatingConfigQueryHandler,
+    ISeatStateReservationCommandHandler,
+)
 from src.service.reservation.app.interface.i_booking_command_repo import (
     IBookingCommandRepo,
 )
@@ -30,13 +34,14 @@ class SeatReservationUseCase:
     """
     Reserve Seats Use Case - PostgreSQL First Flow
 
-    New 6-Step Flow:
+    New 7-Step Flow:
     1. Validate Request - Check seat_positions/quantity <= 4
     2. Idempotency Check - Query PostgreSQL booking table
-    3. Lua Script - Find/verify seats in Kvrocks
-    4. PostgreSQL Write - Insert booking + update tickets
-    5. Kvrocks Pipeline - Update seat map (BITFIELD SET)
-    6. SSE Broadcast - Notify users
+    3. Fetch Config - Get seating config from Kvrocks
+    4. Lua Script - Find/verify seats in Kvrocks
+    5. PostgreSQL Write - Insert booking + update tickets
+    6. Kvrocks Pipeline - Update seat map (BITFIELD SET)
+    7. SSE Broadcast - Notify users
 
     Design Principles:
     - PostgreSQL as source of truth for idempotency
@@ -47,10 +52,12 @@ class SeatReservationUseCase:
     def __init__(
         self,
         seat_state_handler: ISeatStateReservationCommandHandler,
+        seating_config_handler: ISeatingConfigQueryHandler,
         booking_command_repo: IBookingCommandRepo,
         pubsub_handler: PubSubHandlerImpl,
     ) -> None:
         self.seat_state_handler = seat_state_handler
+        self.seating_config_handler = seating_config_handler
         self.booking_command_repo = booking_command_repo
         self.pubsub_handler = pubsub_handler
         self.tracer = trace.get_tracer(__name__)
@@ -60,13 +67,14 @@ class SeatReservationUseCase:
         """
         Execute seat reservation - PostgreSQL First Flow
 
-        New 6-Step Flow:
+        New 7-Step Flow:
         1. Validate Request
         2. Idempotency Check (PostgreSQL)
-        3. Lua Script (find/verify seats)
-        4. PostgreSQL Write (booking + tickets)
-        5. Kvrocks Pipeline (update seat map)
-        6. SSE Broadcast
+        3. Fetch Config (Kvrocks)
+        4. Lua Script (find/verify seats)
+        5. PostgreSQL Write (booking + tickets)
+        6. Kvrocks Pipeline (update seat map)
+        7. SSE Broadcast
         """
         with self.tracer.start_as_current_span(
             'use_case.reserve_seats',
@@ -79,11 +87,6 @@ class SeatReservationUseCase:
             },
         ):
             try:
-                Logger.base.info(
-                    f'🎯 [RESERVE] Processing reservation for booking {request.booking_id}, '
-                    f'buyer {request.buyer_id}, event {request.event_id}'
-                )
-
                 # ========== Step 1: Validate Request ==========
                 self._validate_request(request)
 
@@ -95,9 +98,23 @@ class SeatReservationUseCase:
                     return await self._handle_failure(
                         request, 'Booking previously failed', skip_create=True
                     )
-                elif existing_booking and existing_booking.status == BookingStatus.PENDING_PAYMENT:
+
+                # ========== Step 3: Fetch Config (Kvrocks) ==========
+                with self.tracer.start_as_current_span(
+                    'use_case.fetch_seating_config',
+                    attributes={
+                        'event.id': request.event_id,
+                        'section': request.section_filter,
+                    },
+                ):
+                    config = await self.seating_config_handler.get_config(
+                        event_id=request.event_id,
+                        section=request.section_filter,
+                    )
+
+                if existing_booking and existing_booking.status == BookingStatus.PENDING_PAYMENT:
                     Logger.base.info(
-                        f'✅ [IDEMPOTENCY] Booking {request.booking_id} already exists, '
+                        f'[IDEMPOTENCY] Booking {request.booking_id} already exists, '
                         'completing remaining steps'
                     )
                     tickets = await self.booking_command_repo.get_tickets_by_booking_id(
@@ -107,21 +124,22 @@ class SeatReservationUseCase:
                         request=request,
                         seat_positions=existing_booking.seat_positions,
                         total_price=existing_booking.total_price,
+                        cols=config.cols,
                         tickets_data=[
                             attrs.asdict(t) if attrs.has(type(t)) else t for t in tickets
                         ],
                     )
 
-                # ========== Step 3: Lua Script (find/verify seats) ==========
+                # ========== Step 4: Lua Script (find/verify seats) ==========
                 if request.selection_mode == SelectionMode.BEST_AVAILABLE:
                     find_result = await self.seat_state_handler.find_seats(
                         event_id=request.event_id,
                         section=request.section_filter,
                         subsection=request.subsection_filter,
                         quantity=request.quantity,
-                        rows=request.config.rows if request.config else 0,
-                        cols=request.config.cols if request.config else 0,
-                        price=request.config.price if request.config else 0,
+                        rows=config.rows,
+                        cols=config.cols,
+                        price=config.price,
                     )
                 else:  # MANUAL mode (seat_positions validated in _validate_request)
                     find_result = await self.seat_state_handler.verify_seats(
@@ -129,7 +147,8 @@ class SeatReservationUseCase:
                         section=request.section_filter,
                         subsection=request.subsection_filter,
                         seat_ids=request.seat_positions or [],
-                        price=request.config.price if request.config else 0,
+                        cols=config.cols,
+                        price=config.price,
                     )
 
                 if not find_result['success']:
@@ -140,7 +159,7 @@ class SeatReservationUseCase:
                 total_price = find_result['total_price']
                 seat_positions = [seat_id for _, _, _, seat_id in seats_to_reserve]
 
-                # ========== Step 4: PostgreSQL Write (booking + tickets) ==========
+                # ========== Step 5: PostgreSQL Write (booking + tickets) ==========
                 pg_result = (
                     await self.booking_command_repo.create_booking_and_update_tickets_to_reserved(
                         booking_id=request.booking_id,
@@ -154,15 +173,16 @@ class SeatReservationUseCase:
                     )
                 )
                 Logger.base.info(
-                    f'✅ [RESERVE] PostgreSQL write complete for booking {request.booking_id}'
+                    f'[RESERVATION] PostgreSQL write complete for booking {request.booking_id}'
                 )
 
-                # ========== Step 5 + 6: Kvrocks + SSE ==========
+                # ========== Step 6 + 7: Kvrocks + SSE ==========
 
                 return await self._complete_success_flow(
                     request=request,
                     seat_positions=seat_positions,
                     total_price=total_price,
+                    cols=config.cols,
                     tickets_data=[
                         attrs.asdict(t) if attrs.has(type(t)) else t
                         for t in pg_result.get('tickets', [])
@@ -170,11 +190,11 @@ class SeatReservationUseCase:
                 )
 
             except DomainError as e:
-                Logger.base.warning(f'⚠️ [RESERVE] Domain error: {e}')
+                Logger.base.warning(f'[RESERVATION] Domain error: {e}')
                 return await self._handle_failure(request, str(e))
 
             except Exception as e:
-                Logger.base.exception(f'❌ [RESERVE] Unexpected error: {e}')
+                Logger.base.exception(f'[RESERVATION] Unexpected error: {e}')
                 return await self._handle_failure(request, 'Internal server error')
 
     def _build_seats_to_reserve(
@@ -197,17 +217,13 @@ class SeatReservationUseCase:
         request: ReservationRequest,
         seat_positions: list[str],
         total_price: int,
+        cols: int,
         tickets_data: list,
     ) -> ReservationResult:
-        """Complete Step 5 (Kvrocks) + Step 6 (SSE) + return success result."""
-        if not request.config:
-            raise DomainError(f'Missing config for booking {request.booking_id}')
+        """Complete Step 6 (Kvrocks) + Step 7 (SSE) + return success result."""
+        seats_to_reserve = self._build_seats_to_reserve(seat_positions=seat_positions, cols=cols)
 
-        seats_to_reserve = self._build_seats_to_reserve(
-            seat_positions=seat_positions, cols=request.config.cols
-        )
-
-        # Step 5: Kvrocks Pipeline (idempotent - SET 1 when already 1 is no-op)
+        # Step 6: Kvrocks Pipeline (idempotent - SET 1 when already 1 is no-op)
         await self.seat_state_handler.update_seat_map(
             event_id=request.event_id,
             section=request.section_filter,
@@ -216,9 +232,9 @@ class SeatReservationUseCase:
             seats_to_reserve=seats_to_reserve,
             total_price=total_price,
         )
-        Logger.base.info(f'✅ [RESERVE] Kvrocks seat map updated for booking {request.booking_id}')
+        Logger.base.info(f'[RESERVATION] Kvrocks seat map updated for booking {request.booking_id}')
 
-        # Step 6: SSE Broadcast
+        # Step 7: SSE Broadcast
         await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
         await self.pubsub_handler.publish_booking_update(
             user_id=request.buyer_id,

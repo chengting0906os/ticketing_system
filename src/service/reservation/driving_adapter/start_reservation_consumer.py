@@ -20,7 +20,7 @@ from src.platform.observability.tracing import TracingConfig
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.reservation.driving_adapter.reservation_mq_consumer import (
-    SeatReservationConsumer,
+    ReservationConsumer,
 )
 
 
@@ -55,7 +55,7 @@ async def main() -> None:
         )
         raise
 
-    consumer = SeatReservationConsumer()
+    consumer = ReservationConsumer()
 
     # Setup signal handlers for graceful shutdown
     shutdown_event = anyio.Event()

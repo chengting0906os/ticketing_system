@@ -12,7 +12,6 @@ import orjson
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.platform.state.lua_script_executor import lua_script_executor
 from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
-    make_event_state_key,
     make_seats_bf_key,
 )
 from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
@@ -94,6 +93,7 @@ class AtomicReservationExecutor:
         section: str,
         subsection: int,
         seat_ids: List[str],
+        cols: int,
         price: int,
     ) -> Dict:
         """
@@ -104,14 +104,13 @@ class AtomicReservationExecutor:
         """
         section_id = f'{section}-{subsection}'
         bf_key = make_seats_bf_key(event_id=event_id, section_id=section_id)
-        event_state_key = make_event_state_key(event_id=event_id)
         client = kvrocks_client.get_client()
 
         try:
             lua_result = await lua_script_executor.verify_manual_seats(
                 client=client,
-                keys=[bf_key, event_state_key],
-                args=[str(event_id), section, str(subsection)] + seat_ids,
+                keys=[bf_key],
+                args=[str(cols)] + seat_ids,
             )
         except Exception as e:
             error_msg = str(e)

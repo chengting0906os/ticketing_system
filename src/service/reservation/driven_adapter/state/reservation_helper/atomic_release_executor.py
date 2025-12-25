@@ -6,13 +6,11 @@ Handles atomic seat release with idempotency control via booking metadata.
 
 from typing import Dict, List
 
-import orjson
 from opentelemetry import trace
 
 from src.platform.logging.loguru_io import Logger
 from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
-    make_event_state_key,
     make_seats_bf_key,
 )
 from src.service.shared_kernel.app.interface.i_booking_metadata_handler import (
@@ -39,49 +37,6 @@ class AtomicReleaseExecutor:
     def __init__(self, *, booking_metadata_handler: IBookingMetadataHandler) -> None:
         self.booking_metadata_handler = booking_metadata_handler
         self.tracer = trace.get_tracer(__name__)
-
-    @staticmethod
-    def _calculate_seat_index(row: int, seat_num: int, cols: int) -> int:
-        """Calculate seat index in Bitfield"""
-        return (row - 1) * cols + (seat_num - 1)
-
-    # ========== Split Methods for New Flow ==========
-
-    async def execute_fetch_release_config(
-        self,
-        *,
-        event_id: int,
-        section: str,
-        subsection: int,
-    ) -> Dict:
-        """
-        Fetch config (cols) from Kvrocks for release.
-
-        Returns:
-            Dict with keys:
-                - success: bool
-                - cols: int
-                - error_message: Optional[str]
-        """
-        client = kvrocks_client.get_client()
-        event_state_key = make_event_state_key(event_id=event_id)
-        json_path = f"$.sections['{section}'].subsections['{str(subsection)}'].cols"
-
-        config_result = await client.execute_command('JSON.GET', event_state_key, json_path)
-
-        if not config_result:
-            return {
-                'success': False,
-                'cols': 0,
-                'error_message': f'Config not found for event {event_id}',
-            }
-
-        cols = orjson.loads(config_result)[0]
-        return {
-            'success': True,
-            'cols': cols,
-            'error_message': None,
-        }
 
     async def execute_update_seat_map_release(
         self,

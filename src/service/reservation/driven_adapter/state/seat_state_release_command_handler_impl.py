@@ -26,28 +26,6 @@ class SeatStateReleaseCommandHandlerImpl(ISeatStateReleaseCommandHandler):
         self.release_executor = release_executor
         self.tracer = trace.get_tracer(__name__)
 
-    async def fetch_release_config(
-        self,
-        *,
-        event_id: int,
-        section: str,
-        subsection: int,
-    ) -> Dict:
-        """Fetch config (cols) from Kvrocks for release."""
-        with self.tracer.start_as_current_span(
-            'seat_handler.fetch_release_config',
-            attributes={
-                'event.id': event_id,
-                'section': section,
-                'subsection': subsection,
-            },
-        ):
-            return await self.release_executor.execute_fetch_release_config(
-                event_id=event_id,
-                section=section,
-                subsection=subsection,
-            )
-
     async def update_seat_map_release(
         self,
         *,

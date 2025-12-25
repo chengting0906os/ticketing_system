@@ -16,30 +16,6 @@ class ISeatStateReleaseCommandHandler(ABC):
     """
 
     @abstractmethod
-    async def fetch_release_config(
-        self,
-        *,
-        event_id: int,
-        section: str,
-        subsection: int,
-    ) -> Dict:
-        """
-        Fetch config for release (cols) from Kvrocks.
-
-        Args:
-            event_id: Event ID
-            section: Section (e.g., 'A')
-            subsection: Subsection number (e.g., 1)
-
-        Returns:
-            Dict with keys:
-                - success: bool
-                - cols: int
-                - error_message: Optional[str]
-        """
-        pass
-
-    @abstractmethod
     async def update_seat_map_release(
         self,
         *,

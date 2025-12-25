@@ -21,6 +21,9 @@ from src.service.reservation.driven_adapter.state.seat_state_release_command_han
 from src.service.reservation.driven_adapter.state.seat_state_reservation_command_handler_impl import (
     SeatStateReservationCommandHandlerImpl,
 )
+from src.service.reservation.driven_adapter.state.seating_config_query_handler_impl import (
+    SeatingConfigQueryHandlerImpl,
+)
 
 from src.platform.config.core_setting import Settings
 from src.platform.database.db_setting import Database
@@ -136,14 +139,14 @@ class Container(containers.DeclarativeContainer):
         release_executor=atomic_release_executor,
     )
 
+    # Seating Config Query Handler (reads from Kvrocks)
+    seating_config_query_handler = providers.Singleton(SeatingConfigQueryHandlerImpl)
+
     # Ticketing Service - Init State Handler
     init_event_and_tickets_state_handler = providers.Singleton(InitEventAndTicketsStateHandlerImpl)
 
     # Ticketing Service - Seat Availability Query Handler (updated via Redis Pub/Sub)
-    seat_availability_query_handler = providers.Singleton(
-        SeatAvailabilityQueryHandlerImpl,
-        ttl_seconds=10.0,
-    )
+    seat_availability_query_handler = providers.Singleton(SeatAvailabilityQueryHandlerImpl)
 
     # MQ Infrastructure Orchestrator
     mq_infra_orchestrator = providers.Singleton(
@@ -155,12 +158,14 @@ class Container(containers.DeclarativeContainer):
     seat_reservation_use_case = providers.Singleton(
         SeatReservationUseCase,
         seat_state_handler=seat_state_reservation_handler,
+        seating_config_handler=seating_config_query_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,
     )
     seat_release_use_case = providers.Singleton(
         SeatReleaseUseCase,
         seat_state_handler=seat_state_release_handler,
+        seating_config_handler=seating_config_query_handler,
         booking_command_repo=reservation_booking_command_repo,
         pubsub_handler=pubsub_handler,
     )

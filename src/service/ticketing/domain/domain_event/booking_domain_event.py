@@ -5,17 +5,10 @@ These events are published when booking operations occur and should
 be handled by other bounded contexts (like reservation service).
 """
 
-from typing import TYPE_CHECKING, Optional
-
 import attrs
 from uuid_utils import UUID
 
-from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.entity.booking_entity import Booking, BookingStatus
-
-
-if TYPE_CHECKING:
-    from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 @attrs.define
@@ -32,12 +25,9 @@ class BookingCreatedDomainEvent:
     seat_selection_mode: str
     seat_positions: list[str]
     status: BookingStatus
-    config: Optional[SubsectionConfig] = None
 
     @classmethod
-    def from_booking_with_config(
-        cls, booking: 'Booking', config: 'AvailabilityCheckResult'
-    ) -> 'BookingCreatedDomainEvent':
+    def from_booking(cls, *, booking: 'Booking') -> 'BookingCreatedDomainEvent':
         return cls(
             booking_id=booking.id,
             buyer_id=booking.buyer_id,
@@ -49,7 +39,6 @@ class BookingCreatedDomainEvent:
             seat_selection_mode=booking.seat_selection_mode,
             seat_positions=booking.seat_positions or [],
             status=booking.status,
-            config=config.config,
         )
 
 

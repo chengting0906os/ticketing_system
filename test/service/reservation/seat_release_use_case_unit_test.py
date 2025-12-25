@@ -4,7 +4,7 @@ Unit tests for SeatReleaseUseCase
 Tests PostgreSQL-first flow:
 1. Idempotency check (PostgreSQL get_by_id)
 2. PostgreSQL write (booking → CANCELLED, tickets → AVAILABLE)
-3. Fetch config from Kvrocks
+3. Fetch config from Kvrocks (via seating_config_handler)
 4. Update seat map in Kvrocks
 5. SSE broadcast
 """
@@ -17,6 +17,7 @@ import pytest
 from src.service.reservation.app.command.seat_release_use_case import SeatReleaseUseCase
 from src.service.reservation.app.dto import ReleaseSeatsBatchRequest
 from src.service.shared_kernel.domain.value_object import BookingStatus
+from src.service.shared_kernel.domain.value_object.subsection_config import SubsectionConfig
 
 
 def _make_mock_booking(
@@ -44,10 +45,15 @@ class TestReleaseSeatExecutionOrder:
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
         handler.update_seat_map_release = AsyncMock(
             return_value={'success': True, 'released_seats': ['1-1', '1-2']}
         )
+        return handler
+
+    @pytest.fixture
+    def mock_seating_config_handler(self) -> AsyncMock:
+        handler = AsyncMock()
+        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
         return handler
 
     @pytest.fixture
@@ -65,11 +71,13 @@ class TestReleaseSeatExecutionOrder:
     def use_case(
         self,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
     ) -> SeatReleaseUseCase:
         return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
+            seating_config_handler=mock_seating_config_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
         )
@@ -87,6 +95,7 @@ class TestReleaseSeatExecutionOrder:
         self,
         use_case: SeatReleaseUseCase,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
         valid_request: ReleaseSeatsBatchRequest,
@@ -95,7 +104,7 @@ class TestReleaseSeatExecutionOrder:
         Test execution order on success path (PostgreSQL-first flow):
         1. Idempotency check (PostgreSQL get_by_id)
         2. PostgreSQL write (booking → CANCELLED, tickets → AVAILABLE)
-        3. Fetch config from Kvrocks
+        3. Fetch config from Kvrocks (via seating_config_handler)
         4. Update seat map in Kvrocks
         5. Schedule stats broadcast via Redis Pub/Sub
         6. Publish SSE for booking update
@@ -109,9 +118,9 @@ class TestReleaseSeatExecutionOrder:
         async def track_postgres_update(*args: Any, **kwargs: Any) -> None:
             call_order.append('postgres_update')
 
-        async def track_fetch_config(*args: Any, **kwargs: Any) -> dict:
+        async def track_fetch_config(*args: Any, **kwargs: Any) -> SubsectionConfig:
             call_order.append('kvrocks_fetch_config')
-            return {'success': True, 'cols': 10}
+            return SubsectionConfig(rows=10, cols=10, price=1000)
 
         async def track_kvrocks_update(*args: Any, **kwargs: Any) -> dict:
             call_order.append('kvrocks_update')
@@ -127,7 +136,7 @@ class TestReleaseSeatExecutionOrder:
         mock_booking_command_repo.update_status_to_cancelled_and_release_tickets = (
             track_postgres_update
         )
-        mock_seat_state_handler.fetch_release_config = track_fetch_config
+        mock_seating_config_handler.get_config = track_fetch_config
         mock_seat_state_handler.update_seat_map_release = track_kvrocks_update
         mock_pubsub_handler.schedule_stats_broadcast = track_schedule_broadcast
         mock_pubsub_handler.publish_booking_update = track_sse
@@ -189,10 +198,15 @@ class TestReleaseSeatIdempotency:
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
         handler.update_seat_map_release = AsyncMock(
             return_value={'success': True, 'released_seats': ['1-1', '1-2']}
         )
+        return handler
+
+    @pytest.fixture
+    def mock_seating_config_handler(self) -> AsyncMock:
+        handler = AsyncMock()
+        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
         return handler
 
     @pytest.fixture
@@ -207,11 +221,13 @@ class TestReleaseSeatIdempotency:
     def use_case(
         self,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
     ) -> SeatReleaseUseCase:
         return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
+            seating_config_handler=mock_seating_config_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
         )
@@ -266,10 +282,15 @@ class TestReleaseSeatSSEPublish:
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
         handler = AsyncMock()
-        handler.fetch_release_config = AsyncMock(return_value={'success': True, 'cols': 10})
         handler.update_seat_map_release = AsyncMock(
             return_value={'success': True, 'released_seats': ['1-1']}
         )
+        return handler
+
+    @pytest.fixture
+    def mock_seating_config_handler(self) -> AsyncMock:
+        handler = AsyncMock()
+        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
         return handler
 
     @pytest.fixture
@@ -290,11 +311,13 @@ class TestReleaseSeatSSEPublish:
     def use_case(
         self,
         mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
         mock_booking_command_repo: AsyncMock,
         mock_pubsub_handler: AsyncMock,
     ) -> SeatReleaseUseCase:
         return SeatReleaseUseCase(
             seat_state_handler=mock_seat_state_handler,
+            seating_config_handler=mock_seating_config_handler,
             booking_command_repo=mock_booking_command_repo,
             pubsub_handler=mock_pubsub_handler,
         )

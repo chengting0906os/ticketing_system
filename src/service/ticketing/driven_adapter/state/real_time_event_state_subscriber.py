@@ -29,7 +29,7 @@ class RealTimeEventStateSubscriber:
         self.channel = f'event_state_updates:{event_id}'
         self._throttle_interval = throttle_interval
         self._reconnect_delay = reconnect_delay
-        self._last_update_time: float = 0.0
+        self._last_update_time: float = 0.0  # For throttling only
         self._pubsub_client: AsyncRedis | None = None
 
     async def start(self, *, task_group: TaskGroup) -> None:
@@ -87,7 +87,7 @@ class RealTimeEventStateSubscriber:
             if time_since_last_update < self._throttle_interval:
                 return
 
-            # Update cache
+            # Update cache with timestamp for TTL check
             self.cache_handler._cache[event_id] = {
                 'data': event_state,
                 'timestamp': current_time,

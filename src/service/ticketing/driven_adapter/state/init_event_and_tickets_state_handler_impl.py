@@ -2,16 +2,14 @@
 Init Event And Tickets State Handler Implementation
 
 Seat initialization state handler implementation - Using Pipeline for batch initialization
-JSON-optimized: Config data stored as single JSON per event
+PostgreSQL is the single source of truth for seating_config.
 """
 
-from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Dict, TypedDict
+from typing import Dict
 
 import orjson
 from src.service.reservation.driven_adapter.state.reservation_helper.key_str_generator import (
-    make_event_state_key,
+    make_seating_config_key,
     make_seats_bf_key,
 )
 
@@ -22,56 +20,14 @@ from src.service.ticketing.app.interface.i_init_event_and_tickets_state_handler 
 )
 
 
-class SectionStats(TypedDict):
-    """Section statistics structure"""
-
-    available: int
-    reserved: int
-    sold: int
-    total: int
-    updated_at: int
-
-
-class SubsectionConfig(TypedDict):
-    """Subsection configuration structure (nested under section)"""
-
-    rows: int
-    cols: int
-    stats: SectionStats
-
-
-class SectionConfig(TypedDict):
-    """Section configuration structure (hierarchical - contains subsections)"""
-
-    price: int  # Price at section level (not duplicated)
-    subsections: Dict[str, SubsectionConfig]  # Keyed by subsection number
-
-
-class EventStats(TypedDict):
-    """Event-level statistics structure"""
-
-    available: int
-    reserved: int
-    sold: int
-    total: int
-    updated_at: int
-
-
-class EventConfig(TypedDict):
-    """Unified event configuration structure"""
-
-    event_stats: EventStats
-    sections: Dict[str, SectionConfig]  # Keyed by section name (A, B, C, ...)
-
-
 class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
     """
     Seat Initialization State Handler Implementation
 
     Responsibilities:
     - Generate all seat data from seating_config
-    - Batch write to Kvrocks using Pipeline
-    - Create unified event_state JSON with sections and event_stats
+    - Batch write bitfields to Kvrocks using Pipeline
+    - Write seating_config JSON to Kvrocks (mirrors PostgreSQL)
     """
 
     @Logger.io
@@ -95,7 +51,6 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
 
         for section_config in seating_config['sections']:
             section_name = section_config['name']
-            section_price = section_config['price']
             subsection_count = section_config['subsections']
 
             for subsection_num in range(1, subsection_count + 1):
@@ -106,16 +61,11 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                             {
                                 'section': section_name,
                                 'subsection': subsection_num,
-                                'row': row,
-                                'seat_num': seat_num,
                                 'seat_index': seat_index,
-                                'price': section_price,
-                                'rows': rows,
-                                'cols': cols,
                             }
                         )
 
-        Logger.base.info(f'📊 [INIT-HANDLER] Generated {len(all_seats)} seats from config')
+        Logger.base.info(f'[INIT-HANDLER] Generated {len(all_seats)} seats from config')
         return all_seats
 
     @Logger.io
@@ -135,66 +85,7 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
             # Step 2: Get Kvrocks client
             client = kvrocks_client.get_client()
 
-            # Step 3: Prepare section statistics and unified event config (JSON)
-            section_stats: Dict[str, int] = defaultdict(int)
-            event_state: EventConfig = {
-                'event_stats': {
-                    'available': 0,
-                    'reserved': 0,
-                    'sold': 0,
-                    'total': 0,
-                    'updated_at': 0,
-                },
-                'sections': {},
-            }
-
-            # Build stats and config from seat data (hierarchical structure)
-            for seat in all_seats:
-                section_id = f'{seat["section"]}-{seat["subsection"]}'
-                section_stats[section_id] += 1  # Track per subsection for counting
-                section_name = seat['section']  # e.g., "A"
-                subsection_num = str(seat['subsection'])  # e.g., "1"
-
-                # Create section if not exists (price stored at section level)
-                if section_name not in event_state['sections']:  # first time
-                    event_state['sections'][section_name] = {
-                        'price': seat['price'],
-                        'subsections': {},
-                    }
-
-                # Create subsection if not exists (stats stored at subsection level)
-                if (
-                    subsection_num not in event_state['sections'][section_name]['subsections']
-                ):  # first time
-                    event_state['sections'][section_name]['subsections'][subsection_num] = {
-                        'rows': seat['rows'],
-                        'cols': seat['cols'],
-                        'stats': {
-                            'available': 0,
-                            'reserved': 0,
-                            'sold': 0,
-                            'total': 0,
-                            'updated_at': 0,
-                        },
-                    }
-
-            timestamp = int(datetime.now(timezone.utc).timestamp())
-            for section_id, total_seats in section_stats.items():
-                parts = section_id.split('-')
-                section_name = parts[0]
-                subsection_num = parts[1]
-
-                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
-                    'available'
-                ] = total_seats
-                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
-                    'total'
-                ] = total_seats
-                event_state['sections'][section_name]['subsections'][subsection_num]['stats'][
-                    'updated_at'
-                ] = timestamp
-
-            # Step 4: Use Pipeline to batch write all operations
+            # Step 3: Use Pipeline to batch write all bitfield operations
             pipe = client.pipeline()
 
             for seat in all_seats:
@@ -203,23 +94,16 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
                 # 1-bit per seat: 0=available, 1=reserved
                 pipe.setbit(bf_key, seat['seat_index'], 0)
 
-            event_total_seats = sum(section_stats.values())
-            event_state['event_stats']['available'] = event_total_seats
-            event_state['event_stats']['reserved'] = 0
-            event_state['event_stats']['sold'] = 0
-            event_state['event_stats']['total'] = event_total_seats
-            event_state['event_stats']['updated_at'] = timestamp
-
             await pipe.execute()
 
-            # Step 5: Write unified event config as JSON (single key per event)
-            config_key = make_event_state_key(event_id=event_id)
-            event_state_json = orjson.dumps(event_state).decode()
+            # Step 4: Write seating_config JSON to Kvrocks (mirrors PostgreSQL)
+            config_key = make_seating_config_key(event_id=event_id)
+            seating_config_json = orjson.dumps(seating_config).decode()
+            await client.execute_command('JSON.SET', config_key, '$', seating_config_json)
 
-            await client.execute_command('JSON.SET', config_key, '$', event_state_json)
-            # Step 6: Verify results
-            sections_count = len(event_state['sections'])
-            Logger.base.info(f'✅ [INIT-HANDLER] Initialized {len(all_seats)} seats')
+            # Step 5: Return result
+            sections_count = len(seating_config.get('sections', []))
+            Logger.base.info(f'[INIT-HANDLER] Initialized {len(all_seats)} seats')
             return {
                 'success': True,
                 'total_seats': len(all_seats),
@@ -229,5 +113,5 @@ class InitEventAndTicketsStateHandlerImpl(IInitEventAndTicketsStateHandler):
 
         except Exception as e:
             error_msg = f'Seat initialization error: {str(e)}'
-            Logger.base.error(f'❌ [INIT-HANDLER] {error_msg}')
+            Logger.base.error(f'[INIT-HANDLER] {error_msg}')
             return {'success': False, 'total_seats': 0, 'sections_count': 0, 'error': error_msg}

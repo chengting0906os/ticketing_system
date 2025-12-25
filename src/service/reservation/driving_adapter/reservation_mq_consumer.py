@@ -35,10 +35,9 @@ from src.service.reservation.app.dto import (
     ReleaseSeatsBatchRequest,
     ReservationRequest,
 )
-from src.service.shared_kernel.domain.value_object import SubsectionConfig
 
 
-class SeatReservationConsumer(BaseKafkaConsumer):
+class ReservationConsumer(BaseKafkaConsumer):
     """
     Seat Reservation Consumer - Unified Command Router
 
@@ -286,7 +285,6 @@ class SeatReservationConsumer(BaseKafkaConsumer):
 
         if not all([booking_id, buyer_id, event_id]):
             raise ValueError('Missing required fields in event data')
-        config = event_data['config']
 
         return {
             'booking_id': booking_id,
@@ -297,19 +295,10 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             'quantity': event_data['quantity'],
             'seat_selection_mode': event_data['seat_selection_mode'],
             'seat_positions': event_data.get('seat_positions', []),
-            'rows': config.get('rows', 0),
-            'cols': config.get('cols', 0),
-            'price': config.get('price', 0),
         }
 
     async def _execute_reservation(self, command: Dict) -> bool:
         """Execute reservation use case."""
-        config = SubsectionConfig(
-            rows=command['rows'],
-            cols=command['cols'],
-            price=command['price'],
-        )
-
         request = ReservationRequest(
             booking_id=command['booking_id'],
             buyer_id=command['buyer_id'],
@@ -319,7 +308,6 @@ class SeatReservationConsumer(BaseKafkaConsumer):
             seat_positions=command['seat_positions'],
             section_filter=command['section'],
             subsection_filter=command['subsection'],
-            config=config,
         )
 
         # Call use case (use case is responsible for sending success/failure events)

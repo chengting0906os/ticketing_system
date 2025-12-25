@@ -56,6 +56,7 @@ class ISeatStateReservationCommandHandler(ABC):
         section: str,
         subsection: int,
         seat_ids: List[str],
+        cols: int,
         price: int,
     ) -> Dict:
         """
@@ -66,6 +67,7 @@ class ISeatStateReservationCommandHandler(ABC):
             section: Section (e.g., 'A')
             subsection: Subsection number (e.g., 1)
             seat_ids: List of seat IDs to verify (format: "row-seat")
+            cols: Seats per row (for calculating seat_index)
             price: Section price per seat
 
         Returns:

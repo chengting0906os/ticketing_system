@@ -1,27 +1,25 @@
 """
 Seat Availability Query Handler Interface
 
-Seat availability query handler interface - Used by ticketing service to check seat availability
-before creating bookings (Fail Fast principle)
+Used by ticketing service to check seat availability before creating bookings (Fail Fast principle)
 """
 
 from abc import ABC, abstractmethod
-
-from src.service.ticketing.app.dto import AvailabilityCheckResult
 
 
 class ISeatAvailabilityQueryHandler(ABC):
     """
     Seat Availability Query Handler Interface
 
-    Responsibility: Allow ticketing service to check if enough seats are available before creating booking
-    This is a cross-service query interface, following the Fail Fast principle
+    Responsibility: Quick availability check before sending to reservation service
+    - No cache → pass through (optimistic)
+    - Has cache → check if enough seats available
     """
 
     @abstractmethod
-    async def check_subsection_availability_then_get_config(
+    async def check_availability(
         self, *, event_id: int, section: str, subsection: int, required_quantity: int
-    ) -> AvailabilityCheckResult:
+    ) -> bool:
         """
         Check if the specified subsection has enough available seats
 
@@ -32,11 +30,7 @@ class ISeatAvailabilityQueryHandler(ABC):
             required_quantity: Required number of seats
 
         Returns:
-            AvailabilityCheckResult with:
-            - has_enough_seats: True if enough seats available
-            - config: SubsectionConfig (rows, cols, price)
-
-        Note:
-            This checks 'available' seats only, not 'reserved' or 'sold'
+            True if enough seats available (or no cache - optimistic pass through)
+            False if cache shows insufficient seats
         """
         pass

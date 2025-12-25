@@ -19,7 +19,6 @@ from src.platform.message_queue.protobuf_serializer import (
     convert_domain_event_to_proto,
     get_proto_class_by_event_type,
 )
-from src.service.shared_kernel.domain.value_object import SubsectionConfig
 from src.service.ticketing.domain.domain_event.booking_domain_event import (
     BookingCancelledEvent,
     BookingCreatedDomainEvent,
@@ -94,7 +93,6 @@ class TestBookingCreatedEventSerialization:
             seat_selection_mode='manual',
             seat_positions=['1-1', '1-2'],
             status=BookingStatus.PROCESSING,
-            config=SubsectionConfig(rows=10, cols=20, price=2500),
         )
 
     def test_serialize_and_deserialize_roundtrip(
@@ -119,68 +117,6 @@ class TestBookingCreatedEventSerialization:
         assert result['seat_positions'] == booking_created_event.seat_positions
         assert result['status'] == booking_created_event.status.value
         assert result['message_type'] == 'BookingCreatedDomainEvent'
-
-    def test_config_field_serialization(
-        self, booking_created_event: BookingCreatedDomainEvent
-    ) -> None:
-        proto_msg = convert_domain_event_to_proto(booking_created_event)
-
-        assert proto_msg.config.rows == 10
-        assert proto_msg.config.cols == 20
-        assert proto_msg.config.price == 2500
-
-    def test_config_deserialization_to_dict(
-        self, booking_created_event: BookingCreatedDomainEvent
-    ) -> None:
-        """SubsectionConfig should deserialize to dict"""
-        data = convert_domain_event_to_proto(booking_created_event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='BookingCreatedDomainEvent')
-
-        assert result['config'] == {'rows': 10, 'cols': 20, 'price': 2500}
-
-    def test_config_with_zero_price(self) -> None:
-        """Config with price=0 (free tickets) should serialize correctly"""
-        event = BookingCreatedDomainEvent(
-            booking_id=uuid_utils.uuid7(),
-            buyer_id=42,
-            event_id=1,
-            total_price=0,
-            section='A',
-            subsection=1,
-            quantity=2,
-            seat_selection_mode='auto',
-            seat_positions=[],
-            status=BookingStatus.PROCESSING,
-            config=SubsectionConfig(rows=10, cols=20, price=0),
-        )
-
-        data = convert_domain_event_to_proto(event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='BookingCreatedDomainEvent')
-
-        # With proto3 `optional` keyword, price=0 is now preserved (not omitted)
-        assert result['config'] == {'rows': 10, 'cols': 20, 'price': 0}
-
-    def test_config_none_omitted_from_proto(self) -> None:
-        """config=None should be omitted entirely (not included in proto)"""
-        event = BookingCreatedDomainEvent(
-            booking_id=uuid_utils.uuid7(),
-            buyer_id=42,
-            event_id=1,
-            total_price=0,
-            section='A',
-            subsection=1,
-            quantity=2,
-            seat_selection_mode='auto',
-            seat_positions=[],
-            status=BookingStatus.PROCESSING,
-            config=None,  # Explicitly None
-        )
-
-        data = convert_domain_event_to_proto(event).SerializeToString()
-        result = deserialize_domain_event(data=data, event_type='BookingCreatedDomainEvent')
-
-        # config=None means field not set, so MessageToDict won't include it
-        assert 'config' not in result
 
 
 @pytest.mark.unit

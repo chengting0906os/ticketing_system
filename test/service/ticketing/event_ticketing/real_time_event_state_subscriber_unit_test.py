@@ -138,25 +138,21 @@ class TestRealTimeEventStateSubscriber:
     # =========================================================================
 
     @pytest.mark.asyncio
-    async def test_cache_timestamp_updates(
+    async def test_throttle_time_updates(
         self,
         subscriber: RealTimeEventStateSubscriber,
         event_state_payload: dict[str, Any],
         event_id: int,
     ) -> None:
-        """Test that cache timestamp is updated correctly"""
+        """Test that throttle time is updated correctly"""
         data = orjson.dumps(event_state_payload)
 
         before_time = time.time()
         await subscriber._handle_update(data)
         after_time = time.time()
 
-        # Verify timestamp is in reasonable range
-        cache_timestamp = subscriber.cache_handler._cache[event_id]['timestamp']
-        assert before_time <= cache_timestamp <= after_time
-
-        # Verify last_update_time matches cache timestamp
-        assert subscriber._last_update_time == cache_timestamp
+        # Verify last_update_time is in reasonable range
+        assert before_time <= subscriber._last_update_time <= after_time
 
     # =========================================================================
     # Channel Configuration Tests

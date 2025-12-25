@@ -26,6 +26,11 @@ def make_event_state_key(*, event_id: int) -> str:
     return _make_key(f'event_state:{event_id}')
 
 
+def make_seating_config_key(*, event_id: int) -> str:
+    """Generate seating config key (mirrors PostgreSQL seating_config)"""
+    return _make_key(f'seating_config:{event_id}')
+
+
 def make_booking_key(*, booking_id: str) -> str:
     """Generate booking metadata key"""
     return _make_key(f'booking:{booking_id}')

@@ -17,6 +17,7 @@ Available Given steps:
     - a buyer exists:
 """
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -24,6 +25,7 @@ from fastapi.testclient import TestClient
 from pytest_bdd import given, parsers
 from pytest_bdd.model import Step
 
+from src.platform.config.di import container
 from src.platform.constant.route_constant import EVENT_CREATE
 from test.constants import DEFAULT_SEATING_CONFIG_JSON, DEFAULT_VENUE_NAME, TEST_SELLER_EMAIL
 from test.bdd_conftest.shared_step_utils import (
@@ -146,6 +148,46 @@ def given_role_exists(
 # ============ Given Steps - Event Creation ============
 
 
+def _populate_availability_cache(event_id: int, seating_config: dict[str, Any]) -> None:
+    """Populate the availability cache with initial seat counts.
+
+    This ensures fail-fast checks work correctly in integration tests.
+    """
+    handler = container.seat_availability_query_handler()
+
+    # Calculate total seats per section/subsection
+    rows = seating_config.get('rows', 10)
+    cols = seating_config.get('cols', 10)
+    total_per_subsection = rows * cols
+
+    sections_data: dict[str, Any] = {}
+    for section in seating_config.get('sections', []):
+        section_name = section['name']
+        subsection_count = section.get('subsections', 1)
+        price = section.get('price', 1000)
+
+        subsections_data: dict[str, Any] = {}
+        for i in range(1, subsection_count + 1):
+            subsections_data[str(i)] = {
+                'rows': rows,
+                'cols': cols,
+                'stats': {
+                    'available': total_per_subsection,
+                    'reserved': 0,
+                    'sold': 0,
+                    'total': total_per_subsection,
+                },
+            }
+
+        sections_data[section_name] = {
+            'price': price,
+            'subsections': subsections_data,
+        }
+
+    event_state = {'sections': sections_data}
+    handler._cache[event_id] = {'data': event_state, 'timestamp': time.time()}
+
+
 @given('an event exists with:')
 def create_event_shared(
     step: Step,
@@ -163,20 +205,24 @@ def create_event_shared(
     event_data = extract_table_data(step)
 
     login_user(client, TEST_SELLER_EMAIL, DEFAULT_PASSWORD)
+    seating_config = parse_seating_config(
+        event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON)
+    )
     request_data = {
         'name': event_data['name'],
         'description': event_data['description'],
         'is_active': event_data.get('is_active', 'true').lower() == 'true',
         'venue_name': event_data.get('venue_name', DEFAULT_VENUE_NAME),
-        'seating_config': parse_seating_config(
-            event_data.get('seating_config', DEFAULT_SEATING_CONFIG_JSON)
-        ),
+        'seating_config': seating_config,
     }
 
     response = client.post(EVENT_CREATE, json=request_data)
     assert response.status_code == 201, f'Failed to create event: {response.text}'
     event_result = response.json()
     event_id = event_result['id']
+
+    # Populate availability cache for fail-fast checks
+    _populate_availability_cache(event_id, seating_config)
 
     # If test specifies sold_out status, directly update the event status in database
     desired_status = event_data.get('status', 'available')

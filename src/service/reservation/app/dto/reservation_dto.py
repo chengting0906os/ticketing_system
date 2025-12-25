@@ -4,8 +4,6 @@ from typing import List, Optional
 
 import attrs
 
-from src.service.shared_kernel.domain.value_object import SubsectionConfig
-
 
 @attrs.define
 class ReservationRequest:
@@ -19,8 +17,6 @@ class ReservationRequest:
     subsection_filter: int  # Required, not Optional
     quantity: int  # Required, not Optional
     seat_positions: Optional[List[str]] = None  # Manually selected seat IDs
-    # Config from upstream (avoids redundant Kvrocks lookups in Lua scripts)
-    config: Optional[SubsectionConfig] = None
 
 
 @attrs.define

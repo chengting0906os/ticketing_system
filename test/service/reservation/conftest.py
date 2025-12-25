@@ -211,6 +211,7 @@ def reserve_single_seat_manual(
             section=section,
             subsection=subsec_num,
             seat_ids=[seat_id],
+            cols=config['cols'],
             price=1000,
         )
     )
@@ -256,6 +257,7 @@ def reserve_multiple_seats_manual(
             section=section,
             subsection=subsec_num,
             seat_ids=seats,
+            cols=config['cols'],
             price=1000,
         )
     )
