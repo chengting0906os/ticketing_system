@@ -70,7 +70,8 @@ Event Ticketing 模組負責管理活動（Event）與票券（Ticket）的建�
 
 - [event_creation.feature](../../test/service/ticketing/event_ticketing/event_creation.feature) - 活動建立
 - [event_list_validation.feature](../../test/service/ticketing/event_ticketing/event_list_validation.feature) - 活動列表
-- [event_subsection_seats_list_integration_test.feature](../../test/service/ticketing/event_ticketing/event_subsection_seats_list_integration_test.feature) - 活動詳情 & 座位清單
+- [event_get_integration_test.feature](../../test/service/ticketing/event_ticketing/event_get_integration_test.feature) - 活動詳情
+- [event_subsection_seats_list_integration_test.feature](../../test/service/ticketing/event_ticketing/event_subsection_seats_list_integration_test.feature) - 座位清單
 - [event_status_sse_stream_integration_test.feature](../../test/service/ticketing/event_ticketing/event_status_sse_stream_integration_test.feature) - SSE 即時更新
 
 ### Unit Tests

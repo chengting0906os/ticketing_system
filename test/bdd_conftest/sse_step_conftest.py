@@ -732,17 +732,30 @@ def then_section_stats_include(step: Step, context: dict[str, Any]) -> None:
             break
 
     assert sections_event is not None, 'No event with sections data found'
-    sections = sections_event['data'].get('sections', {})
+    sections = sections_event['data'].get('sections', [])
 
-    key = f'{data["section"]}-{data["subsection"]}'
-    assert key in sections, f'Section {key} not found in response'
+    # Find matching section/subsection in the list
+    target_section = data['section']
+    target_subsection = int(data['subsection'])
+    matching_section = None
+    for s in sections:
+        if s.get('section') == target_section and s.get('subsection') == target_subsection:
+            matching_section = s
+            break
 
-    section = sections[key]
-    assert section['total'] == int(data['total']), (
-        f'Total mismatch for {key}: got {section["total"]}, expected {data["total"]}'
+    key = f'{target_section}-{target_subsection}'
+    assert matching_section is not None, f'Section {key} not found in response'
+
+    total = (
+        matching_section.get('available', 0)
+        + matching_section.get('reserved', 0)
+        + matching_section.get('sold', 0)
     )
-    assert section['available'] == int(data['available']), (
-        f'Available mismatch for {key}: got {section["available"]}, expected {data["available"]}'
+    assert total == int(data['total']), (
+        f'Total mismatch for {key}: got {total}, expected {data["total"]}'
+    )
+    assert matching_section['available'] == int(data['available']), (
+        f'Available mismatch for {key}: got {matching_section["available"]}, expected {data["available"]}'
     )
 
 
@@ -822,7 +835,9 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
     data = extract_table_data(step)
     connections = context.get('user_connections', [])
 
-    key = f'{data["section"]}-{data["subsection"]}'
+    target_section = data['section']
+    target_subsection = int(data['subsection'])
+    key = f'{target_section}-{target_subsection}'
     expected_available = int(data['available'])
     expected_reserved = int(data['reserved'])
 
@@ -838,14 +853,20 @@ def then_all_users_see_same_stats(step: Step, context: dict[str, Any]) -> None:
                 break
 
         assert latest_event is not None, f'No event with sections data for user {conn["user_id"]}'
-        sections = latest_event['data'].get('sections', {})
+        sections = latest_event['data'].get('sections', [])
 
-        assert key in sections, f'Section {key} not found for user {conn["user_id"]}'
+        # Find matching section/subsection in the list
+        matching_section = None
+        for s in sections:
+            if s.get('section') == target_section and s.get('subsection') == target_subsection:
+                matching_section = s
+                break
 
-        section = sections[key]
-        assert section['available'] == expected_available, (
+        assert matching_section is not None, f'Section {key} not found for user {conn["user_id"]}'
+
+        assert matching_section['available'] == expected_available, (
             f'Available mismatch for user {conn["user_id"]}'
         )
-        assert section['reserved'] == expected_reserved, (
+        assert matching_section['reserved'] == expected_reserved, (
             f'Reserved mismatch for user {conn["user_id"]}'
         )

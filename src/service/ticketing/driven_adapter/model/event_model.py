@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.platform.database.db_setting import Base
 
+
 if TYPE_CHECKING:
     from src.service.ticketing.driven_adapter.model.user_model import UserModel
 
@@ -20,6 +21,7 @@ class EventModel(Base):
     status: Mapped[str] = mapped_column(String(20), default='available', nullable=False)
     venue_name: Mapped[str] = mapped_column(String(255), nullable=False)
     seating_config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    stats: Mapped[dict] = mapped_column(JSON, nullable=True)
 
     # Relationships
     seller: Mapped['UserModel'] = relationship(

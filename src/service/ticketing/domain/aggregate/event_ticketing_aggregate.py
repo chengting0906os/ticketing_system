@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 import attrs
 
 from src.platform.logging.loguru_io import Logger
+from src.service.ticketing.domain.entity.subsection_stats_entity import SubsectionStatsEntity
 from src.service.ticketing.domain.enum.event_status import EventStatus
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 
@@ -54,6 +55,7 @@ class Event:
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    stats: Optional[Dict] = None
 
 
 @attrs.define
@@ -63,6 +65,9 @@ class EventTicketingAggregate:
 
     # Tickets collection - entities within aggregate
     tickets: List[Ticket] = attrs.field(factory=list)
+
+    # Subsection stats - read from subsection_stats table
+    subsection_stats: List[SubsectionStatsEntity] = attrs.field(factory=list)
 
     @classmethod
     @Logger.io
@@ -206,3 +211,11 @@ class EventTicketingAggregate:
     @property
     def total_tickets_count(self) -> int:
         return len(self.tickets)
+
+
+@attrs.define
+class SubsectionTicketsAggregate:
+    """Aggregate for subsection stats with tickets."""
+
+    stats: SubsectionStatsEntity
+    tickets: List[Ticket] = attrs.field(factory=list)

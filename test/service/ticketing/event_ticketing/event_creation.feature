@@ -13,8 +13,8 @@ Feature: Event Creation
       | name         | description                  | venue_name   | seating_config                                                               |
       | Rock Concert | Amazing live rock music show | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
     Then the event should be created with:
-      | id        | seller_id | name         | description                  | is_active | venue_name   | seating_config                                                               |
-      | {any_int} | {any_int} | Rock Concert | Amazing live rock music show | true      | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
+      | id        | seller_id | name         | description                  | is_active | venue_name   | seating_config                                                               | stats      |
+      | {any_int} | {any_int} | Rock Concert | Amazing live rock music show | true      | Taipei Arena | {"rows": 25, "cols": 20, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} | {any_dict} |
     And the response status code should be 201
 
   Scenario: Create event with empty name
@@ -29,8 +29,8 @@ Feature: Event Creation
       | name             | description                 | is_active | venue_name  | seating_config                                                               |
       | Broadway Musical | Classic theater performance | false     | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "B", "price": 1500, "subsections": 1}]} |
     Then the event should be created with:
-      | id        | seller_id | name             | description                 | is_active | status    | venue_name  | seating_config                                                               |
-      | {any_int} | {any_int} | Broadway Musical | Classic theater performance | false     | available | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "B", "price": 1500, "subsections": 1}]} |
+      | id        | seller_id | name             | description                 | is_active | status    | venue_name  | seating_config                                                               | stats      |
+      | {any_int} | {any_int} | Broadway Musical | Classic theater performance | false     | available | Taipei Dome | {"rows": 30, "cols": 25, "sections": [{"name": "B", "price": 1500, "subsections": 1}]} | {any_dict} |
     And the response status code should be 201
 
   Scenario: Buyer cannot create event
@@ -47,8 +47,8 @@ Feature: Event Creation
       | Test Event | Great concert | Taipei Arena | {"rows": 5, "cols": 10, "sections": [{"name": "A", "price": 1000, "subsections": 1}]} |
     Then the response status code should be 201
     And the event should be created with:
-      | name       | status    | is_active |
-      | Test Event | available | true      |
+      | name       | status    | is_active | stats      |
+      | Test Event | available | true      | {any_dict} |
     And tickets should be auto-created with:
       | count | price | status    |
       |    50 |  1000 | available |

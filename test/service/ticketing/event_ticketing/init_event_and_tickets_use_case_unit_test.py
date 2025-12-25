@@ -93,6 +93,7 @@ class TestCreateEventKafkaSetup:
             status=EventStatus.AVAILABLE,
             is_active=True,
             created_at=datetime.now(timezone.utc),
+            stats={'available': 100, 'reserved': 0, 'sold': 0, 'total': 100},
         )
         aggregate = EventTicketingAggregate(event=event, tickets=[])
         return aggregate

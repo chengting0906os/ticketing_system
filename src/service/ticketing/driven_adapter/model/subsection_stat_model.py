@@ -25,4 +25,4 @@ class SubsectionStatModel(Base):
     available: Mapped[int] = mapped_column(Integer, server_default='0', nullable=False)
     reserved: Mapped[int] = mapped_column(Integer, server_default='0', nullable=False)
     sold: Mapped[int] = mapped_column(Integer, server_default='0', nullable=False)
-    updated_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[int] = mapped_column(BigInteger, server_default='0', nullable=False)

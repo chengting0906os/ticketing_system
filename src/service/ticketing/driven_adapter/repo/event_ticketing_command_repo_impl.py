@@ -225,6 +225,9 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
                     event_aggregate.event.id,
                 )
 
+                # Update aggregate's event.stats
+                event_aggregate.event.stats = dict(event_stats)
+
                 stats_time = time.time() - stats_start
                 Logger.base.info(
                     f'  📊 [BATCH_CREATE] Stats calculation completed ({stats_time:.3f}s)'

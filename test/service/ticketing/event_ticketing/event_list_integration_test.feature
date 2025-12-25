@@ -30,9 +30,9 @@ Feature: Event List
     When I call GET "/api/event"
     Then the buyer should see 2 events
     And the events should be:
-      | name         | description      | is_active | status    |
-      | Rock Concert | Active available | true      | available |
-      | Comedy Show  | Active available | true      | available |
+      | name         | description      | is_active | status    | stats      |
+      | Rock Concert | Active available | true      | available | {any_dict} |
+      | Comedy Show  | Active available | true      | available | {any_dict} |
 
   Scenario: Empty event list
     Given no available events exist

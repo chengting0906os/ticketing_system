@@ -17,33 +17,27 @@ Feature: Event Ticket Management
     Then the response status code should be 200
     And available tickets should be returned with count:
       | 50 |
+    And each ticket should have valid fields:
+      | field      | expected_value |
+      | section    | A              |
+      | subsection | 1              |
+      | price      | 3000           |
+      | status     | available      |
 
   Scenario: Seller lists tickets by subsection
     When I call GET "/api/event/{event_id}/sections/A/subsection/1/seats"
     Then the response status code should be 200
-    And section tickets should be returned with count:
+    And available tickets should be returned with count:
       | 50 |
+    And each ticket should have valid fields:
+      | field      | expected_value |
+      | section    | A              |
+      | subsection | 1              |
+      | price      | 3000           |
+      | status     | available      |
 
   Scenario: Buyer receives error when listing tickets for non-existent event
     Given a buyer exists
     When I call GET "/api/event/999/sections/A/subsection/1/seats"
-    Then the response status code should be 404
-    And the error message should contain "Event not found"
-
-  Scenario: Get event details with subsection status
-    When I call GET "/api/event/{event_id}"
-    Then the response status code should be 200
-    And the response data should include:
-      | id       | name      | description | seller_id | is_active | status    | venue_name  | seating_config | sections | total_sections |
-      | not_null | SSE Event | SSE Test    | not_null  | true      | available | Large Arena | not_null       | not_null | 4              |
-    And all subsection stats should be returned:
-      | section | subsection | total | available |
-      | A       | 1          | 50    | 50        |
-      | A       | 2          | 50    | 50        |
-      | B       | 1          | 50    | 50        |
-      | C       | 1          | 50    | 50        |
-
-  Scenario: Get event details for non-existent event
-    When I call GET "/api/event/999"
     Then the response status code should be 404
     And the error message should contain "Event not found"

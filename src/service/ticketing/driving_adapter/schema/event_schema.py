@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -17,32 +17,13 @@ class EventCreateWithTicketConfigRequest(BaseModel):
                 'description': 'Amazing live music performance',
                 'venue_name': 'Taipei Arena',
                 'seating_config': {
+                    'rows': 25,
+                    'cols': 20,
                     'sections': [
-                        {
-                            'name': 'A',
-                            'price': 2000,
-                            'subsections': [
-                                {'number': 1, 'rows': 25, 'cols': 20},
-                                {'number': 2, 'rows': 25, 'cols': 20},
-                            ],
-                        },
-                        {
-                            'name': 'B',
-                            'price': 1500,
-                            'subsections': [
-                                {'number': 1, 'rows': 25, 'cols': 20},
-                                {'number': 2, 'rows': 25, 'cols': 20},
-                            ],
-                        },
-                        {
-                            'name': 'C',
-                            'price': 1000,
-                            'subsections': [
-                                {'number': 1, 'rows': 25, 'cols': 20},
-                                {'number': 2, 'rows': 25, 'cols': 20},
-                            ],
-                        },
-                    ]
+                        {'name': 'A', 'price': 2000, 'subsections': 2},
+                        {'name': 'B', 'price': 1500, 'subsections': 2},
+                        {'name': 'C', 'price': 1000, 'subsections': 2},
+                    ],
                 },
                 'is_active': True,
             }
@@ -58,25 +39,26 @@ class EventResponse(BaseModel):
     seating_config: Dict
     is_active: bool
     status: str
+    stats: dict | None
 
     class Config:
         json_schema_extra = {
             'example': {
                 'id': 1,
-                'name': 'iPhone 15 Pro',
-                'description': 'Latest Apple smartphone with A17 Pro chip',
+                'name': 'Concert Event',
+                'description': 'Amazing live music performance',
                 'seller_id': 1,
                 'venue_name': 'Taipei Arena',
                 'seating_config': {
+                    'rows': 25,
+                    'cols': 20,
                     'sections': [
-                        {
-                            'name': 'A',
-                            'subsections': [{'number': 1, 'rows': 25, 'cols': 20}],
-                        }
-                    ]
+                        {'name': 'A', 'price': 2000, 'subsections': 2},
+                    ],
                 },
                 'is_active': True,
                 'status': 'available',
+                'stats': {'available': 1000, 'reserved': 0, 'sold': 0, 'total': 1000},
             }
         }
 
@@ -104,43 +86,23 @@ class SeatResponse(BaseModel):
         }
 
 
-class SectionStatsResponse(BaseModel):
-    """Section Statistics Response."""
+class SubsectionStatsResponse(BaseModel):
+    """Subsection statistics for seat availability."""
 
     event_id: int
     section: str
     subsection: int
-    total: int
+    price: int
     available: int
     reserved: int
     sold: int
-    tickets: List[SeatResponse] = []
-    total_count: int = 0
-
-    class Config:
-        json_schema_extra = {
-            'example': {
-                'event_id': 1,
-                'section': 'A',
-                'subsection': 1,
-                'total': 3000,
-                'available': 480,
-                'reserved': 15,
-                'sold': 5,
-                'tickets': ['1-1', '1-2'],
-                'total_count': 500,
-            }
-        }
+    updated_at: int
 
 
-# ============================ SSE Schemas ============================
+class EventWithSubsectionStatsResponse(BaseModel):
+    """Event response with subsection statistics."""
 
-
-class EventStateSseResponse(BaseModel):
-    """SSE response for event state updates."""
-
-    event_type: str
-    event_id: int
+    id: int
     name: str
     description: str
     seller_id: int
@@ -148,5 +110,102 @@ class EventStateSseResponse(BaseModel):
     status: str
     venue_name: str
     seating_config: Dict
-    sections: Dict
-    total_sections: int
+    stats: dict
+    sections: List[SubsectionStatsResponse]
+
+    class Config:
+        json_schema_extra = {
+            'example': {
+                'id': 3,
+                'name': 'Concert Event',
+                'description': 'Amazing live music performance',
+                'seller_id': 1,
+                'is_active': True,
+                'status': 'available',
+                'venue_name': 'Taipei Arena',
+                'seating_config': {
+                    'cols': 20,
+                    'rows': 25,
+                    'sections': [
+                        {'name': 'A', 'price': 2000, 'subsections': 2},
+                        {'name': 'B', 'price': 1500, 'subsections': 2},
+                    ],
+                },
+                'stats': {'sold': 0, 'total': 2000, 'reserved': 0, 'available': 2000},
+                'sections': [
+                    {
+                        'event_id': 3,
+                        'section': 'A',
+                        'subsection': 1,
+                        'price': 2000,
+                        'available': 500,
+                        'reserved': 0,
+                        'sold': 0,
+                    },
+                    {
+                        'event_id': 3,
+                        'section': 'A',
+                        'subsection': 2,
+                        'price': 2000,
+                        'available': 500,
+                        'reserved': 0,
+                        'sold': 0,
+                    },
+                ],
+            }
+        }
+
+
+class TicketResponse(BaseModel):
+    """Ticket response."""
+
+    id: Optional[int] = None
+    event_id: int
+    section: str
+    subsection: int
+    row: int
+    seat: int
+    price: int
+    status: str
+
+
+class SubsectionSeatsResponse(BaseModel):
+    """Subsection seats response with stats and tickets."""
+
+    event_id: int
+    section: str
+    subsection: int
+    price: int
+    total: int
+    available: int
+    reserved: int
+    sold: int
+    tickets: List[TicketResponse]
+
+
+# ============================ SSE Schemas ============================
+
+
+class EventStateSseResponse(BaseModel):
+    """SSE response for initial event state (full data)."""
+
+    event_type: str
+    event_id: int
+    stats: dict
+    name: str
+    description: str
+    seller_id: int
+    is_active: bool
+    status: str
+    venue_name: str
+    seating_config: Dict
+    sections: List[SubsectionStatsResponse]
+
+
+class EventStateSseUpdateResponse(BaseModel):
+    """SSE response for status updates (only changed fields)."""
+
+    event_type: str
+    event_id: int
+    stats: dict
+    subsection_stats: List[Dict]

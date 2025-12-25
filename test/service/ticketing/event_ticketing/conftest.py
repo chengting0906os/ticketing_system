@@ -194,6 +194,16 @@ def verify_event_created(step: Step, context: dict[str, Any]) -> None:
             assert response_json[field] == expected_json, (
                 f'seating_config mismatch: expected {expected_json}, got {response_json[field]}'
             )
+        elif field == 'stats':
+            # Handle JSON comparison for stats
+            if expected_value == '{any_dict}':
+                assert field in response_json, f"Response should contain field '{field}'"
+                assert isinstance(response_json[field], dict), f'{field} should be a dictionary'
+            else:
+                expected_json = orjson.loads(expected_value)
+                assert response_json[field] == expected_json, (
+                    f'stats mismatch: expected {expected_json}, got {response_json[field]}'
+                )
         else:
             assert response_json[field] == expected_value
 
@@ -259,6 +269,16 @@ def verify_specific_events(step: Step, context: dict[str, Any]) -> None:
                 # Price is no longer part of event - it's on tickets
                 assert str(event['is_active']).lower() == expected['is_active'].lower()
                 assert event['status'] == expected['status']
+                # Verify stats field if specified
+                if 'stats' in expected:
+                    if expected['stats'] == '{any_dict}':
+                        assert 'stats' in event, "Response should contain field 'stats'"
+                        assert isinstance(event['stats'], dict), 'stats should be a dictionary'
+                    else:
+                        expected_stats = orjson.loads(expected['stats'])
+                        assert event['stats'] == expected_stats, (
+                            f'stats mismatch: expected {expected_stats}, got {event["stats"]}'
+                        )
                 found = True
                 break
         assert found, f'Event {expected["name"]} not found in response'
@@ -381,14 +401,18 @@ def then_tickets_returned_with_count(
     step: Step,
     context: dict[str, Any],
 ) -> None:
-    """Verify tickets are returned with correct count, optionally checking status.
+    """Verify tickets are returned with correct count.
 
-    Note: tickets field contains SeatResponse objects grouped by status.
-    Each SeatResponse has seat_positions list with individual seat positions.
+    Response format:
+        {
+            "event_id": 1, "section": "A", "subsection": 1,
+            "price": 3000, "total": 50, "available": 50, "reserved": 0, "sold": 0,
+            "tickets": [{"id": 1, "event_id": 1, "section": "A", ...}, ...]
+        }
 
     Example:
         Then available tickets should be returned with count:
-          | 10 |
+          | 50 |
     """
     rows = step.data_table.rows
     expected_count = int(rows[0].cells[0].value)
@@ -397,20 +421,68 @@ def then_tickets_returned_with_count(
     assert response.status_code == 200
 
     data = response.json()
-    assert data['total_count'] == expected_count
+    assert data['total'] == expected_count, f'Expected total={expected_count}, got {data["total"]}'
 
-    # Count total seat_positions across all SeatResponse groups
-    total_seats = sum(len(ticket['seat_positions']) for ticket in data['tickets'])
-    assert total_seats == expected_count, (
-        f'Expected {expected_count} total seats, got {total_seats}'
-    )
+    # Verify tickets list
+    tickets = data['tickets']
+    assert isinstance(tickets, list), f'Expected tickets to be a list, got {type(tickets)}'
+    assert len(tickets) == expected_count, f'Expected {expected_count} tickets, got {len(tickets)}'
 
-    # If ticket_type is 'available', verify all tickets have status='available'
+    # Verify by ticket_type - filter tickets by status
     if ticket_type == 'available':
-        for ticket in data['tickets']:
-            assert ticket['status'] == 'available', (
-                f"Expected status 'available', got '{ticket['status']}'"
-            )
+        assert data['available'] == expected_count
+        available_tickets = [t for t in tickets if t['status'] == 'available']
+        assert len(available_tickets) == expected_count, (
+            f'Expected {expected_count} available tickets, got {len(available_tickets)}'
+        )
+
+    # Verify ticket structure
+    for ticket in tickets:
+        assert 'id' in ticket
+        assert 'event_id' in ticket
+        assert 'section' in ticket
+        assert 'subsection' in ticket
+        assert 'row' in ticket
+        assert 'seat' in ticket
+        assert 'price' in ticket
+        assert 'status' in ticket
+
+
+@then('each ticket should have valid fields:')
+def then_each_ticket_has_valid_fields(
+    step: Step,
+    context: dict[str, Any],
+) -> None:
+    """Verify each ticket has expected field values.
+
+    Example:
+        And each ticket should have valid fields:
+          | field      | expected_value |
+          | section    | A              |
+          | subsection | 1              |
+          | price      | 3000           |
+          | status     | available      |
+    """
+    response = context['response']
+    data = response.json()
+    tickets = data['tickets']
+
+    # Parse expected values from table (skip header row)
+    expected_values = {}
+    for row in step.data_table.rows[1:]:  # Skip header
+        field = row.cells[0].value
+        value = row.cells[1].value
+        # Convert numeric values
+        if value.isdigit():
+            expected_values[field] = int(value)
+        else:
+            expected_values[field] = value
+
+    # Verify each ticket
+    for i, ticket in enumerate(tickets):
+        for field, expected in expected_values.items():
+            actual = ticket.get(field)
+            assert actual == expected, f'Ticket {i}: expected {field}={expected}, got {actual}'
 
 
 @then('all subsection stats should be returned:')
@@ -420,58 +492,61 @@ def then_all_subsection_stats_returned(
 ) -> None:
     """Verify all subsection stats are returned with correct values.
 
-    Response format (from Kvrocks):
+    Response format (from PostgreSQL subsection_stats table):
         {
-            "event_id": 1,
-            "sections": {
-                "A-1": {"available": 50, "reserved": 0, "sold": 0, "total": 50},
-                "A-2": {"available": 50, "reserved": 0, "sold": 0, "total": 50},
+            "sections": [
+                {"event_id": 1, "section": "A", "subsection": 1, "price": 3000, "available": 50, "reserved": 0, "sold": 0, "updated_at": ...},
                 ...
-            },
-            "total_sections": 4
+            ]
         }
 
     Example:
         Then all subsection stats should be returned:
-          | section | subsection | total | available |
-          | A       | 1          | 50    | 50        |
+          | section | subsection | price | available | reserved | sold | updated_at |
+          | A       | 1          | 3000  | 50        | 0        | 0    | not_null   |
     """
     response = context['response']
     assert response.status_code == 200
 
     data = response.json()
-    sections = data.get('sections', {})
+    sections_list = data.get('sections', [])
+
+    # Convert list to dict for easier lookup
+    sections = {}
+    for s in sections_list:
+        key = f'{s["section"]}-{s["subsection"]}'
+        sections[key] = s
 
     # Parse expected data from step table
     rows = step.data_table.rows
     headers = [cell.value for cell in rows[0].cells]
 
-    expected_stats = []
+    # Verify each expected subsection
     for row in rows[1:]:
         values = [cell.value for cell in row.cells]
         row_data = dict(zip(headers, values, strict=True))
-        expected_stats.append(
-            {
-                'section': row_data['section'],
-                'subsection': int(row_data['subsection']),
-                'total': int(row_data['total']),
-                'available': int(row_data['available']),
-            }
-        )
 
-    # Verify each expected subsection
-    for expected in expected_stats:
-        # Build key like "A-1" from section="A" and subsection=1
-        section_key = f'{expected["section"]}-{expected["subsection"]}'
+        section_key = f'{row_data["section"]}-{row_data["subsection"]}'
         assert section_key in sections, (
             f'Section {section_key} not found in response. Available: {list(sections.keys())}'
         )
 
         section_stats = sections[section_key]
-        assert section_stats['total'] == expected['total'], (
-            f'Section {section_key}: expected total={expected["total"]}, got {section_stats["total"]}'
-        )
-        assert section_stats['available'] == expected['available'], (
-            f'Section {section_key}: expected available={expected["available"]}, '
-            f'got {section_stats["available"]}'
-        )
+
+        # Verify each field in the table
+        for header, expected_value in row_data.items():
+            if header in ('section', 'subsection'):
+                continue  # Already used for lookup
+
+            actual_value = section_stats.get(header)
+
+            if expected_value == 'not_null':
+                assert actual_value is not None, (
+                    f'Section {section_key}: {header} should not be null, got {actual_value}'
+                )
+            else:
+                # Convert to int for numeric fields
+                expected_int = int(expected_value)
+                assert actual_value == expected_int, (
+                    f'Section {section_key}: expected {header}={expected_int}, got {actual_value}'
+                )

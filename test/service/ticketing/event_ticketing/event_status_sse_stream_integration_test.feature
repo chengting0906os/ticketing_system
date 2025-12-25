@@ -17,8 +17,8 @@ Feature: Seat Status SSE Stream
       | event_type     | sections_count |
       | initial_status | 4              |
     And initial SSE event data should include:
-      | event_id  | seller_id | name      | description | is_active | status    | venue_name  | seating_config | total_sections |
-      | {any_int} | {any_int} | SSE Event | SSE Test    | true      | available | Large Arena | not_null       | 4              |
+      | event_id  | seller_id | name      | description | is_active | status    | venue_name  | seating_config |
+      | {any_int} | {any_int} | SSE Event | SSE Test    | true      | available | Large Arena | not_null       |
     And section stats should include:
       | section | subsection | total | available |
       | A       | 1          | 50    | 50        |

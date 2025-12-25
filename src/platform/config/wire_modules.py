@@ -15,8 +15,11 @@ from src.service.ticketing.app.command import (
 )
 from src.service.ticketing.app.query import (
     get_booking_use_case,
+    get_event_use_case,
     list_bookings_use_case,
     list_events_use_case,
+    list_subsection_seats_use_case,
+    stream_event_status_use_case,
 )
 from src.service.ticketing.driving_adapter.http_controller import user_controller
 
@@ -27,7 +30,10 @@ WIRE_MODULES: list[ModuleType] = [
     mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case,
     list_bookings_use_case,
     get_booking_use_case,
+    get_event_use_case,
     create_event_and_tickets_use_case,
     list_events_use_case,
+    list_subsection_seats_use_case,
+    stream_event_status_use_case,
     user_controller,
 ]

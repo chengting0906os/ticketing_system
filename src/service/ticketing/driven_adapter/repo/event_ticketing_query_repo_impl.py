@@ -15,11 +15,14 @@ from src.service.ticketing.app.interface.i_event_ticketing_query_repo import (
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     Event,
     EventTicketingAggregate,
+    SubsectionTicketsAggregate,
     Ticket,
 )
+from src.service.ticketing.domain.entity.subsection_stats_entity import SubsectionStatsEntity
 from src.service.ticketing.domain.enum.event_status import EventStatus
 from src.service.ticketing.domain.enum.ticket_status import TicketStatus
 from src.service.ticketing.driven_adapter.model.event_model import EventModel
+from src.service.ticketing.driven_adapter.model.subsection_stat_model import SubsectionStatModel
 from src.service.ticketing.driven_adapter.model.ticket_model import TicketModel
 
 
@@ -54,6 +57,7 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             id=event_model.id,
             created_at=None,
             updated_at=None,
+            stats=event_model.stats,
         )
 
     def _model_to_ticket(self, ticket_model: TicketModel) -> Ticket:
@@ -72,11 +76,24 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
             reserved_at=ticket_model.reserved_at,
         )
 
+    def _model_to_subsection_stats(self, model: SubsectionStatModel) -> SubsectionStatsEntity:
+        return SubsectionStatsEntity(
+            event_id=model.event_id,
+            section=model.section,
+            subsection=model.subsection,
+            price=model.price,
+            available=model.available,
+            reserved=model.reserved,
+            sold=model.sold,
+            updated_at=model.updated_at,
+        )
+
     @Logger.io
     async def get_event_aggregate_by_id_with_tickets(
         self, *, event_id: int
     ) -> Optional[EventTicketingAggregate]:
         async with self._get_session() as session:
+            # Query event and tickets
             result = await session.execute(
                 select(EventModel, TicketModel)
                 .outerjoin(TicketModel, EventModel.id == TicketModel.event_id)
@@ -96,8 +113,22 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
                 if ticket_model is not None
             ]
 
-            aggregate = EventTicketingAggregate(event=event, tickets=tickets)
-            Logger.base.info(f'[GET_AGGREGATE] Loaded event {event_id} with {len(tickets)} tickets')
+            # Query subsection stats
+            stats_result = await session.execute(
+                select(SubsectionStatModel)
+                .where(SubsectionStatModel.event_id == event_id)
+                .order_by(SubsectionStatModel.section, SubsectionStatModel.subsection)
+            )
+            stats_models = stats_result.scalars().all()
+            subsection_stats = [self._model_to_subsection_stats(m) for m in stats_models]
+
+            aggregate = EventTicketingAggregate(
+                event=event, tickets=tickets, subsection_stats=subsection_stats
+            )
+            Logger.base.info(
+                f'[GET_AGGREGATE] Loaded event {event_id} with {len(tickets)} tickets, '
+                f'{len(subsection_stats)} subsection stats'
+            )
             return aggregate
 
     @Logger.io
@@ -155,3 +186,40 @@ class EventTicketingQueryRepoImpl(IEventTicketingQueryRepo):
                 f'for event={event_id} section={section}-{subsection}'
             )
             return tickets
+
+    @Logger.io
+    async def get_subsection_stats_and_tickets(
+        self, *, event_id: int, section: str, subsection: int
+    ) -> Optional[SubsectionTicketsAggregate]:
+        """Get subsection stats and tickets using ORM with LEFT JOIN."""
+        async with self._get_session() as session:
+            # Single query with LEFT JOIN
+            result = await session.execute(
+                select(SubsectionStatModel, TicketModel)
+                .outerjoin(
+                    TicketModel,
+                    (SubsectionStatModel.event_id == TicketModel.event_id)
+                    & (SubsectionStatModel.section == TicketModel.section)
+                    & (SubsectionStatModel.subsection == TicketModel.subsection),
+                )
+                .where(SubsectionStatModel.event_id == event_id)
+                .where(SubsectionStatModel.section == section)
+                .where(SubsectionStatModel.subsection == subsection)
+            )
+            rows = result.all()
+
+            if not rows:
+                return None
+
+            # First row contains stats
+            stat_model = rows[0][0]
+            stats = self._model_to_subsection_stats(stat_model)
+
+            # Collect tickets from all rows
+            tickets = [
+                self._model_to_ticket(ticket_model)
+                for _, ticket_model in rows
+                if ticket_model is not None
+            ]
+
+            return SubsectionTicketsAggregate(stats=stats, tickets=tickets)

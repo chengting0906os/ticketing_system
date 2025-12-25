@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
+    SubsectionTicketsAggregate,
     Ticket,
 )
 
@@ -38,4 +39,11 @@ class IEventTicketingQueryRepo(ABC):
         self, *, event_id: int, section: str, subsection: int
     ) -> List[Ticket]:
         """Get all tickets for a specific subsection."""
+        pass
+
+    @abstractmethod
+    async def get_subsection_stats_and_tickets(
+        self, *, event_id: int, section: str, subsection: int
+    ) -> Optional[SubsectionTicketsAggregate]:
+        """Get subsection stats with tickets."""
         pass
