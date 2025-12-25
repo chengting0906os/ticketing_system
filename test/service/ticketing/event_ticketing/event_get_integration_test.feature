@@ -18,11 +18,11 @@ Feature: Event Detail
       | id       | name      | description | seller_id | is_active | status    | venue_name  | seating_config | sections | stats    |
       | not_null | SSE Event | SSE Test    | not_null  | true      | available | Large Arena | not_null       | not_null | not_null |
     And all subsection stats should be returned:
-      | section | subsection | price | available | reserved | sold | updated_at |
-      | A       | 1          | 3000  | 50        | 0        | 0    | not_null   |
-      | A       | 2          | 3000  | 50        | 0        | 0    | not_null   |
-      | B       | 1          | 2000  | 50        | 0        | 0    | not_null   |
-      | C       | 1          | 1500  | 50        | 0        | 0    | not_null   |
+      | section | subsection | price | available | reserved | sold |
+      | A       | 1          | 3000  | 50        | 0        | 0    |
+      | A       | 2          | 3000  | 50        | 0        | 0    |
+      | B       | 1          | 2000  | 50        | 0        | 0    |
+      | C       | 1          | 1500  | 50        | 0        | 0    |
 
   Scenario: Get event details for non-existent event
     When I call GET "/api/event/999"

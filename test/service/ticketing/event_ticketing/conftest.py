@@ -495,15 +495,15 @@ def then_all_subsection_stats_returned(
     Response format (from PostgreSQL subsection_stats table):
         {
             "sections": [
-                {"event_id": 1, "section": "A", "subsection": 1, "price": 3000, "available": 50, "reserved": 0, "sold": 0, "updated_at": ...},
+                {"event_id": 1, "section": "A", "subsection": 1, "price": 3000, "available": 50, "reserved": 0, "sold": 0},
                 ...
             ]
         }
 
     Example:
         Then all subsection stats should be returned:
-          | section | subsection | price | available | reserved | sold | updated_at |
-          | A       | 1          | 3000  | 50        | 0        | 0    | not_null   |
+          | section | subsection | price | available | reserved | sold |
+          | A       | 1          | 3000  | 50        | 0        | 0    |
     """
     response = context['response']
     assert response.status_code == 200

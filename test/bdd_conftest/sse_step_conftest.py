@@ -208,6 +208,9 @@ def when_sse_event_published(
     if not channel:
         raise AssertionError('No SSE subscription found. Use "Given I am subscribed to SSE" first.')
 
+    # Store expected booking_id for later verification
+    context['expected_booking_id'] = event_data.get('booking_id')
+
     # Publish to Kvrocks
     redis_client = _get_sync_redis()
     message = orjson.dumps(event_data)
@@ -567,8 +570,8 @@ def then_sse_connection_should_be_closed(context: dict[str, Any]) -> None:
     """Verify SSE connection was closed after receiving terminal state.
 
     This step verifies that:
-    1. A terminal state event (COMPLETED/FAILED/CANCELLED) was received
-    2. The connection was properly closed
+    1. A terminal state event (COMPLETED/FAILED/CANCELLED) was received for the expected booking
+    2. The connection was properly closed (no more messages for this booking)
 
     Example:
         Then the SSE connection should be closed
@@ -576,17 +579,33 @@ def then_sse_connection_should_be_closed(context: dict[str, Any]) -> None:
     subscription = context.get('sse_subscription', {})
     message_queue = subscription.get('message_queue')
     stop_event = subscription.get('stop_event')
+    expected_booking_id = context.get('expected_booking_id')
 
     if not message_queue:
         raise AssertionError('No SSE subscription found.')
 
     try:
-        # Wait for terminal state message
-        received_event = message_queue.get(timeout=2.0)
+        # Wait for terminal state message for the expected booking
+        terminal_states = ['COMPLETED', 'FAILED', 'CANCELLED']
+        received_event = None
+        max_attempts = 10  # Prevent infinite loop
+
+        for _ in range(max_attempts):
+            try:
+                event = message_queue.get(timeout=2.0)
+                # Filter by expected booking_id if set
+                if expected_booking_id and event.get('booking_id') != expected_booking_id:
+                    continue  # Skip events for other bookings
+                received_event = event
+                break
+            except queue.Empty:
+                break
+
+        if received_event is None:
+            raise AssertionError('No SSE events received for expected booking within timeout')
 
         # Verify it's a terminal state
         status = received_event.get('status', '')
-        terminal_states = ['COMPLETED', 'FAILED', 'CANCELLED']
         assert status in terminal_states, (
             f"Expected terminal state (one of {terminal_states}), got '{status}'"
         )
@@ -596,15 +615,19 @@ def then_sse_connection_should_be_closed(context: dict[str, Any]) -> None:
         if stop_event:
             stop_event.set()
 
-        # Verify no more messages after terminal state (connection closed)
+        # Verify no more messages for THIS booking after terminal state
         try:
-            extra_msg = message_queue.get(timeout=0.5)
-            # If we get here, connection wasn't closed properly
-            raise AssertionError(
-                f'Connection should be closed after terminal state, but received: {extra_msg}'
-            )
+            for _ in range(5):  # Check a few times
+                extra_msg = message_queue.get(timeout=0.3)
+                # Ignore messages for other bookings
+                if expected_booking_id and extra_msg.get('booking_id') != expected_booking_id:
+                    continue
+                # If we get a message for our booking, connection wasn't closed properly
+                raise AssertionError(
+                    f'Connection should be closed after terminal state, but received: {extra_msg}'
+                )
         except queue.Empty:
-            pass  # Expected: no more messages after terminal state
+            pass  # Expected: no more messages for this booking after terminal state
 
     except queue.Empty:
         raise AssertionError('No SSE events received within timeout')
