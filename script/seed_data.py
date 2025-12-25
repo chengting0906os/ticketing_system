@@ -11,17 +11,19 @@ Notes:
 - Seat data is stored in reservation's Kvrocks (not PostgreSQL)
 - Ticket data is stored in event_ticketing's PostgreSQL
 """
-from src.platform.config.di import container
 
 import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import text
 
+from src.platform.config.di import container
 from src.platform.database.db_setting import async_session_maker
+from src.platform.state.kvrocks_client import kvrocks_client
 from src.service.ticketing.app.command.create_event_and_tickets_use_case import (
     CreateEventAndTicketsUseCase,
 )
@@ -34,258 +36,227 @@ from src.service.ticketing.driven_adapter.security.bcrypt_password_hasher import
     BcryptPasswordHasher,
 )
 
+DEFAULT_PASSWORD = 'P@ssw0rd'
+CONFIG_FILE = Path(__file__).parent / 'seating_config.json'
 
-def get_seating_config() -> dict:
+
+@dataclass
+class UserConfig:
+    """User seed configuration"""
+    email: str
+    name: str
+    role: UserRole
+
+
+# Test users to create
+TEST_USERS = [
+    UserConfig(email='s@t.com', name='init seller', role=UserRole.SELLER),
+    UserConfig(email='b@t.com', name='init buyer', role=UserRole.BUYER),
+    UserConfig(email='b_1@t.com', name='Load Test User', role=UserRole.BUYER),
+]
+
+
+def _load_seating_config() -> tuple[dict, int]:
     """
-    Get seating configuration based on SEATS environment variable.
+    Load seating configuration based on SEATS environment variable.
 
     Returns:
-        dict: Seating configuration for the current environment (expanded to full format)
-
-    Available seat configs: 500, 1k, 2k, 5k, 25k, 50k, 200k
+        tuple: (config dict, total_seats count)
     """
     seats = os.getenv('SEATS', '500')
 
-    # Load from JSON file
-    config_file = Path(__file__).parent / 'seating_config.json'
-    with open(config_file, 'r') as f:
+    with open(CONFIG_FILE, 'r') as f:
         all_configs = json.load(f)
 
-    # Get config for this environment
     if seats not in all_configs:
         print(f'⚠️  Seats config {seats} not found, using 500')
         seats = '500'
 
     config = all_configs[seats]
-    total_seats = 0
     rows = config.get('rows', 1)
     cols = config.get('cols', 10)
-    for section in config['sections']:
-        subsections = section['subsections']
-        total_seats += subsections * rows * cols
-    
+
+    total_seats = sum(
+        section.get('subsections', 1) * rows * cols
+        for section in config['sections']
+    )
+
     print(f'📊 Using seating config: {seats} ({total_seats:,} seats)')
+    return config, total_seats
 
-    return config
+
+async def _create_user(user_repo, password_hasher, config: UserConfig) -> UserEntity:
+    """Create a single user"""
+    user = UserEntity(
+        email=config.email,
+        name=config.name,
+        role=config.role,
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    user.set_password(DEFAULT_PASSWORD, password_hasher)
+    return await user_repo.create(user)
 
 
-async def create_init_users_in_session(session) -> int:
-    """Create initial test users (12 users total)
+async def create_users(session) -> int:
+    """Create initial test users
 
     Returns:
         int: seller_id
     """
-    try:
-        print('👥 Creating 3 users (1 seller + 1 buyer + 1 load test)...')
+    print(f'👥 Creating {len(TEST_USERS)} users...')
 
-        @asynccontextmanager
-        async def get_current_user_session():
-            yield session
+    @asynccontextmanager
+    async def get_session():
+        yield session
 
-        user_repo = UserCommandRepoImpl(lambda: get_current_user_session())
-        password_hasher = BcryptPasswordHasher()
+    user_repo = UserCommandRepoImpl(lambda: get_session())
+    password_hasher = BcryptPasswordHasher()
 
-        # 1. Create seller
-        seller = UserEntity(
-            email='s@t.com',
-            name='init seller',
-            role=UserRole.SELLER,
-            is_active=True,
-            is_superuser=False,
-            is_verified=True,
-        )
-        seller.set_password('P@ssw0rd', password_hasher)
-        created_seller = await user_repo.create(seller)
-        print(f'   ✅ Created seller: ID={created_seller.id}, Email={created_seller.email}')
+    seller_id = None
 
-        # 2. Create buyer
-        buyer = UserEntity(
-            email='b@t.com',
-            name='init buyer',
-            role=UserRole.BUYER,
-            is_active=True,
-            is_superuser=False,
-            is_verified=True,
-        )
-        buyer.set_password('P@ssw0rd', password_hasher)
-        created_buyer = await user_repo.create(buyer)
-        print(f'   ✅ Created buyer: ID={created_buyer.id}, Email={created_buyer.email}')
+    for config in TEST_USERS:
+        created_user = await _create_user(user_repo, password_hasher, config)
+        role_label = 'seller' if config.role == UserRole.SELLER else 'buyer'
+        print(f'   ✅ Created {role_label}: ID={created_user.id}, Email={created_user.email}')
 
-        # 3. Create 1 load test user
-        loadtest_user = UserEntity(
-            email='b_1@t.com',
-            name='Load Test User',
-            role=UserRole.BUYER,
-            is_active=True,
-            is_superuser=False,
-            is_verified=True,
-        )
-        loadtest_user.set_password('P@ssw0rd', password_hasher)
-        await user_repo.create(loadtest_user)
-        print('   ✅ Created load test user: b_1@t.com')
+        if config.role == UserRole.SELLER:
+            seller_id = created_user.id
 
-        result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
-        user_count = result.scalar()
+    if seller_id is None:
+        raise Exception("Failed to create seller: ID is None")
 
-        print(f'   📧 Seller: s@t.com / P@ssw0rd (ID={created_seller.id})')
-        print(f'   📧 Buyer: b@t.com / P@ssw0rd')
-        print(f'   📧 Load test: b_1@t.com / P@ssw0rd')
-
-        if created_seller.id is None:
-            raise Exception("Failed to create seller: ID is None")
-
-        return created_seller.id
-
-    except Exception as e:
-        print(f'   ❌ Failed to create users: {e}')
-        raise
+    print(f'   📧 Credentials: {DEFAULT_PASSWORD}')
+    return seller_id
 
 
-async def create_init_event_in_session(session, seller_id: int):
+async def create_event(session, seller_id: int):
     """Create initial test event"""
-    try:
-        print('🎫 Creating initial event...')
+    print('🎫 Creating initial event...')
 
-        # Verify user exists
-        result = await session.execute(text(f'SELECT id, email FROM "user" WHERE id = {seller_id}'))
-        user_check = result.fetchone()
-        if user_check:
-            print(f'   🔍 User found in DB: ID={user_check[0]}, Email={user_check[1]}')
-        else:
-            print(f'   ❌ User {seller_id} NOT found in database!')
-            return None
+    # Verify seller exists
+    result = await session.execute(
+        text(f'SELECT id, email FROM "user" WHERE id = {seller_id}')
+    )
+    user_check = result.fetchone()
 
-        # Get all dependencies from DI container
-        
-        # Command repo uses raw SQL, no session needed
-        event_ticketing_repo = EventTicketingCommandRepoImpl()
-        init_state_handler = container.init_event_and_tickets_state_handler()
-        mq_infra_orchestrator = container.mq_infra_orchestrator()
+    if not user_check:
+        print(f'   ❌ Seller {seller_id} NOT found in database!')
+        return None
 
-        # Create UseCase
-        create_event_use_case = CreateEventAndTicketsUseCase(
-            event_ticketing_command_repo=event_ticketing_repo,
-            mq_infra_orchestrator=mq_infra_orchestrator,
-            init_state_handler=init_state_handler,
-        )
+    print(f'   🔍 Seller found: ID={user_check[0]}, Email={user_check[1]}')
 
-        # Select seating config (based on DEPLOY_ENV environment variable)
-        seating_config = get_seating_config()
+    # Get dependencies from DI container
+    event_ticketing_repo = EventTicketingCommandRepoImpl()
+    init_state_handler = container.init_event_and_tickets_state_handler()
+    mq_infra_orchestrator = container.mq_infra_orchestrator()
 
-        # Calculate total seats (compact format: rows/cols at top level, subsections as int)
-        rows = seating_config.get('rows', 10)
-        cols = seating_config.get('cols', 10)
-        total_seats = 0
-        for section in seating_config['sections']:
-            subsections_count = section.get('subsections', 1)
-            total_seats += rows * cols * subsections_count
+    create_event_use_case = CreateEventAndTicketsUseCase(
+        event_ticketing_command_repo=event_ticketing_repo,
+        mq_infra_orchestrator=mq_infra_orchestrator,
+        init_state_handler=init_state_handler,
+    )
 
-        # Use UseCase to create event and tickets
-        event_aggregate = await create_event_use_case.create_event_and_tickets(
-            name='Concert Event',
-            description='Amazing live music performance',
-            seller_id=seller_id,
-            venue_name='Taipei Arena',
-            seating_config=seating_config,
-            is_active=True,
-        )
+    seating_config, _ = _load_seating_config()
 
-        event = event_aggregate.event
-        tickets = event_aggregate.tickets
+    event_aggregate = await create_event_use_case.create_event_and_tickets(
+        name='Concert Event',
+        description='Amazing live music performance',
+        seller_id=seller_id,
+        venue_name='Taipei Arena',
+        seating_config=seating_config,
+        is_active=True,
+    )
 
-        print(f'   ✅ Created event: ID={event.id}, Name={event.name}')
-        print(f'   ✅ Created tickets: {len(tickets)}')
-        print('   🚀 Event created successfully!')
+    event = event_aggregate.event
+    tickets = event_aggregate.tickets
 
-        return event.id
-
-    except Exception as e:
-        print(f'   ❌ Failed to create event: {e}')
-        raise
+    print(f'   ✅ Created event: ID={event.id}, Name={event.name}')
+    print(f'   ✅ Created tickets: {len(tickets)}')
+    return event.id
 
 
 async def verify_data():
     """Verify seeded data"""
-    # async_session_maker is a function that returns a sessionmaker
+    print('🔍 Verifying seeded data...')
+
+    async with async_session_maker()() as session:
+        # Count records
+        for table in ['user', 'event', 'ticket']:
+            table_name = f'"{table}"' if table == 'user' else table
+            result = await session.execute(text(f'SELECT COUNT(*) FROM {table_name}'))
+            count = result.scalar()
+            print(f'   {table.capitalize()} count: {count}')
+
+        # List users
+        result = await session.execute(
+            text('SELECT id, email, role FROM "user" ORDER BY id')
+        )
+        for user in result.fetchall():
+            print(f'      User ID={user[0]}, Email={user[1]}, Role={user[2]}')
+
+        # List events
+        result = await session.execute(
+            text('SELECT id, name, seller_id FROM event')
+        )
+        for event in result.fetchall():
+            print(f'      Event ID={event[0]}, Name={event[1]}, Seller={event[2]}')
+
+    print('   ✅ Data verification completed!')
+
+
+async def _initialize_kvrocks():
+    """Initialize Kvrocks connection"""
+    try:
+        await kvrocks_client.initialize()
+        print('📡 Kvrocks connection pool initialized')
+    except Exception as e:
+        print(f'❌ Failed to initialize Kvrocks: {e}')
+        raise
+
+
+async def _seed_data():
+    """Seed users and event in a single transaction"""
     async with async_session_maker()() as session:
         try:
-            print('🔍 Verifying seeded data...')
+            seller_id = await create_users(session)
+            print()
 
-            result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
-            user_count = result.scalar()
-            print(f'   User count: {user_count}')
+            await create_event(session, seller_id)
+            print()
 
-            result = await session.execute(text('SELECT COUNT(*) FROM event'))
-            event_count = result.scalar()
-            print(f'   Event count: {event_count}')
-
-            result = await session.execute(text('SELECT COUNT(*) FROM ticket'))
-            ticket_count = result.scalar()
-            print(f'   Ticket count: {ticket_count}')
-
-            result = await session.execute(text('SELECT id, email, role FROM "user" ORDER BY id'))
-            users = result.fetchall()
-            for user in users:
-                print(f'      User ID={user[0]}, Email={user[1]}, Role={user[2]}')
-
-            result = await session.execute(text('SELECT id, name, seller_id FROM event'))
-            events = result.fetchall()
-            for event in events:
-                print(f'      Event ID={event[0]}, Name={event[1]}, Seller={event[2]}')
-
-            print('   ✅ Data verification completed!')
+            await session.commit()
+            print('✅ All data committed successfully!')
 
         except Exception as e:
-            print(f'   ❌ Failed to verify data: {e}')
+            await session.rollback()
+            print(f'❌ Rolling back: {e}')
+            raise
 
 
 async def main():
     print('🌱 Starting data seeding...')
     print('=' * 50)
 
-    # Initialize Kvrocks connection pool before seeding
-    from src.platform.state.kvrocks_client import kvrocks_client
-
     try:
-        await kvrocks_client.initialize()
-        print('📡 Kvrocks connection pool initialized')
-    except Exception as e:
-        print(f'❌ Failed to initialize Kvrocks: {e}')
-        exit(1)
-
-    try:
-        # Use a single session to handle all data operations
-        # async_session_maker is a function that returns a sessionmaker
-        async with async_session_maker()() as session:
-            try:
-                seller_id = await create_init_users_in_session(session)
-                print()
-                await create_init_event_in_session(session, seller_id)
-                print()
-
-                await session.commit()
-                print('✅ All data operations committed successfully!')
-
-            except Exception as e:
-                await session.rollback()
-                print(f'❌ Rolling back all operations: {e}')
-                raise
-
+        await _initialize_kvrocks()
+        await _seed_data()
         await verify_data()
-        print()
 
+        print()
         print('=' * 50)
         print('🌱 Data seeding completed!')
         print('📋 Test accounts:')
-        print('   Seller: s@t.com / P@ssw0rd')
-        print('   Buyer:  b@t.com / P@ssw0rd')
-        print('   Load test: b_1@t.com / P@ssw0rd')
+        for user in TEST_USERS:
+            role = 'Seller' if user.role == UserRole.SELLER else 'Buyer'
+            print(f'   {role}: {user.email} / {DEFAULT_PASSWORD}')
 
     except Exception as e:
         print(f'❌ Seeding failed: {e}')
         exit(1)
+
     finally:
-        # Cleanup Kvrocks connection
         try:
             await kvrocks_client.disconnect()
             print('📡 Kvrocks connection closed')

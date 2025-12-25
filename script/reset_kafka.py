@@ -12,13 +12,15 @@ Note: This script does not affect Kvrocks state (reservation and event_ticketing
 """
 
 import time
-from typing import List
 
 from confluent_kafka import KafkaException
 from confluent_kafka.admin import AdminClient
 
 from src.platform.config.core_setting import settings
 from src.platform.logging.loguru_io import Logger
+
+PROTECTED_PATTERN = 'event-id-1'
+TOPIC_DELETE_WAIT_SECONDS = 2
 
 
 class KafkaReset:
@@ -29,177 +31,172 @@ class KafkaReset:
         self.admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})
         Logger.base.info(f'🔍 [Kafka Reset] Connected to: {self.bootstrap_servers}')
 
-    def list_topics(self) -> List[str]:
+    @staticmethod
+    def _is_protected(name: str) -> bool:
+        """Check if a topic/group name is protected"""
+        return PROTECTED_PATTERN in name
+
+    @staticmethod
+    def _partition_by_protection(items: list[str]) -> tuple[list[str], list[str]]:
+        """Partition items into (protected, deletable) lists"""
+        protected = [item for item in items if KafkaReset._is_protected(item)]
+        deletable = [item for item in items if not KafkaReset._is_protected(item)]
+        return protected, deletable
+
+    @staticmethod
+    def _log_protected_items(items: list[str], item_type: str) -> None:
+        """Log protected items"""
+        if not items:
+            return
+        Logger.base.info(f'🛡️ Protected {item_type} ({PROTECTED_PATTERN}): {len(items)}')
+        for item in items:
+            Logger.base.info(f'   🔒 {item}')
+
+    def list_topics(self) -> list[str]:
         """List all user topics (excluding internal topics)"""
         try:
             metadata = self.admin_client.list_topics(timeout=10)
-            topics = [
-                topic for topic in metadata.topics.keys() if not topic.startswith('__')
-            ]
-            return topics
+            return [topic for topic in metadata.topics.keys() if not topic.startswith('__')]
         except Exception as e:
             Logger.base.error(f'Error listing topics: {e}')
             return []
 
-    def delete_topic(self, topic: str) -> bool:
-        """Delete specified topic"""
-        # Protect topics containing "event-id-1"
-        if 'event-id-1' in topic:
-            Logger.base.info(f'🛡️ Protecting topic: {topic} (contains event-id-1)')
-            return True
-
-        try:
-            Logger.base.info(f'🗑️ Deleting topic: {topic}')
-            futures = self.admin_client.delete_topics([topic], request_timeout=30)
-
-            for topic_name, future in futures.items():
-                try:
-                    future.result()  # Block until done
-                    Logger.base.info(f'✅ Deleted topic: {topic_name}')
-                    return True
-                except KafkaException as e:
-                    Logger.base.warning(f'⚠️ Failed to delete topic {topic_name}: {e}')
-                    return False
-
-        except Exception as e:
-            Logger.base.error(f'Error deleting topic {topic}: {e}')
-            return False
-
-        return True
-
-    def list_consumer_groups(self) -> List[str]:
+    def list_consumer_groups(self) -> list[str]:
         """List all consumer groups"""
         try:
             future = self.admin_client.list_consumer_groups(request_timeout=10)
             result = future.result()
-            groups = [group.group_id for group in result.valid]
-            return groups
+            return [group.group_id for group in result.valid]
         except Exception as e:
             Logger.base.error(f'Error listing consumer groups: {e}')
             return []
 
-    def delete_consumer_group(self, group: str) -> bool:
-        """Delete specified consumer group"""
-        # Protect consumer groups containing "event-id-1"
-        if 'event-id-1' in group:
-            Logger.base.info(f'🛡️ Protecting consumer group: {group} (contains event-id-1)')
+    def delete_topic(self, topic: str) -> bool:
+        """Delete specified topic"""
+        if self._is_protected(topic):
+            Logger.base.info(f'🛡️ Protecting topic: {topic} (contains {PROTECTED_PATTERN})')
             return True
 
+        Logger.base.info(f'🗑️ Deleting topic: {topic}')
+
         try:
-            Logger.base.info(f'🗑️ Deleting consumer group: {group}')
+            futures = self.admin_client.delete_topics([topic], request_timeout=30)
+            future = futures[topic]
+            future.result()
+            Logger.base.info(f'✅ Deleted topic: {topic}')
+            return True
+        except KafkaException as e:
+            Logger.base.warning(f'⚠️ Failed to delete topic {topic}: {e}')
+            return False
+        except Exception as e:
+            Logger.base.error(f'Error deleting topic {topic}: {e}')
+            return False
+
+    def delete_consumer_group(self, group: str) -> bool:
+        """Delete specified consumer group"""
+        if self._is_protected(group):
+            Logger.base.info(f'🛡️ Protecting consumer group: {group} (contains {PROTECTED_PATTERN})')
+            return True
+
+        Logger.base.info(f'🗑️ Deleting consumer group: {group}')
+
+        try:
             futures = self.admin_client.delete_consumer_groups([group], request_timeout=30)
-
-            for group_id, future in futures.items():
-                try:
-                    future.result()  # Block until done
-                    Logger.base.info(f'✅ Deleted consumer group: {group_id}')
-                    return True
-                except KafkaException as e:
-                    error_code = e.args[0].code()
-                    if error_code == 69:  # GROUP_NOT_EMPTY
-                        Logger.base.warning(
-                            f'⚠️ Cannot delete {group_id}: has active members\n'
-                            f'   💡 Tip: Stop all consumers first with "docker-compose down"'
-                        )
-                    else:
-                        Logger.base.warning(f'⚠️ Failed to delete group {group_id}: {e}')
-                    return False
-
+            future = futures[group]
+            future.result()
+            Logger.base.info(f'✅ Deleted consumer group: {group}')
+            return True
+        except KafkaException as e:
+            error_code = e.args[0].code()
+            if error_code == 69:  # GROUP_NOT_EMPTY
+                Logger.base.warning(
+                    f'⚠️ Cannot delete {group}: has active members\n'
+                    f'   💡 Tip: Stop all consumers first with "docker-compose down"'
+                )
+            else:
+                Logger.base.warning(f'⚠️ Failed to delete group {group}: {e}')
+            return False
         except Exception as e:
             Logger.base.error(f'Error deleting consumer group {group}: {e}')
             return False
 
-        return True
-
-    def reset_all(self):
-        """Full Kafka reset"""
-        Logger.base.info('🚀 Starting Kafka reset...')
-
-        # 1. List and delete all topics
+    def _delete_topics(self) -> None:
+        """Delete all deletable topics"""
         Logger.base.info('📋 Listing topics...')
         topics = self.list_topics()
 
-        if topics:
-            # Separate protected and deletable topics
-            protected_topics = [t for t in topics if 'event-id-1' in t]
-            deletable_topics = [t for t in topics if 'event-id-1' not in t]
-
-            Logger.base.info(f'Found {len(topics)} total topics')
-            if protected_topics:
-                Logger.base.info(f'🛡️ Protected topics (event-id-1): {len(protected_topics)}')
-                for topic in protected_topics:
-                    Logger.base.info(f'   🔒 {topic}')
-
-            if deletable_topics:
-                Logger.base.info(f'🗑️ Topics to delete: {len(deletable_topics)}')
-                for topic in deletable_topics:
-                    self.delete_topic(topic)
-            else:
-                Logger.base.info('No deletable topics found')
-        else:
+        if not topics:
             Logger.base.info('No user topics found')
+            return
 
-        # Wait for topics to be fully deleted
-        time.sleep(2)
+        protected, deletable = self._partition_by_protection(topics)
+        Logger.base.info(f'Found {len(topics)} total topics')
 
-        # 2. List and delete all consumer groups
+        self._log_protected_items(protected, 'topics')
+
+        if not deletable:
+            Logger.base.info('No deletable topics found')
+            return
+
+        Logger.base.info(f'🗑️ Topics to delete: {len(deletable)}')
+        for topic in deletable:
+            self.delete_topic(topic)
+
+    def _delete_consumer_groups(self) -> None:
+        """Delete all deletable consumer groups"""
         Logger.base.info('👥 Listing consumer groups...')
         groups = self.list_consumer_groups()
 
-        if groups:
-            # Separate protected and deletable groups
-            protected_groups = [g for g in groups if 'event-id-1' in g]
-            deletable_groups = [g for g in groups if 'event-id-1' not in g]
-
-            Logger.base.info(f'Found {len(groups)} total consumer groups')
-            if protected_groups:
-                Logger.base.info(f'🛡️ Protected groups (event-id-1): {len(protected_groups)}')
-                for group in protected_groups:
-                    Logger.base.info(f'   🔒 {group}')
-
-            if deletable_groups:
-                Logger.base.info(f'🗑️ Groups to delete: {len(deletable_groups)}')
-                for group in deletable_groups:
-                    self.delete_consumer_group(group)
-            else:
-                Logger.base.info('No deletable consumer groups found')
-        else:
+        if not groups:
             Logger.base.info('No consumer groups found')
+            return
 
-        # 3. Verify cleanup results
+        protected, deletable = self._partition_by_protection(groups)
+        Logger.base.info(f'Found {len(groups)} total consumer groups')
+
+        self._log_protected_items(protected, 'groups')
+
+        if not deletable:
+            Logger.base.info('No deletable consumer groups found')
+            return
+
+        Logger.base.info(f'🗑️ Groups to delete: {len(deletable)}')
+        for group in deletable:
+            self.delete_consumer_group(group)
+
+    def _verify_cleanup(self) -> None:
+        """Verify cleanup results"""
         Logger.base.info('🔍 Verifying cleanup...')
+
         remaining_topics = self.list_topics()
         remaining_groups = self.list_consumer_groups()
 
-        # Separate protected and unexpected topics/groups
-        protected_topics = [t for t in remaining_topics if 'event-id-1' in t]
-        unexpected_topics = [t for t in remaining_topics if 'event-id-1' not in t]
+        protected_topics, unexpected_topics = self._partition_by_protection(remaining_topics)
+        protected_groups, unexpected_groups = self._partition_by_protection(remaining_groups)
 
-        protected_groups = [g for g in remaining_groups if 'event-id-1' in g]
-        unexpected_groups = [g for g in remaining_groups if 'event-id-1' not in g]
-
-        if not unexpected_topics and not unexpected_groups:
-            Logger.base.info('✅ Kafka reset completed successfully!')
-
-            if protected_topics:
-                Logger.base.info(f'🛡️ Protected topics preserved: {len(protected_topics)}')
-                for topic in protected_topics:
-                    Logger.base.info(f'   🔒 {topic}')
-
-            if protected_groups:
-                Logger.base.info(f'🛡️ Protected consumer groups preserved: {len(protected_groups)}')
-                for group in protected_groups:
-                    Logger.base.info(f'   🔒 {group}')
-        else:
+        if unexpected_topics or unexpected_groups:
             if unexpected_topics:
                 Logger.base.warning(f'⚠️ Unexpected topics remain: {unexpected_topics}')
             if unexpected_groups:
                 Logger.base.warning(f'⚠️ Unexpected consumer groups remain: {unexpected_groups}')
 
-            if protected_topics:
-                Logger.base.info(f'🛡️ Protected topics (as expected): {len(protected_topics)}')
-            if protected_groups:
-                Logger.base.info(f'🛡️ Protected groups (as expected): {len(protected_groups)}')
+            self._log_protected_items(protected_topics, 'topics (as expected)')
+            self._log_protected_items(protected_groups, 'groups (as expected)')
+            return
+
+        Logger.base.info('✅ Kafka reset completed successfully!')
+        self._log_protected_items(protected_topics, 'topics preserved')
+        self._log_protected_items(protected_groups, 'consumer groups preserved')
+
+    def reset_all(self):
+        """Full Kafka reset"""
+        Logger.base.info('🚀 Starting Kafka reset...')
+
+        self._delete_topics()
+        time.sleep(TOPIC_DELETE_WAIT_SECONDS)
+
+        self._delete_consumer_groups()
+        self._verify_cleanup()
 
 
 def main():

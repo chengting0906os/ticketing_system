@@ -1,1 +1,0 @@
-"""Shared Kernel Domain Events"""
