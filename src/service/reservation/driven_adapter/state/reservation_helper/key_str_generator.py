@@ -29,8 +29,3 @@ def make_event_state_key(*, event_id: int) -> str:
 def make_booking_key(*, booking_id: str) -> str:
     """Generate booking metadata key"""
     return _make_key(f'booking:{booking_id}')
-
-
-def make_sellout_timer_key(*, event_id: int) -> str:
-    """Generate sellout timer key"""
-    return _make_key(f'event_sellout_timer:{event_id}')

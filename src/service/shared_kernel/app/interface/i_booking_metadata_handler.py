@@ -14,42 +14,9 @@ class IBookingMetadataHandler(ABC):
     Port (interface) for managing booking metadata in Kvrocks.
 
     Responsibilities:
-    - Store temporary booking metadata during reservation
     - Retrieve booking metadata for reservation processing
     - Update booking status (PENDING_RESERVATION → COMPLETED/FAILED)
-    - Clean up metadata after processing
     """
-
-    @abstractmethod
-    async def save_booking_metadata(
-        self,
-        *,
-        booking_id: str,
-        buyer_id: int,
-        event_id: int,
-        section: str,
-        subsection: int,
-        quantity: int,
-        seat_selection_mode: str,
-        seat_positions: list[str],
-    ) -> None:
-        """
-        Save booking metadata to Kvrocks.
-
-        Args:
-            booking_id: UUID7 booking identifier
-            buyer_id: Buyer user ID
-            event_id: Event ID
-            section: Section identifier
-            subsection: Subsection number
-            quantity: Number of seats to reserve
-            seat_selection_mode: 'manual' or 'best_available'
-            seat_positions: List of seat positions (for manual mode)
-
-        Raises:
-            StateError: If save operation fails
-        """
-        pass
 
     @abstractmethod
     async def get_booking_metadata(self, *, booking_id: str) -> Optional[Dict]:
@@ -92,18 +59,5 @@ class IBookingMetadataHandler(ABC):
 
         Raises:
             StateError: If update operation fails
-        """
-        pass
-
-    @abstractmethod
-    async def delete_booking_metadata(self, *, booking_id: str) -> None:
-        """
-        Delete booking metadata from Kvrocks.
-
-        Args:
-            booking_id: UUID7 booking identifier
-
-        Note:
-            Usually called after successful reservation to clean up temporary data
         """
         pass

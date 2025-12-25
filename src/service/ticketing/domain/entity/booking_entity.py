@@ -141,11 +141,6 @@ class Booking:
         )
 
     @Logger.io
-    def mark_as_failed(self) -> 'Booking':
-        now = datetime.now(timezone.utc)
-        return attrs.evolve(self, status=BookingStatus.FAILED, updated_at=now)
-
-    @Logger.io
     def validate_can_be_paid(self) -> None:
         """
         Validate if booking can be paid (Domain layer validation logic)

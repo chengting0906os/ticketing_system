@@ -169,10 +169,6 @@ class EventTicketingAggregate:
                     'Invalid seating configuration: subsections must be a positive integer'
                 )
 
-    @property
-    def total_tickets_count(self) -> int:
-        return len(self.tickets)
-
 
 @attrs.define
 class SubsectionTicketsAggregate:

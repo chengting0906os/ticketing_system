@@ -3,7 +3,6 @@ from typing import List, Optional
 from uuid_utils import UUID
 
 from src.service.ticketing.domain.entity.booking_entity import Booking
-from src.service.ticketing.domain.value_object.ticket_ref import TicketRef
 
 
 class IBookingQueryRepo(ABC):
@@ -24,8 +23,4 @@ class IBookingQueryRepo(ABC):
 
     @abstractmethod
     async def get_seller_bookings_with_details(self, *, seller_id: int, status: str) -> List[dict]:
-        pass
-
-    @abstractmethod
-    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List['TicketRef']:
         pass

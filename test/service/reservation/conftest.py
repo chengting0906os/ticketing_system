@@ -25,7 +25,7 @@ from src.service.reservation.driven_adapter.state.reservation_helper.atomic_rese
 from src.service.reservation.driven_adapter.state.seat_state_reservation_command_handler_impl import (
     SeatStateReservationCommandHandlerImpl,
 )
-from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
+from src.service.reservation.driven_adapter.state.booking_metadata_handler_impl import (
     BookingMetadataHandlerImpl,
 )
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (

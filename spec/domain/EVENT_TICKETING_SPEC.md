@@ -166,8 +166,6 @@ data: {"event_type": "status_update", "event_id": 1, "sections": [...], "total_s
 
 - [create_event_and_tickets_use_case.py](../../src/service/ticketing/app/command/create_event_and_tickets_use_case.py) - 建立活動
 - [list_events_use_case.py](../../src/service/ticketing/app/query/list_events_use_case.py) - 列出活動
-- [list_all_subsection_status_use_case.py](../../src/service/reservation/app/query/list_all_subsection_status_use_case.py) - 子區域狀態
-- [list_section_seats_detail_use_case.py](../../src/service/reservation/app/query/list_section_seats_detail_use_case.py) - 座位清單
 
 #### Pub/Sub Components
 

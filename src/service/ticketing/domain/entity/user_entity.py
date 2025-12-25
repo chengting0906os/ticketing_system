@@ -6,9 +6,7 @@ import attrs
 from pydantic import SecretStr
 
 from src.platform.exception.exceptions import (
-    AuthenticationError,
     DomainError,
-    ForbiddenError,
     LoginError,
 )
 
@@ -33,17 +31,6 @@ class UserEntity:
     is_superuser: bool = False
     is_verified: bool = False
     created_at: Optional[datetime] = None
-
-    def validate_for_authentication(self) -> None:
-        if not self.email:
-            raise AuthenticationError('LOGIN_BAD_CREDENTIALS')
-
-        if not self.is_active:
-            raise ForbiddenError('User is inactive')
-
-    def validate_exists(self) -> None:
-        if not self.id or not self.email:
-            raise AuthenticationError('User not found')
 
     def validate_active(self) -> None:
         from src.platform.exception.exceptions import ForbiddenError

@@ -144,7 +144,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
                 return None
 
             # Query tickets using seat_positions
-            tickets = await self.get_tickets_by_booking_id(booking_id=booking_id)
+            tickets = await self._get_tickets_by_booking_id(booking_id=booking_id)
             tickets_data = [
                 {
                     'id': ticket.id,
@@ -183,7 +183,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             # Query tickets for each booking
             bookings_with_tickets = []
             for db_booking in db_bookings:
-                tickets = await self.get_tickets_by_booking_id(booking_id=db_booking.id)
+                tickets = await self._get_tickets_by_booking_id(booking_id=db_booking.id)
                 tickets_data = [
                     {
                         'id': ticket.id,
@@ -226,7 +226,7 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             # Query tickets for each booking
             bookings_with_tickets = []
             for db_booking in db_bookings:
-                tickets = await self.get_tickets_by_booking_id(booking_id=db_booking.id)
+                tickets = await self._get_tickets_by_booking_id(booking_id=db_booking.id)
                 tickets_data = [
                     {
                         'id': ticket.id,
@@ -246,12 +246,14 @@ class BookingQueryRepoImpl(IBookingQueryRepo):
             return bookings_with_tickets
 
     @Logger.io
-    async def get_tickets_by_booking_id(self, *, booking_id: UUID) -> List['TicketRef']:
+    async def _get_tickets_by_booking_id(self, *, booking_id: UUID) -> list[TicketRef]:
         """
         Get all tickets for a booking using seat_positions
 
         Uses booking's event_id, section, subsection, and seat_positions to find matching tickets
         via the unique constraint (event_id, section, subsection, row_number, seat_number)
+
+        Note: This is an internal implementation method, not part of the public interface.
         """
         async with self._get_session() as session:
             # First get booking info

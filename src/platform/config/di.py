@@ -15,9 +15,6 @@ from src.service.reservation.driven_adapter.state.reservation_helper.atomic_rese
 from src.service.reservation.driven_adapter.repo.booking_command_repo_impl import (
     BookingCommandRepoImpl as ReservationBookingCommandRepoImpl,
 )
-from src.service.reservation.driven_adapter.state.seat_state_query_handler_impl import (
-    SeatStateQueryHandlerImpl,
-)
 from src.service.reservation.driven_adapter.state.seat_state_release_command_handler_impl import (
     SeatStateReleaseCommandHandlerImpl,
 )
@@ -53,7 +50,7 @@ from src.service.ticketing.driven_adapter.repo.event_ticketing_query_repo_impl i
 )
 from src.service.ticketing.driven_adapter.repo.user_command_repo_impl import UserCommandRepoImpl
 from src.service.ticketing.driven_adapter.repo.user_query_repo_impl import UserQueryRepoImpl
-from src.service.ticketing.driven_adapter.state.booking_metadata_handler_impl import (
+from src.service.reservation.driven_adapter.state.booking_metadata_handler_impl import (
     BookingMetadataHandlerImpl,
 )
 from src.service.ticketing.driven_adapter.state.init_event_and_tickets_state_handler_impl import (
@@ -115,9 +112,6 @@ class Container(containers.DeclarativeContainer):
 
     # Reservation Service - Booking Command Repo (PostgreSQL writes)
     reservation_booking_command_repo = providers.Singleton(ReservationBookingCommandRepoImpl)
-
-    # Seat Reservation Use Cases (CQRS)
-    seat_state_query_handler = providers.Singleton(SeatStateQueryHandlerImpl)  # Singleton for cache
 
     # Ticketing Service - Booking Metadata Handler (Kvrocks)
     booking_metadata_handler = providers.Singleton(BookingMetadataHandlerImpl)

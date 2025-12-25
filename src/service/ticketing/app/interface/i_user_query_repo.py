@@ -8,15 +8,7 @@ class IUserQueryRepo(ABC):
     """User Query Repository Abstract Interface (Domain Layer) - Handles read operations"""
 
     @abstractmethod
-    async def get_by_email(self, email: str) -> Optional[UserEntity]:
-        pass
-
-    @abstractmethod
     async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
-        pass
-
-    @abstractmethod
-    async def exists_by_email(self, email: str) -> bool:
         pass
 
     @abstractmethod

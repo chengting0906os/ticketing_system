@@ -149,10 +149,6 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 - [seat_reservation_use_case.py](../../src/service/reservation/app/command/seat_reservation_use_case.py) - 預訂座位
 - [seat_release_use_case.py](../../src/service/reservation/app/command/seat_release_use_case.py) - 釋放座位
 
-#### Use Cases (Query)
-
-- [list_all_subsection_status_use_case.py](../../src/service/reservation/app/query/list_all_subsection_status_use_case.py) - 查詢所有子區域狀態
-
 #### Interfaces
 
 - [i_seat_state_command_handler.py](../../src/service/reservation/app/interface/i_seat_state_command_handler.py) - 座位狀態寫入介面

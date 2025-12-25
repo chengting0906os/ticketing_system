@@ -11,7 +11,6 @@ from src.service.ticketing.domain.aggregate.event_ticketing_aggregate import (
     EventTicketingAggregate,
     SubsectionTicketsAggregate,
 )
-from src.service.ticketing.domain.entity.ticket_entity import TicketEntity
 
 
 class IEventTicketingQueryRepo(ABC):
@@ -32,13 +31,6 @@ class IEventTicketingQueryRepo(ABC):
     @abstractmethod
     async def list_available_events(self) -> List[EventTicketingAggregate]:
         """Get all available events (excluding tickets for performance)."""
-        pass
-
-    @abstractmethod
-    async def get_tickets_by_subsection(
-        self, *, event_id: int, section: str, subsection: int
-    ) -> List[TicketEntity]:
-        """Get all tickets for a specific subsection."""
         pass
 
     @abstractmethod

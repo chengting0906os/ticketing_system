@@ -19,17 +19,6 @@ class UserQueryRepoImpl(IUserQueryRepo):
         self.password_hasher = BcryptPasswordHasher()
 
     @Logger.io
-    async def get_by_email(self, email: str) -> Optional[UserEntity]:
-        async with self.session_factory() as session:
-            result = await session.execute(select(UserModel).where(UserModel.email == email))
-            user_model = result.scalar_one_or_none()
-
-            if not user_model:
-                return None
-
-            return self._model_to_entity(user_model)
-
-    @Logger.io
     async def get_by_id(self, user_id: int) -> Optional[UserEntity]:
         async with self.session_factory() as session:
             result = await session.execute(select(UserModel).where(UserModel.id == user_id))
@@ -39,12 +28,6 @@ class UserQueryRepoImpl(IUserQueryRepo):
                 return None
 
             return self._model_to_entity(user_model)
-
-    @Logger.io
-    async def exists_by_email(self, email: str) -> bool:
-        async with self.session_factory() as session:
-            result = await session.execute(select(UserModel.id).where(UserModel.email == email))
-            return result.scalar_one_or_none() is not None
 
     @Logger.io
     async def verify_password(self, email: str, plain_password: str) -> Optional[UserEntity]:
