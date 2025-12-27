@@ -6,7 +6,6 @@ Architecture:
 - EC2 instance with Docker installed
 - SSH/SSM access for direct shell operations
 - Uses loadtest-service ECR image (Alpine + Go binaries)
-- Stores results in S3
 - Runs inside VPC to access ALB/Aurora/Kvrocks/Kafka
 
 Usage:
@@ -28,7 +27,6 @@ from aws_cdk import (
     aws_ecr as ecr,
     aws_iam as iam,
     aws_logs as logs,
-    aws_s3 as s3,
     aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
@@ -84,16 +82,6 @@ class LoadTestStack(Stack):
         )
         cpu_type = ec2.AmazonLinuxCpuType.ARM_64 if is_arm else ec2.AmazonLinuxCpuType.X86_64
 
-        # ============= S3 Bucket for Test Results =============
-        results_bucket = s3.Bucket(
-            self,
-            'LoadTestResults',
-            bucket_name=f'ticketing-loadtest-results-{self.account}',
-            removal_policy=RemovalPolicy.RETAIN,
-            auto_delete_objects=False,
-            versioned=True,
-        )
-
         # ============= ECR Repository =============
         loadtest_repo = ecr.Repository.from_repository_name(
             self, 'LoadTestServiceRepo', repository_name='loadtest-service'
@@ -112,9 +100,6 @@ class LoadTestStack(Stack):
                 ),
             ],
         )
-
-        # Grant S3 write permission for uploading results
-        results_bucket.grant_write(instance_role)
 
         # Grant access to Aurora and App secrets
         aurora_cluster_secret.grant_read(instance_role)
@@ -190,7 +175,6 @@ class LoadTestStack(Stack):
             kafka_bootstrap_servers=kafka_bootstrap_servers,
             kvrocks_host=kvrocks_host,
             kvrocks_port=kvrocks_port,
-            s3_bucket=results_bucket.bucket_name,
             environment=environment,
             debug=str(config.get('debug', False)).lower(),
             is_arm=is_arm,
@@ -252,14 +236,6 @@ class LoadTestStack(Stack):
 
         CfnOutput(
             self,
-            'ResultsBucket',
-            value=results_bucket.bucket_name,
-            description='S3 bucket for test results',
-            export_name='LoadTestResultsBucket',
-        )
-
-        CfnOutput(
-            self,
             'ECRRepository',
             value=loadtest_repo.repository_uri,
             description='ECR repository for loadtest image',
@@ -284,7 +260,6 @@ class LoadTestStack(Stack):
         # Store references
         self.instance = instance
         self.security_group = loadtest_sg
-        self.results_bucket = results_bucket
         self.ecr_repository = loadtest_repo
 
     def _create_user_data(
@@ -297,7 +272,6 @@ class LoadTestStack(Stack):
         kafka_bootstrap_servers: str,
         kvrocks_host: str,
         kvrocks_port: str,
-        s3_bucket: str,
         environment: str,
         debug: str,
         is_arm: bool = False,
@@ -362,7 +336,6 @@ class LoadTestStack(Stack):
             'cat > /home/ec2-user/.env << EOF',
             f'ALB_HOST=http://{alb_dns}',
             f'API_HOST=http://{alb_dns}',
-            f'S3_BUCKET={s3_bucket}',
             'AWS_REGION=$REGION',
             f'POSTGRES_SERVER={aurora_endpoint}',
             'POSTGRES_DB=ticketing_system_db',

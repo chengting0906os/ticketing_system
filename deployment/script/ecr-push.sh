@@ -48,7 +48,7 @@ REPOSITORIES=(
 
 # Docker Configuration
 DOCKERFILE="Dockerfile"
-BUILD_TARGET="production"
+# BUILD_TARGET removed - using single-stage Dockerfile
 
 # =============================================================================
 # Helper Functions
@@ -171,8 +171,6 @@ build_and_push() {
 
     # Build image
     log_info "Building Docker image..."
-    # Only use --target for Python services (main Dockerfile)
-    # Go loadtest Dockerfile doesn't have named production stage
     local build_args="--platform linux/amd64 \
         --tag ${image_uri}:${image_tag} \
         --tag ${image_uri}:${ENVIRONMENT}-latest \
@@ -182,10 +180,7 @@ build_and_push() {
         --file $dockerfile \
         $build_context"
 
-    if [ "$dockerfile" = "$DOCKERFILE" ]; then
-        # Python services: use production stage
-        build_args="--target $BUILD_TARGET $build_args"
-    fi
+    # Single-stage Dockerfile, no --target needed
 
     if ! docker build $build_args 2>&1 | grep -E "^(#|=>|ERROR)" ; then
         log_error "Build failed for $service_name"
