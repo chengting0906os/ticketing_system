@@ -14,6 +14,7 @@ from stacks.aurora_stack import AuroraStack
 from stacks.ec2_kafka_stack import EC2KafkaStack
 from stacks.ec2_kvrocks_stack import EC2KvrocksStack
 from stacks.loadtest_stack import LoadTestStack
+from stacks.rds_postgres_stack import RdsPostgresStack
 from stacks.reservation_service_stack import ReservationServiceStack
 from stacks.ticketing_service_stack import TicketingServiceStack
 
@@ -84,6 +85,31 @@ kvrocks_stack = EC2KvrocksStack(
 )
 kvrocks_stack.add_dependency(aurora_stack)
 
+# 3.5. RDS PostgreSQL Stack (Alternative to Aurora - for migration testing)
+# Deploy separately: DEPLOY_ENV=development cdk deploy TicketingRdsPostgresStack
+rds_postgres_stack = RdsPostgresStack(
+    app,
+    'TicketingRdsPostgresStack',
+    vpc=aurora_stack.vpc,
+    config=config,
+    deploy_env=deploy_env,
+    env=env,
+    description=f'RDS PostgreSQL Multi-AZ (db.{config["rds_postgres"]["instance_type"]})',
+)
+rds_postgres_stack.add_dependency(aurora_stack)
+
+# ============= Database Selection =============
+# Set USE_AURORA=true to use Aurora instead of RDS PostgreSQL
+use_aurora = os.getenv('USE_AURORA', 'false').lower() == 'true'
+if use_aurora:
+    db_endpoint = aurora_stack.cluster_endpoint
+    db_secret = aurora_stack.cluster.secret
+    print('   Database: Aurora Serverless v2 (USE_AURORA=true)')
+else:
+    db_endpoint = rds_postgres_stack.endpoint
+    db_secret = rds_postgres_stack.instance.secret
+    print('   Database: RDS PostgreSQL (default)')
+
 # 4. Ticketing API Service Stack (API Only)
 # Handles HTTP API endpoints for user authentication, events, and bookings
 # Kafka consumers run as separate ECS services for better scalability
@@ -96,8 +122,8 @@ ticketing_service_stack = TicketingServiceStack(
     ecs_cluster=aurora_stack.ecs_cluster,
     alb_listener=aurora_stack.alb_listener,
     internal_alb_listener=aurora_stack.internal_alb_listener,
-    aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
-    aurora_cluster_secret=aurora_stack.cluster.secret,
+    aurora_cluster_endpoint=db_endpoint,  # Switches based on USE_RDS
+    aurora_cluster_secret=db_secret,  # Switches based on USE_RDS
     app_secrets=aurora_stack.app_secrets,
     namespace=aurora_stack.namespace,
     kafka_bootstrap_servers=kafka_stack.bootstrap_servers,
@@ -110,6 +136,8 @@ ticketing_service_stack = TicketingServiceStack(
 ticketing_service_stack.add_dependency(aurora_stack)
 ticketing_service_stack.add_dependency(kvrocks_stack)
 ticketing_service_stack.add_dependency(kafka_stack)
+if not use_aurora:
+    ticketing_service_stack.add_dependency(rds_postgres_stack)
 
 # 5. Reservation Service Stack (Background Kafka consumer + Kvrocks polling)
 reservation_service_stack = ReservationServiceStack(
@@ -117,8 +145,8 @@ reservation_service_stack = ReservationServiceStack(
     'ReservationServiceStack',
     vpc=aurora_stack.vpc,
     ecs_cluster=aurora_stack.ecs_cluster,
-    aurora_cluster_secret=aurora_stack.cluster.secret,
-    aurora_cluster_endpoint=aurora_stack.cluster_endpoint,
+    aurora_cluster_secret=db_secret,  # Switches based on USE_RDS
+    aurora_cluster_endpoint=db_endpoint,  # Switches based on USE_RDS
     app_secrets=aurora_stack.app_secrets,
     namespace=aurora_stack.namespace,
     kafka_bootstrap_servers=kafka_stack.bootstrap_servers,
@@ -131,6 +159,8 @@ reservation_service_stack = ReservationServiceStack(
 reservation_service_stack.add_dependency(aurora_stack)
 reservation_service_stack.add_dependency(kvrocks_stack)
 reservation_service_stack.add_dependency(kafka_stack)
+if not use_aurora:
+    reservation_service_stack.add_dependency(rds_postgres_stack)
 
 # 7. Load Test Stack (optional - for performance testing + interactive operations)
 # EC2 instance with Docker for direct SSH access and manual operations
@@ -141,8 +171,8 @@ loadtest_stack = LoadTestStack(
     'TicketingLoadTestStack',
     vpc=aurora_stack.vpc,
     alb_dns=aurora_stack.alb.load_balancer_dns_name,  # Internal DNS (free traffic)
-    aurora_cluster_endpoint=aurora_stack.cluster_endpoint,  # For seed operations
-    aurora_cluster_secret=aurora_stack.cluster.secret,  # Aurora credentials
+    aurora_cluster_endpoint=db_endpoint,  # Switches based on USE_RDS
+    aurora_cluster_secret=db_secret,  # Switches based on USE_RDS
     app_secrets=aurora_stack.app_secrets,  # JWT secrets
     kafka_bootstrap_servers=kafka_stack.bootstrap_servers,  # Kafka endpoints
     kvrocks_endpoint=kvrocks_stack.kvrocks_endpoint,  # Kvrocks endpoint

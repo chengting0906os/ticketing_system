@@ -1,148 +1,9 @@
 # =============================================================================
-# Ticketing System Deployment Configuration
-# =============================================================================
-# Uses YAML anchors (&) and aliases (*) to share common configurations
+# Ticketing System Deployment Configuration (Development)
 # =============================================================================
 
-# ============= Shared Configurations =============
-_shared:
-  region: &region us-west-2
-
-  kvrocks: &kvrocks
-    instance_type: m6id.large  # 2 vCPU, 8 GB RAM, 118 GB NVMe
-    storage_type: nvme
-    port: 6666
-    max_clients: 10000
-    workers: 4
-
-  kafka: &kafka
-    type: ec2
-    instance_type: c7g.large   # ARM Graviton - 20% cheaper
-    instance_count: 3
-    storage_type: ebs
-    storage_gb: 30
-
-  database: &database
-    pool_size: 20
-    pool_max_overflow: 30
-    pool_timeout: 30
-    pool_recycle: 3600
-    pool_pre_ping: true
-
-  loadtest: &loadtest
-    instance_type: t4g.medium   # 2 vCPU, 4 GB RAM (~$0.03/hour) - ARM Graviton
-    storage_gb: 15
-
-  jwt: &jwt
-    algorithm: HS256
-    access_token_expire_minutes: 1440
-    refresh_token_expire_days: 30
-
-  monitoring: &monitoring_base
-    cloudwatch_logs_retention_days: 1
-    xray_tracing_enabled: true
-
-  # Auto-scaling thresholds (same for all services)
-  scaling: &scaling
-    cpu_threshold: 60
-    memory_threshold: 60
-
-  # Consumer task resources (reservation)
-  # task_cpu: ECS CPU units (256, 512, 1024, 2048), task_memory: MB (512, 1024, 2048, 4096)
-  consumer_task: &consumer_task
-    task_cpu: 2048      # 2 vCPU
-    task_memory: 4096   # 4 GB (minimum for 2 vCPU on Fargate)
-
-  performance: &performance
-    rate_limit_per_minute: 100000
-    request_timeout: 60
-    max_request_size_mb: 10
-
-# =============================================================================
-# Production Environment (10,000 TPS target)
-# =============================================================================
-production:
-  region: *region
-  account_id: null
-  environment: production
-  debug: false
-  log_level: INFO
-
-  services:
-    ticketing:
-      min_tasks: 100
-      max_tasks: 100
-      task_cpu: 1024     # 1 vCPU
-      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
-      workers: 1
-      <<: *scaling
-
-    reservation:
-      min_tasks: 100
-      max_tasks: 100
-      <<: *consumer_task
-
-  aurora:
-    min_acu: 2
-    max_acu: 8
-
-  kafka: *kafka
-  kvrocks: *kvrocks
-  database: *database
-  loadtest: *loadtest
-  jwt: *jwt
-
-  monitoring:
-    <<: *monitoring_base
-    container_insights_enabled: true
-
-  performance: *performance
-
-# =============================================================================
-# Staging Environment
-# =============================================================================
-staging:
-  region: *region
-  account_id: null
-  environment: staging
-  debug: false
-  log_level: INFO
-
-  services:
-    ticketing:
-      min_tasks: 50
-      max_tasks: 50
-      task_cpu: 1024     # 1 vCPU
-      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
-      workers: 1
-      <<: *scaling
-
-    reservation:
-      min_tasks: 50
-      max_tasks: 50
-      <<: *consumer_task
-
-  aurora:
-    min_acu: 1
-    max_acu: 8
-
-  kafka: *kafka
-  kvrocks: *kvrocks
-  database: *database
-  loadtest: *loadtest
-  jwt: *jwt
-
-  monitoring:
-    <<: *monitoring_base
-    container_insights_enabled: true
-
-  performance: *performance
-
-# =============================================================================
-# Development Environment
-# =============================================================================
 development:
-  region: *region
+  region: us-west-2
   account_id: null
   environment: development
   debug: false
@@ -151,30 +12,64 @@ development:
   services:
     ticketing:
       min_tasks: 1
-      max_tasks: 20
-      task_cpu: 1024     # 1 vCPU
-      task_memory: 2048  # 2 GB (minimum for 1 vCPU on Fargate)
+      max_tasks: 100
+      task_cpu: 2048 # 2 vCPU
+      task_memory: 4096 # 4 GB
       workers: 1
-      <<: *scaling
+      cpu_threshold: 60
+      memory_threshold: 60
 
     reservation:
       min_tasks: 1
-      max_tasks: 20
-      task_cpu: 4096     # 4 vCPU
-      task_memory: 8192  # 8 GB
+      max_tasks: 10
+      task_cpu: 2048 # 2 vCPU
+      task_memory: 4096 # 4 GB
 
   aurora:
     min_acu: 1
     max_acu: 8
 
-  kafka: *kafka
-  kvrocks: *kvrocks
-  database: *database
-  loadtest: *loadtest
-  jwt: *jwt
+  kvrocks:
+    instance_type: m6i.large # 2 vCPU, 8 GB RAM, x86 Intel
+    storage_gb: 20
+    port: 6666
+    max_clients: 10000
+    workers: 4
+
+  kafka:
+    type: ec2
+    instance_type: c7g.large # ARM Graviton - 20% cheaper
+    instance_count: 3
+    storage_type: ebs
+    storage_gb: 30
+
+  rds_postgres:
+    instance_type: r6g.2xlarge # 8 vCPU, 64 GB RAM, Graviton2 ARM
+    storage_gb: 20
+    max_storage_gb: 100 # Auto-scaling limit
+
+  database:
+    pool_size: 20
+    pool_max_overflow: 30
+    pool_timeout: 30
+    pool_recycle: 3600
+    pool_pre_ping: true
+
+  loadtest:
+    instance_type: t4g.medium # 2 vCPU, 4 GB RAM (~$0.03/hour) - ARM Graviton
+    storage_gb: 15
+
+  jwt:
+    algorithm: HS256
+    access_token_expire_minutes: 1440
+    refresh_token_expire_days: 30
 
   monitoring:
-    <<: *monitoring_base
+    cloudwatch_logs_retention_days: 1
+    xray_tracing_enabled: true
     container_insights_enabled: false
 
-  performance: *performance
+  performance:
+    rate_limit_per_minute: 100000
+    request_timeout: 60
+    max_request_size_mb: 10

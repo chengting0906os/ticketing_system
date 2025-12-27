@@ -3,21 +3,16 @@ EC2 Kvrocks Stack - Redis-compatible storage on EC2 with kvrocks-fpm
 Runs Kvrocks binary (pre-compiled .deb) on Ubuntu EC2 instance
 
 Architecture:
-- 1 × EC2 instance (instance type from config.yml)
+- 1 × EC2 instance (m6i.large from config.yml)
 - Ubuntu 24.04 LTS x86_64 with kvrocks-fpm v2.13.0-1
 - Systemd service for process management
-- Storage: NVMe instance store (m6id, i4i) or EBS (configurable)
+- Storage: EBS gp3 (configurable IOPS/throughput)
 - Auto Scaling Group (single instance) for automatic restart on failure
 
-Storage Options:
-- NVMe (m6id.large): $82/month, 118 GB, ~40K IOPS
-- NVMe (i4i.large): $165/month, 468 GB, 50K+ IOPS
-- EBS (gp3): Configurable IOPS and throughput
-
-Benefits: Fast deployment, native binary performance, high IOPS with NVMe
+Benefits: Fast deployment, native binary performance, data persistence
 """
 
-from aws_cdk import CfnOutput, Stack
+from aws_cdk import CfnOutput, Duration, Stack, Tags
 from aws_cdk import aws_autoscaling as autoscaling
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_events as events
@@ -33,22 +28,12 @@ class EC2KvrocksStack(Stack):
     EC2 Kvrocks Stack with kvrocks-fpm (pre-compiled binary)
 
     Configuration from config.yml:
-    - Instance: config['kvrocks']['instance_type'] (e.g., m6id.large, i4i.large)
-    - Storage Type: config['kvrocks']['storage_type'] ('nvme' or 'ebs')
+    - Instance: config['kvrocks']['instance_type'] (e.g., m6i.large)
+    - Storage: config['kvrocks']['storage_gb'] (e.g., 20 GB)
     - Port: config['kvrocks']['port'] (default: 6666)
 
-    NVMe Configuration (storage_type='nvme'):
-    - Uses instance store (m6id: 118GB, i4i: 468GB)
-    - High IOPS (40K-50K+)
-    - Data lost on stop/start (reboot preserves data)
-
-    EBS Configuration (storage_type='ebs'):
-    - Storage: config['kvrocks']['storage_gb'] (e.g., 30 GB)
-    - Configurable IOPS/throughput
-    - Data persists across stop/start
-
-    Single EC2 instance runs Kvrocks native binary with systemd,
-    providing fast deployment without compilation.
+    EBS gp3 (with default IOPS/throughput) provides data persistence across stop/start.
+    Single EC2 instance runs Kvrocks native binary with systemd.
     """
 
     def __init__(
@@ -77,15 +62,9 @@ class EC2KvrocksStack(Stack):
         # Extract Kvrocks configuration
         kvrocks_config = config.get('kvrocks', {})
         instance_type_str = kvrocks_config.get('instance_type', 't3.small')
-        storage_type = kvrocks_config.get('storage_type', 'ebs')  # 'ebs' or 'nvme'
-        storage_gb = kvrocks_config.get('storage_gb', 30)  # Only used for EBS
+        storage_gb = kvrocks_config.get('storage_gb', 20)
         kvrocks_port = kvrocks_config.get('port', 6666)
         max_clients = kvrocks_config.get('max_clients', 10000)
-
-        # EBS volume configuration (only used when storage_type='ebs')
-        ebs_volume_type = kvrocks_config.get('ebs_volume_type', 'gp3')
-        ebs_iops = kvrocks_config.get('ebs_iops', None)  # None = use default for volume type
-        ebs_throughput = kvrocks_config.get('ebs_throughput', None)  # None = use default
 
         # ============= Security Group for EC2 =============
         self.ec2_sg = ec2.SecurityGroup(
@@ -116,8 +95,6 @@ class EC2KvrocksStack(Stack):
         # ============= Service Discovery Integration (Create first) =============
         # Register EC2 instance IP with Cloud Map for service discovery
         # Note: This will use the private IP of the EC2 instance
-        from aws_cdk import Duration
-
         self.service_discovery = sd.Service(
             self,
             'KvrocksServiceDiscovery',
@@ -155,82 +132,51 @@ class EC2KvrocksStack(Stack):
         # ============= User Data for Kvrocks Installation (kvrocks-fpm) =============
         user_data = ec2.UserData.for_linux()
 
-        # Generate mount commands based on storage type
-        if storage_type == 'nvme':
-            # NVMe instance store (m6id, i4i, etc.) - use first instance store volume
-            mount_commands = [
-                '# Mount NVMe instance store for Kvrocks data',
-                'mkdir -p /data/kvrocks',
-                '',
-                '# Use first NVMe instance store (nvme1n1 is typically the first instance store)',
-                'DATA_DEVICE="/dev/nvme1n1"',
-                '',
-                'if [ ! -b "$DATA_DEVICE" ]; then',
-                '  echo "ERROR: NVMe instance store $DATA_DEVICE not found"',
-                '  exit 1',
-                'fi',
-                '',
-                'echo "Using NVMe instance store: $DATA_DEVICE"',
-                '',
-                '# Clean up any previous mounts',
-                'umount /data/kvrocks || true',
-                '',
-                '# Format NVMe (instance store is always empty on first boot)',
-                'echo "Formatting $DATA_DEVICE with ext4..."',
-                'mkfs.ext4 -F "$DATA_DEVICE"',
-                '',
-                '# Mount the NVMe volume',
-                'echo "Mounting $DATA_DEVICE to /data/kvrocks..."',
-                'mount "$DATA_DEVICE" /data/kvrocks',
-                '',
-                '# Note: Do NOT add to fstab - instance store may not exist after stop/start',
-            ]
-        else:
-            # EBS volume - use existing logic to find 30GB volume
-            mount_commands = [
-                '# Mount EBS volume for Kvrocks data',
-                'mkdir -p /data/kvrocks',
-                '',
-                '# Find data volume (30GB EBS, not the root volume)',
-                '# On NVMe instances, find the 30GB volume (our data disk)',
-                'DATA_DEVICE=""',
-                'for dev in /dev/nvme[0-9]n1; do',
-                '  size=$(lsblk -b -d -n -o SIZE "$dev" 2>/dev/null || echo 0)',
-                '  # 30GB = 32212254720 bytes, allow 10% variance',
-                '  if [ "$size" -gt 29000000000 ] && [ "$size" -lt 35000000000 ]; then',
-                '    DATA_DEVICE="$dev"',
-                '    break',
-                '  fi',
-                'done',
-                '',
-                'if [ -z "$DATA_DEVICE" ]; then',
-                '  echo "ERROR: Could not find 30GB data volume"',
-                '  exit 1',
-                'fi',
-                '',
-                'echo "Data device found: $DATA_DEVICE"',
-                '',
-                '# Clean up any previous mounts',
-                'umount /data/kvrocks || true',
-                '',
-                '# Check filesystem and repair if needed',
-                'e2fsck -p "$DATA_DEVICE" || echo "fsck skipped or completed with warnings"',
-                '',
-                '# Format if no filesystem exists',
-                'if ! blkid -s TYPE "$DATA_DEVICE" | grep -q TYPE; then',
-                '  echo "Formatting $DATA_DEVICE with ext4..."',
-                '  mkfs.ext4 "$DATA_DEVICE"',
-                'fi',
-                '',
-                '# Mount the data volume',
-                'echo "Mounting $DATA_DEVICE to /data/kvrocks..."',
-                'mount "$DATA_DEVICE" /data/kvrocks',
-                '',
-                '# Add to fstab if not already present (using _netdev for network devices)',
-                'if ! grep -q "/data/kvrocks" /etc/fstab; then',
-                '  echo "$DATA_DEVICE /data/kvrocks ext4 defaults,_netdev 0 2" >> /etc/fstab',
-                'fi',
-            ]
+        # EBS volume mount commands - find non-root volume
+        mount_commands = [
+            '# Mount EBS volume for Kvrocks data',
+            'mkdir -p /data/kvrocks',
+            '',
+            '# Find data volume by excluding root device',
+            'ROOT_DEV=$(findmnt -n -o SOURCE / | sed "s/p[0-9]*$//")',
+            'echo "Root device: $ROOT_DEV"',
+            '',
+            'DATA_DEVICE=""',
+            'for dev in /dev/nvme[0-9]n1; do',
+            '  if [ "$dev" != "$ROOT_DEV" ]; then',
+            '    DATA_DEVICE="$dev"',
+            '    break',
+            '  fi',
+            'done',
+            '',
+            'if [ -z "$DATA_DEVICE" ]; then',
+            '  echo "ERROR: Could not find data volume (non-root)"',
+            '  exit 1',
+            'fi',
+            '',
+            'echo "Data device found: $DATA_DEVICE"',
+            '',
+            '# Clean up any previous mounts',
+            'umount /data/kvrocks || true',
+            '',
+            '# Check filesystem and repair if needed',
+            'e2fsck -p "$DATA_DEVICE" || echo "fsck skipped or completed with warnings"',
+            '',
+            '# Format if no filesystem exists',
+            'if ! blkid -s TYPE "$DATA_DEVICE" | grep -q TYPE; then',
+            '  echo "Formatting $DATA_DEVICE with ext4..."',
+            '  mkfs.ext4 "$DATA_DEVICE"',
+            'fi',
+            '',
+            '# Mount the data volume',
+            'echo "Mounting $DATA_DEVICE to /data/kvrocks..."',
+            'mount "$DATA_DEVICE" /data/kvrocks',
+            '',
+            '# Add to fstab if not already present',
+            'if ! grep -q "/data/kvrocks" /etc/fstab; then',
+            '  echo "$DATA_DEVICE /data/kvrocks ext4 defaults,nofail 0 2" >> /etc/fstab',
+            'fi',
+        ]
 
         user_data.add_commands(
             '#!/bin/bash',
@@ -317,35 +263,18 @@ class EC2KvrocksStack(Stack):
         )
 
         # ============= Launch Template =============
-        # Build block devices list based on storage type
+        # Data volume only - AMI provides its own root volume (/dev/sda1)
         block_devices = [
             ec2.BlockDevice(
-                device_name='/dev/xvda',  # Root volume
+                device_name='/dev/xvdf',
                 volume=ec2.BlockDeviceVolume.ebs(
-                    volume_size=30,  # 30 GB for OS
+                    volume_size=storage_gb,
                     volume_type=ec2.EbsDeviceVolumeType.GP3,
                     delete_on_termination=True,
                     encrypted=True,
                 ),
             ),
         ]
-
-        # Only add EBS data volume if storage_type is 'ebs'
-        # NVMe instances (m6id, i4i) use instance store, not EBS
-        if storage_type == 'ebs':
-            block_devices.append(
-                ec2.BlockDevice(
-                    device_name='/dev/xvdf',  # Data volume for Kvrocks
-                    volume=ec2.BlockDeviceVolume.ebs(
-                        volume_size=storage_gb,
-                        volume_type=self._get_volume_type(ebs_volume_type),
-                        iops=ebs_iops,  # None = use default
-                        throughput=ebs_throughput,  # None = use default
-                        delete_on_termination=True,  # Clean up on termination
-                        encrypted=True,
-                    ),
-                )
-            )
 
         launch_template = ec2.LaunchTemplate(
             self,
@@ -373,8 +302,6 @@ class EC2KvrocksStack(Stack):
         )
 
         # Tag instances for EventBridge filtering
-        from aws_cdk import Tags
-
         Tags.of(self.asg).add('Service', 'kvrocks')
         Tags.of(self.asg).add('ManagedBy', 'ServiceDiscovery')
 
@@ -488,23 +415,3 @@ def handler(event, context):
             value=self.ec2_sg.security_group_id,
             description='Security Group ID for Kvrocks EC2',
         )
-
-    def _get_volume_type(self, volume_type_str: str) -> ec2.EbsDeviceVolumeType:
-        """
-        Map volume type string to CDK enum
-
-        Args:
-            volume_type_str: Volume type string from config (e.g., 'gp3', 'io2')
-
-        Returns:
-            EbsDeviceVolumeType enum value
-        """
-        volume_type_map = {
-            'gp2': ec2.EbsDeviceVolumeType.GP2,
-            'gp3': ec2.EbsDeviceVolumeType.GP3,
-            'io1': ec2.EbsDeviceVolumeType.IO1,
-            'io2': ec2.EbsDeviceVolumeType.IO2,
-            'st1': ec2.EbsDeviceVolumeType.ST1,
-            'sc1': ec2.EbsDeviceVolumeType.SC1,
-        }
-        return volume_type_map.get(volume_type_str.lower(), ec2.EbsDeviceVolumeType.GP3)
