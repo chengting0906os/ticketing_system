@@ -278,6 +278,9 @@ class SeatReservationUseCase:
                 quantity=request.quantity or len(request.seat_positions or []),
             )
 
+        # Broadcast stats update so ticketing service cache knows seats are insufficient
+        await self.pubsub_handler.schedule_stats_broadcast(event_id=request.event_id)
+
         # Publish SSE failure notification
         await self.pubsub_handler.publish_booking_update(
             user_id=request.buyer_id,

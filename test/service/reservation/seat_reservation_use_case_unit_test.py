@@ -223,3 +223,107 @@ class TestReserveSeatsExecutionOrder:
         assert not broadcast_when_postgres_not_called, (
             'schedule_stats_broadcast was called before PostgreSQL write - this violates the invariant!'
         )
+
+    @pytest.mark.asyncio
+    async def test_failure_path_broadcasts_stats_update(
+        self,
+        use_case: SeatReservationUseCase,
+        mock_seat_state_handler: AsyncMock,
+        mock_booking_command_repo: AsyncMock,
+        mock_pubsub_handler: AsyncMock,
+        valid_request: ReservationRequest,
+    ) -> None:
+        """
+        Test that failure path also broadcasts stats update.
+        This ensures ticketing service cache is updated when seats are insufficient.
+        """
+        # Arrange - make find_seats return failure (insufficient seats)
+        mock_booking_command_repo.get_by_id = AsyncMock(return_value=None)
+        mock_seat_state_handler.find_seats = AsyncMock(
+            return_value={
+                'success': False,
+                'error_message': 'Insufficient available seats',
+            }
+        )
+        mock_booking_command_repo.create_failed_booking_directly = AsyncMock()
+
+        # Act
+        result = await use_case.reserve_seats(valid_request)
+
+        # Assert
+        assert result.success is False
+        assert result.error_message == 'Insufficient available seats'
+
+        # Verify schedule_stats_broadcast was called on failure
+        mock_pubsub_handler.schedule_stats_broadcast.assert_called_once_with(
+            event_id=valid_request.event_id
+        )
+
+        # Verify publish_booking_update was called with FAILED status
+        mock_pubsub_handler.publish_booking_update.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_failure_path_execution_order(
+        self,
+        use_case: SeatReservationUseCase,
+        mock_seat_state_handler: AsyncMock,
+        mock_seating_config_handler: AsyncMock,
+        mock_booking_command_repo: AsyncMock,
+        mock_pubsub_handler: AsyncMock,
+        valid_request: ReservationRequest,
+    ) -> None:
+        """
+        Test execution order on failure path:
+        1. Idempotency Check
+        2. Fetch Config
+        3. Find seats (fails)
+        4. Create failed booking
+        5. Schedule stats broadcast
+        6. SSE publish failure notification
+        """
+        call_order: list[str] = []
+
+        async def track_idempotency(*args: Any, **kwargs: Any) -> None:
+            call_order.append('idempotency_check')
+            return None
+
+        async def track_fetch_config(*args: Any, **kwargs: Any) -> SubsectionConfig:
+            call_order.append('fetch_config')
+            return SubsectionConfig(rows=10, cols=10, price=1000)
+
+        async def track_find_seats(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            call_order.append('lua_find_seats')
+            return {
+                'success': False,
+                'error_message': 'Insufficient available seats',
+            }
+
+        async def track_create_failed(*args: Any, **kwargs: Any) -> None:
+            call_order.append('create_failed_booking')
+
+        async def track_schedule_broadcast(*args: Any, **kwargs: Any) -> None:
+            call_order.append('schedule_stats_broadcast')
+
+        async def track_sse(*args: Any, **kwargs: Any) -> None:
+            call_order.append('sse_publish')
+
+        mock_booking_command_repo.get_by_id = track_idempotency
+        mock_seating_config_handler.get_config = track_fetch_config
+        mock_seat_state_handler.find_seats = track_find_seats
+        mock_booking_command_repo.create_failed_booking_directly = track_create_failed
+        mock_pubsub_handler.schedule_stats_broadcast = track_schedule_broadcast
+        mock_pubsub_handler.publish_booking_update = track_sse
+
+        # Act
+        result = await use_case.reserve_seats(valid_request)
+
+        # Assert
+        assert result.success is False
+        assert call_order == [
+            'idempotency_check',
+            'fetch_config',
+            'lua_find_seats',
+            'create_failed_booking',
+            'schedule_stats_broadcast',
+            'sse_publish',
+        ], f'Expected failure flow order, got: {call_order}'
