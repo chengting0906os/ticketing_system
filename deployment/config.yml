@@ -56,7 +56,7 @@ development:
     pool_pre_ping: true
 
   loadtest:
-    instance_type: t4g.medium # 2 vCPU, 4 GB RAM (~$0.03/hour) - ARM Graviton
+    instance_type: c7g.xlarge # 4 vCPU, 8 GB RAM - ARM Graviton
     storage_gb: 15
 
   jwt:
