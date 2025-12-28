@@ -89,9 +89,7 @@ async def create_booking(
             id=booking.id,
             buyer_id=booking.buyer_id,
             event_id=booking.event_id,
-            total_price=booking.total_price,
-            status=booking.status.value,  # Should be 'pending_payment' now
-            created_at=booking.created_at,
+            status=booking.status.value,
         )
 
 

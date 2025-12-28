@@ -37,10 +37,7 @@ class BookingResponse(BaseModel):
                 'id': '01936d8f-5e73-7c4e-a9c5-123456789abc',  # UUID7
                 'buyer_id': 2,
                 'event_id': 1,
-                'total_price': 2000,
                 'status': 'pending_payment',
-                'created_at': '2025-01-10T10:30:00',
-                'paid_at': None,
             }
         },
     }
@@ -48,10 +45,7 @@ class BookingResponse(BaseModel):
     id: UtilsUUID7  # UUID7
     buyer_id: int
     event_id: int
-    total_price: int
     status: str
-    created_at: datetime
-    paid_at: Optional[datetime] = None
 
 
 class BookingStatusUpdateRequest(BaseModel):

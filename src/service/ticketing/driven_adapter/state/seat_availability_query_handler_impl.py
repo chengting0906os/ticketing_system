@@ -42,7 +42,8 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
         Strategy:
         - No cache → pass through
         - Cache expired (>10s) → pass through
-        - Has valid cache → check availability
+        - Subsection not in cache → pass through (cache may be incomplete)
+        - Has valid cache with subsection → check availability
         """
         with self.tracer.start_as_current_span('use_case.cache.check_availability') as span:
             cache_entry = self._cache.get(event_id)
@@ -72,5 +73,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
                     available_count = stats.get('available', 0)
                     return available_count >= required_quantity
 
-            # Subsection not found in cache
-            return False
+            # Subsection not found in cache: pass through (cache may be incomplete)
+            span.set_attribute('subsection_not_in_cache', True)
+            span.set_attribute('pass_through', True)
+            return True
