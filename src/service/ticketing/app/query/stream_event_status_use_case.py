@@ -86,7 +86,7 @@ class StreamEventStatusUseCase:
                     'event_type': SseEventType.STATUS_UPDATE,
                     'event_id': payload.get('event_id', event_id),
                     'stats': event_state.get('event_stats', event.stats),
-                    'subsection_stats': event_state.get('subsection_stats', []),
+                    'subsection_stats': event_state.get('subsection_stats', {}),
                 }
 
         except anyio.get_cancelled_exc_class():

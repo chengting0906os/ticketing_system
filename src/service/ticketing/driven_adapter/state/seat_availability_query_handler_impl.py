@@ -25,7 +25,7 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
     - TTL 10s: If cache expired, pass through (let reservation service handle it)
     """
 
-    def __init__(self, *, ttl_seconds: float = 15.0) -> None:
+    def __init__(self, *, ttl_seconds: float = 20.0) -> None:
         self.tracer = trace.get_tracer(__name__)
         self._cache: Dict[int, CacheEntry] = {}
         self._ttl_seconds = ttl_seconds
@@ -63,15 +63,15 @@ class SeatAvailabilityQueryHandlerImpl(ISeatAvailabilityQueryHandler):
 
             span.set_attribute('cache_hit', True)
 
-            # Has valid cache: check availability
+            # Has valid cache: check availability via O(1) dict lookup
             event_state = cache_entry['data']
+            subsection_stats = event_state.get('subsection_stats', {})
+            key = f'{section}-{subsection}'
+            stats = subsection_stats.get(key)
 
-            # Find matching subsection in subsection_stats list
-            subsection_stats = event_state.get('subsection_stats', [])
-            for stats in subsection_stats:
-                if stats.get('section') == section and stats.get('subsection') == subsection:
-                    available_count = stats.get('available', 0)
-                    return available_count >= required_quantity
+            if stats:
+                available_count = stats.get('available', 0)
+                return available_count >= required_quantity
 
             # Subsection not found in cache: pass through (cache may be incomplete)
             span.set_attribute('subsection_not_in_cache', True)

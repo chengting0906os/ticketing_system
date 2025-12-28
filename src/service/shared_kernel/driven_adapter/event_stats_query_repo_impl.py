@@ -22,7 +22,7 @@ class EventStatsQueryRepoImpl:
             event_id: Event ID
 
         Returns:
-            Dict with event_stats and subsection_stats
+            Dict with event_stats and subsection_stats (keyed by 'section-subsection')
         """
         pool = await get_asyncpg_pool()
         async with pool.acquire() as conn:
@@ -55,10 +55,9 @@ class EventStatsQueryRepoImpl:
                 """,
                 event_id,
             )
-            subsection_stats = [
-                {
-                    'section': row['section'],
-                    'subsection': row['subsection'],
+            # Dict keyed by 'section-subsection' for O(1) lookup
+            subsection_stats = {
+                f'{row["section"]}-{row["subsection"]}': {
                     'price': row['price'],
                     'available': row['available'],
                     'reserved': row['reserved'],
@@ -66,7 +65,7 @@ class EventStatsQueryRepoImpl:
                     'updated_at': row['updated_at'],
                 }
                 for row in subsection_rows
-            ]
+            }
 
             Logger.base.debug(f'📊 [StatsQuery] Queried stats for event={event_id}')
 

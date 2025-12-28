@@ -1,5 +1,6 @@
 import contextlib
 import time
+from typing import Any
 
 import anyio
 from anyio.abc import TaskGroup
@@ -21,7 +22,7 @@ class RealTimeEventStateSubscriber:
         *,
         event_id: int,
         cache_handler: ISeatAvailabilityQueryHandler,
-        throttle_interval: float = 0.5,  # 500ms minimum interval between cache updates
+        throttle_interval: float = 0.5,  # Apply latest update at most once per interval
         reconnect_delay: float = 5.0,  # Delay before reconnecting after error
     ) -> None:
         self.event_id = event_id
@@ -29,7 +30,8 @@ class RealTimeEventStateSubscriber:
         self.channel = f'event_state_updates:{event_id}'
         self._throttle_interval = throttle_interval
         self._reconnect_delay = reconnect_delay
-        self._last_update_time: float = 0.0  # For throttling only
+        self._last_apply_time: float = 0.0
+        self._pending: dict[str, Any] | None = None  # Pending event_state to apply
         self._pubsub_client: AsyncRedis | None = None
 
     async def start(self, *, task_group: TaskGroup) -> None:
@@ -73,25 +75,29 @@ class RealTimeEventStateSubscriber:
                 )
                 await anyio.sleep(self._reconnect_delay)
 
-    async def _handle_update(self, data: bytes) -> None:
-        """Handle incoming event_state update with throttling"""
+    @Logger.io
+    async def _handle_update(self, data: bytes) -> float | None:
+        """Handle incoming event_state update with throttling (apply latest every interval)"""
         try:
             payload = orjson.loads(data)
             event_id = payload['event_id']
             event_state = payload['event_state']
 
-            # Throttle cache updates to reduce overhead
             current_time = time.time()
-            time_since_last_update = current_time - self._last_update_time
 
-            if time_since_last_update < self._throttle_interval:
-                return
+            # Always store latest as pending
+            self._pending = {'event_id': event_id, 'event_state': event_state}
 
-            # Update cache with timestamp for TTL check
-            self.cache_handler._cache[event_id] = {
-                'data': event_state,
-                'timestamp': current_time,
-            }
-            self._last_update_time = current_time
+            # Apply pending if enough time has passed
+            if current_time - self._last_apply_time >= self._throttle_interval:
+                self.cache_handler._cache[event_id] = {
+                    'data': self._pending['event_state'],
+                    'timestamp': current_time,
+                }
+                self._last_apply_time = current_time
+                self._pending = None  # Clear pending after apply
+                return current_time  # for logging
+            return None
         except Exception as e:
             Logger.base.warning(f'⚠️ [Cache Subscriber] Parse error: {e}')
+            return None

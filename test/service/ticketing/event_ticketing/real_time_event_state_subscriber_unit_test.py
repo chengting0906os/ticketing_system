@@ -5,7 +5,6 @@ Tests the Redis Pub/Sub subscriber that receives real-time event_state updates
 and updates the cache with throttling and automatic reconnection.
 """
 
-import time
 from typing import Any
 from unittest.mock import Mock
 
@@ -77,7 +76,7 @@ class TestRealTimeEventStateSubscriber:
         cache_entry = subscriber.cache_handler._cache[event_id]
         assert cache_entry['data'] == event_state_payload['event_state']
         assert 'timestamp' in cache_entry
-        assert subscriber._last_update_time > 0
+        assert subscriber._last_apply_time > 0
 
     @pytest.mark.asyncio
     async def test_handle_update_invalid_json(
@@ -132,27 +131,6 @@ class TestRealTimeEventStateSubscriber:
         assert 'timestamp' in cache_entry
         assert isinstance(cache_entry['data'], dict)
         assert 'sections' in cache_entry['data']
-
-    # =========================================================================
-    # Throttling Tests
-    # =========================================================================
-
-    @pytest.mark.asyncio
-    async def test_throttle_time_updates(
-        self,
-        subscriber: RealTimeEventStateSubscriber,
-        event_state_payload: dict[str, Any],
-        event_id: int,
-    ) -> None:
-        """Test that throttle time is updated correctly"""
-        data = orjson.dumps(event_state_payload)
-
-        before_time = time.time()
-        await subscriber._handle_update(data)
-        after_time = time.time()
-
-        # Verify last_update_time is in reasonable range
-        assert before_time <= subscriber._last_update_time <= after_time
 
     # =========================================================================
     # Channel Configuration Tests

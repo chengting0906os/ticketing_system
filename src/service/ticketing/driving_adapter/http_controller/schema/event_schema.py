@@ -301,7 +301,7 @@ class EventStateSseUpdateResponse(BaseModel):
     event_type: str
     event_id: int
     stats: dict
-    subsection_stats: List[Dict]
+    subsection_stats: Dict[str, Dict]  # Keyed by 'section-subsection'
 
     class Config:
         json_schema_extra = {
@@ -309,16 +309,8 @@ class EventStateSseUpdateResponse(BaseModel):
                 'event_type': 'status_update',
                 'event_id': 1,
                 'stats': {'available': 998, 'reserved': 2, 'sold': 0, 'total': 1000},
-                'subsection_stats': [
-                    {
-                        'event_id': 1,
-                        'section': 'A',
-                        'subsection': 1,
-                        'price': 2000,
-                        'available': 498,
-                        'reserved': 2,
-                        'sold': 0,
-                    }
-                ],
+                'subsection_stats': {
+                    'A-1': {'price': 2000, 'available': 498, 'reserved': 2, 'sold': 0},
+                },
             }
         }

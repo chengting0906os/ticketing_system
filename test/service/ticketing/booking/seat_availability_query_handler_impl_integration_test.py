@@ -21,29 +21,24 @@ from src.service.ticketing.driven_adapter.state.seat_availability_query_handler_
 
 
 def _build_event_state(section_id: str, stats: dict[str, Any]) -> dict[str, Any]:
-    """Build event_state structure for cache or Kvrocks."""
-    section_name = section_id.split('-')[0]
-    subsection_num = section_id.split('-')[1]
-
+    """Build event_state structure for cache (matches get_event_stats format)."""
     return {
-        'sections': {
-            section_name: {
+        'event_stats': {
+            'available': stats.get('available', 0),
+            'reserved': stats.get('reserved', 0),
+            'sold': stats.get('sold', 0),
+            'total': stats.get('total', 100),
+        },
+        # Dict keyed by 'section-subsection' for O(1) lookup
+        'subsection_stats': {
+            section_id: {
                 'price': 1000,
-                'subsections': {
-                    subsection_num: {
-                        'rows': 10,
-                        'cols': 10,
-                        'stats': {
-                            'available': stats.get('available', 0),
-                            'reserved': stats.get('reserved', 0),
-                            'sold': stats.get('sold', 0),
-                            'total': stats.get('total', 100),
-                            'updated_at': stats.get('updated_at', 0),
-                        },
-                    }
-                },
+                'available': stats.get('available', 0),
+                'reserved': stats.get('reserved', 0),
+                'sold': stats.get('sold', 0),
+                'updated_at': stats.get('updated_at', 0),
             }
-        }
+        },
     }
 
 
@@ -166,7 +161,9 @@ class TestCheckAvailabilityIntegration:
         event_state = orjson.loads(config_json)
         if isinstance(event_state, list):
             event_state = event_state[0]
-        assert event_state['sections']['C']['subsections']['3']['stats']['available'] == 10
+        # Verify subsection_stats structure (dict keyed by 'section-subsection')
+        assert 'C-3' in event_state['subsection_stats']
+        assert event_state['subsection_stats']['C-3']['available'] == 10
 
     @pytest.mark.asyncio
     async def test_pass_through_when_no_cache(
