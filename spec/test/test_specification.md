@@ -55,7 +55,7 @@ This document defines the test architecture, conventions, and best practices for
 Feature: Booking Creation
 
 Integration Test - All scenarios:
-  [v] Buyer creates booking successfully (201)
+  [v] Buyer creates booking successfully (202)
   [v] Buyer creates booking with insufficient seats (400)
   [v] Buyer creates booking for sold out event (400)
   [v] Seller cannot create booking (403)

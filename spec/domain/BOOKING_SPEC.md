@@ -117,7 +117,7 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 
 | Method | Endpoint                            | Description            | Permission    | Success | Error         |
 | ------ | ----------------------------------- | ---------------------- | ------------- | ------- | ------------- |
-| POST   | `/api/booking`                      | 建立預訂               | Buyer         | 201     | 400, 401      |
+| POST   | `/api/booking`                      | 建立預訂               | Buyer         | 202     | 400, 401      |
 | GET    | `/api/booking/{booking_id}`         | 取得預訂詳情           | Authenticated | 200     | 401, 404      |
 | GET    | `/api/booking/my_booking`           | 列出我的預訂           | Authenticated | 200     | 401           |
 | PATCH  | `/api/booking/{booking_id}`         | 取消預訂               | Buyer         | 200     | 400, 401, 404 |
