@@ -58,6 +58,8 @@ cpu.prof
 # Load test reports
 script/go_client/report/*
 !script/go_client/report/.gitkeep
+script/k6/report/*
+!script/k6/report/.gitkeep
 
 # GitHub
 .github/image/

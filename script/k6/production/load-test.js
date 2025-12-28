@@ -13,7 +13,7 @@ export const options = {
       maxVUs: 2000,
       stages: [
         { target: 1200, duration: '5s' },  // 4K
-        { target: 1800, duration: '8s' },  // 12K
+        { target: 1800, duration: '7s' },  // 12K
         { target: 1000, duration: '3s' },  // 4K
       ],
     },

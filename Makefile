@@ -174,22 +174,22 @@ t:  ## 🧪 Run tests in Docker (single process, -n 0)
 
 .PHONY: k6-dev-load k6-dev-stress k6-dev-spike k6-prod-load k6-prod-stress k6-prod-spike
 k6-dev-load:  ## 🎯 Run k6 load test (dev: ~10K req, peak 900 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/dev/load-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/dev-load-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/load-test.js
 
 k6-dev-stress:  ## 💥 Run k6 stress test (dev: peak 1000 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/dev/stress-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/dev-stress-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/stress-test.js
 
 k6-dev-spike:  ## ⚡ Run k6 spike test (dev: spike to 1000 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/dev/spike-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/dev-spike-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/spike-test.js
 
 k6-prod-load:  ## 🚀 Run k6 load test (prod: ~20K req, peak 1800 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/production/load-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/prod-load-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/load-test.js
 
 k6-prod-stress:  ## 💥 Run k6 stress test (prod: peak 7000 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/production/stress-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/prod-stress-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/stress-test.js
 
 k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS)
-	@k6 run -e API_HOST=$(API_HOST) script/k6/production/spike-test.js
+	@./script/k6/run-with-report.sh "script/k6/report/prod-spike-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/spike-test.js
 
 # ==============================================================================
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)

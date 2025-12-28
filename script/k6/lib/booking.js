@@ -3,7 +3,7 @@ import { check } from 'k6';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
 // API_HOST: cloud uses port 80 (http://alb-dns), local uses port 8100 (http://localhost:8100)
-export const BASE_URL = __ENV.API_HOST || 'http://localhost:8100';
+export const BASE_URL = __ENV.API_HOST || 'http://127.0.0.1:8100';
 export const EVENT_ID = parseInt(__ENV.EVENT_ID || '1');
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 export const MAX_SUBSECTION = parseInt(__ENV.MAX_SUBSECTION || '10');  // 200k uses 40
