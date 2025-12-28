@@ -52,7 +52,7 @@ export function makeBooking(data) {
 
   check(res, { 'success': (r) => r.status >= 200 && r.status < 500 });
 
-  if (res.status === 201) {
+  if (res.status === 202) {
     bookingTime.add(res.timings.duration);
     bookingCompleted.add(1);
   }

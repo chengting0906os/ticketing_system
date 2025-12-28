@@ -56,7 +56,7 @@ async def list_my_bookings(
         return []
 
 
-@router.post('', status_code=status.HTTP_201_CREATED)
+@router.post('', status_code=status.HTTP_202_ACCEPTED)
 @Logger.io
 async def create_booking(
     request: BookingCreateRequest,

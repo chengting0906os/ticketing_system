@@ -16,7 +16,7 @@ Feature: Booking with Seat Selection
     When I call POST "/api/booking" with
       | event_id   | section | subsection | seat_selection_mode | seat_positions | quantity |
       | {event_id} | A       | 1          | manual              | ["1-1","1-2"]  | 2        |
-    Then the response status code should be 201
+    Then the response status code should be 202
     And the response data should include:
       | status     |
       | processing |
@@ -25,7 +25,7 @@ Feature: Booking with Seat Selection
     When I call POST "/api/booking" with
       | event_id   | section | subsection | seat_selection_mode | seat_positions | quantity |
       | {event_id} | A       | 1          | best_available      | []             | 3        |
-    Then the response status code should be 201
+    Then the response status code should be 202
     And the response data should include:
       | status     |
       | processing |
@@ -34,7 +34,7 @@ Feature: Booking with Seat Selection
     When I call POST "/api/booking" with
       | event_id   | section | subsection | seat_selection_mode | seat_positions | quantity |
       | {event_id} | A       | 1          | best_available      | []             | 1        |
-    Then the response status code should be 201
+    Then the response status code should be 202
     And the response data should include:
       | status     |
       | processing |
@@ -50,7 +50,7 @@ Feature: Booking with Seat Selection
     When I call POST "/api/booking" with
       | event_id   | section | subsection | seat_selection_mode | seat_positions | quantity |
       | {event_id} | A       | 1          | manual              | ["2-3"]        | 1        |
-    Then the response status code should be 201
+    Then the response status code should be 202
     And the response data should include:
       | status     |
       | processing |
