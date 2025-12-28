@@ -1,10 +1,6 @@
 import http from 'k6/http';
 import { check } from 'k6';
-import { Trend, Counter } from 'k6/metrics';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
-
-export const bookingTime = new Trend('booking_time', true);
-export const bookingCompleted = new Counter('booking_completed');
 
 // API_HOST: cloud uses port 80 (http://alb-dns), local uses port 8100 (http://localhost:8100)
 export const BASE_URL = __ENV.API_HOST || 'http://localhost:8100';
@@ -50,10 +46,5 @@ export function makeBooking(data) {
     },
   });
 
-  check(res, { 'success': (r) => r.status >= 200 && r.status < 500 });
-
-  if (res.status === 202) {
-    bookingTime.add(res.timings.duration);
-    bookingCompleted.add(1);
-  }
+  check(res, { 'booking_accepted': (r) => r.status === 202 });
 }

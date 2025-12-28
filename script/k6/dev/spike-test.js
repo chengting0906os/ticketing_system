@@ -3,6 +3,7 @@ export { setup };
 
 // Spike test - sudden traffic surge (simulates ticket sale opening)
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     spike: {
       executor: 'ramping-arrival-rate',

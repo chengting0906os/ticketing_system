@@ -3,6 +3,7 @@ export { setup };
 
 // Stress test - stepped increase to find breaking point
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     stress: {
       executor: 'ramping-arrival-rate',

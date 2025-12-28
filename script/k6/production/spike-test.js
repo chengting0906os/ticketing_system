@@ -3,6 +3,7 @@ export { setup };
 
 // ~50K requests, spike to 5000 RPS
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     spike: {
       executor: 'ramping-arrival-rate',

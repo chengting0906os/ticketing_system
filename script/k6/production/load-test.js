@@ -3,6 +3,7 @@ export { setup };
 
 // ~20K requests (2x local)
 export const options = {
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
     load: {
       executor: 'ramping-arrival-rate',
