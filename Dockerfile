@@ -29,13 +29,4 @@ COPY script/ ./script/
 COPY deployment/ ./deployment/
 COPY alembic.ini Makefile ./
 
-EXPOSE 8000
-
-# Development server with hot reload
-CMD ["uv", "run", "granian", "src.main:app", \
-     "--interface", "asgi", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--reload", \
-     "--reload-paths", "src", \
-     "--log-config", "src/platform/logging/granian_log_config.json"]
+# Runtime config (ports, command, env) is specified in docker-compose.yml
