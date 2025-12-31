@@ -101,6 +101,23 @@
       { "name": "J", "price": 800, "subsections": 10 }
     ]
   },
+  "100k": {
+    "total_seats": 100000,
+    "rows": 25,
+    "cols": 20,
+    "sections": [
+      { "name": "A", "price": 3000, "subsections": 20 },
+      { "name": "B", "price": 2800, "subsections": 20 },
+      { "name": "C", "price": 2500, "subsections": 20 },
+      { "name": "D", "price": 2200, "subsections": 20 },
+      { "name": "E", "price": 2000, "subsections": 20 },
+      { "name": "F", "price": 1800, "subsections": 20 },
+      { "name": "G", "price": 1500, "subsections": 20 },
+      { "name": "H", "price": 1200, "subsections": 20 },
+      { "name": "I", "price": 1000, "subsections": 20 },
+      { "name": "J", "price": 800, "subsections": 20 }
+    ]
+  },
   "200k": {
     "total_seats": 200000,
     "rows": 25,

@@ -23,6 +23,9 @@ SCALE_RESERVATION ?= 10
 # Default seats for seeding
 SEATS ?= 500
 
+# k6 MAX_SUBSECTION (REQUIRED for k6 tests): 50k=10, 100k=20, 200k=40
+MAX_SUBSECTION ?=
+
 
 # ==============================================================================
 # 🗄️ DATABASE
@@ -69,6 +72,9 @@ re-seed-5k:  ## 🔄 Reset and seed with 5,000 seats
 
 re-seed-50k:  ## 🔄 Reset and seed with 50,000 seats
 	@$(MAKE) re-seed SEATS=50k
+
+re-seed-100k:  ## 🔄 Reset and seed with 100,000 seats
+	@$(MAKE) re-seed SEATS=100k
 
 re-seed-200k:  ## 🔄 Reset and seed with 200,000 seats
 	@$(MAKE) re-seed SEATS=200k
@@ -172,24 +178,39 @@ t:  ## 🧪 Run tests in Docker (single process, -n 0)
 # 🎯 K6 LOAD TESTING
 # ==============================================================================
 
+# Helper to check MAX_SUBSECTION is set
+define check_max_subsection
+	@if [ -z "$(MAX_SUBSECTION)" ]; then \
+		echo "❌ Error: MAX_SUBSECTION is required!"; \
+		echo "   Usage: make $@ MAX_SUBSECTION=10  (50k=10, 100k=20, 200k=40)"; \
+		exit 1; \
+	fi
+endef
+
 .PHONY: k6-dev-load k6-dev-stress k6-dev-spike k6-prod-load k6-prod-stress k6-prod-spike
-k6-dev-load:  ## 🎯 Run k6 load test (dev: ~10K req, peak 900 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/dev-load-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/load-test.js
+k6-dev-load:  ## 🎯 Run k6 load test (dev: ~10K req, peak 900 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/dev/load-test.js
 
-k6-dev-stress:  ## 💥 Run k6 stress test (dev: peak 1000 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/dev-stress-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/stress-test.js
+k6-dev-stress:  ## 💥 Run k6 stress test (dev: peak 1000 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/dev/stress-test.js
 
-k6-dev-spike:  ## ⚡ Run k6 spike test (dev: spike to 1000 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/dev-spike-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run script/k6/dev/spike-test.js
+k6-dev-spike:  ## ⚡ Run k6 spike test (dev: spike to 1000 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/dev/spike-test.js
 
-k6-prod-load:  ## 🚀 Run k6 load test (prod: ~20K req, peak 1800 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/prod-load-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/load-test.js
+k6-prod-load:  ## 🚀 Run k6 load test (prod: ~20K req, peak 1800 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e API_HOST=$(API_HOST) -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/production/load-test.js
 
-k6-prod-stress:  ## 💥 Run k6 stress test (prod: peak 7000 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/prod-stress-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/stress-test.js
+k6-prod-stress:  ## 💥 Run k6 stress test (prod: peak 7000 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e API_HOST=$(API_HOST) -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/production/stress-test.js
 
-k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS)
-	@./script/k6/run-with-report.sh "script/k6/report/prod-spike-$$(date +%Y-%m-%d_%H-%M-%S).txt" k6 run -e API_HOST=$(API_HOST) script/k6/production/spike-test.js
+k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS) - requires MAX_SUBSECTION
+	$(call check_max_subsection)
+	@k6 run -e API_HOST=$(API_HOST) -e MAX_SUBSECTION=$(MAX_SUBSECTION) script/k6/production/spike-test.js
 
 # ==============================================================================
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
@@ -252,7 +273,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-{500,1k,2k,3k,5k,50k,200k} - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,3k,5k,50k,100k,200k} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
@@ -265,7 +286,7 @@ help:
 	@echo ""
 	@echo "⚡ LOAD TESTING"
 	@echo "  go-frst-{500,1k,2k,3k,5k,50k,200k} - Full reserved spike test"
-	@echo "  k6-dev-load / k6-dev-stress / k6-dev-spike / k6-prod-load / k6-prod-stress / k6-prod-spike"
+	@echo "  k6-dev-* / k6-prod-* MAX_SUBSECTION=N  (50k=10, 100k=20, 200k=40)"
 	@echo ""
 	@echo "☁️  AWS (make -f deployment/Makefile help)"
 	@echo "  dev-deploy-full / prod-deploy-full"
