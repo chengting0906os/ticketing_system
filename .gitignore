@@ -76,3 +76,6 @@ deployment/cdk/cdk.context.json
 # Profiling
 observability/profiling/*
 !observability/profiling/.gitkeep
+
+# Go compiled binaries
+script/go_client/full_reserved_spike_test
