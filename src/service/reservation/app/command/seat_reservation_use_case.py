@@ -100,17 +100,10 @@ class SeatReservationUseCase:
                     )
 
                 # ========== Step 3: Fetch Config (Kvrocks) ==========
-                with self.tracer.start_as_current_span(
-                    'use_case.fetch_seating_config',
-                    attributes={
-                        'event.id': request.event_id,
-                        'section': request.section_filter,
-                    },
-                ):
-                    config = await self.seating_config_handler.get_config(
-                        event_id=request.event_id,
-                        section=request.section_filter,
-                    )
+                config = await self.seating_config_handler.get_config(
+                    event_id=request.event_id,
+                    section=request.section_filter,
+                )
 
                 if existing_booking and existing_booking.status == BookingStatus.PENDING_PAYMENT:
                     Logger.base.info(

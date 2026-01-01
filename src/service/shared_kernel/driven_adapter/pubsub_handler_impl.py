@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 import orjson
+from opentelemetry import trace
 from redis.asyncio import Redis as AsyncRedis
 
 from src.platform.logging.loguru_io import Logger
@@ -52,6 +53,7 @@ class PubSubHandlerImpl(IPubSubHandler):
         self._throttle_interval = throttle_interval
         self._pending_timers: set[int] = set()  # event_ids with active timers
         self._event_stats_query_repo = event_stats_query_repo
+        self._tracer = trace.get_tracer(__name__)
 
     @Logger.io
     async def schedule_stats_broadcast(self, *, event_id: int) -> None:
@@ -61,34 +63,38 @@ class PubSubHandlerImpl(IPubSubHandler):
         If no timer is running for this event, starts a 1s timer.
         After timer expires, queries latest stats from DB and broadcasts via Redis.
         """
-        if event_id in self._pending_timers:
-            # Timer already running, no need to start another
-            return
+        with self._tracer.start_as_current_span(
+            'pubsub.schedule_stats_broadcast',
+            attributes={'event.id': event_id},
+        ):
+            if event_id in self._pending_timers:
+                # Timer already running, no need to start another
+                return
 
-        self._pending_timers.add(event_id)
+            self._pending_timers.add(event_id)
 
-        # Start timer task (fire and forget)
-        async def delayed_query_and_broadcast() -> None:
-            try:
-                await anyio.sleep(self._throttle_interval)
+            # Start timer task (fire and forget)
+            async def delayed_query_and_broadcast() -> None:
+                try:
+                    await anyio.sleep(self._throttle_interval)
 
-                if self._event_stats_query_repo is None:
-                    Logger.base.warning('⚠️ [Throttle] event_stats_query_repo not set')
-                    return
+                    if self._event_stats_query_repo is None:
+                        Logger.base.warning('⚠️ [Throttle] event_stats_query_repo not set')
+                        return
 
-                # Query latest stats from PostgreSQL
-                stats = await self._event_stats_query_repo.get_event_stats(event_id)
+                    # Query latest stats from PostgreSQL
+                    stats = await self._event_stats_query_repo.get_event_stats(event_id)
 
-                # Broadcast to Redis pub/sub
-                await self.broadcast_event_state(event_id=event_id, event_state=stats)
+                    # Broadcast to Redis pub/sub
+                    await self.broadcast_event_state(event_id=event_id, event_state=stats)
 
-            except Exception as e:
-                Logger.base.warning(f'⚠️ [Throttle] Failed for event={event_id}: {e}')
-            finally:
-                self._pending_timers.discard(event_id)
+                except Exception as e:
+                    Logger.base.warning(f'⚠️ [Throttle] Failed for event={event_id}: {e}')
+                finally:
+                    self._pending_timers.discard(event_id)
 
-        # Spawn fire-and-forget task (FastAPI runs on asyncio)
-        asyncio.create_task(delayed_query_and_broadcast())
+            # Spawn fire-and-forget task (FastAPI runs on asyncio)
+            asyncio.create_task(delayed_query_and_broadcast())
 
     def _channel_name(self, *, user_id: int, event_id: int) -> str:
         """Generate channel name for user+event combination"""
@@ -155,11 +161,19 @@ class PubSubHandlerImpl(IPubSubHandler):
             event_id: Event ID
             event_data: Event dictionary to publish
         """
-        channel = self._channel_name(user_id=user_id, event_id=event_id)
-        message = orjson.dumps(event_data)
+        with self._tracer.start_as_current_span(
+            'pubsub.publish_booking_update',
+            attributes={
+                'event.id': event_id,
+                'user.id': user_id,
+                'booking.id': event_data.get('booking_id', ''),
+            },
+        ):
+            channel = self._channel_name(user_id=user_id, event_id=event_id)
+            message = orjson.dumps(event_data)
 
-        subscribers = await self._redis.publish(channel, message)
-        Logger.base.info(f'📡 [KVROCKS] Published to {channel}: subscribers={subscribers}')
+            subscribers = await self._redis.publish(channel, message)
+            Logger.base.info(f'📡 [KVROCKS] Published to {channel}: subscribers={subscribers}')
 
     @Logger.io
     async def broadcast_event_state(self, *, event_id: int, event_state: dict) -> None:

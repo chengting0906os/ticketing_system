@@ -50,7 +50,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
         Uses CTE to atomically create booking and update tickets in single query.
         """
         with self.tracer.start_as_current_span(
-            'reservation.repo.create_booking_with_tickets',
+            'repo.create_booking_with_tickets',
             attributes={
                 'booking.id': str(booking_id),
                 'event.id': event_id,
