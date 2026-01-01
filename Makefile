@@ -79,6 +79,9 @@ re-seed-100k:  ## 🔄 Reset and seed with 100,000 seats
 re-seed-200k:  ## 🔄 Reset and seed with 200,000 seats
 	@$(MAKE) re-seed SEATS=200k
 
+re-seed-400k:  ## 🔄 Reset and seed with 400,000 seats
+	@$(MAKE) re-seed SEATS=400k
+
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U postgres -d ticketing_system_db
 
@@ -273,7 +276,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-{500,1k,2k,3k,5k,50k,100k,200k} - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,3k,5k,50k,100k,200k,400k} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"

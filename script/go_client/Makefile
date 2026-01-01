@@ -53,9 +53,9 @@ clean:  ## 🧹 Remove all binaries
 # ==============================================================================
 # 🚀 FULL RESERVED SPIKE TEST (Sellout Testing)
 # ==============================================================================
-# Environments: 500, 1k, 2k, 3k, 5k, 50k, 200k
+# Environments: 500, 1k, 2k, 3k, 5k, 50k, 200k, 400k
 
-.PHONY: frst frst-500 frst-1k frst-2k frst-3k frst-5k frst-50k frst-200k
+.PHONY: frst frst-500 frst-1k frst-2k frst-3k frst-5k frst-50k frst-200k frst-400k
 
 frst: build-spike-test  ## 🚀 Full Reserved Spike Test (SEATS=500 WORKERS=100)
 	@WORKERS=$${WORKERS:-100}; \
@@ -83,6 +83,9 @@ frst-50k: build-spike-test  ## 🚀 50,000 seats
 
 frst-200k: build-spike-test  ## 🚀 200,000 seats
 	@./$(SPIKE_TEST_BIN) -env 200k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
+
+frst-400k: build-spike-test  ## 🚀 400,000 seats
+	@./$(SPIKE_TEST_BIN) -env 400k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 # ==============================================================================
 # 📊 UTILITIES
@@ -120,6 +123,7 @@ help:  ## 📖 Show this help
 	@echo "  frst-5k            5,000 seats"
 	@echo "  frst-50k           50,000 seats"
 	@echo "  frst-200k          200,000 seats"
+	@echo "  frst-400k          400,000 seats"
 	@echo ""
 	@echo "$(COLOR_YELLOW)💡 EXAMPLES$(COLOR_RESET)"
 	@echo "  make frst-5k                        # 5K sellout test"
