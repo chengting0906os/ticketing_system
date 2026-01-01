@@ -48,7 +48,6 @@ REPOSITORIES=(
 
 # Docker Configuration
 DOCKERFILE="Dockerfile"
-# BUILD_TARGET removed - using single-stage Dockerfile
 
 # =============================================================================
 # Helper Functions
@@ -155,7 +154,7 @@ build_and_push() {
 
     log_info "Repository: $repo_name"
     log_info "Image URI: $image_uri"
-    log_info "Tags: $image_tag, ${ENVIRONMENT}-latest, latest"
+    log_info "Tags: $image_tag, latest"
 
     # Ensure ECR repository exists
     if ! aws ecr describe-repositories --repository-names "$repo_name" --region "$AWS_REGION" &>/dev/null; then
@@ -173,14 +172,9 @@ build_and_push() {
     log_info "Building Docker image..."
     local build_args="--platform linux/amd64 \
         --tag ${image_uri}:${image_tag} \
-        --tag ${image_uri}:${ENVIRONMENT}-latest \
         --tag ${image_uri}:latest \
-        --build-arg SERVICE_NAME=$service_name \
-        --build-arg ENVIRONMENT=$ENVIRONMENT \
         --file $dockerfile \
         $build_context"
-
-    # Single-stage Dockerfile, no --target needed
 
     if ! docker build $build_args 2>&1 | grep -E "^(#|=>|ERROR)" ; then
         log_error "Build failed for $service_name"
@@ -189,7 +183,7 @@ build_and_push() {
     log_success "Build completed"
 
     # Push all tags
-    for tag in "$image_tag" "${ENVIRONMENT}-latest" "latest"; do
+    for tag in "$image_tag" "latest"; do
         log_info "Pushing tag: $tag"
         if docker push "${image_uri}:${tag}" >/dev/null 2>&1; then
             log_success "Pushed: $tag"
