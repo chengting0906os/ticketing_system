@@ -59,24 +59,25 @@ func loadSeatingConfig(env string) (EnvironmentConfig, error) {
 	}
 
 	// Expand to internal format
-	return expandConfig(compact), nil
+	return expandConfig(compact)
 }
 
 // expandConfig expands compact format to internal format
-func expandConfig(compact CompactEnvironmentConfig) EnvironmentConfig {
+func expandConfig(compact CompactEnvironmentConfig) (EnvironmentConfig, error) {
+	if compact.Rows == 0 {
+		return EnvironmentConfig{}, fmt.Errorf("config error: 'rows' is required but not specified")
+	}
+	if compact.Cols == 0 {
+		return EnvironmentConfig{}, fmt.Errorf("config error: 'cols' is required but not specified")
+	}
+
 	config := EnvironmentConfig{
 		TotalSeats: compact.TotalSeats,
 		Sections:   make([]Section, 0, len(compact.Sections)),
 	}
 
 	rows := compact.Rows
-	if rows == 0 {
-		rows = 1
-	}
 	cols := compact.Cols
-	if cols == 0 {
-		cols = 10
-	}
 
 	for _, cs := range compact.Sections {
 		section := Section{
@@ -94,7 +95,7 @@ func expandConfig(compact CompactEnvironmentConfig) EnvironmentConfig {
 		config.Sections = append(config.Sections, section)
 	}
 
-	return config
+	return config, nil
 }
 
 // login performs user login and returns cookie jar with session
@@ -193,8 +194,8 @@ func buyTicketsAsync(client *http.Client, host string, eventID int, section stri
 				return
 			}
 
-			// No seats available - stop trying this subsection
-			if resp.StatusCode == 404 || (resp.StatusCode == 400 && bytes.Contains(lastBody, []byte("No available seats"))) {
+			// No seats available - stop trying
+			if resp.StatusCode == 400 && bytes.Contains(respBody, []byte("No available seats")) {
 				resultChan <- BookingResult{
 					TicketsPurchased: 0,
 					SoldOut:          true,
@@ -204,21 +205,21 @@ func buyTicketsAsync(client *http.Client, host string, eventID int, section stri
 				return
 			}
 
-			// Client errors (4xx) - don't retry except 429 (rate limit)
-			if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-				resultChan <- BookingResult{
-					TicketsPurchased: 0,
-					SoldOut:          false,
-					Err:              fmt.Errorf("client error %d: %s", resp.StatusCode, string(respBody)),
-					Latency:          time.Since(start),
+			// Retry only on 429 (rate limit) or 5xx (server error)
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+				if attempt < maxRetries-1 {
+					continue
 				}
-				return
 			}
 
-			// Server errors (5xx) or rate limit (429) - retry
-			if attempt < maxRetries-1 {
-				continue
+			// All other errors - fail immediately
+			resultChan <- BookingResult{
+				TicketsPurchased: 0,
+				SoldOut:          false,
+				Err:              fmt.Errorf("request failed: %d %s", resp.StatusCode, string(respBody)),
+				Latency:          time.Since(start),
 			}
+			return
 		}
 
 		resultChan <- BookingResult{
@@ -252,7 +253,6 @@ func worker(
 	lastRequestTime *atomic.Value,
 	lastResponseTime *atomic.Value,
 	requestCount *atomic.Int64,
-	batchSize int,
 ) {
 	defer wg.Done()
 
@@ -268,48 +268,31 @@ func worker(
 		// - production: 25 × 20 = 500 tickets
 		maxTicketsPerSubsection := task.Subsection.Rows * task.Subsection.Cols
 
-		// BATCH SEND: Configurable batch size for subsection requests
 		// Fixed quantity: always buy 1 ticket per request
 		quantity := 1
-
-		// Determine effective batch size (0 means send all at once)
-		effectiveBatchSize := batchSize
-		if effectiveBatchSize == 0 || effectiveBatchSize > maxTicketsPerSubsection {
-			effectiveBatchSize = maxTicketsPerSubsection
-		}
 
 		// ═══════════════════════════════════════════════════════════════
 		// PHASE 1: Send ALL requests (fire-and-forget, no waiting)
 		// ═══════════════════════════════════════════════════════════════
-		var allResultChans []<-chan BookingResult
+		allResultChans := make([]<-chan BookingResult, 0, maxTicketsPerSubsection)
 
-		for sent := 0; sent < maxTicketsPerSubsection; sent += effectiveBatchSize {
-			// Calculate how many to send in this batch
-			remaining := maxTicketsPerSubsection - sent
-			currentBatchSize := effectiveBatchSize
-			if currentBatchSize > remaining {
-				currentBatchSize = remaining
+		for i := 0; i < maxTicketsPerSubsection; i++ {
+			// Track first request time
+			if firstRequestTime.Load() == nil {
+				firstRequestTime.CompareAndSwap(nil, time.Now())
 			}
+			requestCount.Add(1)
 
-			// Send batch of requests (non-blocking)
-			for i := 0; i < currentBatchSize; i++ {
-				// Track first request time
-				if firstRequestTime.Load() == nil {
-					firstRequestTime.CompareAndSwap(nil, time.Now())
-				}
-				requestCount.Add(1)
-
-				// Fire async request (doesn't block)
-				resultChan := buyTicketsAsync(
-					client,
-					host,
-					eventID,
-					task.Section.Name,
-					task.Subsection.Number,
-					quantity,
-				)
-				allResultChans = append(allResultChans, resultChan)
-			}
+			// Fire async request (doesn't block)
+			resultChan := buyTicketsAsync(
+				client,
+				host,
+				eventID,
+				task.Section.Name,
+				task.Subsection.Number,
+				quantity,
+			)
+			allResultChans = append(allResultChans, resultChan)
 		}
 
 		// ALL requests sent - record timing (accurate send time)
@@ -351,23 +334,18 @@ func worker(
 }
 
 func main() {
-	// Note: As of Go 1.20, rand is automatically seeded at program startup
-	// No need to call rand.Seed() manually
-
 	// Parse command line flags
 	var (
 		host       string
 		eventID    int
 		env        string
 		numWorkers int
-		batchSize  int
 	)
 
 	flag.StringVar(&host, "host", "", "API host (overrides API_HOST env var)")
 	flag.IntVar(&eventID, "event", 1, "Event ID")
 	flag.StringVar(&env, "env", "local_dev", "Environment (local_dev, development, staging, production)")
-	flag.IntVar(&numWorkers, "workers", 500, "Number of concurrent workers (default: 500 for max throughput)")
-	flag.IntVar(&batchSize, "batch", 0, "Batch size for subsection requests (0 = send all at once, default)")
+	flag.IntVar(&numWorkers, "workers", 100, "Number of concurrent workers")
 	flag.Parse()
 
 	// Use API_HOST env var if -host flag not provided
@@ -470,7 +448,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(client, host, eventID, tasks, results, &wg, &firstRequestTime, &lastRequestTime, &lastResponseTime, &requestCount, batchSize)
+		go worker(client, host, eventID, tasks, results, &wg, &firstRequestTime, &lastRequestTime, &lastResponseTime, &requestCount)
 	}
 	fmt.Printf("   ✅ All workers ready\n\n")
 
@@ -505,8 +483,8 @@ func main() {
 	completedSubsections := 0
 	totalSubsections := totalTasks // Dynamic based on config
 
-	// Collect all latencies
-	var allLatencies []time.Duration
+	// Collect all latencies (pre-allocate for expected capacity)
+	allLatencies := make([]time.Duration, 0, totalSeats)
 
 	for result := range results {
 		totalTickets.Add(int64(result.TicketsPurchased))

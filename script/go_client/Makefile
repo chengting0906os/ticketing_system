@@ -57,33 +57,32 @@ clean:  ## 🧹 Remove all binaries
 
 .PHONY: frst frst-500 frst-1k frst-2k frst-3k frst-5k frst-50k frst-200k
 
-frst: build-spike-test  ## 🚀 Full Reserved Spike Test (SEATS=500 WORKERS=100 BATCH=1)
+frst: build-spike-test  ## 🚀 Full Reserved Spike Test (SEATS=500 WORKERS=100)
 	@WORKERS=$${WORKERS:-100}; \
-	BATCH=$${BATCH:-1}; \
 	SEATS=$${SEATS:-500}; \
-	echo "$(COLOR_BLUE)🚀 Running FULL reserved spike test (Seats: $$SEATS, Workers: $$WORKERS, Batch: $$BATCH)...$(COLOR_RESET)"; \
-	./$(SPIKE_TEST_BIN) -env $$SEATS -event 1 -workers $$WORKERS -batch $$BATCH -host $(API_HOST)
+	echo "$(COLOR_BLUE)🚀 Running FULL reserved spike test (Seats: $$SEATS, Workers: $$WORKERS)...$(COLOR_RESET)"; \
+	./$(SPIKE_TEST_BIN) -env $$SEATS -event 1 -workers $$WORKERS -host $(API_HOST)
 
 frst-500: build-spike-test  ## 🚀 500 seats
-	@./$(SPIKE_TEST_BIN) -env 500 -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 500 -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-1k: build-spike-test  ## 🚀 1,000 seats
-	@./$(SPIKE_TEST_BIN) -env 1k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 1k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-2k: build-spike-test  ## 🚀 2,000 seats
-	@./$(SPIKE_TEST_BIN) -env 2k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 2k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-3k: build-spike-test  ## 🚀 3,000 seats
-	@./$(SPIKE_TEST_BIN) -env 3k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 3k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-5k: build-spike-test  ## 🚀 5,000 seats
-	@./$(SPIKE_TEST_BIN) -env 5k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 5k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-50k: build-spike-test  ## 🚀 50,000 seats
-	@./$(SPIKE_TEST_BIN) -env 50k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 50k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 frst-200k: build-spike-test  ## 🚀 200,000 seats
-	@./$(SPIKE_TEST_BIN) -env 200k -event 1 -workers $${WORKERS:-100} -batch $${BATCH:-1} -host $(API_HOST)
+	@./$(SPIKE_TEST_BIN) -env 200k -event 1 -workers $${WORKERS:-100} -host $(API_HOST)
 
 # ==============================================================================
 # 📊 UTILITIES
@@ -113,7 +112,7 @@ help:  ## 📖 Show this help
 	@echo "  clean              Remove all binaries"
 	@echo ""
 	@echo "$(COLOR_CYAN)🚀 FULL RESERVED SPIKE TEST (Sellout)$(COLOR_RESET)"
-	@echo "  frst               Auto-detect env (WORKERS=100 BATCH=1)"
+	@echo "  frst               Auto-detect env (WORKERS=100)"
 	@echo "  frst-500           500 seats"
 	@echo "  frst-1k            1,000 seats"
 	@echo "  frst-2k            2,000 seats"
