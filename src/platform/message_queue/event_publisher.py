@@ -12,6 +12,7 @@ Features:
 - True async - doesn't block event loop
 """
 
+import os
 from typing import Literal
 
 from confluent_kafka.experimental.aio import AIOProducer
@@ -33,9 +34,10 @@ async def _get_global_producer() -> AIOProducer:
         _global_producer = AIOProducer(
             {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
-                # === Reliability Settings ===
-                'enable.idempotence': True,  # Exactly-once semantics
-                'acks': 'all',  # Wait for all replicas
+                'client.id': f'ticketing-producer-{os.getpid()}',
+                # === Reliability Settings (At Least Once) ===
+                'enable.idempotence': True,  # Prevent duplicates on producer retry
+                'acks': 'all',  # Wait for all replicas to acknowledge
                 'retries': 3,
                 # === Batching for Throughput ===
                 'linger.ms': 50,  # Wait up to 50ms for batching

@@ -10,6 +10,7 @@ Key differences from sync version:
 - Handlers must be async
 """
 
+import os
 from abc import ABC, abstractmethod
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -156,6 +157,7 @@ class BaseKafkaConsumer(ABC):
         return AIOProducer(
             {
                 'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
+                'client.id': f'{self.service_name}-dlq-producer-{os.getpid()}',
                 'acks': 'all',
                 'retries': 3,
             }
