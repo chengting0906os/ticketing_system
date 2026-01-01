@@ -12,9 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from src.platform.config.core_setting import settings
 from src.platform.exception.exception_handlers import register_exception_handlers
@@ -92,14 +90,9 @@ def create_app(
 
 
 def _register_common_endpoints(app: FastAPI) -> None:
-    """Register health and metrics endpoints."""
+    """Register health endpoint."""
 
     @app.get('/health')
     async def health_check() -> dict[str, str]:
         """Health check endpoint for container orchestration."""
         return {'status': 'healthy', 'service': 'Ticketing System'}
-
-    @app.get('/metrics')
-    async def get_metrics() -> PlainTextResponse:
-        """Prometheus metrics endpoint."""
-        return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

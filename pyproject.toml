@@ -36,9 +36,7 @@ dependencies = [
     "attrs>=24.0.0",
     "dependency-injector>=4.48.2",
     "loguru>=0.7.3",
-    # Monitoring
-    "prometheus-client>=0.20.0",
-    "prometheus-fastapi-instrumentator>=7.0.0",
+    # Monitoring (OpenTelemetry)
     "opentelemetry-api>=1.30.0",
     "opentelemetry-sdk>=1.30.0",
     "opentelemetry-instrumentation-fastapi>=0.51b0",
