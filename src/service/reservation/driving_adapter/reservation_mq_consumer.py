@@ -158,9 +158,7 @@ class ReservationConsumer(BaseKafkaConsumer):
             else:
                 raise ValueError(f'Unknown message_type: {message_type}')
 
-            Logger.base.info(
-                f'[RESERVATION-{self.instance_id}] type={message_type} booking_id={booking_id}'
-            )
+            Logger.base.info(f'📥 [RESERVATION] type={message_type} booking_id={booking_id}')
 
             # Extract trace context from message
             extract_trace_context(
@@ -201,9 +199,7 @@ class ReservationConsumer(BaseKafkaConsumer):
         """Handle reservation request (async)."""
         booking_id = message.get('booking_id', 'unknown')
 
-        Logger.base.info(
-            f'\033[94m[RESERVATION-{self.instance_id}] Processing: booking_id={booking_id}\033[0m'
-        )
+        Logger.base.info(f'[RESERVATION] Processing: booking_id={booking_id}')
 
         await self._handle_reservation_async(message)
         return {'success': True}

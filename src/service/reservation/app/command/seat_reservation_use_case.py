@@ -165,9 +165,6 @@ class SeatReservationUseCase:
                         total_price=total_price,
                     )
                 )
-                Logger.base.info(
-                    f'[RESERVATION] PostgreSQL write complete for booking {request.booking_id}'
-                )
 
                 # ========== Step 6 + 7: Kvrocks + SSE ==========
 

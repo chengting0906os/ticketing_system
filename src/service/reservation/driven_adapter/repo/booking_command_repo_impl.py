@@ -192,10 +192,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     )
                     tickets.append(ticket)
 
-                Logger.base.info(
-                    f'✅ [RESERVATION→PG] Created booking {booking_id} in PENDING_PAYMENT '
-                    f'with {len(tickets)} RESERVED tickets'
-                )
+                Logger.base.info(f'[RESERVATION→PG] booking {booking_id} ({len(tickets)} tickets)')
 
                 return {
                     'booking': created_booking,
@@ -307,10 +304,7 @@ class BookingCommandRepoImpl(IBookingCommandRepo):
                     paid_at=booking_row['paid_at'],
                 )
 
-                Logger.base.info(
-                    f'✅ [RESERVATION→PG] Created booking {booking_id} in FAILED status '
-                    f'(requested {quantity} seats in {section}-{subsection})'
-                )
+                Logger.base.info(f'❌ [RESERVATION→PG] booking {booking_id} FAILED')
 
                 return created_booking
 

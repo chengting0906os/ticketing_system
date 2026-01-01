@@ -171,9 +171,8 @@ class PubSubHandlerImpl(IPubSubHandler):
         ):
             channel = self._channel_name(user_id=user_id, event_id=event_id)
             message = orjson.dumps(event_data)
-
-            subscribers = await self._redis.publish(channel, message)
-            Logger.base.info(f'📡 [KVROCKS] Published to {channel}: subscribers={subscribers}')
+            await self._redis.publish(channel, message)
+            Logger.base.info(f'📡 [KVROCKS] Published to {channel}')
 
     @Logger.io
     async def broadcast_event_state(self, *, event_id: int, event_state: dict) -> None:
