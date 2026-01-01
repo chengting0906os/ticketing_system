@@ -70,6 +70,9 @@ re-seed-3k:  ## 🔄 Reset and seed with 3,000 seats
 re-seed-5k:  ## 🔄 Reset and seed with 5,000 seats
 	@$(MAKE) re-seed SEATS=5k
 
+re-seed-10k:  ## 🔄 Reset and seed with 10,000 seats
+	@$(MAKE) re-seed SEATS=10k
+
 re-seed-50k:  ## 🔄 Reset and seed with 50,000 seats
 	@$(MAKE) re-seed SEATS=50k
 
