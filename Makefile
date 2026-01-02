@@ -85,6 +85,9 @@ re-seed-200k:  ## 🔄 Reset and seed with 200,000 seats
 re-seed-400k:  ## 🔄 Reset and seed with 400,000 seats
 	@$(MAKE) re-seed SEATS=400k
 
+re-seed-1m:  ## 🔄 Reset and seed with 1,000,000 seats
+	@$(MAKE) re-seed SEATS=1m
+
 psql:  ## 🐘 Connect to PostgreSQL
 	@docker exec -it ticketing_system_db psql -U postgres -d ticketing_system_db
 
@@ -222,7 +225,7 @@ k6-prod-spike:  ## ⚡ Run k6 spike test (prod: spike to 5000 RPS) - requires MA
 # ⚡ LOAD TESTING (Auto-forwarded to script/go_client/Makefile)
 # ==============================================================================
 # Usage: make go-<target>
-#   make go-frst-{500,1k,2k,3k,5k,50k,200k}  # Full reserved spike test
+#   make go-frst-{500,1k,2k,3k,5k,50k,200k,400k,1m}  # Full reserved spike test
 #   make go-help               # Show all go_client commands
 # ==============================================================================
 
@@ -279,7 +282,7 @@ help:
 	@echo ""
 	@echo "🗄️  DATABASE"
 	@echo "  migrate-up / down / new / history"
-	@echo "  re-seed-{500,1k,2k,3k,5k,50k,100k,200k,400k} - Seed with different sizes"
+	@echo "  re-seed-{500,1k,2k,3k,5k,50k,100k,200k,400k,1m} - Seed with different sizes"
 	@echo "  psql                        - Connect to PostgreSQL"
 	@echo ""
 	@echo "🧪 TESTING"
@@ -291,7 +294,7 @@ help:
 	@echo "  format / lint / pyre / clean"
 	@echo ""
 	@echo "⚡ LOAD TESTING"
-	@echo "  go-frst-{500,1k,2k,3k,5k,50k,200k} - Full reserved spike test"
+	@echo "  go-frst-{500,1k,2k,3k,5k,50k,200k,400k,1m} - Full reserved spike test"
 	@echo "  k6-dev-* / k6-prod-* MAX_SUBSECTION=N  (50k=10, 100k=20, 200k=40)"
 	@echo ""
 	@echo "☁️  AWS (make -f deployment/Makefile help)"
