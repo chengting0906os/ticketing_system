@@ -7,7 +7,6 @@ Uses EventTicketingAggregate as the unit of operation to ensure aggregate consis
 Performance: Using raw SQL with asyncpg for maximum performance
 """
 
-from datetime import datetime, timezone
 import time
 from typing import List
 
@@ -270,82 +269,19 @@ class EventTicketingCommandRepoImpl(IEventTicketingCommandRepo):
         return event_aggregate
 
     @Logger.io
-    async def update_event_aggregate(
-        self, *, event_aggregate: EventTicketingAggregate
-    ) -> EventTicketingAggregate:
-        """Update Event Aggregate"""
-        if not event_aggregate.event.id:
-            raise ValueError('Event must have an ID to be updated')
-
-        async with (await get_asyncpg_pool()).acquire() as conn, conn.transaction():
-            # 1. Update Event
+    async def update_event_status(self, *, event_id: int, status: str) -> None:
+        """Update Event status only (without updating tickets)."""
+        async with (await get_asyncpg_pool()).acquire() as conn:
             await conn.execute(
                 """
-                    UPDATE event
-                    SET name = $1,
-                        description = $2,
-                        venue_name = $3,
-                        seating_config = $4::jsonb,
-                        is_active = $5,
-                        status = $6
-                    WHERE id = $7
-                    """,
-                event_aggregate.event.name,
-                event_aggregate.event.description,
-                event_aggregate.event.venue_name,
-                orjson.dumps(event_aggregate.event.seating_config).decode(),
-                event_aggregate.event.is_active,
-                event_aggregate.event.status.value,
-                event_aggregate.event.id,
+                UPDATE event
+                SET status = $1
+                WHERE id = $2
+                """,
+                status,
+                event_id,
             )
-
-            # 2. Update Tickets
-            for ticket in event_aggregate.tickets:
-                if ticket.id:
-                    # Update existing ticket
-                    await conn.execute(
-                        """
-                            UPDATE ticket
-                            SET status = $1,
-                                buyer_id = $2,
-                                reserved_at = $3,
-                                updated_at = $4
-                            WHERE id = $5
-                            """,
-                        ticket.status.value,
-                        ticket.buyer_id,
-                        ticket.reserved_at,
-                        datetime.now(timezone.utc),
-                        ticket.id,
-                    )
-                else:
-                    # Insert new ticket
-                    ticket_row = await conn.fetchrow(
-                        """
-                            INSERT INTO ticket (
-                                event_id, section, subsection, row_number, seat_number,
-                                price, status, buyer_id, reserved_at
-                            )
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                            RETURNING id
-                            """,
-                        event_aggregate.event.id,
-                        ticket.section,
-                        ticket.subsection,
-                        ticket.row,
-                        ticket.seat,
-                        ticket.price,
-                        ticket.status.value,
-                        ticket.buyer_id,
-                        ticket.reserved_at,
-                    )
-                    ticket.id = ticket_row['id']
-
-            Logger.base.info(
-                f'🔄 [UPDATE_AGGREGATE] Updated event {event_aggregate.event.id} with {len(event_aggregate.tickets)} tickets'
-            )
-
-            return event_aggregate
+            Logger.base.info(f'🔄 [UPDATE_STATUS] Updated event {event_id} status to {status}')
 
     @Logger.io
     async def delete_event_aggregate(self, *, event_id: int) -> bool:

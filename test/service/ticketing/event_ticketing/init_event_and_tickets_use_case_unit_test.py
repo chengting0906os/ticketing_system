@@ -32,7 +32,7 @@ class TestCreateEventKafkaSetup:
         repo = MagicMock()
         repo.create_event_aggregate = AsyncMock()
         repo.create_event_aggregate_with_batch_tickets = AsyncMock()
-        repo.update_event_aggregate = AsyncMock()
+        repo.update_event_status = AsyncMock()
         repo.delete_event_aggregate = AsyncMock()
         return repo
 
@@ -132,11 +132,8 @@ class TestCreateEventKafkaSetup:
             call_order.append('init_seats')
             return {'success': True, 'total_seats': 100, 'sections_count': 1}
 
-        async def track_update_event(
-            *, event_aggregate: EventTicketingAggregate
-        ) -> EventTicketingAggregate:
-            call_order.append('update_event')
-            return created_aggregate
+        async def track_update_status(*, event_id: int, status: str) -> None:
+            call_order.append('update_status')
 
         async def track_kafka_setup(*, event_id: int, seating_config: dict[str, Any]) -> None:
             call_order.append('kafka_setup')
@@ -148,7 +145,7 @@ class TestCreateEventKafkaSetup:
         mock_init_state_handler.initialize_seats_from_config = AsyncMock(
             side_effect=track_init_seats
         )
-        mock_event_repo.update_event_aggregate = AsyncMock(side_effect=track_update_event)
+        mock_event_repo.update_event_status = AsyncMock(side_effect=track_update_status)
         mock_mq_orchestrator.setup_kafka_topics_and_partitions = AsyncMock(
             side_effect=track_kafka_setup
         )
@@ -161,7 +158,7 @@ class TestCreateEventKafkaSetup:
             'create_event',
             'batch_tickets',
             'init_seats',
-            'update_event',
+            'update_status',
             'kafka_setup',
         ]
 
@@ -180,7 +177,7 @@ class TestCreateEventKafkaSetup:
         mock_event_repo.create_event_aggregate_with_batch_tickets = AsyncMock(
             return_value=created_aggregate
         )
-        mock_event_repo.update_event_aggregate = AsyncMock(return_value=created_aggregate)
+        mock_event_repo.update_event_status = AsyncMock()
         mock_mq_orchestrator.setup_kafka_topics_and_partitions = AsyncMock(
             side_effect=Exception('Kafka connection failed')
         )
@@ -210,7 +207,7 @@ class TestCreateEventKafkaSetup:
         mock_event_repo.create_event_aggregate_with_batch_tickets = AsyncMock(
             return_value=created_aggregate
         )
-        mock_event_repo.update_event_aggregate = AsyncMock(return_value=created_aggregate)
+        mock_event_repo.update_event_status = AsyncMock()
 
         # When
         await use_case.create_event_and_tickets(**valid_event_data)

@@ -33,10 +33,8 @@ class IEventTicketingCommandRepo(ABC):
         pass
 
     @abstractmethod
-    async def update_event_aggregate(
-        self, *, event_aggregate: EventTicketingAggregate
-    ) -> EventTicketingAggregate:
-        """Update Event Aggregate."""
+    async def update_event_status(self, *, event_id: int, status: str) -> None:
+        """Update Event status only (without updating tickets)."""
         pass
 
     @abstractmethod
