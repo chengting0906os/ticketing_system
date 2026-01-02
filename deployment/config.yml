@@ -11,8 +11,8 @@ development:
 
   services:
     ticketing:
-      min_tasks: 1
-      max_tasks: 100
+      min_tasks: 25
+      max_tasks: 25
       task_cpu: 2048 # 2 vCPU
       task_memory: 4096 # 4 GB
       workers: 1
@@ -20,7 +20,7 @@ development:
       memory_threshold: 60
 
     reservation:
-      min_tasks: 1
+      min_tasks: 10
       max_tasks: 10
       task_cpu: 2048 # 2 vCPU
       task_memory: 4096 # 4 GB
@@ -44,7 +44,7 @@ development:
     storage_gb: 30
 
   rds_postgres:
-    instance_type: c6gd.2xlarge # 8 vCPU, 32 GB RAM, Graviton2 ARM + NVMe
+    instance_type: m8g.xlarge # 4 vCPU, 16 GB RAM, Graviton4 ARM + NVMe
     storage_gb: 20
     max_storage_gb: 100 # Auto-scaling limit
 
