@@ -39,8 +39,8 @@ class LuaScripts:
             / 'lua_scripts'
         )
 
-        # Load find_consecutive_seats.lua
-        find_seats_path = lua_scripts_dir / 'find_consecutive_seats.lua'
+        # Load find_best_available_seats.lua
+        find_seats_path = lua_scripts_dir / 'find_best_available_seats.lua'
         if find_seats_path.exists():
             self._find_consecutive_seats_source = find_seats_path.read_text()
             self._find_consecutive_seats_script = client.register_script(

@@ -55,7 +55,7 @@ for row = 1, rows do
         local seat_index = calculate_seat_index(row, seat_num, cols)
         table.insert(bitfield_args, 'GET')      -- Append
         table.insert(bitfield_args, 'u1')       -- Append GET u1 (unsigned 1-bit integer) command
-        table.insert(bitfield_args, seat_index) -- Append (no * 2 needed for 1-bit)
+        table.insert(bitfield_args, seat_index) 
     end
 
     -- Execute BITFIELD: 1 command instead of cols × 2 GETBIT
