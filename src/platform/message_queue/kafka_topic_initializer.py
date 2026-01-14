@@ -63,11 +63,8 @@ class KafkaTopicInitializer:
                 NewTopic(
                     topic=topic,
                     num_partitions=self.total_partitions,
-                    replication_factor=1,
-                    config={
-                        'cleanup.policy': 'delete',
-                        'retention.ms': '604800000',  # 7 days
-                    },
+                    replication_factor=settings.KAFKA_REPLICATION_FACTOR,
+                    config=settings.KAFKA_TOPIC_CONFIG,
                 )
                 for topic in topics_to_create
             ]
