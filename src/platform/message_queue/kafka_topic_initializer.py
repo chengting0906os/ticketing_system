@@ -24,11 +24,9 @@ class KafkaTopicInitializer:
     Kafka brokers via network, making it container-friendly.
     """
 
-    def __init__(
-        self, *, bootstrap_servers: str | None = None, total_partitions: int = 100
-    ) -> None:
-        self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
-        self.total_partitions = total_partitions
+    def __init__(self) -> None:
+        self.bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        self.total_partitions = settings.KAFKA_TOTAL_PARTITIONS
         self.admin_client = AdminClient({'bootstrap.servers': self.bootstrap_servers})
 
     def ensure_topics_exist(self, *, event_id: int) -> bool:
@@ -63,11 +61,8 @@ class KafkaTopicInitializer:
                 NewTopic(
                     topic=topic,
                     num_partitions=self.total_partitions,
-                    replication_factor=1,
-                    config={
-                        'cleanup.policy': 'delete',
-                        'retention.ms': '604800000',  # 7 days
-                    },
+                    replication_factor=settings.KAFKA_REPLICATION_FACTOR,
+                    config=settings.KAFKA_TOPIC_CONFIG,
                 )
                 for topic in topics_to_create
             ]

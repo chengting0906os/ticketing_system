@@ -26,14 +26,9 @@ class KafkaConfigService(IKafkaConfigService):
     Note: Consumer management is handled by Docker Compose
     """
 
-    def __init__(
-        self,
-        *,
-        total_partitions: int = 100,
-        bootstrap_servers: str | None = None,
-    ) -> None:
-        self.total_partitions = total_partitions
-        self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
+    def __init__(self) -> None:
+        self.total_partitions = settings.KAFKA_TOTAL_PARTITIONS
+        self.bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
         self._admin_client: AdminClient | None = None
         self._kafka_reachable: bool | None = None
 
@@ -134,11 +129,8 @@ class KafkaConfigService(IKafkaConfigService):
             NewTopic(
                 topic=topic,
                 num_partitions=self.total_partitions,
-                replication_factor=1,
-                config={
-                    'cleanup.policy': 'delete',
-                    'retention.ms': '604800000',  # 7 days
-                },
+                replication_factor=settings.KAFKA_REPLICATION_FACTOR,
+                config=settings.KAFKA_TOPIC_CONFIG,
             )
             for topic in topics_to_create
         ]

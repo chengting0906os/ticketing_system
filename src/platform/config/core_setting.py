@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     REDIS_DECODE_RESPONSES: bool = True  # Kvrocks also uses Redis protocol
 
     # Kvrocks Connection Pool Configuration
-    KVROCKS_POOL_MAX_CONNECTIONS: int = 100  # Max connections in pool
+    KVROCKS_POOL_MAX_CONNECTIONS: int = 10000  # Max connections in pool
     KVROCKS_POOL_SOCKET_TIMEOUT: int = (
         30  # Socket read/write timeout (seconds) - AWS VPC can be slower
     )
@@ -160,9 +160,15 @@ class Settings(BaseSettings):
     KAFKA_PRODUCER_RETRIES: int = 3
     KAFKA_CONSUMER_AUTO_OFFSET_RESET: str = 'latest'
     KAFKA_TOTAL_PARTITIONS: int = 100  # Total partitions per topic for even distribution
+    KAFKA_REPLICATION_FACTOR: int = 3  # Topic replication factor for high availability
+    KAFKA_TOPIC_RETENTION_MS: int = 604800000  # Topic retention: 7 days (in milliseconds)
     SUBSECTIONS_PER_SECTION: int = (
         10  # Number of subsections per section (for partition calculation)
     )
+
+    @property
+    def KAFKA_TOPIC_CONFIG(self) -> dict[str, str]:
+        return {'retention.ms': str(self.KAFKA_TOPIC_RETENTION_MS)}
 
     @property
     def KAFKA_PRODUCER_INSTANCE_ID(self) -> str:
