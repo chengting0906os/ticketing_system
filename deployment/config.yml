@@ -44,7 +44,7 @@ development:
     storage_gb: 30
 
   rds_postgres:
-    instance_type: m8g.xlarge # 4 vCPU, 16 GB RAM, Graviton4 ARM + NVMe
+    instance_type: m8gd.2xlarge # 8 vCPU, 32 GB RAM, Graviton4 ARM
     storage_gb: 20
     max_storage_gb: 100 # Auto-scaling limit
 
