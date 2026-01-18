@@ -61,9 +61,6 @@ script/go_client/report/*
 script/k6/report/*
 !script/k6/report/.gitkeep
 
-# GitHub
-.github/image/
-
 # CDK
 cdk.out/
 cdk.out.*/
