@@ -2,45 +2,45 @@
 
 ## 1. Overview
 
-Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程。買家可以選擇手動選位或最佳可用座位模式進行預訂，系統透過 Kafka 事件驅動架構與 Reservation Service 協作完成座位鎖定，並透過 SSE 即時推送預訂狀態更新。
+The Booking module manages ticket booking creation, queries, payment, and cancellation workflows. Buyers can choose manual seat selection or best available seat mode for booking. The system collaborates with Reservation Service through Kafka event-driven architecture to lock seats, and pushes booking status updates in real-time via SSE.
 
 ---
 
-## 2. Business Rules
+## 2. User Story
 
-1. **預訂數量限制**: 每筆預訂最少 1 張，最多 4 張票
-2. **選位模式**:
-   - `manual`: 手動選位，需提供 seat_positions，數量需與 quantity 一致
-   - `best_available`: 系統自動選擇最佳可用座位，seat_positions 須為空陣列
-3. **座位格式**: seat_positions 格式為 `"row-seat"`（如 `"1-1"`, `"2-3"`）
-4. **Fail Fast 原則**: 建立預訂前先檢查座位可用性，不足則立即回傳錯誤
-5. **狀態轉換規則**:
-   - 只有 `PROCESSING` 和 `PENDING_PAYMENT` 狀態可以取消
-   - 只有 `PENDING_PAYMENT` 狀態可以付款
-   - `PROCESSING` 狀態付款回傳 400 "Cannot pay booking in processing state"
-   - `COMPLETED`、`CANCELLED`、`FAILED` 為終態，不可再變更
-   - 終態錯誤回應（皆回傳 400）：
-     - `COMPLETED` 狀態取消 "Cannot cancel a completed booking"
-     - `CANCELLED` 狀態取消 "Booking already in terminal state"
-     - `FAILED` 狀態取消 "Cannot cancel failed booking"
-6. **無 Timeout**: PENDING_PAYMENT 狀態無時間限制，直到買家付款或取消
-7. **權限控制**:
-   - 只有預訂的買家可以取消或付款
-   - 賣家可以查看其活動的所有預訂
-   - 買家只能查看自己的預訂
-8. **事件驅動**: 預訂建立/付款/取消皆透過 Kafka 事件通知 Reservation Service 更新座位狀態
+- As a Buyer, I need to select seats and create a booking to lock the desired seats
+- As a Buyer, I need to use the best available seat feature to quickly complete a booking
+- As a Buyer, I need to view my booking details to confirm seat information
+- As a Buyer, I need to cancel unpaid bookings to release seats for others
+- As a Buyer, I need to complete booking payment to confirm successful purchase
+- As a Buyer, I need to receive real-time booking status updates to know if seat reservation was successful
+- As a Seller, I need to view all bookings for my events to manage sales status
 
 ---
 
-## 3. User Story
+## 3. Business Rules
 
-- 作為 Buyer，我需要選擇座位並建立預訂，以便鎖定想要的座位
-- 作為 Buyer，我需要使用最佳可用座位功能，以便快速完成預訂
-- 作為 Buyer，我需要查看我的預訂詳情，以便確認座位資訊
-- 作為 Buyer，我需要取消未付款的預訂，以便釋放座位給其他人
-- 作為 Buyer，我需要完成預訂付款，以便確認購票成功
-- 作為 Buyer，我需要即時接收預訂狀態更新，以便知道座位是否預訂成功
-- 作為 Seller，我需要查看活動的所有預訂，以便管理銷售狀況
+1. **Booking Quantity Limit**: Each booking requires minimum 1 ticket, maximum 4 tickets
+2. **Seat Selection Mode**:
+   - `manual`: Manual seat selection, requires seat_positions, count must match quantity
+   - `best_available`: System automatically selects best available seats, seat_positions must be empty array
+3. **Seat Format**: seat_positions format is `"row-seat"` (e.g., `"1-1"`, `"2-3"`)
+4. **Fail Fast Principle**: Check seat availability before creating booking, return error immediately if insufficient
+5. **Status Transition Rules**:
+   - Only `processing` and `pending_payment` status can be cancelled
+   - Only `pending_payment` status can be paid
+   - Payment in `processing` status returns 400 "Cannot pay booking in processing state"
+   - `completed`, `cancelled`, `failed` are terminal states, cannot be changed
+   - Terminal state error responses (all return 400):
+     - Cancel `completed` status: "Cannot cancel a completed booking"
+     - Cancel `cancelled` status: "Booking already in terminal state"
+     - Cancel `failed` status: "Cannot cancel failed booking"
+6. **No Timeout**: `pending_payment` status has no time limit, until buyer pays or cancels
+7. **Permission Control**:
+   - Only the booking's buyer can cancel or pay
+   - Sellers can view all bookings for their events
+   - Buyers can only view their own bookings
+8. **Event-Driven**: Booking creation/cancellation notifies Reservation Service via Kafka events to update seat status
 
 ---
 
@@ -48,49 +48,49 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 
 ### Booking Creation
 
-- [x] Buyer 可以手動選擇 1-4 個座位建立預訂
-- [x] Buyer 可以使用最佳可用模式建立預訂
-- [x] 手動選位時 seat_positions 數量需與 quantity 一致
-- [x] 最佳可用模式時 seat_positions 必須為空陣列
-- [x] 預訂數量超過 4 張回傳 400
-- [x] 座位不足時立即回傳 400（Fail Fast）
-- [x] 預訂建立後狀態為 PROCESSING
-- [x] 預訂建立後發送 BookingCreatedDomainEvent
+- [x] Buyer can manually select 1-4 seats to create booking
+- [x] Buyer can create booking using best available mode
+- [x] Manual selection requires seat_positions count to match quantity
+- [x] Best available mode requires seat_positions to be empty array
+- [x] Booking quantity exceeding 4 returns 400
+- [x] Insufficient seats returns 400 immediately (Fail Fast)
+- [x] Booking status is processing after creation
+- [x] BookingCreatedDomainEvent is sent after booking creation
 
 ### Booking Payment
 
-- [x] Buyer 可以對 PENDING_PAYMENT 狀態的預訂付款
-- [x] 付款成功後狀態變更為 COMPLETED
-- [x] 付款成功後關聯的票券狀態變更為 SOLD
-- [x] 已付款的預訂無法再次付款
-- [x] 已取消的預訂無法付款
-- [x] PROCESSING 狀態的預訂無法付款（回傳 400）
-- [x] FAILED 狀態的預訂無法付款（回傳 400）
-- [x] 非預訂擁有者無法付款
+- [x] Buyer can pay for pending_payment status bookings
+- [x] Status changes to completed after successful payment
+- [x] Associated ticket status changes to sold after successful payment
+- [x] Paid bookings cannot be paid again
+- [x] Cancelled bookings cannot be paid
+- [x] processing status bookings cannot be paid (returns 400)
+- [x] failed status bookings cannot be paid (returns 400)
+- [x] Non-booking owner cannot pay
 
 ### Booking Cancellation
 
-- [x] Buyer 可以取消 PROCESSING 或 PENDING_PAYMENT 狀態的預訂
-- [x] 取消後狀態變更為 CANCELLED
-- [x] 取消後座位釋放回可用狀態
-- [x] 已完成付款的預訂無法取消（回傳 400）
-- [x] 已取消的預訂無法再次取消（回傳 400）
-- [x] FAILED 狀態的預訂無法取消（回傳 400）
-- [x] 非預訂擁有者無法取消（回傳 403）
+- [x] Buyer can cancel processing or pending_payment status bookings
+- [x] Status changes to cancelled after cancellation
+- [x] Seats are released back to available status after cancellation
+- [x] Completed bookings cannot be cancelled (returns 400)
+- [x] Cancelled bookings cannot be cancelled again (returns 400)
+- [x] failed status bookings cannot be cancelled (returns 400)
+- [x] Non-booking owner cannot cancel (returns 403)
 
 ### Booking Query
 
-- [x] Buyer 可以查看自己的預訂列表
-- [x] Seller 可以查看其活動的所有預訂
-- [x] 可依據狀態篩選預訂列表
-- [x] 預訂詳情包含活動資訊、買家資訊、座位資訊
-- [x] 查詢不存在的預訂回傳 404
+- [x] Buyer can view their own booking list
+- [x] Seller can view all bookings for their events
+- [x] Booking list can be filtered by status
+- [x] Booking details include event info, buyer info, seat info
+- [x] Query for non-existent booking returns 404
 
 ### SSE Real-time Updates
 
-- [x] 已驗證用戶可連線 SSE 接收預訂狀態更新
-- [x] 未驗證用戶連線 SSE 回傳 401
-- [x] 預訂達到終態時自動關閉 SSE 連線
+- [x] Authenticated users can connect to SSE to receive booking status updates
+- [x] Unauthenticated users connecting to SSE returns 401
+- [x] SSE connection auto-closes when booking reaches terminal state
 
 ---
 
@@ -98,16 +98,16 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 
 ### Integration Tests (BDD)
 
-- [booking_creation_integration_test.feature](../../test/service/ticketing/booking/booking_creation_integration_test.feature) - 預訂建立
-- [booking_payment_integration_test.feature](../../test/service/ticketing/booking/booking_payment_integration_test.feature) - 預訂付款
-- [booking_cancellation_integration_test.feature](../../test/service/ticketing/booking/booking_cancellation_integration_test.feature) - 預訂取消
-- [booking_list_integration_test.feature](../../test/service/ticketing/booking/booking_list_integration_test.feature) - 預訂列表
-- [booking_sse_integration_test.feature](../../test/service/ticketing/booking/booking_sse_integration_test.feature) - SSE 即時更新
+- [booking_creation_integration_test.feature](../../test/service/ticketing/booking/booking_creation_integration_test.feature)
+- [booking_payment_integration_test.feature](../../test/service/ticketing/booking/booking_payment_integration_test.feature)
+- [booking_cancellation_integration_test.feature](../../test/service/ticketing/booking/booking_cancellation_integration_test.feature)
+- [booking_list_integration_test.feature](../../test/service/ticketing/booking/booking_list_integration_test.feature)
+- [booking_sse_integration_test.feature](../../test/service/ticketing/booking/booking_sse_integration_test.feature)
 
 ### Unit Tests
 
-- [create_booking_use_case_unit_test.py](../../test/service/ticketing/booking/create_booking_use_case_unit_test.py) - 建立預訂 Use Case
-- [update_booking_to_cancelled_use_case_unit_test.py](../../test/service/ticketing/booking/update_booking_to_cancelled_use_case_unit_test.py) - 取消預訂 Use Case
+- [create_booking_use_case_unit_test.py](../../test/service/ticketing/booking/create_booking_use_case_unit_test.py)
+- [update_booking_to_cancelled_use_case_unit_test.py](../../test/service/ticketing/booking/update_booking_to_cancelled_use_case_unit_test.py)
 
 ---
 
@@ -115,14 +115,14 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 
 ### 6.1 API Endpoints
 
-| Method | Endpoint                            | Description            | Permission    | Success | Error         |
-| ------ | ----------------------------------- | ---------------------- | ------------- | ------- | ------------- |
-| POST   | `/api/booking`                      | 建立預訂               | Buyer         | 202     | 400, 401      |
-| GET    | `/api/booking/{booking_id}`         | 取得預訂詳情           | Authenticated | 200     | 401, 404      |
-| GET    | `/api/booking/my_booking`           | 列出我的預訂           | Authenticated | 200     | 401           |
-| PATCH  | `/api/booking/{booking_id}`         | 取消預訂               | Buyer         | 200     | 400, 401, 404 |
-| POST   | `/api/booking/{booking_id}/pay`     | 預訂付款               | Buyer         | 200     | 400, 401, 404 |
-| GET    | `/api/booking/event/{event_id}/sse` | 訂閱預訂狀態更新 (SSE) | Authenticated | 200     | 401           |
+| Method | Endpoint                            | Description                    | Permission    | Success | Error         |
+| ------ | ----------------------------------- | ------------------------------ | ------------- | ------- | ------------- |
+| POST   | `/api/booking`                      | Create Booking                 | Buyer         | 202     | 400, 401      |
+| GET    | `/api/booking/{booking_id}`         | Get Booking Details            | Authenticated | 200     | 401, 404      |
+| GET    | `/api/booking/my_booking`           | List My Bookings               | Authenticated | 200     | 401           |
+| PATCH  | `/api/booking/{booking_id}`         | Cancel Booking                 | Buyer         | 200     | 400, 401, 404 |
+| POST   | `/api/booking/{booking_id}/pay`     | Pay Booking                    | Buyer         | 200     | 400, 401, 404 |
+| GET    | `/api/booking/event/{event_id}/sse` | Subscribe Booking Status (SSE) | Authenticated | 200     | 401           |
 
 ### 6.2 Model
 
@@ -131,92 +131,92 @@ Booking 模組負責管理購票預訂的建立、查詢、付款與取消流程
 | Field                 | Type      | Description                                                       |
 | --------------------- | --------- | ----------------------------------------------------------------- |
 | `id`                  | UUID      | Primary key (UUID7)                                               |
-| `buyer_id`            | int       | 買家 ID (indexed)                                                 |
-| `event_id`            | int       | 活動 ID (indexed)                                                 |
-| `section`             | str       | 區域                                                              |
-| `subsection`          | int       | 子區域                                                            |
-| `seat_positions`      | List[str] | 座位清單 (nullable), 格式: `"{row}-{seat}"` e.g. `["1-1", "1-2"]` |
-| `quantity`            | int       | 數量 (default=0)                                                  |
-| `total_price`         | int       | 總價                                                              |
-| `status`              | str       | 預訂狀態 (default='processing')                                   |
-| `seat_selection_mode` | str       | 選位模式                                                          |
-| `created_at`          | datetime  | 建立時間 (auto)                                                   |
-| `updated_at`          | datetime  | 更新時間 (auto)                                                   |
-| `paid_at`             | datetime  | 付款時間 (nullable)                                               |
+| `buyer_id`            | int       | Buyer ID (indexed)                                                |
+| `event_id`            | int       | Event ID (indexed)                                                |
+| `section`             | str       | Section                                                           |
+| `subsection`          | int       | Subsection                                                        |
+| `seat_positions`      | List[str] | Seat list (nullable), format: `"{row}-{seat}"` e.g. `["1-1", "1-2"]` |
+| `quantity`            | int       | Quantity (default=0)                                              |
+| `total_price`         | int       | Total Price                                                       |
+| `status`              | str       | Booking Status (default='processing')                             |
+| `seat_selection_mode` | str       | Seat Selection Mode                                               |
+| `created_at`          | datetime  | Created At (auto)                                                 |
+| `updated_at`          | datetime  | Updated At (auto)                                                 |
+| `paid_at`             | datetime  | Paid At (nullable)                                                |
 
 #### BookingStatus Enum
 
-| Value           | Description                          |
-| --------------- | ------------------------------------ |
-| PROCESSING      | 處理中（初始狀態，等待座位預訂確認） |
-| PENDING_PAYMENT | 待付款（座位已預訂成功）             |
-| COMPLETED       | 已完成（付款成功）                   |
-| CANCELLED       | 已取消                               |
-| FAILED          | 預訂失敗（座位預訂失敗）             |
+| Value           | Description                                              |
+| --------------- | -------------------------------------------------------- |
+| processing      | Processing (initial state, waiting for seat confirmation) |
+| pending_payment | Pending Payment (seats reserved successfully)            |
+| completed       | Completed (payment successful)                           |
+| cancelled       | Cancelled                                                |
+| failed          | Failed (seat reservation failed)                         |
 
 #### Status Transition Diagram
 
 ```
                     ┌──────────────┐
-                    │  PROCESSING  │
+                    │  processing  │
                     └──────┬───────┘
                            │
            ┌───────────────┼───────────────┐
            │               │               │
            ▼               ▼               ▼
-    ┌──────────┐   ┌───────────────┐   ┌────────┐
-    │  FAILED  │   │PENDING_PAYMENT│   │CANCELLED│
-    └──────────┘   └───────┬───────┘   └────────┘
+    ┌──────────┐   ┌───────────────┐   ┌──────────┐
+    │  failed  │   │pending_payment│   │cancelled │
+    └──────────┘   └───────┬───────┘   └──────────┘
                            │                ▲
                     ┌──────┴──────┐         │
                     │             │         │
                     ▼             └─────────┘
              ┌───────────┐
-             │ COMPLETED │
+             │ completed │
              └───────────┘
 ```
 
 ### 6.3 Request/Response Schema
 
-- [booking_schema.py](../../src/service/ticketing/driving_adapter/schema/booking_schema.py) - Request/Response schemas
+- [booking_schema.py](../../src/service/ticketing/driving_adapter/schema/booking_schema.py)
 
 ### 6.4 Domain Events
 
-| Event                     | Trigger  | Consumer            | Action                     |
-| ------------------------- | -------- | ------------------- | -------------------------- |
-| BookingCreatedDomainEvent | 預訂建立 | Reservation Service | 在 Kvrocks 預訂座位        |
-| BookingCancelledEvent     | 預訂取消 | Reservation Service | 在 Kvrocks 釋放座位        |
+| Event                     | Trigger          | Consumer            | Action                       |
+| ------------------------- | ---------------- | ------------------- | ---------------------------- |
+| BookingCreatedDomainEvent | Booking Created  | Reservation Service | Reserve seats in Kvrocks     |
+| BookingCancelledEvent     | Booking Cancelled | Reservation Service | Release seats in Kvrocks     |
 
-> **Note**: 付款完成後直接更新 PostgreSQL，不發送事件到 Reservation Service。Kvrocks 只追蹤 AVAILABLE/RESERVED 狀態。
+> **Note**: Payment completion directly updates PostgreSQL, no event sent to Reservation Service. Kvrocks only tracks available/reserved status.
 
 #### BookingCreatedDomainEvent
 
-| Field               | Type            | Description                    |
-| ------------------- | --------------- | ------------------------------ |
-| booking_id          | UUID            | 預訂 ID                        |
-| buyer_id            | int             | 買家 ID                        |
-| event_id            | int             | 活動 ID                        |
-| total_price         | int             | 總價                           |
-| section             | str             | 區域                           |
-| subsection          | int             | 子區域                         |
-| quantity            | int             | 數量                           |
-| seat_selection_mode | str             | 選位模式 (manual/best_available) |
-| seat_positions      | List[str]       | 座位清單，格式: `"{row}-{seat}"` |
-| status              | BookingStatus   | 預訂狀態                       |
-| occurred_at         | datetime        | 發生時間                       |
-| config              | SubsectionConfig | 子區域配置 (rows, cols, price) |
+| Field               | Type             | Description                          |
+| ------------------- | ---------------- | ------------------------------------ |
+| booking_id          | UUID             | Booking ID                           |
+| buyer_id            | int              | Buyer ID                             |
+| event_id            | int              | Event ID                             |
+| total_price         | int              | Total Price                          |
+| section             | str              | Section                              |
+| subsection          | int              | Subsection                           |
+| quantity            | int              | Quantity                             |
+| seat_selection_mode | str              | Selection Mode (manual/best_available) |
+| seat_positions      | List[str]        | Seat List, format: `"{row}-{seat}"`  |
+| status              | BookingStatus    | Booking Status                       |
+| occurred_at         | datetime         | Occurred At                          |
+| config              | SubsectionConfig | Subsection Config (rows, cols, price) |
 
 #### BookingCancelledEvent
 
-| Field          | Type      | Description                    |
-| -------------- | --------- | ------------------------------ |
-| booking_id     | UUID      | 預訂 ID                        |
-| buyer_id       | int       | 買家 ID                        |
-| event_id       | int       | 活動 ID                        |
-| section        | str       | 區域                           |
-| subsection     | int       | 子區域                         |
-| seat_positions | List[str] | 座位清單，格式: `"{row}-{seat}"` |
-| cancelled_at   | datetime  | 取消時間                       |
+| Field          | Type      | Description                         |
+| -------------- | --------- | ----------------------------------- |
+| booking_id     | UUID      | Booking ID                          |
+| buyer_id       | int       | Buyer ID                            |
+| event_id       | int       | Event ID                            |
+| section        | str       | Section                             |
+| subsection     | int       | Subsection                          |
+| seat_positions | List[str] | Seat List, format: `"{row}-{seat}"` |
+| cancelled_at   | datetime  | Cancelled At                        |
 
 ### 6.5 SSE Architecture
 
@@ -228,35 +228,35 @@ Reservation Service ─────── publish ──────────
 
 **Flow:**
 
-1. SSE 客戶端連線時，訂閱 Kvrocks pub/sub channel `booking:status:{user_id}:{event_id}`
-2. Reservation Service 處理座位預訂後，透過 `IPubSubHandler` 發布狀態更新
-3. SSE endpoint 收到訂閱訊息後，推送 `status_update` 事件給客戶端
-4. 當預訂達到終態（completed/failed/cancelled）時，自動關閉 SSE 連線
+1. When SSE client connects, subscribe to Kvrocks pub/sub channel `booking:status:{user_id}:{event_id}`
+2. Reservation Service publishes status update via `IPubSubHandler` after processing seat reservation
+3. SSE endpoint pushes `status_update` event to client after receiving subscription message
+4. Auto-close SSE connection when booking reaches terminal state (completed/failed/cancelled)
 
 ### 6.6 Implementation
 
 #### Core Domain
 
-- [booking_entity.py](../../src/service/ticketing/domain/entity/booking_entity.py) - Booking Entity
-- [booking_domain_event.py](../../src/service/ticketing/domain/domain_event/booking_domain_event.py) - Domain Events
+- [booking_entity.py](../../src/service/ticketing/domain/entity/booking_entity.py)
+- [booking_domain_event.py](../../src/service/ticketing/domain/domain_event/booking_domain_event.py)
 
 #### HTTP Controller
 
-- [booking_controller.py](../../src/service/ticketing/driving_adapter/http_controller/booking_controller.py) - REST & SSE endpoints
-- [booking_schema.py](../../src/service/ticketing/driving_adapter/schema/booking_schema.py) - Request/Response schemas
+- [booking_controller.py](../../src/service/ticketing/driving_adapter/http_controller/booking_controller.py)
+- [booking_schema.py](../../src/service/ticketing/driving_adapter/schema/booking_schema.py)
 
 #### Use Cases (Command)
 
-- [create_booking_use_case.py](../../src/service/ticketing/app/command/create_booking_use_case.py) - 建立預訂
-- [update_booking_status_to_cancelled_use_case.py](../../src/service/ticketing/app/command/update_booking_status_to_cancelled_use_case.py) - 取消預訂
-- [mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case.py](../../src/service/ticketing/app/command/mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case.py) - 付款
+- [create_booking_use_case.py](../../src/service/ticketing/app/command/create_booking_use_case.py)
+- [update_booking_status_to_cancelled_use_case.py](../../src/service/ticketing/app/command/update_booking_status_to_cancelled_use_case.py)
+- [mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case.py](../../src/service/ticketing/app/command/mock_payment_and_update_booking_status_to_completed_and_ticket_to_paid_use_case.py)
 
 #### Use Cases (Query)
 
-- [get_booking_use_case.py](../../src/service/ticketing/app/query/get_booking_use_case.py) - 查詢預訂詳情
-- [list_bookings_use_case.py](../../src/service/ticketing/app/query/list_bookings_use_case.py) - 列出預訂
+- [get_booking_use_case.py](../../src/service/ticketing/app/query/get_booking_use_case.py)
+- [list_bookings_use_case.py](../../src/service/ticketing/app/query/list_bookings_use_case.py)
 
 #### Repository
 
-- [booking_command_repo_impl.py](../../src/service/ticketing/driven_adapter/repo/booking_command_repo_impl.py) - Command Repository
-- [booking_query_repo_impl.py](../../src/service/ticketing/driven_adapter/repo/booking_query_repo_impl.py) - Query Repository
+- [booking_command_repo_impl.py](../../src/service/ticketing/driven_adapter/repo/booking_command_repo_impl.py)
+- [booking_query_repo_impl.py](../../src/service/ticketing/driven_adapter/repo/booking_query_repo_impl.py)

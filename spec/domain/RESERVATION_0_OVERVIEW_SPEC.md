@@ -1,34 +1,34 @@
-# Seat Reservation - PRD
+# Reservation - PRD
 
 ## 1. Overview
 
-Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserve）與釋放（Release）。此服務透過 Kafka 接收來自 Ticketing Service 的事件，並操作 Kvrocks 來管理座位狀態，同時將結果寫入 PostgreSQL。
+The Reservation module manages seat status changes, including Reserve and Release operations. This service receives events from Ticketing Service via Kafka, operates Kvrocks to manage seat status, and writes results to PostgreSQL.
 
-> **Note**: Kvrocks 只追蹤 AVAILABLE/RESERVED 兩種狀態。PostgreSQL 是 SOLD/COMPLETED 狀態的 source of truth。
-
----
-
-## 2. Business Rules
-
-1. **座位狀態**: Kvrocks 追蹤兩種狀態 - `AVAILABLE`（可用）、`RESERVED`（已預訂）。SOLD 狀態由 PostgreSQL 管理。
-2. **原子性操作**: 所有座位操作皆使用 Lua Script 確保原子性
-3. **選位模式**:
-   - `manual`: 手動選位，需提供指定的座位 ID
-   - `best_available`: 系統自動選擇最佳可用連續座位
-4. **預訂數量限制**: 每次預訂最多 4 個座位
-5. **冪等性**: 使用 booking_id 確保重複訊息不會重複處理
-6. **連續座位優先**: best_available 模式優先選擇同一排的連續座位
-7. **Smart Fallback**: best_available 找不到連續座位時，使用最大連續區塊組合
-8. **失敗處理**: 預訂失敗時，建立 FAILED 狀態的 booking 並透過 SSE 通知用戶
-9. **即時廣播**: 座位狀態變更後透過 Pub/Sub 推送給 SSE 客戶端
+> **Note**: Kvrocks only tracks AVAILABLE/RESERVED two states. PostgreSQL is the source of truth for SOLD/COMPLETED status.
 
 ---
 
-## 3. User Story
+## 2. User Story
 
-- 作為 Reservation Service，我需要接收預訂請求並更新座位狀態，透過 Kafka Partition Ordering 確保不會超賣
-- 作為 Reservation Service，我需要先寫入 PostgreSQL 再同步 Kvrocks，確保資料一致性
-- 作為 Reservation Service，我需要接收取消請求並釋放座位，讓其他用戶可以購買
+- As the system, I need to receive reservation requests and update seat status to prevent overselling
+- As the system, I need to write to PostgreSQL first then sync to Kvrocks to ensure data consistency
+- As the system, I need to receive cancellation requests and release seats for other users
+
+---
+
+## 3. Business Rules
+
+1. **Seat Status**: Kvrocks tracks two states - `AVAILABLE` and `RESERVED`. SOLD status is managed by PostgreSQL.
+2. **Atomic Operations**: All seat operations use Lua Script to ensure atomicity
+3. **Selection Mode**:
+   - `manual`: Manual seat selection, requires specified seat IDs
+   - `best_available`: System automatically selects best available consecutive seats
+4. **Reservation Quantity Limit**: Maximum 4 seats per reservation
+5. **Idempotency**: Use booking_id to ensure duplicate messages are not processed again
+6. **Consecutive Seat Priority**: best_available mode prioritizes consecutive seats in the same row
+7. **Smart Fallback**: When best_available cannot find consecutive seats, uses largest consecutive block combination
+8. **Failure Handling**: When reservation fails, create FAILED status booking and notify user via SSE
+9. **Real-time Broadcast**: Push to SSE clients via Pub/Sub after seat status changes
 
 ---
 
@@ -36,27 +36,27 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 ### Seat Reservation
 
-- [x] 手動選位模式可成功預訂指定座位
-- [x] 最佳可用模式可自動選擇連續座位
-- [x] 預訂已被預訂的座位回傳失敗
-- [x] 部分座位不可用時整筆預訂失敗（原子性）
-- [x] 預訂成功後座位狀態變為 RESERVED
-- [x] 預訂成功後寫入 PostgreSQL（booking + tickets）
-- [x] 預訂失敗時建立 FAILED 狀態的 booking
-- [x] 預訂完成後透過 Pub/Sub 發送 SSE 通知
-- [x] 超過 4 個座位的預訂請求被拒絕
+- [x] Manual selection mode can successfully reserve specified seats
+- [x] Best available mode can automatically select consecutive seats
+- [x] Reserving already reserved seats returns failure
+- [x] Entire reservation fails when some seats are unavailable (atomicity)
+- [x] Seat status becomes RESERVED after successful reservation
+- [x] Write to PostgreSQL (booking + tickets) after successful reservation
+- [x] Create FAILED status booking when reservation fails
+- [x] Send SSE notification via Pub/Sub after reservation completes
+- [x] Reservation requests exceeding 4 seats are rejected
 
 ### Seat Release
 
-- [x] 可批次釋放多個座位
-- [x] 釋放成功後座位狀態變為 AVAILABLE
-- [x] 支援部分成功（部分座位釋放成功，部分失敗）
+- [x] Can batch release multiple seats
+- [x] Seat status becomes AVAILABLE after successful release
+- [x] Supports partial success (some seats released successfully, some failed)
 
 ### Best Available Algorithm
 
-- [x] 優先選擇同一排的連續座位
-- [x] 若同一排無足夠連續座位，嘗試下一排
-- [x] 無連續座位時，選擇分散的可用座位
+- [x] Prioritize consecutive seats in the same row
+- [x] If insufficient consecutive seats in same row, try next row
+- [x] When no consecutive seats available, select scattered available seats
 
 ---
 
@@ -64,14 +64,14 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 ### Integration Tests
 
-- [reserve_seats_atomic_integration_test.py](../../test/service/reservation/reserve_seats_atomic_integration_test.py) - 座位預訂原子操作
+- [reserve_seats_atomic_integration_test.py](../../test/service/reservation/reserve_seats_atomic_integration_test.py)
 
 ### Unit Tests
 
-- [seat_reservation_use_case_unit_test.py](../../test/service/reservation/seat_reservation_use_case_unit_test.py) - 預訂 Use Case
-- [seat_finder_unit_test.py](../../test/service/reservation/seat_finder_unit_test.py) - 座位搜尋演算法
-- [seat_state_command_handler_unit_test.py](../../test/service/reservation/seat_state_command_handler_unit_test.py) - 狀態處理器
-- [atomic_reservation_executor_unit_test.py](../../test/service/reservation/atomic_reservation_executor_unit_test.py) - 原子預訂執行器
+- [seat_reservation_use_case_unit_test.py](../../test/service/reservation/seat_reservation_use_case_unit_test.py)
+- [seat_finder_unit_test.py](../../test/service/reservation/seat_finder_unit_test.py)
+- [seat_state_command_handler_unit_test.py](../../test/service/reservation/seat_state_command_handler_unit_test.py)
+- [atomic_reservation_executor_unit_test.py](../../test/service/reservation/atomic_reservation_executor_unit_test.py)
 
 ---
 
@@ -81,17 +81,17 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 | Topic Pattern | Description | Producer | Message Type |
 | ------------- | ----------- | -------- | ------------ |
-| `event-id-{id}______reserve-seats-request______booking___to___reservation` | 座位預訂請求 | Ticketing Service | BookingCreatedDomainEvent |
-| `event-id-{id}______release-ticket-status-to-available-in-kvrocks______ticketing___to___reservation` | 座位釋放請求 | Ticketing Service | BookingCancelledEvent |
+| `event-id-{id}______reserve-seats-request______booking___to___reservation` | Seat Reservation Request | Ticketing Service | BookingCreatedDomainEvent |
+| `event-id-{id}______release-ticket-status-to-available-in-kvrocks______ticketing___to___reservation` | Seat Release Request | Ticketing Service | BookingCancelledEvent |
 
 ### 6.2 Seat Status (Kvrocks)
 
 | Status | Value | Description |
 | ------ | ----- | ----------- |
-| AVAILABLE | 0 | 可預訂 |
-| RESERVED | 1 | 已預訂（待付款） |
+| AVAILABLE | 0 | Available for reservation |
+| RESERVED | 1 | Reserved (pending payment) |
 
-> **Note**: SOLD 狀態由 PostgreSQL ticket.status 管理，Kvrocks 不追蹤此狀態。
+> **Note**: SOLD status is managed by PostgreSQL ticket.status, Kvrocks does not track this status.
 
 ### 6.3 Request/Result DTOs
 
@@ -99,72 +99,72 @@ Seat Reservation 模組負責管理座位的狀態變更，包括預訂（Reserv
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `booking_id` | str | 預訂 ID (UUID7) |
-| `buyer_id` | int | 買家 ID |
-| `event_id` | int | 活動 ID |
-| `selection_mode` | str | 選位模式 (manual/best_available) |
-| `section_filter` | str | 區域 |
-| `subsection_filter` | int | 子區域 |
-| `quantity` | int | 座位數量 |
-| `seat_positions` | List[str] | 座位清單（手動模式用） |
-| `config` | SubsectionConfig | 子區域配置 (rows, cols, price) |
+| `booking_id` | str | Booking ID (UUID7) |
+| `buyer_id` | int | Buyer ID |
+| `event_id` | int | Event ID |
+| `selection_mode` | str | Selection Mode (manual/best_available) |
+| `section_filter` | str | Section |
+| `subsection_filter` | int | Subsection |
+| `quantity` | int | Seat Quantity |
+| `seat_positions` | List[str] | Seat List (for manual mode) |
+| `config` | SubsectionConfig | Subsection Config (rows, cols, price) |
 
 #### ReservationResult
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `success` | bool | 是否成功 |
-| `booking_id` | str | 預訂 ID |
-| `reserved_seats` | List[str] | 預訂成功的座位清單 |
-| `total_price` | int | 總價 |
-| `error_message` | str | 錯誤訊息（失敗時） |
-| `event_id` | int | 活動 ID |
+| `success` | bool | Is Successful |
+| `booking_id` | str | Booking ID |
+| `reserved_seats` | List[str] | Successfully Reserved Seat List |
+| `total_price` | int | Total Price |
+| `error_message` | str | Error Message (on failure) |
+| `event_id` | int | Event ID |
 
 #### ReleaseSeatsBatchRequest
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `seat_positions` | List[str] | 座位清單，格式: `"{row}-{seat}"` |
-| `event_id` | int | 活動 ID |
-| `section` | str | 區域 |
-| `subsection` | int | 子區域 |
+| `seat_positions` | List[str] | Seat List, format: `"{row}-{seat}"` |
+| `event_id` | int | Event ID |
+| `section` | str | Section |
+| `subsection` | int | Subsection |
 
 ### 6.4 Kvrocks Data Structure
 
 | Key Pattern | Type | Description |
 | ----------- | ---- | ----------- |
-| `seats_bf:{event_id}:{section}-{subsection}` | BITFIELD | 座位狀態 (1 bit per seat: u1, 0=available, 1=reserved) |
-| `seats_config:{event_id}:{section}-{subsection}` | HASH | 子區域配置 (rows, cols, price) |
-| `subsection_stats:{event_id}:{section}-{subsection}` | HASH | 統計 (available, reserved) |
-| `seat_booking:{event_id}:{section}-{subsection}:{row}-{seat}` | STRING | 座位對應的 booking_id |
+| `seats_bf:{event_id}:{section}-{subsection}` | BITFIELD | Seat Status (1 bit per seat: u1, 0=available, 1=reserved) |
+| `seats_config:{event_id}:{section}-{subsection}` | HASH | Subsection Config (rows, cols, price) |
+| `subsection_stats:{event_id}:{section}-{subsection}` | HASH | Statistics (available, reserved) |
+| `seat_booking:{event_id}:{section}-{subsection}:{row}-{seat}` | STRING | Seat to booking_id mapping |
 
 ### 6.5 Implementation
 
 #### MQ Consumer
 
-- [reservation_mq_consumer.py](../../src/service/reservation/driving_adapter/reservation_mq_consumer.py) - Kafka Consumer
-- [start_reservation_consumer.py](../../src/service/reservation/driving_adapter/start_reservation_consumer.py) - Consumer 啟動入口
+- [reservation_mq_consumer.py](../../src/service/reservation/driving_adapter/reservation_mq_consumer.py)
+- [start_reservation_consumer.py](../../src/service/reservation/driving_adapter/start_reservation_consumer.py)
 
 #### Use Cases (Command)
 
-- [seat_reservation_use_case.py](../../src/service/reservation/app/command/seat_reservation_use_case.py) - 預訂座位
-- [seat_release_use_case.py](../../src/service/reservation/app/command/seat_release_use_case.py) - 釋放座位
+- [seat_reservation_use_case.py](../../src/service/reservation/app/command/seat_reservation_use_case.py)
+- [seat_release_use_case.py](../../src/service/reservation/app/command/seat_release_use_case.py)
 
 #### Interfaces
 
-- [i_seat_state_command_handler.py](../../src/service/reservation/app/interface/i_seat_state_command_handler.py) - 座位狀態寫入介面
-- [i_booking_command_repo.py](../../src/service/reservation/app/interface/i_booking_command_repo.py) - Booking 寫入介面
+- [i_seat_state_command_handler.py](../../src/service/reservation/app/interface/i_seat_state_command_handler.py)
+- [i_booking_command_repo.py](../../src/service/reservation/app/interface/i_booking_command_repo.py)
 
 #### Driven Adapters
 
-- [seat_state_command_handler_impl.py](../../src/service/reservation/driven_adapter/seat_state_command_handler_impl.py) - Kvrocks 座位操作
-- [booking_command_repo_impl.py](../../src/service/reservation/driven_adapter/repo/booking_command_repo_impl.py) - PostgreSQL Booking 寫入
+- [seat_state_command_handler_impl.py](../../src/service/reservation/driven_adapter/seat_state_command_handler_impl.py)
+- [booking_command_repo_impl.py](../../src/service/reservation/driven_adapter/repo/booking_command_repo_impl.py)
 
 #### Reservation Helpers
 
-- [atomic_reservation_executor.py](../../src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py) - 原子預訂執行器
-- [seat_finder.py](../../src/service/reservation/driven_adapter/reservation_helper/seat_finder.py) - 最佳座位搜尋
-- [release_executor.py](../../src/service/reservation/driven_adapter/reservation_helper/release_executor.py) - 座位釋放執行器
+- [atomic_reservation_executor.py](../../src/service/reservation/driven_adapter/reservation_helper/atomic_reservation_executor.py)
+- [seat_finder.py](../../src/service/reservation/driven_adapter/reservation_helper/seat_finder.py)
+- [release_executor.py](../../src/service/reservation/driven_adapter/reservation_helper/release_executor.py)
 
 ### 6.6 Architecture Flow
 
@@ -174,15 +174,14 @@ Ticketing Service ──Kafka──> Reservation Service ──> PostgreSQL + Kv
 
 **Flow:**
 
-1. Ticketing Service 發送 Domain Event 到 Kafka（Reserve/Release 使用同一個 topic: `seat_reservation`）
-2. Reservation Consumer 接收訊息，執行對應的 UseCase
-3. Kvrocks Find Seats（Reserve only: BITFIELD GET 查詢可用座位）
-4. PostgreSQL Write（booking + tickets 狀態更新）
-5. Kvrocks Set Seats（BITFIELD SET 更新座位狀態）
-6. 透過 Pub/Sub 發送 SSE 通知給前端
+1. Ticketing Service sends Domain Event to Kafka (Reserve/Release use same topic: `seat_reservation`)
+2. Reservation Consumer receives message, executes corresponding UseCase
+3. Kvrocks Find Seats (Reserve only: BITFIELD GET to query available seats)
+4. PostgreSQL Write (booking + tickets status update)
+5. Kvrocks Set Seats (BITFIELD SET to update seat status)
+6. Send SSE notification to frontend via Pub/Sub
 
-**詳細流程文件**：
-- [Reservation Workflow](RESERVATION_1_RESERVATION_WORKFLOW_SPEC.md) - 座位預訂流程
-- [Release Workflow](RESERVATION_2_RELEASE_WORKFLOW_SPEC.md) - 座位釋放流程
-- [Find Best Available Seats](RESERVATION_3_FIND_BEST_AVAILABLE_SEATS_SPEC.md) - 最佳座位搜尋演算法
-
+**Detailed Workflow Documents**:
+- [Reservation Workflow](RESERVATION_1_RESERVATION_WORKFLOW_SPEC.md)
+- [Release Workflow](RESERVATION_2_RELEASE_WORKFLOW_SPEC.md)
+- [Find Best Available Seats](RESERVATION_3_FIND_BEST_AVAILABLE_SEATS_SPEC.md)

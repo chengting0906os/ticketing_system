@@ -5,8 +5,8 @@ This directory contains SPEC (Specification Documents) for each functional modul
 ## Document Structure
 
 1. Overview - Feature introduction
-2. Business Rules - Business rules and constraints
-3. User Story - User stories
+2. User Story - User stories
+3. Business Rules - Business rules and constraints
 4. Acceptance - Acceptance criteria
 5. Test Scenarios -> test/{module}/ (use relative path links for navigation)
 6. Technical Specification
