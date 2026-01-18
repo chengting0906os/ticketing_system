@@ -109,6 +109,7 @@ Event Ticketing 模組負責管理活動（Event）與票券（Ticket）的建�
 | `status`         | str  | 活動狀態 (default='available') |
 | `venue_name`     | str  | 場地名稱                       |
 | `seating_config` | JSON | 座位配置                       |
+| `stats`          | JSONB | 活動統計 (available, reserved, sold, total)，由 trigger 自動更新 |
 
 #### TicketModel
 
