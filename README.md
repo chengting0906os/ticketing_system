@@ -2,74 +2,178 @@
 
 ## Project Highlights
 
-- Designed and implemented an **event-driven ticketing system** using Hexagonal Architecture, achieving **5,116 RPS** under load testing
-- Built async seat reservation with **SAGA pattern** for distributed transactions across Kafka, Kvrocks, and PostgreSQL
-- Achieved **consistency** via Kafka partition ordering + idempotency check
+- Designed and implemented an **event-driven ticketing system** achieving **5,116 RPS** under load testing
+- Leveraged **Kafka partition ordering** + **idempotency design** to achieve consistency without distributed locks
+- Implemented **async booking notification** via SSE + Pub/Sub: API returns `202 Accepted` immediately, client receives real-time status updates
 - Integrated **OpenTelemetry** with **Jaeger (local)** and AWS **X-Ray (cloud)** for distributed tracing
 - Used **py-spy** to generate flame graphs, identified and resolved CPU bottlenecks in the hot path, reducing execution time by **72%**
 
+---
+
+## Project Goal
+
+This project demonstrates a **Lock-Free Architecture** using **Kafka Partition** and **Consumer Group** characteristics to ensure data consistency under high concurrency without traditional distributed locks.
+
+> **Note:** The following features are excluded from the scope:
+>
+> - Payment Processing
+> - Timeout-based Cancellations
 
 ---
 
-### After: 50 Consumers × 0.1 CPU (Total: 5 CPU reserved)
+## Table of Contents
 
-```yaml
-resources:
-  limits:
-    cpus: "0.25"
-    memory: 512M
-  reservations:
-    cpus: "0.1"
-    memory: 128M
+- [System Architecture](#system-architecture)
+  - [Tech Stack](#tech-stack)
+- [Idempotency Design](#idempotency-design)
+  - [Kafka Partition Ordering](#1-kafka-partition-ordering)
+  - [Reservation Flow](#2-reservation-flow)
+    - [PostgreSQL Idempotency Check](#postgresql-idempotency-check)
+    - [Kvrocks Idempotent Operations](#kvrocks-idempotent-operations)
+- [Observability](#observability)
+  - [Distributed Tracing: OpenTelemetry](#distributed-tracing-opentelemetry)
+  - [CPU Profiling: py-spy](#cpu-profiling-py-spy)
+- [Load Testing](#load-testing)
+  - [Test Environment](#test-environment)
+  - [Benchmark Results](#benchmark-results)
+
+---
+
+## System Architecture
+
+```
+┌────────┐      ┌─────────┐      ┌─────────────────┐      ┌─────────────┐      ┌─────────────────────┐
+│ Client │─────▶│   ALB   │─────▶│    Ticketing    │─────▶│    Kafka    │─────▶│ Reservation Service │
+└────────┘      └─────────┘      │    Service      │      │    (EC2)    │      │       (ECS)         │
+     ▲                           │     (ECS)       │      └─────────────┘      └──────────┬──────────┘
+     │                           └────────┬────────┘                                      │
+     │                                    │                                      ┌────────┴────────┐
+     │ SSE                                │                                      ▼                 ▼
+     │                                    │                               ┌───────────┐    ┌───────────┐
+     └────────────────────────────────────┘                               │  Aurora   │    │  Kvrocks  │
+                                                                          │PostgreSQL │    │   (EC2)   │
+                                                                          └───────────┘    └───────────┘
 ```
 
-**Result (longest trace):** Producer → Consumer latency: **~1 second** (4.35s ~ 5.53s)
+### Tech Stack
 
-![After optimization - Jaeger trace](.github/image/v0.0.1-more-containers/v0.0.1-interval-jaejar-fast.png)
-![After optimization - Go client](.github/image/v0.0.1-more-containers/v0.0.1-interval-go-fast.png)
+| Category           | Technology                         | Purpose                                 |
+| ------------------ | ---------------------------------- | --------------------------------------- |
+| **Language**       | Python 3.13                        | Runtime                                 |
+| **Web Framework**  | FastAPI + Granian + uvloop         | High-performance async API              |
+| **Database**       | RDS PostgreSQL                     | Persistent storage (booking, tickets)   |
+| **Message Broker** | Kafka                              | Event streaming, At-Least-Once delivery |
+| **Cache/State**    | Kvrocks (RocksDB + Redis protocol) | Seat bitmap, real-time state            |
+| **Cloud**          | AWS (ECS, ALB, CDK)                | Infrastructure                          |
+| **Observability**  | OpenTelemetry + Jaeger / X-Ray     | Distributed tracing                     |
+| **Profiling**      | py-spy                             | CPU flame graph analysis                |
+
+> **Why Kvrocks over Redis?**
+> Redis 主要是 in-memory，雖然有 RDB/AOF 但仍可能丟失資料。Kvrocks 基於 RocksDB，資料直接寫入磁碟，crash 後不會遺失座位狀態。
 
 ---
 
-## CPU Profiling with py-spy
+## Idempotency Design
+
+透過以下兩點設計確保冪等性：
+
+1. **Kafka Partition Ordering** - 同一 Partition 只分配給同一 Consumer，確保順序處理
+2. **Idempotent Operations** - PostgreSQL 狀態檢查 + Kvrocks BITFIELD SET 皆為冪等操作
+
+### 1. Kafka Partition Ordering
+
+同一區域的 Reserve/Release 發到同一 Partition，保證順序處理
+
+**關鍵**: 同一 Consumer Group 內，一個 Partition 同時只會分配給一個 Consumer，確保順序處理
+
+```
+Topic: seat_reservation (Reserve + Release 都發到這裡)
+    │
+    ▼
+Partition Key: {event_id}-{section}-{subsection}
+    │
+    ▼
+Same Partition → Same Consumer → 順序處理
+
+Reserve A-1 (t=1) → Release A-1 (t=2) → Reserve A-1 (t=3)
+                    ↑
+                    保證在 t=1 之後處理
+```
+
+**Message Commit（Offset Commit）**:
+
+- Consumer 處理完訊息後 commit offset，確認已處理
+- Commit 前 crash → 訊息重新傳遞 → 需要冪等操作
+
+### 2. Idempotent Operations
+
+```
+SeatReservationUseCase.reserve_seats(request)
+    │
+    ├── [Step 1] Idempotency Check（PostgreSQL）
+    │       ├── SELECT * FROM booking WHERE id = {booking_id}
+    │       ├── FAILED → 返回錯誤
+    │       └── PENDING_PAYMENT → 跳到 Step 4（確保 Kvrocks + SSE 完成）
+    │
+    ├── [Step 2] Find Best Available Seats（Kvrocks）
+    │       └── BITFIELD GET 批次讀取座位狀態 → 返回 seats[]
+    │
+    ├── [Step 3] PostgreSQL Write
+    │       ├── INSERT booking (status=PENDING_PAYMENT)
+    │       └── UPDATE tickets SET status=RESERVED
+    │
+    └── [Step 4] Kvrocks Set Seats
+            └── BITFIELD SET u1 seat_index 1（冪等：SET 1 = no-op）
+```
+
+#### PostgreSQL: Booking Status Check
+
+booking_id (UUID7) 由 Client 產生，作為 Idempotency Key
+
+```
+SELECT * FROM booking WHERE id = {booking_id}
+  │
+  ├── 不存在 → 正常處理
+  ├── FAILED → 返回錯誤（不重複建立）
+  └── PENDING_PAYMENT → 跳過 DB 寫入，只完成 Kvrocks + SSE
+```
+
+#### Kvrocks: BITFIELD SET
+
+BITFIELD SET 是冪等操作，重複執行不改變結果
+
+```
+BITFIELD SET u1 seat_index 1
+  → 座位已是 1？SET 1 = no-op（冪等）
+
+BITFIELD SET u1 seat_index 0
+  → 座位已是 0？SET 0 = no-op（冪等）
+```
+
+---
+
+## Observability
+
+### Distributed Tracing: OpenTelemetry
+
+Integrated **OpenTelemetry** for end-to-end distributed tracing across services.
+
+**Exporters:**
+
+| Environment | Exporter |
+| ----------- | -------- |
+| Local       | Jaeger   |
+| AWS         | X-Ray    |
+
+### CPU Profiling: py-spy
 
 Used **py-spy** to generate flame graphs and identify CPU bottlenecks in the API hot path.
 
-### Setup
-
-```dockerfile
-# Dockerfile (development stage)
-RUN uv sync --all-groups --frozen && \
-    pip install py-spy
-```
-
-```yaml
-# docker-compose.yml
-ticketing-service:
-  cap_add:
-    - SYS_PTRACE # Required for py-spy profiling
-```
-
-### Profiling Commands
-
-```bash
-# Enter container
-docker exec -it <container> bash
-
-# Find Python process
-ps aux | grep python
-
-# Generate flame graph (30 seconds sampling)
-py-spy record -o /tmp/profile_$(date +%Y%m%d_%H%M%S).svg --pid <PID> --duration 30
-
-# Copy out
-docker cp <container>:/tmp/profile_*.svg ./observability/profiling/
-```
-
-### Bottlenecks Identified (from Flame Graph - Before Fix)
+### Bottleneck Identified
 
 ![Flame Graph - Before Fix](.github/image/v0.0.2-py-spy/flame-graph.png)
 
-**Biggest bottleneck call stack:**
+**Bottleneck call stack:**
 
 ```text
 publish_domain_event()                                    33.84%
@@ -83,31 +187,17 @@ publish_domain_event()                                    33.84%
                                             └── __init__()            15.75%
 ```
 
-**Loguru file sink bottleneck:**
+| Rank | Function                      | Samples | CPU %      | Root Cause                             |
+| ---- | ----------------------------- | ------- | ---------- | -------------------------------------- |
+| 1    | `quixstreams/app.topic()`     | 246     | **33.70%** | Calls `list_topics()` on every publish |
+| 2    | `list_topics()` (admin.py)    | 198     | **27.12%** | Queries Kafka cluster metadata         |
+| 3    | `confluent_kafka list_topics` | 151     | **20.68%** | Underlying Kafka client call           |
 
-```text
-loguru/_handler.py:emit()                                 15.75%
-  └── _queued_writer()                                    15.75%  ← Async queue processing
-        └── _file_sink.py:write()                          9.86%  ← File I/O blocking
-              └── open().write()                           9.86%
-```
+### Fix Applied
 
-| Rank | Function                            | Samples | CPU %      | Root Cause                             |
-| ---- | ----------------------------------- | ------- | ---------- | -------------------------------------- |
-| 1    | `quixstreams/app.topic()`           | 246     | **33.70%** | Calls `list_topics()` on every publish |
-| 2    | `list_topics()` (admin.py)          | 198     | **27.12%** | Queries Kafka cluster metadata         |
-| 3    | `confluent_kafka list_topics`       | 151     | **20.68%** | Underlying Kafka client call           |
-| 4    | `loguru/_handler.py:_queued_writer` | 115     | **15.75%** | Log queue processing                   |
-| 5    | `loguru/_file_sink.py:write`        | 72      | **9.86%**  | File I/O blocking                      |
+**Root Cause:** `app.topic()` calls `list_topics()` on every publish to verify topic exists → expensive Kafka metadata query
 
-### Fixes Applied
-
-| Bottleneck    | CPU % | Fix                                               | Result                                               |
-| ------------- | ----- | ------------------------------------------------- | ---------------------------------------------------- |
-| `app.topic()` | ~34%  | Cache Topic objects in `_quix_topic_object_cache` | Eliminates repeated `list_topics()` calls            |
-| File logging  | ~25%  | Disable file sink in production (`DEBUG=false`)   | Use stdout only, collected by CloudWatch/Docker logs |
-
-### Implementation
+**Solution:** Cache Topic objects after first creation
 
 ```python
 # event_publisher.py - Topic caching
@@ -125,74 +215,98 @@ def _get_or_create_quix_topic_with_cache(topic_name: str):
     return _quix_topic_object_cache[topic_name]
 ```
 
-```python
-# loguru_io_config.py - Conditional file logging
-if settings.DEBUG:
-    custom_logger.add(file_sink, ...)  # Only in development
-```
+### Performance Validation (go-spike-test)
 
-### Architecture Decision
+> **Architecture Note:** This system uses **Response-First** pattern. The API responds immediately after publishing to Kafka (`202 Accepted`), actual seat reservation and booking creation happen asynchronously via consumers.
 
-- **Development**: `DEBUG=true` → File logging enabled (convenient for local debugging)
-- **Production**: `DEBUG=false` → Stdout only (logs still persisted via CloudWatch/Loki/Docker json-file driver)
-
----
-
-### Before vs After Comparison
-
-| Function                        | Before                   | After                 | Improvement |
-| ------------------------------- | ------------------------ | --------------------- | ----------- |
-| `publish_domain_event` total    | 247 samples (**33.84%**) | ~15 samples (**~4%**) | **88% ↓**   |
-| ├─ `quixstreams/app.topic()`    | 246 samples (**33.70%**) | 6 samples (**1.51%**) | **95.5% ↓** |
-| │ └─ `list_topics()`            | 198 samples (**27.12%**) | 0 samples (**0%**)    | **100% ↓**  |
-| └─ `loguru/_file_sink.py:write` | 72 samples (**9.86%**)   | 0 samples (**0%**)    | **100% ↓**  |
-
-**Key Observations:**
-
-1. **Topic Caching Works**: `app.topic()` dropped from 33.70% → 1.51% (only called on cache miss)
-2. **list_topics() Eliminated**: No longer called on every publish (0% CPU)
-3. **File Logging Disabled**: `_file_sink.py:write` completely eliminated in `DEBUG=false` mode
-4. **CPU Now Spent on Business Logic**: Top consumers are now `solve_dependencies` (18%), `start_span` (15%), `save_booking_metadata` (8%)
-
----
-
-### Spike Test Results (1000 Concurrent Requests)
-
-> **Architecture Note:** This system uses **Response-First** pattern. The API responds immediately after publishing to Kafka (`202 Accepted`), actual seat reservation and booking creation happen asynchronously via consumers. Throughput measures API response speed, not end-to-end processing.
-
-#### Step 1: Before Optimization
+#### Before Optimization
 
 ![Before optimization](.github/image/v0.0.2-py-spy/v0.0.2_1-before.png)
 
-#### Step 2: After Topic Caching
+#### After Topic Caching
 
 ![After topic caching](.github/image/v0.0.2-py-spy/v0.0.2_2-topic-cache.png)
 
-#### Step 3: After Logging Optimization (DEBUG=false)
-
-![After logging optimization](.github/image/v0.0.2-py-spy/v0.0.2_3-logging%20optimization.png)
-
 #### Performance Comparison
 
-| Metric                  | Before | + Topic Cache | + Logging Off | Total Improvement |
-| ----------------------- | ------ | ------------- | ------------- | ----------------- |
-| **Sellout Duration** ¹  | 13.91s | 3.31s         | **2.53s**     | **81.8% ↓**       |
-| **Response Duration** ² | 7.13s  | 3.33s         | **1.08s**     | **84.9% ↓**       |
-| **P50**                 | 3.59s  | 1.84s         | **575ms**     | **84.0% ↓**       |
-| **P95**                 | 6.54s  | 3.14s         | **994ms**     | **84.8% ↓**       |
-| **P99**                 | 7.00s  | 3.30s         | **1.06s**     | **84.9% ↓**       |
-| **Throughput**          | 140/s  | 300/s         | **930/s**     | **6.6× ↑**        |
+| Metric                  | Before | After Topic Cache | Improvement |
+| ----------------------- | ------ | ----------------- | ----------- |
+| **Sellout Duration** ¹  | 13.91s | 3.31s             | **76.2% ↓** |
+| **Response Duration** ² | 7.13s  | 3.33s             | **53.3% ↓** |
+| **P50**                 | 3.59s  | 1.84s             | **48.7% ↓** |
+| **P95**                 | 6.54s  | 3.14s             | **52.0% ↓** |
+| **P99**                 | 7.00s  | 3.30s             | **52.9% ↓** |
+| **Throughput**          | 140/s  | 300/s             | **2.1× ↑**  |
 
-> ¹ **Sellout Duration** (`duration_seconds`): Time from first ticket reserved to all 1000 tickets sold (end-to-end, includes async consumer processing)
+> ¹ **Sellout Duration**: Time from first ticket reserved to all 1000 tickets sold (end-to-end, includes async consumer processing)
 >
 > ² **Response Duration**: Time for all 1000 HTTP requests to receive responses (API layer only)
 
-#### Incremental Gains
+**Conclusion:** Topic caching optimization reduced sellout time from **13.91s → 3.31s** (76% faster) and increased throughput from **140/s → 300/s** (2.1×)
 
-| Optimization  | Sellout | Response | P95   | Throughput | Gain                   |
-| ------------- | ------- | -------- | ----- | ---------- | ---------------------- |
-| Baseline      | 13.91s  | 7.13s    | 6.54s | 140/s      | -                      |
-| + Topic Cache | 3.31s   | 3.33s    | 3.14s | 300/s      | **76% faster sellout** |
-| + Logging Off | 2.53s   | 1.08s    | 994ms | 930/s      | **24% faster sellout** |
+---
 
-**Conclusion:** Two simple optimizations reduced sellout time from **13.91s → 2.53s** (82% faster), response time from **7.13s → 1.08s** (85% faster), and increased throughput from **140/s → 930/s** (6.6×)
+## Load Testing
+
+### Test Environment
+
+| Component           | Local (MacBook Pro M2 Max) | AWS Cloud (Development)             |
+| ------------------- | -------------------------- | ----------------------------------- |
+| PostgreSQL          | Docker                     | RDS db.c6gd.2xlarge (8 vCPU, 32 GB) |
+| Kafka               | 3 brokers (Docker)         | 3× c7g.large EC2 (2 vCPU, 4 GB)     |
+| Kvrocks             | Docker                     | m6i.large EC2 (2 vCPU, 8 GB)        |
+| Ticketing Service   | 5 instances                | ECS Fargate (2 vCPU, 4 GB)          |
+| Reservation Service | 5 instances                | ECS Fargate (2 vCPU, 4 GB)          |
+
+### Benchmark Results
+
+#### Spike Test (Sellout 2000 Tickets)
+
+| Environment                  | Avg Time | TPS  | vs Local |
+| ---------------------------- | -------- | ---- | -------- |
+| Local                        | 1.33s    | 1504 | 100%     |
+| RDS Single-AZ (m8gd.2xlarge) | 2.31s    | 866  | 58%      |
+| RDS Multi-AZ (m8gd.2xlarge)  | 3.45s    | 580  | 39%      |
+
+#### Sustained Load Test (k6, 0% Error Rate)
+
+| Environment      | RPS   | avg     | p95      | p99      |
+| ---------------- | ----- | ------- | -------- | -------- |
+| Local            | 1,145 | 30.51ms | 121.23ms | 247.18ms |
+| ECS (10i/20vCPU) | 2,355 | 14.86ms | 44.33ms  | 267.5ms  |
+| ECS (25i/50vCPU) | 5,116 | 9.28ms  | 26.59ms  | 84.9ms   |
+
+![Local (5 containers, ~1,145 RPS)](.github/image/60s_5container_local_loadtest_1000-1400.png)
+
+![ECS (10i/20vCPU, ~2,355 RPS)](.github/image/60s_10i_20cpu_loadtest_2000-2900.png)
+
+![ECS (25i/50vCPU, ~5,116 RPS)](.github/image/60s_25i_50cpu_loadtest_3600-7150.png)
+
+**Key Findings:**
+
+- Cloud environment ~74% slower than local due to network RTT
+- Multi-AZ replication costs 33% TPS (866 → 580)
+- TPS remains stable (~880) across 2K/5K/10K ticket volumes
+- Bottleneck is network layer
+
+### Distributed Tracing Analysis
+
+Traces confirm the bottleneck is **network RTT**:
+
+| Metric                                 | Local  | Cloud | Description                              |
+| -------------------------------------- | ------ | ----- | ---------------------------------------- |
+| **Total Trace**                        | 2.53s  | 3.8s  | End-to-end (API → Kafka → Consumer → DB) |
+| `consumer...ticket-command-request...` | 2.46ms | ~10ms | Consumer actual processing time          |
+| `repo.create_booking_with_tickets`     | 1.03ms | ~4ms  | PostgreSQL write (booking + tickets)     |
+
+> **Insight**: Consumer processing 10ms (includes DB write), but total trace is 3.8s → **99.7% is Kafka queue wait time**
+
+**Example Trace (Jaeger - Booking → Reservation, 2.53s):**
+
+![Jaeger Trace](.github/image/2000-longest_reservation_service.png)
+
+**Example Trace (X-Ray - Booking → Reservation, 3.8s):**
+
+![AWS X-Ray Trace](.github/image/2000-longest_x_ray.png)
+
+> See [BENCHMARK.md](BENCHMARK.md) for detailed analysis
