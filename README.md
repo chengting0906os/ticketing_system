@@ -39,8 +39,10 @@ This project demonstrates a **Lock-Free Architecture** using **Kafka Partition**
     - [CPU Scaling](#cpu-scaling)
     - [Distributed Tracing Analysis](#distributed-tracing-analysis)
   - [Load Test (k6)](#load-test-k6)
-  - [Key Findings](#key-findings)
-- [Conclusion](#conclusion)
+    - [Local](#local)
+    - [ECS (10i/20vCPU)](#ecs-10i20vcpu)
+    - [ECS (25i/50vCPU)](#ecs-25i50vcpu)
+    - [Performance Comparison](#performance-comparison)
 
 ---
 
@@ -68,15 +70,17 @@ This project demonstrates a **Lock-Free Architecture** using **Kafka Partition**
 | ------------------ | ---------------------------------- | --------------------------------------- |
 | **Language**       | Python 3.13                        | Runtime                                 |
 | **Web Framework**  | FastAPI + Granian + uvloop         | High-performance async API              |
-| **Database**       | RDS PostgreSQL                     | Persistent storage (booking, tickets)   |
+| **Database**       | RDS PostgreSQL                     | Persistent storage                      |
 | **Message Broker** | Kafka                              | Event streaming, At-Least-Once delivery |
-| **Cache/State**    | Kvrocks (RocksDB + Redis protocol) | Seat bitmap, real-time state            |
+| **Cache/State**    | Kvrocks (RocksDB + Redis protocol) | Seat bitmap, Pub/Sub                    |
 | **Cloud**          | AWS (ECS, ALB, CDK)                | Infrastructure                          |
 | **Observability**  | OpenTelemetry + Jaeger / X-Ray     | Distributed tracing                     |
 | **Profiling**      | py-spy                             | CPU flame graph analysis                |
 
 > **Why Kvrocks over Redis?**
-> Redis is primarily in-memory; despite RDB/AOF persistence, data loss is possible. Kvrocks uses RocksDB, writing directly to disk, ensuring seat state survives crashes.
+> While Redis can be configured with `appendfsync always` to prevent data loss, the official documentation marks it as "very very slow," and benchmarks show 500+ times performance degradation (write latency increases from 32μs to 18ms). The default `everysec` strategy may lose up to 1 second of data on crashes. Kvrocks is built on RocksDB's LSM-tree architecture, optimized for sequential disk writes, maintaining acceptable performance while ensuring WAL-based synchronous durability—making it more suitable for seat bitmap state under at-least-once event delivery (see [Kvrocks vs Redis Benchmark](https://github.com/apache/kvrocks/discussions/389)).
+>
+> _Reference: [Redis Persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/), [Redis Performance Comparison](https://medium.com/@krittaboon.t/persistance-in-redis-931768face32), [RocksDB Write-Ahead Log](<https://github.com/facebook/rocksdb/wiki/Write-Ahead-Log-(WAL)>)_
 
 ---
 
@@ -250,8 +254,6 @@ def _get_or_create_quix_topic_with_cache(topic_name: str):
 >
 > ² **Response Duration**: Time for all 1000 HTTP requests to receive responses (API layer only)
 
-**Conclusion:** Topic caching optimization reduced sellout time from **13.91s → 3.31s** (76% faster) and increased throughput from **140/s → 300/s** (2.1×)
-
 ---
 
 ## Performance Testing
@@ -342,6 +344,10 @@ Traces confirm the bottleneck is **network RTT**:
 
 > **Insight**: Consumer processing ~10ms per message, but total trace shows 2.53s/3.8s due to **message backlog during spike test** (2000 concurrent requests queuing in Kafka)
 
+**Key Findings:**
+
+- **Network latency has significant impact** — Cloud TPS reduced by 42% (866 vs 1504); Multi-AZ costs additional 33% TPS (866→580); CPU scaling showed no improvement (810→866→837 TPS). Distributed tracing confirms network RTT as bottleneck: consumer processing +307% slower (2.46ms→10ms), DB writes +288% slower (1.03ms→4ms)
+
 ---
 
 ### Load Test (k6)
@@ -358,7 +364,7 @@ Sustained load over 60 seconds with gradual ramp-up, measuring maximum RPS at 0%
 - Ticketing Service: **5i** (Local) / **10i** / **25i** (2 vCPU, 4 GB each) — scaled with load
 - Reservation Service: **10 instances** (2 vCPU, 4 GB each)
 
-#### Local (5 containers, ~1,145 RPS)
+#### Local
 
 | avg     | med     | p90     | p95      | p99      | max   |
 | ------- | ------- | ------- | -------- | -------- | ----- |
@@ -366,7 +372,7 @@ Sustained load over 60 seconds with gradual ramp-up, measuring maximum RPS at 0%
 
 ![Local (5 containers, ~1,145 RPS)](.github/image/v0.0.3/60s_5container_local_loadtest_1000-1400.png)
 
-#### ECS (10i/20vCPU, ~2,355 RPS)
+#### ECS (10i/20vCPU)
 
 | avg     | med    | p90     | p95     | p99     | max   |
 | ------- | ------ | ------- | ------- | ------- | ----- |
@@ -374,7 +380,7 @@ Sustained load over 60 seconds with gradual ramp-up, measuring maximum RPS at 0%
 
 ![ECS (10i/20vCPU, ~2,355 RPS)](.github/image/v0.0.3/60s_10i_20cpu_loadtest_2000-2900.png)
 
-#### ECS (25i/50vCPU, ~5,116 RPS)
+#### ECS (25i/50vCPU)
 
 | avg    | med   | p90     | p95     | p99    | max   |
 | ------ | ----- | ------- | ------- | ------ | ----- |
@@ -389,22 +395,3 @@ Sustained load over 60 seconds with gradual ramp-up, measuring maximum RPS at 0%
 | Local            | 1,145 | 30.51ms | 13.15ms | 74.74ms | 121.23ms | 247.18ms | 2.23s |
 | ECS (10i/20vCPU) | 2,355 | 14.86ms | 5.53ms  | 20.71ms | 44.33ms  | 267.5ms  | 2.96s |
 | ECS (25i/50vCPU) | 5,116 | 9.28ms  | 5.3ms   | 12.89ms | 26.59ms  | 84.9ms   | 1.24s |
-
----
-
-### Key Findings
-
-- Cloud environment ~74% slower than local due to network RTT
-- Multi-AZ replication costs 33% TPS (866 → 580)
-- TPS remains stable (~880) across 2K/5K/10K ticket volumes
-- Bottleneck is network layer, not database CPU
-
----
-
-## Conclusion
-
-**Key Findings:**
-
-- **Lock-free architecture** using Kafka partition ordering + idempotency eliminates distributed locks while ensuring consistency
-- **Network latency has significant impact** — Cloud TPS reduced by 42% (866 vs 1504); Multi-AZ costs additional 33% TPS (866→580); CPU scaling showed no improvement (810→866→837 TPS)
-- **Horizontal scaling is effective** — 1,145 RPS (5i) → 2,355 RPS (10i) → 5,116 RPS (25i)
