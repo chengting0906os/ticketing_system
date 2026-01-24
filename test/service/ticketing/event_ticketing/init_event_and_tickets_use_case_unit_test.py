@@ -23,6 +23,18 @@ from src.service.ticketing.domain.entity.event_entity import EventEntity
 from src.service.ticketing.domain.enum import EventStatus
 
 
+# ==============================================================================
+# Stub Classes for Test Data
+# ==============================================================================
+
+
+class StubInitStateHandler:
+    """Stub providing default successful seat initialization response"""
+
+    async def initialize_seats_from_config(self, **_) -> dict[str, Any]:
+        return {'success': True, 'total_seats': 100, 'sections_count': 1}
+
+
 @pytest.mark.unit
 class TestCreateEventKafkaSetup:
     """Test CreateEventAndTicketsUseCase Kafka topics setup"""
@@ -44,11 +56,12 @@ class TestCreateEventKafkaSetup:
 
     @pytest.fixture
     def mock_init_state_handler(self) -> Mock:
-        handler = MagicMock()
-        handler.initialize_seats_from_config = AsyncMock(
-            return_value={'success': True, 'total_seats': 100, 'sections_count': 1}
-        )
-        return handler
+        """
+        Mock for verifying init state handler calls.
+        Uses StubInitStateHandler spec for default behavior.
+        Execution order tests override with tracking functions.
+        """
+        return AsyncMock(spec=StubInitStateHandler)
 
     @pytest.fixture
     def use_case(

@@ -20,23 +20,39 @@ from src.service.shared_kernel.domain.value_object import BookingStatus
 from src.service.shared_kernel.domain.value_object.subsection_config import SubsectionConfig
 
 
-def _make_mock_booking(
-    status: BookingStatus = BookingStatus.PENDING_PAYMENT,
-    buyer_id: int = 1,
-    event_id: int = 1,
-    section: str = 'A',
-    subsection: int = 1,
-) -> AsyncMock:
-    """Create a mock booking with given attributes."""
-    booking = AsyncMock()
-    booking.id = 'test-booking-id'
-    booking.status = status
-    booking.buyer_id = buyer_id
-    booking.event_id = event_id
-    booking.section = section
-    booking.subsection = subsection
-    booking.seat_positions = ['1-1', '1-2']
-    return booking
+# ==============================================================================
+# Fake/Stub Classes for Test Data
+# ==============================================================================
+
+
+class FakeBooking:
+    """Fake booking object with configurable attributes (not AsyncMock)"""
+
+    def __init__(
+        self,
+        *,
+        booking_id: str = 'test-booking-id',
+        status: BookingStatus = BookingStatus.PENDING_PAYMENT,
+        buyer_id: int = 1,
+        event_id: int = 1,
+        section: str = 'A',
+        subsection: int = 1,
+        seat_positions: list[str] | None = None,
+    ) -> None:
+        self.id = booking_id
+        self.status = status
+        self.buyer_id = buyer_id
+        self.event_id = event_id
+        self.section = section
+        self.subsection = subsection
+        self.seat_positions = seat_positions or ['1-1', '1-2']
+
+
+class StubSeatingConfigHandler:
+    """Stub providing default seating configuration"""
+
+    async def get_config(self, **_) -> SubsectionConfig:
+        return SubsectionConfig(rows=10, cols=10, price=1000)
 
 
 class TestReleaseSeatExecutionOrder:
@@ -52,14 +68,20 @@ class TestReleaseSeatExecutionOrder:
 
     @pytest.fixture
     def mock_seating_config_handler(self) -> AsyncMock:
-        handler = AsyncMock()
-        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
-        return handler
+        """Mock for verifying config handler calls (execution order tests)"""
+        return AsyncMock(spec=StubSeatingConfigHandler)
 
     @pytest.fixture
     def mock_booking_command_repo(self) -> AsyncMock:
+        """
+        Mock repository for verifying update calls.
+        get_by_id returns FakeBooking (stub behavior - no verification needed)
+        update_* methods are mocked (verification needed)
+        """
         repo = AsyncMock()
-        repo.get_by_id = AsyncMock(return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT))
+        # Stub behavior: get_by_id just returns data
+        repo.get_by_id = AsyncMock(return_value=FakeBooking())
+        # Mock behavior: update methods need verification
         repo.update_status_to_cancelled_and_release_tickets = AsyncMock(return_value=None)
         return repo
 
@@ -111,9 +133,9 @@ class TestReleaseSeatExecutionOrder:
         """
         call_order: list[str] = []
 
-        async def track_get_by_id(*args: Any, **kwargs: Any) -> AsyncMock:
+        async def track_get_by_id(*args: Any, **kwargs: Any) -> FakeBooking:
             call_order.append('postgres_get_by_id')
-            return _make_mock_booking(BookingStatus.PENDING_PAYMENT)
+            return FakeBooking(status=BookingStatus.PENDING_PAYMENT)
 
         async def track_postgres_update(*args: Any, **kwargs: Any) -> None:
             call_order.append('postgres_update')
@@ -240,7 +262,7 @@ class TestReleaseSeatIdempotency:
     ) -> None:
         """Test that already cancelled bookings complete remaining steps without PostgreSQL write."""
         mock_booking_command_repo.get_by_id = AsyncMock(
-            return_value=_make_mock_booking(BookingStatus.CANCELLED)
+            return_value=FakeBooking(status=BookingStatus.CANCELLED)
         )
 
         request = ReleaseSeatsBatchRequest(
@@ -261,7 +283,7 @@ class TestReleaseSeatIdempotency:
     ) -> None:
         """Test that bookings not in PENDING_PAYMENT status return error."""
         mock_booking_command_repo.get_by_id = AsyncMock(
-            return_value=_make_mock_booking(BookingStatus.COMPLETED)
+            return_value=FakeBooking(status=BookingStatus.COMPLETED)
         )
 
         request = ReleaseSeatsBatchRequest(
@@ -298,7 +320,7 @@ class TestReleaseSeatSSEPublish:
         repo = AsyncMock()
         # Mock booking with buyer_id=42, event_id=99 for SSE assertions
         repo.get_by_id = AsyncMock(
-            return_value=_make_mock_booking(BookingStatus.PENDING_PAYMENT, buyer_id=42, event_id=99)
+            return_value=FakeBooking(status=BookingStatus.PENDING_PAYMENT, buyer_id=42, event_id=99)
         )
         repo.update_status_to_cancelled_and_release_tickets = AsyncMock(return_value=None)
         return repo

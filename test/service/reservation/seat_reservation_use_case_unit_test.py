@@ -19,55 +19,85 @@ from src.service.reservation.app.dto import ReservationRequest
 from src.service.shared_kernel.domain.value_object.subsection_config import SubsectionConfig
 
 
+# ==============================================================================
+# Stub Classes for Test Data
+# ==============================================================================
+
+
+class StubSeatStateHandler:
+    """Stub providing default successful responses for seat operations"""
+
+    async def find_seats(self, **_) -> dict[str, Any]:
+        return {
+            'success': True,
+            'seats_to_reserve': [(1, 1, 0, '1-1'), (1, 2, 1, '1-2')],
+            'total_price': 2000,
+        }
+
+    async def verify_seats(self, **_) -> dict[str, Any]:
+        return {
+            'success': True,
+            'seats_to_reserve': [(1, 1, 0, '1-1')],
+            'total_price': 1000,
+        }
+
+    async def update_seat_map(self, **_) -> dict[str, Any]:
+        return {
+            'success': True,
+            'reserved_seats': ['1-1', '1-2'],
+            'subsection_stats': {},
+            'event_stats': {},
+        }
+
+
+class StubSeatingConfigHandler:
+    """Stub providing default seating configuration"""
+
+    async def get_config(self, **_) -> SubsectionConfig:
+        return SubsectionConfig(rows=10, cols=10, price=1000)
+
+
+class StubBookingCommandRepo:
+    """Stub providing default booking repository responses"""
+
+    async def get_by_id(self, **_) -> None:
+        return None  # No existing booking (idempotency check passes)
+
+    async def create_booking_and_update_tickets_to_reserved(self, **_) -> dict[str, Any]:
+        return {'tickets': [{'id': 1}]}
+
+
 class TestReserveSeatsExecutionOrder:
     """Test that reserve_seats executes steps in correct order (new 6-step flow)."""
 
     @pytest.fixture
     def mock_seat_state_handler(self) -> AsyncMock:
-        handler = AsyncMock()
-        # New split methods for 6-step flow
-        handler.find_seats = AsyncMock(
-            return_value={
-                'success': True,
-                'seats_to_reserve': [(1, 1, 0, '1-1'), (1, 2, 1, '1-2')],
-                'total_price': 2000,
-            }
-        )
-        handler.verify_seats = AsyncMock(
-            return_value={
-                'success': True,
-                'seats_to_reserve': [(1, 1, 0, '1-1')],
-                'total_price': 1000,
-            }
-        )
-        handler.update_seat_map = AsyncMock(
-            return_value={
-                'success': True,
-                'reserved_seats': ['1-1', '1-2'],
-                'subsection_stats': {},
-                'event_stats': {},
-            }
-        )
-        return handler
+        """
+        Mock for verifying seat state handler calls.
+        Tests override methods with tracking functions to verify execution order.
+        """
+        return AsyncMock(spec=StubSeatStateHandler)
 
     @pytest.fixture
     def mock_booking_command_repo(self) -> AsyncMock:
-        repo = AsyncMock()
-        repo.get_by_id = AsyncMock(return_value=None)  # No existing booking
-        repo.create_booking_and_update_tickets_to_reserved = AsyncMock(
-            return_value={'tickets': [{'id': 1}]}
-        )
-        return repo
+        """
+        Mock for verifying booking repository calls.
+        Tests override methods with tracking functions to verify execution order.
+        """
+        return AsyncMock(spec=StubBookingCommandRepo)
 
     @pytest.fixture
     def mock_pubsub_handler(self) -> AsyncMock:
+        """Mock for verifying pubsub handler calls (broadcast, SSE)."""
         return AsyncMock()
 
     @pytest.fixture
     def mock_seating_config_handler(self) -> AsyncMock:
-        handler = AsyncMock()
-        handler.get_config = AsyncMock(return_value=SubsectionConfig(rows=10, cols=10, price=1000))
-        return handler
+        """
+        Mock for verifying config handler calls.
+        Tests override methods with tracking functions to verify execution order.
+        """
+        return AsyncMock(spec=StubSeatingConfigHandler)
 
     @pytest.fixture
     def use_case(
