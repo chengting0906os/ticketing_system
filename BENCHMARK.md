@@ -18,7 +18,7 @@
 | 組件                | 規格                                                      |
 | ------------------- | --------------------------------------------------------- |
 | 區域                | us-west-2                                                 |
-| RDS PostgreSQL      | db.c6gd.2xlarge (8 vCPU, 32 GB RAM, Graviton2 ARM + NVMe) |
+| RDS PostgreSQL      | RDS Single-AZ (m8gd.2xlarge)                              |
 | Kafka               | 3x c7g.large EC2 (2 vCPU, 4 GB RAM, ARM Graviton3)        |
 | Kvrocks             | m6i.large EC2 (2 vCPU, 8 GB RAM, x86 Intel)               |
 | Ticketing Service   | ECS Fargate (2 vCPU, 4 GB)                                |
@@ -47,7 +47,7 @@
 | 環境                         | 測試紀錄 (s)             | 平均秒數 | 平均 TPS |
 | ---------------------------- | ------------------------ | -------- | -------- |
 | 本地                         | 1.29/1.33/1.39/1.27/1.35 | 1.33     | 1504     |
-| RDS Single-AZ                | 2.50/2.45/2.48/2.46/2.45 | 2.47     | 810      |
+| RDS Single-AZ (m8gd.xlarge)  | 2.50/2.45/2.48/2.46/2.45 | 2.47     | 810      |
 | RDS Single-AZ (m8gd.2xlarge) | 2.29/2.30/2.34/2.35/2.29 | 2.31     | 866      |
 | RDS Single-AZ (m8gd.4xlarge) | 2.35/2.40/2.41/2.38/2.41 | 2.39     | 837      |
 | RDS Multi-AZ Instance        | 3.37/3.40/3.41/3.49/3.45 | 3.42     | 585      |

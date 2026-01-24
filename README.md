@@ -27,32 +27,39 @@ This project demonstrates a **Lock-Free Architecture** using **Kafka Partition**
   - [Tech Stack](#tech-stack)
 - [Idempotency Design](#idempotency-design)
   - [Kafka Partition Ordering](#1-kafka-partition-ordering)
-  - [Reservation Flow](#2-reservation-flow)
-    - [PostgreSQL Idempotency Check](#postgresql-idempotency-check)
-    - [Kvrocks Idempotent Operations](#kvrocks-idempotent-operations)
+  - [Idempotent Operations](#2-idempotent-operations)
 - [Observability](#observability)
   - [Distributed Tracing: OpenTelemetry](#distributed-tracing-opentelemetry)
   - [CPU Profiling: py-spy](#cpu-profiling-py-spy)
-- [Load Testing](#load-testing)
+- [Performance Testing](#performance-testing)
   - [Test Environment](#test-environment)
-  - [Benchmark Results](#benchmark-results)
+  - [Spike Test (Go)](#spike-test-go)
+    - [Environment Comparison](#environment-comparison)
+    - [Volume Scaling](#volume-scaling)
+    - [CPU Scaling](#cpu-scaling)
+    - [Distributed Tracing Analysis](#distributed-tracing-analysis)
+  - [Load Test (k6)](#load-test-k6)
+  - [Key Findings](#key-findings)
+- [Conclusion](#conclusion)
 
 ---
 
 ## System Architecture
 
 ```
-┌────────┐      ┌─────────┐      ┌─────────────────┐      ┌─────────────┐      ┌─────────────────────┐
-│ Client │─────▶│   ALB   │─────▶│    Ticketing    │─────▶│    Kafka    │─────▶│ Reservation Service │
-└────────┘      └─────────┘      │    Service      │      │    (EC2)    │      │       (ECS)         │
-     ▲                           │     (ECS)       │      └─────────────┘      └──────────┬──────────┘
-     │                           └────────┬────────┘                                      │
-     │                                    │                                      ┌────────┴────────┐
-     │ SSE                                │                                      ▼                 ▼
-     │                                    │                               ┌───────────┐    ┌───────────┐
-     └────────────────────────────────────┘                               │  Aurora   │    │  Kvrocks  │
-                                                                          │PostgreSQL │    │   (EC2)   │
-                                                                          └───────────┘    └───────────┘
+┌────────┐      ┌─────────┐      ┌───────────────────┐      ┌─────────────┐      ┌─────────────────────┐
+│ Client │─────▶│   ALB   │─────▶│ Ticketing Service │─────▶│    Kafka    │─────▶│ Reservation Service │
+└────────┘      └─────────┘      │       (ECS)       │      │    (EC2)    │      │       (ECS)         │
+                                 └─────────┬─────────┘      └─────────────┘      └──────────┬──────────┘
+                                           │                                                │
+                                           └───────────────────────┬────────────────────────┘
+                                                                   │
+                                                         ┌─────────┴─────────┐
+                                                         ▼                   ▼
+                                                  ┌────────────┐       ┌───────────┐
+                                                  │ PostgreSQL │       │  Kvrocks  │
+                                                  │   (RDS)    │       │   (EC2)   │
+                                                  └────────────┘       └───────────┘
 ```
 
 ### Tech Stack
@@ -69,85 +76,87 @@ This project demonstrates a **Lock-Free Architecture** using **Kafka Partition**
 | **Profiling**      | py-spy                             | CPU flame graph analysis                |
 
 > **Why Kvrocks over Redis?**
-> Redis 主要是 in-memory，雖然有 RDB/AOF 但仍可能丟失資料。Kvrocks 基於 RocksDB，資料直接寫入磁碟，crash 後不會遺失座位狀態。
+> Redis is primarily in-memory; despite RDB/AOF persistence, data loss is possible. Kvrocks uses RocksDB, writing directly to disk, ensuring seat state survives crashes.
 
 ---
 
 ## Idempotency Design
 
-透過以下兩點設計確保冪等性：
+Idempotency is ensured through two key designs:
 
-1. **Kafka Partition Ordering** - 同一 Partition 只分配給同一 Consumer，確保順序處理
-2. **Idempotent Operations** - PostgreSQL 狀態檢查 + Kvrocks BITFIELD SET 皆為冪等操作
+1. **Kafka Partition Ordering** - Same partition is assigned to same consumer, ensuring sequential processing
+2. **Idempotent Operations** - PostgreSQL status check + Kvrocks BITFIELD SET are both idempotent
 
 ### 1. Kafka Partition Ordering
 
-同一區域的 Reserve/Release 發到同一 Partition，保證順序處理
+Reserve/Release for the same section go to the same partition, guaranteeing sequential processing.
 
-**關鍵**: 同一 Consumer Group 內，一個 Partition 同時只會分配給一個 Consumer，確保順序處理
+**Key**: Within the same Consumer Group, a partition is only assigned to one consumer at a time, ensuring sequential processing.
 
 ```
-Topic: seat_reservation (Reserve + Release 都發到這裡)
+Topic: event-id-{event_id}______ticket-command-request______ (per event)
     │
     ▼
-Partition Key: {event_id}-{section}-{subsection}
+Partition: calculated from {section}-{subsection}
     │
     ▼
-Same Partition → Same Consumer → 順序處理
+Same Partition → Same Consumer → Sequential Processing
 
 Reserve A-1 (t=1) → Release A-1 (t=2) → Reserve A-1 (t=3)
                     ↑
-                    保證在 t=1 之後處理
+                    Guaranteed to process after t=1
 ```
 
-**Message Commit（Offset Commit）**:
+**Message Commit (Offset Commit)**:
 
-- Consumer 處理完訊息後 commit offset，確認已處理
-- Commit 前 crash → 訊息重新傳遞 → 需要冪等操作
+- Consumer commits offset after processing message, confirming completion
+- Crash before commit → message redelivered → requires idempotent operations
 
 ### 2. Idempotent Operations
 
 ```
 SeatReservationUseCase.reserve_seats(request)
     │
-    ├── [Step 1] Idempotency Check（PostgreSQL）
+    ├── [Step 1] Idempotency Check (PostgreSQL)
     │       ├── SELECT * FROM booking WHERE id = {booking_id}
-    │       ├── FAILED → 返回錯誤
-    │       └── PENDING_PAYMENT → 跳到 Step 4（確保 Kvrocks + SSE 完成）
+    │       ├── PENDING_PAYMENT → skip to Step 4 (ensure Kvrocks complete)
+    │       └── FAILED → return error
     │
-    ├── [Step 2] Find Best Available Seats（Kvrocks）
-    │       └── BITFIELD GET 批次讀取座位狀態 → 返回 seats[]
+    ├── [Step 2] Find Seats (Kvrocks Lua Script)
+    │       ├── BEST_AVAILABLE: prioritize consecutive seats, fallback to largest blocks
+    │       └── MANUAL: verify specified seats are AVAILABLE
     │
-    ├── [Step 3] PostgreSQL Write
+    ├── [Step 3] PostgreSQL Write (CTE Atomic)
     │       ├── INSERT booking (status=PENDING_PAYMENT)
-    │       └── UPDATE tickets SET status=RESERVED
+    │       ├── UPDATE tickets SET status=RESERVED
+    │       └── TRIGGER auto-update event.stats
     │
-    └── [Step 4] Kvrocks Set Seats
-            └── BITFIELD SET u1 seat_index 1（冪等：SET 1 = no-op）
+    └── [Step 4] Set Seats (Kvrocks)
+            └── BITFIELD SET u1 seat_index 1 (idempotent: SET 1 = no-op)
 ```
 
 #### PostgreSQL: Booking Status Check
 
-booking_id (UUID7) 由 Client 產生，作為 Idempotency Key
+booking_id (UUID7) is generated by Client, serving as the Idempotency Key.
 
 ```
 SELECT * FROM booking WHERE id = {booking_id}
   │
-  ├── 不存在 → 正常處理
-  ├── FAILED → 返回錯誤（不重複建立）
-  └── PENDING_PAYMENT → 跳過 DB 寫入，只完成 Kvrocks + SSE
+  ├── Not exists → process normally
+  ├── FAILED → return error (don't recreate)
+  └── PENDING_PAYMENT → skip DB write, only complete Kvrocks
 ```
 
 #### Kvrocks: BITFIELD SET
 
-BITFIELD SET 是冪等操作，重複執行不改變結果
+BITFIELD SET is an idempotent operation—repeated execution doesn't change the result.
 
 ```
 BITFIELD SET u1 seat_index 1
-  → 座位已是 1？SET 1 = no-op（冪等）
+  → Seat already 1? SET 1 = no-op (idempotent)
 
 BITFIELD SET u1 seat_index 0
-  → 座位已是 0？SET 0 = no-op（冪等）
+  → Seat already 0? SET 0 = no-op (idempotent)
 ```
 
 ---
@@ -156,14 +165,9 @@ BITFIELD SET u1 seat_index 0
 
 ### Distributed Tracing: OpenTelemetry
 
-Integrated **OpenTelemetry** for end-to-end distributed tracing across services.
+Integrated **OpenTelemetry** for end-to-end distributed tracing across services (Local: Jaeger, AWS: X-Ray).
 
-**Exporters:**
-
-| Environment | Exporter |
-| ----------- | -------- |
-| Local       | Jaeger   |
-| AWS         | X-Ray    |
+See [Distributed Tracing Analysis](#distributed-tracing-analysis) for trace examples comparing Local and Cloud performance.
 
 ### CPU Profiling: py-spy
 
@@ -171,7 +175,7 @@ Used **py-spy** to generate flame graphs and identify CPU bottlenecks in the API
 
 ### Bottleneck Identified
 
-![Flame Graph - Before Fix](.github/image/v0.0.2-py-spy/flame-graph.png)
+![Flame Graph - Before Fix](.github/image/v0.0.3/flame-graph.png)
 
 **Bottleneck call stack:**
 
@@ -221,11 +225,15 @@ def _get_or_create_quix_topic_with_cache(topic_name: str):
 
 #### Before Optimization
 
-![Before optimization](.github/image/v0.0.2-py-spy/v0.0.2_1-before.png)
+<img src=".github/image/v0.0.3/cpu-optimization-before-1.png" alt="Before optimization" width="500">
+
+<img src=".github/image/v0.0.3/cpu-optimization-before-2.png" alt="Before optimization" width="500">
 
 #### After Topic Caching
 
-![After topic caching](.github/image/v0.0.2-py-spy/v0.0.2_2-topic-cache.png)
+<img src=".github/image/v0.0.3/cpu-optimization-after-1.png" alt="After topic caching" width="500">
+
+<img src=".github/image/v0.0.3/cpu-optimization-after-2.png" alt="After topic caching" width="500">
 
 #### Performance Comparison
 
@@ -246,67 +254,157 @@ def _get_or_create_quix_topic_with_cache(topic_name: str):
 
 ---
 
-## Load Testing
+## Performance Testing
 
 ### Test Environment
 
-| Component           | Local (MacBook Pro M2 Max) | AWS Cloud (Development)             |
-| ------------------- | -------------------------- | ----------------------------------- |
-| PostgreSQL          | Docker                     | RDS db.c6gd.2xlarge (8 vCPU, 32 GB) |
-| Kafka               | 3 brokers (Docker)         | 3× c7g.large EC2 (2 vCPU, 4 GB)     |
-| Kvrocks             | Docker                     | m6i.large EC2 (2 vCPU, 8 GB)        |
-| Ticketing Service   | 5 instances                | ECS Fargate (2 vCPU, 4 GB)          |
-| Reservation Service | 5 instances                | ECS Fargate (2 vCPU, 4 GB)          |
+| Component           | Local (Apple M2 Max, 12 cores, 32 GB) | AWS Cloud                           |
+| ------------------- | ------------------------------------- | ----------------------------------- |
+| Ticketing Service   | 5 instances                           | ECS Fargate (2 vCPU, 4 GB)          |
+| Reservation Service | 5 instances                           | ECS Fargate (2 vCPU, 4 GB)          |
+| PostgreSQL          | Docker                                | RDS db.m8gd.2xlarge (8 vCPU, 32 GB) |
+| Kafka               | Docker(3 brokers)                     | 3× c7g.large EC2 (2 vCPU, 4 GB)     |
+| Kvrocks             | Docker                                | m6i.large EC2 (2 vCPU, 8 GB)        |
 
-### Benchmark Results
+### Spike Test (Go)
 
-#### Spike Test (Sellout 2000 Tickets)
+Burst all requests simultaneously (fire-and-forget), measuring time to complete all seat reservations.
 
-| Environment                  | Avg Time | TPS  | vs Local |
-| ---------------------------- | -------- | ---- | -------- |
-| Local                        | 1.33s    | 1504 | 100%     |
-| RDS Single-AZ (m8gd.2xlarge) | 2.31s    | 866  | 58%      |
-| RDS Multi-AZ (m8gd.2xlarge)  | 3.45s    | 580  | 39%      |
+**Purpose**: Establish performance baseline and compare local vs cloud throughput.
 
-#### Sustained Load Test (k6, 0% Error Rate)
+**Test Config:**
 
-| Environment      | RPS   | avg     | p95      | p99      |
-| ---------------- | ----- | ------- | -------- | -------- |
-| Local            | 1,145 | 30.51ms | 121.23ms | 247.18ms |
-| ECS (10i/20vCPU) | 2,355 | 14.86ms | 44.33ms  | 267.5ms  |
-| ECS (25i/50vCPU) | 5,116 | 9.28ms  | 26.59ms  | 84.9ms   |
+- Each test ran 5 times, results averaged
+- Reservation Service: **10 instances** (2 vCPU, 4 GB each)
 
-![Local (5 containers, ~1,145 RPS)](.github/image/60s_5container_local_loadtest_1000-1400.png)
+#### Environment Comparison
 
-![ECS (10i/20vCPU, ~2,355 RPS)](.github/image/60s_10i_20cpu_loadtest_2000-2900.png)
+**Purpose**: Compare Local vs Cloud, Single-AZ vs Multi-AZ performance impact.
 
-![ECS (25i/50vCPU, ~5,116 RPS)](.github/image/60s_25i_50cpu_loadtest_3600-7150.png)
+**Condition**: 2,000 tickets, RDS m8gd.2xlarge
+**Variable**: Deployment environment (Local / Single-AZ / Multi-AZ)
 
-**Key Findings:**
+| Environment   | TPS  | vs Local | Duration | Test Records (s)         |
+| ------------- | ---- | -------- | -------- | ------------------------ |
+| Local         | 1504 | 100%     | 1.33s    | 1.29/1.33/1.39/1.27/1.35 |
+| RDS Single-AZ | 866  | 58%      | 2.31s    | 2.29/2.30/2.34/2.35/2.29 |
+| RDS Multi-AZ  | 580  | 39%      | 3.45s    | 3.51/3.38/3.47/3.41/3.46 |
+
+#### Volume Scaling
+
+**Purpose**: Verify TPS stability across different data volumes.
+
+**Condition**: RDS Single-AZ m8gd.2xlarge
+**Variable**: Concurrent requests (2K / 5K / 10K)
+
+| Tickets | TPS | Duration | Test Records (s)              |
+| ------- | --- | -------- | ----------------------------- |
+| 2,000   | 866 | 2.31s    | 2.29/2.30/2.34/2.35/2.29      |
+| 5,000   | 887 | 5.64s    | 5.56/5.60/5.74/5.55/5.73      |
+| 10,000  | 888 | 11.26s   | 11.31/11.21/11.15/11.39/11.22 |
+
+> TPS remains stable (~880) across different ticket volumes, confirming linear scalability.
+
+#### CPU Scaling
+
+**Purpose**: Determine if database CPU is the bottleneck.
+
+**Condition**: 2,000 tickets, RDS Single-AZ
+**Variable**: RDS instance type (4→8→16 vCPU)
+
+| Instance                      | TPS | Duration | Test Records (s)         |
+| ----------------------------- | --- | -------- | ------------------------ |
+| m8gd.xlarge (4 vCPU, 16 GB)   | 810 | 2.47s    | 2.50/2.45/2.48/2.46/2.45 |
+| m8gd.2xlarge (8 vCPU, 32 GB)  | 866 | 2.31s    | 2.29/2.30/2.34/2.35/2.29 |
+| m8gd.4xlarge (16 vCPU, 64 GB) | 837 | 2.39s    | 2.35/2.40/2.41/2.38/2.41 |
+
+> Doubling CPU (4→8→16 vCPU) shows no significant improvement — suggests bottleneck is network RTT, not database CPU.
+
+#### Distributed Tracing Analysis
+
+**Example Trace (Jaeger - Booking → Reservation, 2.53s):**
+
+![Jaeger Trace](.github/image/v0.0.3/2000-longest_reservation_service-key-point.png)
+
+**Example Trace (X-Ray - Booking → Reservation, 3.8s):**
+
+![AWS X-Ray Trace](.github/image/v0.0.3/2000-longest_x_ray-key-point.png)
+
+> These traces show the **longest operations** from the **2000 spike test** in Local (Jaeger, 2.53s) and Cloud (X-Ray, 3.8s) environments, comparing the **Reservation Service execution time differences** between the two environments.
+
+Traces confirm the bottleneck is **network RTT**:
+
+| Metric                               | Local  | Cloud | Δ     | Description                                 |
+| ------------------------------------ | ------ | ----- | ----- | ------------------------------------------- |
+| Total Trace                          | 2.53s  | 3.8s  | +50%  | End-to-end (API → Kafka → Consumer → DB)    |
+| **reservation service end-to-end**   | 2.46ms | ~10ms | +307% | Consumer actual processing time             |
+| **repo.create_booking_with_tickets** | 1.03ms | ~4ms  | +288% | PostgreSQL write (booking + tickets + stat) |
+
+> **Insight**: Consumer processing ~10ms per message, but total trace shows 2.53s/3.8s due to **message backlog during spike test** (2000 concurrent requests queuing in Kafka)
+
+---
+
+### Load Test (k6)
+
+Sustained load over 60 seconds with gradual ramp-up, measuring maximum RPS at 0% error rate.
+
+**Purpose**: Find maximum sustainable throughput while maintaining reliability.
+
+**Condition**: RDS Single-AZ m8gd.2xlarge, 60s sustained load
+**Variable**: Ticketing Service instances (5i / 10i / 25i)
+
+**Test Config:**
+
+- Ticketing Service: **5i** (Local) / **10i** / **25i** (2 vCPU, 4 GB each) — scaled with load
+- Reservation Service: **10 instances** (2 vCPU, 4 GB each)
+
+#### Local (5 containers, ~1,145 RPS)
+
+| avg     | med     | p90     | p95      | p99      | max   |
+| ------- | ------- | ------- | -------- | -------- | ----- |
+| 30.51ms | 13.15ms | 74.74ms | 121.23ms | 247.18ms | 2.23s |
+
+![Local (5 containers, ~1,145 RPS)](.github/image/v0.0.3/60s_5container_local_loadtest_1000-1400.png)
+
+#### ECS (10i/20vCPU, ~2,355 RPS)
+
+| avg     | med    | p90     | p95     | p99     | max   |
+| ------- | ------ | ------- | ------- | ------- | ----- |
+| 14.86ms | 5.53ms | 20.71ms | 44.33ms | 267.5ms | 2.96s |
+
+![ECS (10i/20vCPU, ~2,355 RPS)](.github/image/v0.0.3/60s_10i_20cpu_loadtest_2000-2900.png)
+
+#### ECS (25i/50vCPU, ~5,116 RPS)
+
+| avg    | med   | p90     | p95     | p99    | max   |
+| ------ | ----- | ------- | ------- | ------ | ----- |
+| 9.28ms | 5.3ms | 12.89ms | 26.59ms | 84.9ms | 1.24s |
+
+![ECS (25i/50vCPU, ~5,116 RPS)](.github/image/v0.0.3/60s_25i_50cpu_loadtest_3600-7150.png)
+
+#### Performance Comparison
+
+| Environment      | RPS   | avg     | med     | p90     | p95      | p99      | max   |
+| ---------------- | ----- | ------- | ------- | ------- | -------- | -------- | ----- |
+| Local            | 1,145 | 30.51ms | 13.15ms | 74.74ms | 121.23ms | 247.18ms | 2.23s |
+| ECS (10i/20vCPU) | 2,355 | 14.86ms | 5.53ms  | 20.71ms | 44.33ms  | 267.5ms  | 2.96s |
+| ECS (25i/50vCPU) | 5,116 | 9.28ms  | 5.3ms   | 12.89ms | 26.59ms  | 84.9ms   | 1.24s |
+
+---
+
+### Key Findings
 
 - Cloud environment ~74% slower than local due to network RTT
 - Multi-AZ replication costs 33% TPS (866 → 580)
 - TPS remains stable (~880) across 2K/5K/10K ticket volumes
-- Bottleneck is network layer
+- Bottleneck is network layer, not database CPU
 
-### Distributed Tracing Analysis
+---
 
-Traces confirm the bottleneck is **network RTT**:
+## Conclusion
 
-| Metric                                 | Local  | Cloud | Description                              |
-| -------------------------------------- | ------ | ----- | ---------------------------------------- |
-| **Total Trace**                        | 2.53s  | 3.8s  | End-to-end (API → Kafka → Consumer → DB) |
-| `consumer...ticket-command-request...` | 2.46ms | ~10ms | Consumer actual processing time          |
-| `repo.create_booking_with_tickets`     | 1.03ms | ~4ms  | PostgreSQL write (booking + tickets)     |
+**Key Findings:**
 
-> **Insight**: Consumer processing 10ms (includes DB write), but total trace is 3.8s → **99.7% is Kafka queue wait time**
-
-**Example Trace (Jaeger - Booking → Reservation, 2.53s):**
-
-![Jaeger Trace](.github/image/2000-longest_reservation_service.png)
-
-**Example Trace (X-Ray - Booking → Reservation, 3.8s):**
-
-![AWS X-Ray Trace](.github/image/2000-longest_x_ray.png)
-
-> See [BENCHMARK.md](BENCHMARK.md) for detailed analysis
+- **Lock-free architecture** using Kafka partition ordering + idempotency eliminates distributed locks while ensuring consistency
+- **Network latency has significant impact** — Cloud TPS reduced by 42% (866 vs 1504); Multi-AZ costs additional 33% TPS (866→580); CPU scaling showed no improvement (810→866→837 TPS)
+- **Horizontal scaling is effective** — 1,145 RPS (5i) → 2,355 RPS (10i) → 5,116 RPS (25i)
