@@ -13,7 +13,7 @@ ifneq (,$(wildcard ../../.env))
 endif
 
 # Defaults (can be overridden by .env or command line)
-API_HOST ?= http://localhost:8100
+API_HOST ?= http://localhost:8200
 SEATS ?= 500
 
 # Binary names

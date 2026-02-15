@@ -11,7 +11,7 @@ AWS_REGION ?= us-west-2
 AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "unknown")
 
 # API Configuration (can be overridden via environment variables)
-API_HOST ?= http://localhost:8100
+API_HOST ?= http://localhost:8200
 
 # Deployment environment for seeding (can be overridden via environment variables)
 DEPLOY_ENV ?= local_dev
@@ -152,7 +152,7 @@ d-reset-all dra:  ## 🚀 Complete Docker reset (down → up → migrate → res
 	@$(MAKE) d-seed
 	@echo ""
 	@echo "✅ ==================== SETUP COMPLETE ===================="
-	@echo "   🌐 API:  http://localhost:8100/docs#"
+	@echo "   🌐 API:  http://localhost:8200/docs#"
 	@echo "   📊 Kafka UI:     http://localhost:8080"
 	@echo "   📈 Grafana:      http://localhost:3000"
 	@echo "   🔍 Jaeger:       http://localhost:16686"

@@ -9,8 +9,8 @@ export const insufficientSeats = new Counter('insufficient_seats');
 // 200 = login, 202 = booking accepted, 400 = seats unavailable (all expected)
 http.setResponseCallback(http.expectedStatuses(200, 202, 400));
 
-// API_HOST: cloud uses port 80 (http://alb-dns), local uses port 8100 (http://localhost:8100)
-export const BASE_URL = __ENV.API_HOST || 'http://localhost:8100';
+// API_HOST: cloud uses port 80 (http://alb-dns), local uses port 8200 (http://localhost:8200)
+export const BASE_URL = __ENV.API_HOST || 'http://localhost:8200';
 export const EVENT_ID = parseInt(__ENV.EVENT_ID || '1');
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 

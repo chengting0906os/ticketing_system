@@ -12,7 +12,7 @@ Usage:
 1. Deploy stack: `DEPLOY_ENV=development uv run cdk deploy TicketingLoadTestStack`
 2. SSH into instance: `aws ssm start-session --target <instance-id>`
 3. Run loadtest: `cd /home/ec2-user && docker exec -it loadtest sh`
-4. Inside container: `cd script/go_client && make frlt WORKERS=500 BATCH=1`
+4. Inside container: `cd script/go_client && make frst WORKERS=500 BATCH=1`
 
 Cost:
 - c7i.xlarge (4 vCPU, 8GB): ~$0.17/hour (~$122/month if running 24/7)

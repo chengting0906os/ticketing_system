@@ -37,7 +37,7 @@ services:
       - "min_wal_size=128MB"
 
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./script/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
@@ -370,7 +370,7 @@ services:
     image: nginx:alpine
     container_name: ticketing-nginx-lb
     ports:
-      - "8100:80" # Main entry point - all traffic goes through here
+      - "8200:80" # Main entry point - all traffic goes through here
     volumes:
       - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./logs/nginx:/var/log/nginx # Nginx access/error logs

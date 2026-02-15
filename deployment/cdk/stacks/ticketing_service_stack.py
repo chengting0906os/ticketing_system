@@ -149,7 +149,7 @@ class TicketingServiceStack(Stack):
             command=[
                 'sh',
                 '-c',
-                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8100 --workers ${WORKERS} --log-config src/platform/logging/granian_log_config.json',
+                'uv run granian src.main:app --interface asgi --host 0.0.0.0 --port 8200 --workers ${WORKERS} --log-config src/platform/logging/granian_log_config.json',
             ],
             logging=ecs.LogDriver.aws_logs(
                 stream_prefix='ticketing-service', log_retention=logs.RetentionDays.ONE_WEEK
@@ -187,14 +187,14 @@ class TicketingServiceStack(Stack):
                 ),
             },
             health_check=ecs.HealthCheck(
-                command=['CMD-SHELL', 'curl -f http://localhost:8100/health || exit 1'],
+                command=['CMD-SHELL', 'curl -f http://localhost:8200/health || exit 1'],
                 interval=Duration.seconds(30),
                 timeout=Duration.seconds(5),
                 retries=3,
                 start_period=Duration.seconds(60),
             ),
         )
-        container.add_port_mappings(ecs.PortMapping(container_port=8100))
+        container.add_port_mappings(ecs.PortMapping(container_port=8200))
 
         # ADOT sidecar for OpenTelemetry
         adot = task_def.add_container(
@@ -273,7 +273,7 @@ service:
         # ALB Target Group - Handle all /api/* routes (internet-facing)
         alb_listener.add_targets(
             'APITargets',
-            port=8100,
+            port=8200,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[service],
             health_check=elbv2.HealthCheck(
@@ -292,7 +292,7 @@ service:
         # Internal ALB Target Group - For LoadTest (VPC internal traffic only)
         internal_alb_listener.add_targets(
             'InternalAPITargets',
-            port=8100,
+            port=8200,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[service],
             health_check=elbv2.HealthCheck(
